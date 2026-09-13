@@ -103,11 +103,14 @@ clear message naming what *is* available, rather than silently skipping.
 
 ### Documentation
 
-`05-using-slax/` (9 pages) and `50-cookbook/` (7 pages, one per shipped recipe) are complete.
-`30-inventory/`, `40-workflow/`, `60-testing/`, `70-compat/` and `90-reference/` are partial.
-`10-anatomy/`, `15-upstream/` and `20-boot-sequence/` are **planned but empty** — those are the
-Phase 1 "how is the ISO constructed" and "boot sequence" deliverables and are the largest remaining
-documentation gap. See [the index](../README.md).
+**Phase 1 is complete.** `00-overview/`, `05-using-slax/`, `10-anatomy/`, `15-upstream/`,
+`20-boot-sequence/` and `30-inventory/` are done — 54 pages covering how the ISO is constructed, how
+it boots on every medium, what software is in it, and the upstream source of truth for all of it.
+
+Still partial, and tracking how far the toolkit itself is built: `40-workflow/` (missing
+`edit-initramfs`, `edit-bootloader`, `write-to-usb`, `reproducibility`, `host-handoff`),
+`50-cookbook/` (7 pages, one per shipped recipe — the other ~24 recipes do not exist yet),
+`60-testing/`, `70-compat/`, `90-reference/`. See [the index](../README.md).
 
 ---
 
@@ -129,6 +132,6 @@ The dev container has no `CAP_SYS_ADMIN`, no user namespaces and no `/dev/kvm`. 
 
 ## Known upstream issues
 
-Eleven, recorded separately in [known upstream issues](../30-inventory/known-upstream-bugs.md).
+Twelve, recorded separately in [known upstream issues](../30-inventory/known-upstream-bugs.md).
 The two that shape this project most: the stock ISO **cannot boot on UEFI** and **cannot be `dd`'d
 to a USB stick**. Both are fixed by recipes here.

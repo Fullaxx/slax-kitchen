@@ -187,8 +187,8 @@ the recipes that caused them. A weekly CI job watches for a new release.
 
 See **[docs/00-overview/status.md](docs/00-overview/status.md)** for what is verified, what is
 written but unsupported, and what does not exist yet. Short version: the core loop
-(unpack → apply → pack → test) and eight recipes are boot-verified; roughly half the documentation
-and two thirds of the planned recipes are not written yet.
+(unpack → apply → pack → test) and eight recipes are boot-verified, and the documentation of Slax
+itself is complete; roughly two thirds of the planned recipes are not written yet.
 
 ## Licensing
 
