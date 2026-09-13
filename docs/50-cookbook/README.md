@@ -2,7 +2,7 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Ten recipes ship today**, all verified by booting the result. The plan lists roughly 32; the
+**Eleven recipes ship today**, all verified by booting the result. The plan lists roughly 32; the
 other two thirds do not exist yet, and this index says so rather than implying a fuller shelf than
 there is. [Project status](../00-overview/status.md) has the honest ledger.
 
@@ -31,6 +31,7 @@ ways: BIOS optical, UEFI optical, BIOS `dd`'d stick, UEFI `dd`'d stick.
 |---|---|---|
 | [`initramfs-add-binary`](initramfs-add-binary.md) | put a static binary or script into early boot | ○ |
 | [`initramfs-add-modules`](initramfs-add-modules.md) | promote drivers from a bundle so `find_data` can see your disk | ○ |
+| [`initramfs-boot-timeout`](initramfs-boot-timeout.md) | change the 45 s `find_data` budget; the reference example for `initramfs.patch` | ○ |
 
 Early boot runs before any bundle is mounted, so anything `find_data` or a `debug` shell needs has
 to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.

@@ -79,6 +79,10 @@ def send_keys(q: "Qmp", spec: str) -> None:
         time.sleep(0.25)
 
 
+# Markers that prove the guest reached OUR code rather than dying in the kernel.
+LIVEKIT_MARKERS = ("Looking for", "Mounting bundles", "Live Kit done", "Setting up")
+
+
 def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
          keys: str | None = None, kernel: str | None = None,
          initrd: str | None = None) -> dict:
@@ -162,13 +166,37 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--expect", action="append", default=[],
                     help="string that must appear in the serial log")
     ap.add_argument("--keys", help="menu keystrokes, e.g. '6s,down,down,ret'")
+    ap.add_argument("--retries", type=int, default=1,
+                    help="retry this many times if the guest panics before reaching "
+                         "livekit at all (TCG flakiness); a boot that reached livekit "
+                         "and then failed is never retried")
     a = ap.parse_args(argv[1:])
     if not os.path.isfile(a.iso):
         print(f"no such file: {a.iso}", file=sys.stderr)
         return 2
 
+    # TCG is not reliably deterministic. A run of this harness produced a kernel panic
+    # in mask_ioapic_irq during x86_late_time_init -- a crash in early kernel init,
+    # before the initramfs is even unpacked -- and the identical ISO booted fine on the
+    # next attempt. That is infrastructure noise, not a product failure, and letting it
+    # fail CI would teach people to ignore a red boot test.
+    #
+    # Retry ONLY when the guest never reached our code: no livekit marker at all AND a
+    # panic in the log. A boot that got into livekit and then failed is a real failure
+    # and is never retried, so this cannot mask a product bug.
     r = boot(a.iso, a.mode, a.seconds, a.out, keys=a.keys,
              kernel=a.kernel, initrd=a.initrd)
+    for attempt in range(a.retries):
+        txt = r["serial_text"]
+        reached_us = any(m in txt for m in LIVEKIT_MARKERS)
+        panicked = "Kernel panic" in txt or "end trace" in txt
+        if reached_us or not panicked:
+            break
+        print(f"  retry {attempt + 1}/{a.retries}: the guest panicked in early kernel "
+              f"init without reaching livekit -- almost certainly TCG flakiness, "
+              f"retrying", file=sys.stderr)
+        r = boot(a.iso, a.mode, a.seconds, a.out, keys=a.keys,
+                 kernel=a.kernel, initrd=a.initrd)
     print(f"boot {a.mode}: {os.path.basename(a.iso)}"
           f"   ({'KVM' if r['kvm'] else 'TCG -- slow'})")
     print(f"  serial log : {r['serial']} ({len(r['serial_text'])} bytes)")

@@ -1,0 +1,31 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: initramfs-boot-timeout
+  summary: Change how long early boot waits for the Slax data to appear
+  tags: [initramfs, boot, template]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: mknod
+vars:
+  seconds: "90"
+steps:
+  # find_data retries for 45 seconds, calling refresh_devs once a second, then gives up
+  # with "Could not locate slax data". That budget is the single most common thing worth
+  # changing in early boot:
+  #
+  #   raise it   slow USB enumeration, spun-down disks, a hub that settles late
+  #   lower it   CI and VMs, where 45 s of retrying just delays a failure you want fast
+  #
+  # The patch is one exact string that must appear exactly once. If a future Slax
+  # changes that line, this FAILS rather than silently doing nothing -- which is the
+  # whole point of the verb. expect_sha256 pins it to the 12.2.0/15.0.4 /init, which is
+  # byte-identical across all four targets.
+  - verb: initramfs.patch
+    edits:
+      - file: /init
+        expect_sha256: "1b04a359f56f06fb542b626fdb4796893f80cbfe02fcf90cd69970a3ab3a1153"
+        find: 'find_data 45 "$DATAMNT"'
+        replace: 'find_data {{seconds}} "$DATAMNT"'

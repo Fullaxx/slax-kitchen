@@ -43,6 +43,7 @@ the resulting ISO in QEMU and reading the console.
 | `add-packages` | ✅ **booted** on Debian — bundle mounts last, `Live Kit done, starting slax` |
 | `initramfs-add-binary` | ✅ **booted** — file survives the repack, image still reaches `slax login:` |
 | `initramfs-add-modules` | ✅ **booted** — promotes from a bundle; verified on both flavours and both arches |
+| `initramfs-boot-timeout` | ✅ **booted** — `sh -n` gate proven against a deliberately boot-bricking patch |
 
 The same ISO boots on **both** BIOS and UEFI after `uefi-bootable` + `isohybrid`, which stock Slax
 cannot do at all.
@@ -74,6 +75,7 @@ Full reasoning: [add-packages cookbook page](../50-cookbook/add-packages.md).
 
 | Approach | Why not |
 |---|---|
+| **`initramfs.config` verb** | Only 2 of the 8 variables in `/lib/config` are read at runtime — `LIVEKITNAME` (14 uses) and `BEXT` (3). The other six are build-time only. And `LIVEKITNAME` is merely the *default* for `from=` (`livekitlib:640`), so a second Live Kit tree on one stick needs no rename at all. Renaming costs the `from=…iso` and PXE paths, and on CD requires re-patching `isolinux.bin`. A verb for one variable nobody should change. |
 | **`proot` for unprivileged chroot** | **Unsafe.** proot 5.1.0 does not translate `statx()`, so `stat` escapes the fake root and reads the **host** filesystem. Silent and selective — paths that exist on the host appear to work. Could emit a corrupt bundle. Real `chroot` works instead. |
 | **`fakechroot`** | LD_PRELOADs host binaries against target libs; Ubuntu 24.04 glibc 2.39 cannot load against Debian 12's 2.36. |
 | **byte-identical ISO rebuilds** | No single backend is both faithful and reproducible: `genisoimage` matches upstream but cannot pin dates; `xorriso` pins dates but uppercases the application id. Both ship; pick by task. |
@@ -89,20 +91,20 @@ pretending to work. (`fetch` is implemented and verified — it was listed here 
 
 ### Verbs
 
-12 of 25 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
+13 of 25 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
 clear message naming what *is* available, rather than silently skipping.
 
 **Implemented:** `boot.cmdline` `boot.isohybrid` `boot.menu` `boot.payload` `boot.uefi`
-`bundle.packages` `bundle.remove` `initramfs.files` `initramfs.modules` `iso.files`
-`rootcopy.files` `rootcopy.preinit`
+`bundle.packages` `bundle.remove` `initramfs.files` `initramfs.modules` `initramfs.patch`
+`iso.files` `rootcopy.files` `rootcopy.preinit`
 
 **Not yet:** `boot.branding` `boot.grub` `boot.secureboot` `bundle.files` `bundle.fromDir`
-`bundle.fromTarball` `bundle.renumber` `bundle.script` `initramfs.config` `initramfs.patch`
-`iso.checksums` `iso.metadata` `kernel.replace`
+`bundle.fromTarball` `bundle.renumber` `bundle.script` `iso.checksums` `iso.metadata`
+`kernel.replace`  ·  `initramfs.config` is **won't-do**, see below
 
 ### Recipes
 
-10 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
+11 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
 `initramfs-busybox`, `kernel-replace`.
 
 ### Documentation

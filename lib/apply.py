@@ -583,6 +583,93 @@ def v_initramfs_modules(ctx: Ctx, step: dict) -> None:
         shutil.rmtree(work, ignore_errors=True)
 
 
+@verb("initramfs.patch")
+def v_initramfs_patch(ctx: Ctx, step: dict) -> None:
+    """Patch the boot scripts inside the initramfs -- init, livekitlib, shutdown, config.
+
+    This is the most dangerous verb in the toolkit. These four files ARE the boot: a
+    stray character in livekitlib and the machine stops somewhere in early init with no
+    message, because the thing that would print one is the file you just broke.
+
+    So it is deliberately strict rather than general. No unified diffs, no line numbers,
+    no regex by default -- an exact string that must appear an exact number of times.
+    A patch written against 12.2.0 that no longer matches FAILS rather than silently
+    doing nothing, which is the failure mode that makes "it stopped working three
+    releases ago and nobody noticed" possible.
+
+    Every patched file is then checked with `sh -n`. All four are shell scripts and all
+    four parse clean as shipped, so a syntax error is caught here rather than at boot.
+    """
+    edits = step.get("edits") or []
+    if not edits:
+        raise RuntimeError("initramfs.patch: no edits listed")
+    if ctx.dry:
+        for e in edits:
+            ctx.say(f"would patch {e['file']}: {_short(e.get('find', ''))!r}")
+        return
+
+    import tempfile
+    work = tempfile.mkdtemp(prefix="kitchen-irfs-", dir=os.path.dirname(os.path.abspath(ctx.work)))
+    try:
+        tree = _initramfs_unpack(ctx, work)
+        touched: set = set()
+        for e in edits:
+            rel = e["file"].lstrip("/")
+            path = os.path.join(tree, rel)
+            if not os.path.isfile(path):
+                raise RuntimeError(f"initramfs.patch: {rel} not in the initramfs")
+
+            # Pin the patch to a known file, so a recipe cannot quietly apply to a
+            # version it was never written for.
+            want_sha = e.get("expect_sha256")
+            if want_sha:
+                got = hashlib.sha256(open(path, "rb").read()).hexdigest()
+                if got != want_sha:
+                    raise RuntimeError(
+                        f"initramfs.patch: {rel} is sha256 {got[:16]}..., recipe expects "
+                        f"{want_sha[:16]}.... Refusing -- this patch was written for a "
+                        f"different build.")
+
+            text = open(path, encoding="utf-8", errors="surrogateescape").read()
+            find, repl = e["find"], e.get("replace", "")
+            want_n = int(e.get("count", 1))
+            got_n = text.count(find)
+            if got_n != want_n:
+                raise RuntimeError(
+                    f"initramfs.patch: {rel}: expected {want_n} occurrence(s) of "
+                    f"{_short(find)!r}, found {got_n}. Refusing rather than guessing.")
+            text = text.replace(find, repl)
+            with open(path, "w", encoding="utf-8", errors="surrogateescape") as f:
+                f.write(text)
+            touched.add(rel)
+            ctx.say(f"initramfs: patched {rel}  {_short(find)!r} -> {_short(repl)!r}")
+
+        # Syntax-check anything that looks like a shell script. Cheap, and it is the
+        # difference between "refuses to ship" and "bricks the boot".
+        for rel in sorted(touched):
+            path = os.path.join(tree, rel)
+            with open(path, "rb") as f:
+                shebang = f.readline()
+            if not shebang.startswith(b"#!") or (b"sh" not in shebang):
+                continue
+            shell = "bash" if b"bash" in shebang and shutil.which("bash") else "sh"
+            r = subprocess.run([shell, "-n", path], capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(
+                    f"initramfs.patch: {rel} no longer parses as {shell} after patching:\n"
+                    f"  {r.stderr.strip()[:300]}\n"
+                    f"Refusing to build an initramfs that cannot boot.")
+            ctx.say(f"{shell} -n {rel}: ok")
+        _initramfs_pack(ctx, tree)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _short(t: str, n: int = 48) -> str:
+    t = " ".join(t.split())
+    return t if len(t) <= n else t[:n - 1] + "\u2026"
+
+
 @verb("rootcopy.files")
 def v_rootcopy_files(ctx: Ctx, step: dict) -> None:
     """Drop files into /slax/rootcopy/, which livekit copies onto the union at boot.
