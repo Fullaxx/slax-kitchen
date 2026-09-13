@@ -20,6 +20,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 OVMF_CODE = "/usr/share/OVMF/OVMF_CODE_4M.fd"
@@ -79,13 +80,18 @@ def send_keys(q: "Qmp", spec: str) -> None:
 
 
 def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
-         keys: str | None = None) -> dict:
+         keys: str | None = None, kernel: str | None = None,
+         initrd: str | None = None) -> dict:
     os.makedirs(outdir, exist_ok=True)
     tag = f"{os.path.basename(iso).rsplit('.', 1)[0]}-{mode}"
     serial = os.path.join(outdir, tag + ".serial.log")
     shot = os.path.join(outdir, tag + ".png")
-    qmp = os.path.join(outdir, tag + ".qmp")
-    for p in (serial, shot, qmp):
+    # AF_UNIX paths are capped at ~108 bytes, so the QMP socket cannot live beside the
+    # evidence -- a deep -o directory silently broke the harness with "AF_UNIX path too
+    # long". Put it in a short temp dir and let the outputs go wherever they like.
+    qmp_dir = tempfile.mkdtemp(prefix="qb-")
+    qmp = os.path.join(qmp_dir, "q")
+    for p in (serial, shot):
         if os.path.exists(p):
             os.unlink(p)
 
@@ -94,6 +100,17 @@ def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
            "-qmp", f"unix:{qmp},server,nowait", "-boot", "d"]
     if os.access("/dev/kvm", os.W_OK):
         cmd.insert(1, "-enable-kvm")
+    if mode == "kernel":
+        # Direct kernel boot: skip the bootloader entirely and put the kernel on the
+        # serial port by construction. The menu modes cannot do this -- their default
+        # entry has no console=ttyS0, so everything after the loader goes to video and
+        # the serial log stays empty. This is the per-push signal: it exercises the
+        # whole of livekit init with no menu timing to get wrong under TCG.
+        if kernel is None or initrd is None:
+            raise RuntimeError("kernel mode needs --kernel and --initrd")
+        cmd += ["-kernel", kernel, "-initrd", initrd, "-append",
+                "vga=normal rw printk.time=0 consoleblank=0 automount "
+                "console=ttyS0,115200n8 from=/dev/sr0/slax"]
     if mode == "uefi":
         if not os.path.isfile(OVMF_CODE):
             raise RuntimeError(f"{OVMF_CODE} missing (apt-get install ovmf)")
@@ -137,7 +154,9 @@ def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="boot an ISO in QEMU and capture evidence")
     ap.add_argument("iso")
-    ap.add_argument("--mode", choices=["bios", "uefi"], default="bios")
+    ap.add_argument("--mode", choices=["bios", "uefi", "kernel"], default="bios")
+    ap.add_argument("--kernel", help="vmlinuz for --mode kernel")
+    ap.add_argument("--initrd", help="initrfs.img for --mode kernel")
     ap.add_argument("--seconds", type=int, default=25, help="how long to let it run")
     ap.add_argument("--out", default="out/boot-tests")
     ap.add_argument("--expect", action="append", default=[],
@@ -148,15 +167,19 @@ def main(argv: list[str]) -> int:
         print(f"no such file: {a.iso}", file=sys.stderr)
         return 2
 
-    r = boot(a.iso, a.mode, a.seconds, a.out, keys=a.keys)
+    r = boot(a.iso, a.mode, a.seconds, a.out, keys=a.keys,
+             kernel=a.kernel, initrd=a.initrd)
     print(f"boot {a.mode}: {os.path.basename(a.iso)}"
           f"   ({'KVM' if r['kvm'] else 'TCG -- slow'})")
     print(f"  serial log : {r['serial']} ({len(r['serial_text'])} bytes)")
     print(f"  screenshot : {r['screenshot']} ({r['screenshot_bytes']} bytes)")
 
     rc = 0
-    if r["screenshot_bytes"] == 0:
+    if r["screenshot_bytes"] == 0 and a.mode != "kernel":
         print("  FAIL: no screenshot captured (qemu never reached a display state)")
+        rc = 1
+    if a.mode == "kernel" and not r["serial_text"].strip():
+        print("  FAIL: serial log is empty -- the kernel produced no output at all")
         rc = 1
     for want in a.expect:
         if want in r["serial_text"]:

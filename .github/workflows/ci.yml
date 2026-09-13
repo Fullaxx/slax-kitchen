@@ -130,7 +130,16 @@ jobs:
           key: iso-debian-64bit-12.2.0-${{ hashFiles('compat/sources.yaml') }}
       - run: ./kitchen fetch debian-64bit-12.2.0
       - run: ./kitchen build example --keep
-      - name: BIOS and UEFI boot
+      # --kernel is the assertion; --bios/--uefi are evidence.
+      #
+      # A direct kernel boot puts the kernel on ttyS0 by construction and checks the
+      # livekit markers, so it can actually fail. The menu modes cannot assert on
+      # serial -- their default entry has no console=ttyS0, so the log stays empty --
+      # and for four CI runs they reported success while proving nothing.
+      - name: boot (direct kernel, asserts livekit markers)
+        run: ./kitchen test out/slax-example-12.2.0.iso --kernel --seconds 240
+
+      - name: boot (bootloader screenshots, BIOS and UEFI)
         run: |
           ./kitchen test out/slax-example-12.2.0.iso --bios --seconds 120
           ./kitchen test out/slax-example-12.2.0.iso --uefi --seconds 120

@@ -14,12 +14,14 @@ _test_structure() {
 }
 
 kitchen_test() {
-    iso="" want_structure=0 want_bios=0 want_uefi=0 expect_uefi="" expect_hybrid="" secs=32
+    iso="" want_structure=0 want_bios=0 want_uefi=0 want_kernel=0
+    expect_uefi="" expect_hybrid="" secs=32
     while [ $# -gt 0 ]; do
         case "$1" in
             --structure)    want_structure=1; shift ;;
             --bios|--bios-boot) want_bios=1; shift ;;
             --uefi|--uefi-boot) want_uefi=1; shift ;;
+            --kernel|--kernel-boot) want_kernel=1; shift ;;
             --expect-uefi)  expect_uefi=1; shift ;;
             --expect-hybrid) expect_hybrid=1; shift ;;
             --seconds)      secs=$2; shift 2 ;;
@@ -29,19 +31,49 @@ kitchen_test() {
     done
     [ -n "$iso" ] || die "test: need an ISO path"
     [ -f "$iso" ] || die "test: no such file: $iso"
-    [ "$want_structure" = 0 ] && [ "$want_bios" = 0 ] && [ "$want_uefi" = 0 ] && want_structure=1
+    [ "$want_structure" = 0 ] && [ "$want_bios" = 0 ] && [ "$want_uefi" = 0 ] \
+        && [ "$want_kernel" = 0 ] && want_structure=1
 
     rc=0
     if [ "$want_structure" = 1 ]; then
         printf '%s* structure%s\n' "$B" "$O"
         _test_structure "$iso" "$expect_uefi" "$expect_hybrid" || rc=1
     fi
+    # Direct kernel boot. The menu modes cannot assert on serial: their default entry
+    # carries no console=ttyS0, so everything after the loader goes to video and the
+    # serial log stays empty -- which is how a boot test that asserted nothing passed
+    # for four CI runs. This mode puts the kernel on ttyS0 by construction, so the
+    # livekit markers are checkable and a failure names the stage it stopped at.
+    if [ "$want_kernel" = 1 ]; then
+        have qemu-system-x86_64 || { warn_no_qemu; rc=1; want_kernel=0; }
+    fi
+    if [ "$want_kernel" = 1 ]; then
+        printf '%s* kernel boot%s  %s(direct, bypasses the bootloader)%s\n' "$B" "$O" "$D" "$O"
+        [ -r /dev/kvm ] || printf '  %snote: no /dev/kvm, running under TCG -- this is slow%s\n' "$D" "$O"
+        kb=$(mktemp -d "${TMPDIR:-/tmp}/kitchen-kb.XXXXXX")
+        if xorriso -osirrox on -indev "$iso" \
+              -extract /slax/boot/vmlinuz "$kb/vmlinuz" \
+              -extract /slax/boot/initrfs.img "$kb/initrfs.img" -- >/dev/null 2>&1 \
+           && [ -s "$kb/vmlinuz" ] && [ -s "$kb/initrfs.img" ]; then
+            python3 "$REPO_ROOT/tests/boot/qemu_boot.py" "$iso" --mode kernel \
+                --kernel "$kb/vmlinuz" --initrd "$kb/initrfs.img" \
+                --seconds "$secs" --out "$(dirname "$iso")/boot-tests" \
+                --expect 'Looking for slax data' \
+                --expect 'Mounting bundles' \
+                --expect 'Live Kit done, starting slax' || rc=1
+        else
+            printf '  %sFAIL%s could not extract vmlinuz/initrfs.img from %s\n' "$R" "$O" "$iso"
+            rc=1
+        fi
+        rm -rf "$kb"
+    fi
+
     modes=""
     [ "$want_bios" = 1 ] && modes="$modes bios"
     [ "$want_uefi" = 1 ] && modes="$modes uefi"
     for mode in $modes; do
         have qemu-system-x86_64 || { warn_no_qemu; rc=1; continue; }
-        printf '%s* %s boot%s\n' "$B" "$mode" "$O"
+        printf '%s* %s boot%s  %s(bootloader; asserts on the screenshot)%s\n' "$B" "$mode" "$O" "$D" "$O"
         if [ ! -r /dev/kvm ]; then
             printf '  %snote: no /dev/kvm, running under TCG -- this is slow%s\n' "$D" "$O"
         fi

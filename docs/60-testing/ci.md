@@ -44,17 +44,27 @@ entry, `isohybrid` for a hybrid MBR. A recipe that runs cleanly and changes noth
 
 ## Round-trip guards the core claim
 
-`ci/roundtrip.sh` unpacks and repacks with no recipes, then asserts the result is still the same ISO:
+`ci/roundtrip.sh` unpacks, repacks with no recipes, extracts both images again, and compares:
 
 ```
 size      original=435,853,312  rebuilt=435,853,312  delta=+0
-sectors   19 of 212,819 differ (0.0089%)
-ok        all differences are in the metadata region (<= sector 41)
+contents  44 entries in the original, 44 in the rebuild
+ok        every file byte-identical, every mode preserved
+ok        structure preserved (RR=True Joliet=True vol='slax', 2 El Torito entries)
+ok        boot-info-table self-consistent (0xe5d3e1ef)
 ```
 
-Two assertions matter more than the count. **Identical size**, and **every difference confined to the
-ISO9660 metadata region** — those 19 sectors are volume timestamp fields, which no backend can pin
-portably. A difference out in the payload would mean a rebuild is corrupting something.
+It compares **contents, not sector positions**, and the distinction is load-bearing. genisoimage
+allocates file extents in directory-scan order, and readdir order varies by filesystem: the first CI
+run rebuilt a structurally perfect ISO in which `/slax/boot/EFI/Boot/*` moved from LBA 212257 to
+10877, and the old sector-by-sector check scored that 99.9% corrupted. Comparing layout position
+tests the build host, not the build. LBA moves are now reported as a note.
+
+The reference side is a **second, pristine extraction of the source** rather than the tree that was
+packed. Comparing against the build tree would put any corruption introduced between unpack and pack
+on both sides of the comparison — the first draft did exactly that, and a flipped byte and a
+stripped exec bit both passed it. Negative-tested since: corrupt a file, strip a mode, delete a
+file, and all three fail.
 
 ## Base ISOs
 
@@ -62,6 +72,35 @@ They are 416–476 MiB each and are never committed. `kitchen fetch` downloads f
 `compat/sources.yaml` and verifies **size and sha256** before accepting anything, so a stale or
 hostile mirror cannot poison a build. CI caches on the content hash of that file, so each ISO is
 downloaded at most once and re-verified on every run.
+
+## Boot tests: one asserts, two are evidence
+
+```sh
+kitchen test out.iso --kernel --seconds 240      # the assertion
+kitchen test out.iso --bios --uefi               # the evidence
+```
+
+**`--kernel` is the one that can fail.** It boots `vmlinuz` + `initrfs.img` directly with
+`console=ttyS0`, bypassing the bootloader, so the whole of livekit init lands in a machine-readable
+serial log and is checked for markers:
+
+```
+ok   serial contains 'Looking for slax data'
+ok   serial contains 'Mounting bundles'
+ok   serial contains 'Live Kit done, starting slax'
+```
+
+A failure names the stage it stopped at, which is far more useful than "it did not boot". Under TCG
+it reaches a `slax login:` prompt in about 150 s.
+
+**`--bios` and `--uefi` cannot assert on serial**, and it is worth understanding why: the default
+menu entry carries no `console=ttyS0`, so once the loader hands off, every kernel message goes to
+the video console and the serial log stays empty. Those modes prove the *bootloader* works, via a
+QMP screenshot — which is the only way to see GRUB or isolinux at all, since they draw to video.
+
+This was a real gap. For four CI runs the boot job reported success while passing no `--expect` at
+all, so its only assertion was "a screenshot exists" — a check that could not fail. The BIOS serial
+log was 0 bytes and nothing noticed.
 
 ## Boot tests are slow, and that is a runner limitation
 
