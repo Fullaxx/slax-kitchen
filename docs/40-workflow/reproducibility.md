@@ -1,0 +1,150 @@
+# Reproducibility
+
+How much of a rebuild is deterministic, where it is not, and what you can do about each case.
+
+Short version: **the payload is fully reproducible; the containers are not, by default.** Both the
+ISO and the initramfs carry nondeterminism that upstream does not attempt to control — and in the
+initramfs's case, that is worth fixing even if you do not care about reproducible builds, because it
+turns a repack into something you can diff.
+
+## The four layers
+
+| layer | deterministic? | why |
+|---|---|---|
+| **bundles** (`.sb`) | ✅ yes, given the same input tree | `mksquashfs` with fixed flags; no timestamps in the output beyond the files' own |
+| **initramfs** (`initrfs.img`) | ❌ **no** — `find` has no `sort` | fixable in one pipe |
+| **ISO** (`genisoimage`) | ❌ no — volume timestamps | fixable with the xorriso backend |
+| **ISO** (`xorriso`) | ✅ yes with `--date` | but it uppercases the application id |
+
+## The initramfs — the interesting one
+
+Upstream's pack command, from both `initramfs_create` and the shipped `initramfs_pack`:
+
+```sh
+find . -print | cpio -o -H newc | xz -T0 -f --extreme --check=crc32
+```
+
+There is no `sort`, so entry order is `find`'s readdir order. **That is not stable.** Measured on the
+reference container, five runs of `find . -print` over an unchanged tree:
+
+| filesystem | result |
+|---|---|
+| ext2/3/4 | identical every time — stable, but arbitrary (hash order, not alphabetical) |
+| **overlayfs** (Docker's default) | **5 runs, 5 different orders** |
+
+So on a container filesystem, two consecutive repacks of the *same* tree produce different archives:
+
+```
+unsorted, run A    8,869,652 B
+unsorted, run B    8,900,924 B        same 768 files, different bytes, 31 KB apart
+```
+
+Add one pipe stage and it becomes exact:
+
+```sh
+find . -print | LC_ALL=C sort | cpio -o -H newc | xz -T0 -f --extreme --check=crc32
+```
+
+```
+sorted, run 1      8,869,652 B   sha256 4ad7c7f9…
+sorted, run 2      8,869,652 B   sha256 4ad7c7f9…     byte-identical
+```
+
+**cpio order is irrelevant to extraction**, so this changes nothing at boot. `LC_ALL=C` matters
+because a locale-aware sort would order differently on different machines, which defeats the point.
+
+### This also explains a shipped artifact
+
+The two 64-bit images' initramfs trees are identical except that Slackware adds one terminfo file —
+yet Slackware's `initrfs.img` is **3,448 bytes smaller** despite having four more entries. Different
+build hosts, different readdir order, different xz output. Nothing is wrong; it is just not
+controlled.
+
+## The ISO
+
+### `genisoimage` cannot pin its timestamps
+
+Round-tripping the stock 64-bit Debian ISO through `unpack` → `pack` with the genisoimage backend:
+
+```
+size  original=435,853,312  rebuilt=435,853,312  delta=+0
+sectors differing: 19/212,819 (0.0089%)
+```
+
+All 19 are in the metadata region, and the difference is **entirely three PVD timestamp fields** —
+creation (offset 813), modification (830), effective (864). Every byte of the 415 MB payload matches,
+and the boot-info-table checksum comes through unchanged at `0xe5d3e1ef`.
+
+That is as close as genisoimage gets. It has no option to set the volume date.
+
+### `xorriso` can, at a cost
+
+```sh
+kitchen pack -s work/iso -o out.iso --backend xorriso --date 2023100920484300
+```
+
+Now two runs are bit-identical — but xorriso **uppercases the application id** (`slax` → `SLAX`),
+which genisoimage does not. Nothing reads that field, so it is cosmetic; it does mean a
+byte-comparison against an upstream image will never match.
+
+**There is no single backend that is both faithful to upstream and reproducible.** Both ship; pick by
+task:
+
+| goal | backend |
+|---|---|
+| match upstream's output as closely as possible | `genisoimage` (the default) |
+| bit-identical rebuilds | `xorriso --date …` |
+| UEFI or isohybrid | `xorriso` — genisoimage cannot add a second El Torito entry |
+
+## Bundles are fine
+
+`mksquashfs` with upstream's four flags is deterministic for a given input tree:
+
+```sh
+mksquashfs SRC DST -comp xz -b 1024K -Xbcj x86 -always-use-fragments
+```
+
+The caveat is the *input tree*, not the tool. A bundle built by installing packages is only as
+reproducible as the package repository — and bookworm is oldstable while Slackware's configured
+mirror points at `-current`. If you need a reproducible bundle, pin the source:
+
+```yaml
+apt:
+  sources: ["deb http://snapshot.debian.org/archive/debian/20231009T000000Z bookworm main"]
+```
+
+Without pinning, the same recipe run six months apart produces different bundles, and that has
+nothing to do with the tooling here.
+
+## What to do
+
+**If you just want to diff two builds**, sort the initramfs. That is the whole fix, and it is worth
+doing unconditionally — an unsorted repack is not diffable even against itself.
+
+**If you need bit-identical output**, all three:
+
+```sh
+find . -print | LC_ALL=C sort | cpio -o -H newc | xz -T0 -f --extreme --check=crc32
+kitchen pack --backend xorriso --date <fixed>
+# and pin the package sources in any bundle.packages recipe
+```
+
+**If you want to prove a rebuild did not corrupt anything** — which is the more common need —
+`ci/roundtrip.sh` is the check:
+
+```sh
+ci/roundtrip.sh isos/slax-64bit-debian-12.2.0.iso
+```
+
+It unpacks and repacks with no recipes, then asserts the size is identical and that differing sectors
+stay under a threshold (64 by default; the real figure is 19). That is a fidelity test, not a
+reproducibility test, and it is the one wired into CI — because "the payload survived" is what
+actually matters for an ISO that has to boot.
+
+## What is never reproducible, and does not need to be
+
+| | |
+|---|---|
+| `isolinux.bin` inside the ISO vs on disk | `-boot-info-table` patches 56 bytes in during mastering. Compare the parsed checksum, not the bytes — `lib/isoparse.py` reports `self_consistent` |
+| perch containers | sparse files created at first boot |
+| anything under `/slax/changes/` | runtime state by definition |

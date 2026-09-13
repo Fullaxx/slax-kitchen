@@ -79,7 +79,6 @@ qemu-system-x86_64|qemu-system-x86|boot tests
 qemu-img|qemu-utils|build USB test images
 shellcheck|shellcheck|commit gate
 yamllint|yamllint|commit gate
-proot|proot|unprivileged chroot fallback for bundle.packages
 jq|jq|JSON handling
 curl|curl|fetch base ISOs
 file|file|artifact identification'
@@ -130,12 +129,14 @@ doctor_tier() {
     printf '\n%sWhat this machine can run%s\n' "$B" "$O"
     printf '  %so%s  unprivileged recipes .............. %syes%s  (bundles, initramfs, boot, ISO)\n' "$B" "$O" "$G" "$O"
 
-    if cap mount || cap userns; then
+    # bundle.packages needs chroot + mknod only. Measured: apt-get update and a full
+    # apt-get install with maintainer scripts both exit 0 inside an extracted 01-core.sb
+    # with no /proc mounted, so CAP_SYS_ADMIN is NOT required. proot is not a fallback --
+    # it does not translate statx(), so stat silently reads the host filesystem.
+    if cap chroot && cap mknod; then
         printf '  %sd%s  bundle.packages (real chroot) .... %syes%s\n' "$B" "$O" "$G" "$O"
-    elif have proot; then
-        printf '  %sd%s  bundle.packages .................. %sproot fallback%s (untested - validate early)\n' "$B" "$O" "$Y" "$O"
     else
-        printf '  %sd%s  bundle.packages .................. %sno%s  -> HOST_TASKS.DNC.md\n' "$B" "$O" "$R" "$O"
+        printf '  %sd%s  bundle.packages .................. %sno%s  needs chroot + mknod -> HOST_TASKS.DNC.md\n' "$B" "$O" "$R" "$O"
     fi
 
     if cap kvm; then
@@ -146,11 +147,11 @@ doctor_tier() {
         printf '  %sk%s  boot tests ....................... %sno qemu%s\n' "$B" "$O" "$R" "$O"
     fi
 
-    if ! cap mount && ! cap userns && [ "$(id -u)" = 0 ]; then
-        printf '\n  %sNote:%s no CAP_SYS_ADMIN and user namespaces are blocked by the container\n' "$D" "$O"
-        printf '  %sruntime (the kernel allows them). Relaxing Docker with%s\n' "$D" "$O"
-        printf '  %s  --device /dev/kvm --security-opt seccomp=unconfined --cap-add SYS_ADMIN%s\n' "$D" "$O"
-        printf '  %swould unlock both blocked items. Otherwise see HOST_TASKS.DNC.md.%s\n' "$D" "$O"
+    if ! cap kvm; then
+        printf '\n  %sNote:%s only the full boot matrix is blocked here. Adding%s\n' "$D" "$O" "$O"
+        printf '  %s  --device /dev/kvm%s\n' "$D" "$O"
+        printf '  %sturns a 5-15 min boot-to-desktop run into ~30 s. Everything else,%s\n' "$D" "$O"
+        printf '  %sbundle.packages included, already runs here. See HOST_TASKS.DNC.md.%s\n' "$D" "$O"
     fi
 }
 

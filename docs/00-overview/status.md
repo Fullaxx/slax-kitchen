@@ -107,10 +107,12 @@ clear message naming what *is* available, rather than silently skipping.
 `20-boot-sequence/` and `30-inventory/` are done — 54 pages covering how the ISO is constructed, how
 it boots on every medium, what software is in it, and the upstream source of truth for all of it.
 
-Still partial, and tracking how far the toolkit itself is built: `40-workflow/` (missing
-`edit-initramfs`, `edit-bootloader`, `write-to-usb`, `reproducibility`, `host-handoff`),
-`50-cookbook/` (7 pages, one per shipped recipe — the other ~24 recipes do not exist yet),
-`60-testing/`, `70-compat/`, `90-reference/`. See [the index](../README.md).
+`40-workflow/` is also complete — 10 pages, every procedure written to work by hand with the
+`kitchen` verb noted alongside.
+
+Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (7 pages, one per
+shipped recipe — the other ~24 recipes do not exist yet), `60-testing/`, `70-compat/`,
+`90-reference/`. See [the index](../README.md).
 
 ---
 
@@ -126,7 +128,12 @@ The dev container has no `CAP_SYS_ADMIN`, no user namespaces and no `/dev/kvm`. 
 | Secure Boot / MOK enrolment | needs real firmware |
 
 **Not blocked, contrary to the original plan:** `bundle.packages` needs only `CAP_SYS_CHROOT` and
-`CAP_MKNOD`, both of which are present, and does not need `/proc` mounted.
+`CAP_MKNOD`, both of which are present, and does not need `/proc` mounted. `kitchen doctor` now
+reports it as available and no longer offers `proot`, which was rejected as unsafe.
+
+So the only genuinely blocked item is the boot matrix, and `--device /dev/kvm` alone fixes it —
+`--cap-add SYS_ADMIN` and `--security-opt seccomp=unconfined` are not needed for anything.
+→ [host handoff](../40-workflow/host-handoff.md)
 
 ---
 

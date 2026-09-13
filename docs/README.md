@@ -17,8 +17,9 @@ New to Slax? [What Slax is](00-overview/what-is-slax.md) in one page, and the
 [boot modes](05-using-slax/boot-modes-and-tricks.md)
 
 **I want to customize an ISO.**
-[unpack](40-workflow/unpack.md) → [edit bundles](40-workflow/edit-bundles.md) →
-[repack](40-workflow/repack-iso.md), with [the cookbook](50-cookbook/) for worked recipes.
+[toolchain](40-workflow/toolchain.md) → [unpack](40-workflow/unpack.md) →
+[edit bundles](40-workflow/edit-bundles.md) → [repack](40-workflow/repack-iso.md) →
+[write to USB](40-workflow/write-to-usb.md), with [the cookbook](50-cookbook/) for worked recipes.
 
 **I want to understand how Slax works.**
 [runtime-layout](10-anatomy/runtime-layout.md) first — nearly every "where does my file go?" question
@@ -48,15 +49,15 @@ the commit gates in `ci/checks/`.
 | `15-upstream/` | [`vendor/linux-live` as source of truth](15-upstream/), annotated | **current** |
 | `20-boot-sequence/` | [Firmware → loader → kernel → init → chroot](20-boot-sequence/), per medium | **current** |
 | `30-inventory/` | [Software inventory](30-inventory/) + [known upstream issues](30-inventory/known-upstream-bugs.md) | **current** |
-| `40-workflow/` | [unpack](40-workflow/unpack.md) · [edit bundles](40-workflow/edit-bundles.md) · [repack](40-workflow/repack-iso.md) · [container vs host](40-workflow/container-vs-host.md) | partial |
+| `40-workflow/` | [How to change an ISO](40-workflow/): tools, unpack, edit, repack, write to USB | **current** |
 | `50-cookbook/` | [7 recipes](50-cookbook/), incl. [uefi-bootable](50-cookbook/uefi-bootable.md) and [isohybrid](50-cookbook/isohybrid.md) | partial |
 | `60-testing/` | [CI](60-testing/ci.md); QEMU and boot tests | partial |
 | `70-compat/` | [Fingerprints and `kitchen probe`](70-compat/fingerprints.md) | partial |
 | `90-reference/` | [CLI reference](90-reference/cli.md) + profile format | partial |
 
-**The first six sections are complete.** They describe Slax itself: how to use it, what is in it, how
-it is built, and how it boots. The remaining five describe this toolkit, and are written as far as
-the toolkit is built.
+**The first seven sections are complete** — Slax itself (how to use it, what is in it, how it is
+built, how it boots) plus the procedures for changing it. The remaining four describe this toolkit's
+own surface, and are written as far as the toolkit is built.
 
 ## Three things worth knowing up front
 

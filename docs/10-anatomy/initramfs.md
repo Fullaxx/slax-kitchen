@@ -30,15 +30,21 @@ with no useful message. Anything that rewrites this file must keep the flag.
 
 ### It is not byte-reproducible, and that is upstream's doing
 
-`find . -print` has no `sort`, so entry order follows the build host's directory-entry order. The two
-64-bit images demonstrate it: every file in both trees is byte-identical except that Slackware adds
-`usr/share/terminfo/l/linux`, yet the archives are ordered completely differently — Debian's begins
-`root`, `lib`, `lib/modules/…`; Slackware's begins `shutdown`, `init`, `bin`, `bin/insmod`, … The
-Slackware image is 3,448 bytes *smaller* despite having four more entries, purely because xz
-compressed a different ordering.
+`find . -print` has no `sort`, so entry order follows readdir order — and that is not merely
+host-dependent, it is **not stable at all on some filesystems**. Measured over five runs on an
+unchanged tree: identical every time on ext2/3/4, but **five different orders on overlayfs**, which
+is what Docker uses by default. Two consecutive repacks there differ by ~31 KB.
 
-Add `| LC_ALL=C sort` after the `find` if you want reproducible rebuilds. It changes nothing at boot;
-cpio order is irrelevant to extraction.
+The two 64-bit images show the same effect in the shipped artifacts: every file in both trees is
+byte-identical except that Slackware adds `usr/share/terminfo/l/linux`, yet Debian's archive begins
+`root`, `lib`, `lib/modules/…` and Slackware's begins `shutdown`, `init`, `bin`, … The Slackware
+image is 3,448 bytes *smaller* despite having four more entries, purely because xz compressed a
+different ordering.
+
+Add `| LC_ALL=C sort` after the `find` and the output becomes byte-identical across runs. It changes
+nothing at boot — cpio order is irrelevant to extraction — and it is worth doing unconditionally,
+because an unsorted repack cannot be diffed even against itself.
+→ [reproducibility](../40-workflow/reproducibility.md)
 
 ## Layout
 

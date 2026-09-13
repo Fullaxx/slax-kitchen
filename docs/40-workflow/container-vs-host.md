@@ -42,16 +42,35 @@ Everything below is pure userspace file manipulation and runs here with no privi
 
 That covers 27 of the 32 cookbook recipes, including both flagship ones.
 
-## The two exceptions
+## `bundle.packages` needs less than expected
 
-**1. `bundle.packages` (installing distro packages into a bundle)** needs `/proc` mounted inside a
-chroot, which `apt` and `dpkg` maintainer scripts rely on. Three backends, tried in order:
+The original plan assumed it needed `/proc` bind-mounted into a chroot, and therefore
+`CAP_SYS_ADMIN`. **That turned out to be wrong.** Measured in this container:
 
-1. real `chroot` + bind mounts — needs `CAP_SYS_ADMIN`
-2. `unshare -Urm` + mounts inside a user namespace — needs seccomp relaxed
-3. **`proot -0 -b /proc -b /sys -b /dev`** — fully unprivileged, works in this container
+> `apt-get update` and a full `apt-get install` — maintainer scripts and triggers included — both
+> complete with **exit 0** inside an extracted `01-core.sb`, with no `/proc` mounted.
 
-**2. The Tier C boot matrix** (BIOS + UEFI + USB + persistence, booting all the way to a desktop)
+The real requirement is `CAP_SYS_CHROOT` + `CAP_MKNOD`, both of which are present. `kitchen doctor`
+reports it as available here.
+
+What it does need is for the extracted bundle to be made into a usable root first — Debian's
+`01-core.sb` ships **no `/tmp`, `/proc`, `/sys` or `/dev` at all**, so `apt-get update` dies with
+`Unable to mkstemp`. `lib/apply.py` creates them (`RUNTIME_DIRS`) and then excludes them from the
+finished bundle (`BUNDLE_EXCLUDE`). See [edit-bundles](edit-bundles.md).
+
+### Both unprivileged shortcuts were tested and rejected
+
+| | verdict |
+|---|---|
+| **`proot`** | ⚠ **unsafe — do not use.** proot 5.1.0 does not translate `statx()`, so `stat` escapes the fake root and reads the **host** filesystem. Proven: it reported `/etc/lsb-release` as present when the bundle has no such file. Silent and selective, so it can emit a corrupt bundle that looks fine. |
+| **`fakechroot`** | fails outright — it `LD_PRELOAD`s host binaries against target libraries, and Ubuntu 24.04's glibc 2.39 cannot load against Debian 12's 2.36. |
+
+Real `chroot` works and is the only supported backend. `proot` is no longer listed by
+`kitchen doctor` for this reason.
+
+## The one real exception
+
+**The Tier C boot matrix** (BIOS + UEFI + USB + persistence, booting all the way to a desktop)
 wants KVM to be practical. Note this is a speed problem, not a capability one:
 
 | Tier | What it does | Here |
@@ -62,11 +81,15 @@ wants KVM to be practical. Note this is a speed problem, not a capability one:
 
 ## Relaxing the container
 
-If you would rather not move machines, these Docker flags unblock both items in place:
+Only one flag is still worth adding:
 
 ```
---device /dev/kvm --security-opt seccomp=unconfined --cap-add SYS_ADMIN
+--device /dev/kvm
 ```
 
-`--device /dev/kvm` alone is the single highest-value change: it turns the boot matrix from a
-nightly job into something you can iterate on.
+That turns a 5–15 minute boot-to-desktop run into about 30 seconds — the difference between a
+nightly job and something you can iterate on. `--cap-add SYS_ADMIN` and
+`--security-opt seccomp=unconfined` are no longer needed for anything, since `bundle.packages`
+turned out not to require them.
+
+If you would rather move machines, [host-handoff](host-handoff.md) is the runbook.
