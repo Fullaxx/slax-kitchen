@@ -28,8 +28,8 @@ jobs:
       - name: install lint tooling
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends shellcheck yamllint
-          pip install --quiet PyYAML jsonschema
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck yamllint python3-yaml python3-jsonschema
       - run: ./ci/run-checks.sh ci
 
   # ----------------------------------------------------------------- build --
@@ -61,8 +61,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             squashfs-tools cpio xz-utils xorriso genisoimage \
             syslinux syslinux-common syslinux-utils isolinux extlinux \
-            mtools dosfstools grub-efi-amd64-bin grub-common
-          pip install --quiet PyYAML jsonschema
+            mtools dosfstools grub-efi-amd64-bin grub-common \
+            python3-yaml python3-jsonschema
 
       # The base ISOs are 416-476 MiB each and never change -- upstream has not shipped
       # a release since 2023 -- so cache on the content hash and download at most once.
@@ -122,8 +122,8 @@ jobs:
             squashfs-tools cpio xz-utils xorriso genisoimage \
             syslinux syslinux-common syslinux-utils isolinux \
             mtools dosfstools grub-efi-amd64-bin grub-common \
-            qemu-system-x86 ovmf
-          pip install --quiet PyYAML jsonschema
+            qemu-system-x86 ovmf \
+            python3-yaml python3-jsonschema
       - uses: actions/cache@v4
         with:
           path: isos/slax-64bit-debian-12.2.0.iso
