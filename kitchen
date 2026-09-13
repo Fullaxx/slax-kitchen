@@ -1,0 +1,176 @@
+#!/bin/sh
+# slax-kitchen -- customize a Slax ISO from declarative recipes.
+#
+# Upstream Slax and Linux Live Kit are the work of Tomas Matejicek (GPLv2).
+# See NOTICE.md. This toolkit is MIT.
+set -u
+
+KITCHEN_VERSION="0.1.0-dev"
+REPO_ROOT=$(cd "$(dirname "$0")" && pwd)
+export REPO_ROOT
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    B=$(printf '\033[1m');  G=$(printf '\033[32m'); Y=$(printf '\033[33m')
+    R=$(printf '\033[31m'); D=$(printf '\033[2m');  O=$(printf '\033[0m')
+else B=; G=; Y=; R=; D=; O=; fi
+
+die() { printf '%serror:%s %s\n' "$R" "$O" "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# shellcheck source=lib/unpack.sh
+. "$REPO_ROOT/lib/unpack.sh"
+# shellcheck source=lib/pack.sh
+. "$REPO_ROOT/lib/pack.sh"
+
+usage() {
+    cat <<USAGE
+${B}kitchen${O} $KITCHEN_VERSION -- customize a Slax ISO from declarative recipes
+
+${B}USAGE${O}
+  kitchen <command> [options]
+
+${B}COMMANDS${O}
+  doctor [--install-hooks]   check tools + capabilities; report what this machine can run
+  selftest [stage]           run the commit gates (stage: pre-commit|pre-push|ci)
+  probe <iso>                fingerprint an ISO and report compatibility
+  fetch <flavour> <arch> <ver>   download + verify a base ISO into isos/
+  unpack <iso> [-o DIR]      explode an ISO into a work tree
+  apply <recipe>...          apply recipes to a work tree
+  pack -o <iso>              rebuild an ISO from a work tree
+  build <profile>            fetch -> unpack -> apply -> pack -> test
+  test <iso> [--structure|--bios|--uefi|--usb|--persistence]
+  shell <bundle|work>        chroot/proot into a bundle for exploration
+  diff <isoA> <isoB>         structural + per-file diff
+  upstream-diff              regenerate docs/15-upstream/drift-report.md
+  version                    print version
+
+${B}DOCS${O}  docs/README.md        ${B}COOKBOOK${O}  docs/50-cookbook/
+USAGE
+}
+
+# ---------------------------------------------------------------- doctor ----
+# Tool table: "binary|package|why"
+TOOLS='mksquashfs|squashfs-tools|build .sb bundles
+unsquashfs|squashfs-tools|unpack .sb bundles
+cpio|cpio|initramfs pack/unpack
+xz|xz-utils|initramfs compression (must support --check=crc32)
+7z|p7zip-full|read ISO + squashfs without mounting
+xorriso|xorriso|rebuild the ISO
+genisoimage|genisoimage|byte-compare against upstream Slax build
+isohybrid|syslinux-utils|make the ISO dd-able to USB
+extlinux|extlinux|install the USB/HDD bootloader
+syslinux|syslinux|BIOS bootloader tooling
+mkfs.vfat|dosfstools|build the EFI System Partition image
+mcopy|mtools|write into the ESP image WITHOUT mounting it
+grub-mkstandalone|grub-efi-amd64-bin|build BOOTX64.EFI for UEFI boot
+qemu-system-x86_64|qemu-system-x86|boot tests
+qemu-img|qemu-utils|build USB test images
+shellcheck|shellcheck|commit gate
+yamllint|yamllint|commit gate
+proot|proot|unprivileged chroot fallback for bundle.packages
+jq|jq|JSON handling
+curl|curl|fetch base ISOs
+file|file|artifact identification'
+
+doctor_tools() {
+    printf '%sTools%s\n' "$B" "$O"
+    missing=0
+    echo "$TOOLS" | while IFS='|' read -r bin pkg why; do
+        if have "$bin"; then
+            printf '  %sok%s   %-20s %s%s%s\n' "$G" "$O" "$bin" "$D" "$why" "$O"
+        else
+            printf '  %sMISS%s %-20s %s(apt-get install %s)%s\n' "$R" "$O" "$bin" "$D" "$pkg" "$O"
+        fi
+    done
+    # recount outside the subshell
+    missing=0
+    for bin in $(echo "$TOOLS" | cut -d'|' -f1); do
+        have "$bin" || missing=$((missing+1))
+    done
+    [ "$missing" -eq 0 ] || printf '  %s%d tool(s) missing%s\n' "$Y" "$missing" "$O"
+    return 0
+}
+
+# Probe kernel/container capabilities. Echoes one "name=yes|no" per line.
+doctor_caps() {
+    probe_dir=$(mktemp -d)
+    if mount -t tmpfs tmpfs "$probe_dir" >/dev/null 2>&1; then
+        echo "mount=yes"; umount "$probe_dir" 2>/dev/null
+    else echo "mount=no"; fi
+    if unshare -U true >/dev/null 2>&1; then echo "userns=yes"; else echo "userns=no"; fi
+    if [ -c /dev/kvm ] && [ -r /dev/kvm ]; then echo "kvm=yes"; else echo "kvm=no"; fi
+    if mknod "$probe_dir/n" c 1 3 >/dev/null 2>&1; then echo "mknod=yes"; rm -f "$probe_dir/n"
+    else echo "mknod=no"; fi
+    if chroot / /bin/true >/dev/null 2>&1; then echo "chroot=yes"; else echo "chroot=no"; fi
+    if [ -e /dev/loop-control ]; then echo "loop=yes"; else echo "loop=no"; fi
+    rmdir "$probe_dir" 2>/dev/null
+}
+
+doctor_tier() {
+    caps=$1
+    cap() { echo "$caps" | grep -q "^$1=yes"; }
+    printf '\n%sCapabilities%s\n' "$B" "$O"
+    echo "$caps" | while IFS='=' read -r name val; do
+        if [ "$val" = yes ]; then printf '  %sok%s   %s\n' "$G" "$O" "$name"
+        else printf '  %sno%s   %s\n' "$Y" "$O" "$name"; fi
+    done
+
+    printf '\n%sWhat this machine can run%s\n' "$B" "$O"
+    printf '  %so%s  unprivileged recipes .............. %syes%s  (bundles, initramfs, boot, ISO)\n' "$B" "$O" "$G" "$O"
+
+    if cap mount || cap userns; then
+        printf '  %sd%s  bundle.packages (real chroot) .... %syes%s\n' "$B" "$O" "$G" "$O"
+    elif have proot; then
+        printf '  %sd%s  bundle.packages .................. %sproot fallback%s (untested - validate early)\n' "$B" "$O" "$Y" "$O"
+    else
+        printf '  %sd%s  bundle.packages .................. %sno%s  -> HOST_TASKS.DNC.md\n' "$B" "$O" "$R" "$O"
+    fi
+
+    if cap kvm; then
+        printf '  %sk%s  boot tests ....................... %sKVM (fast)%s\n' "$B" "$O" "$G" "$O"
+    elif have qemu-system-x86_64; then
+        printf '  %sk%s  boot tests ....................... %sTCG only%s (10-20x slower; Tier B ok, Tier C -> host)\n' "$B" "$O" "$Y" "$O"
+    else
+        printf '  %sk%s  boot tests ....................... %sno qemu%s\n' "$B" "$O" "$R" "$O"
+    fi
+
+    if ! cap mount && ! cap userns && [ "$(id -u)" = 0 ]; then
+        printf '\n  %sNote:%s no CAP_SYS_ADMIN and user namespaces are blocked by the container\n' "$D" "$O"
+        printf '  %sruntime (the kernel allows them). Relaxing Docker with%s\n' "$D" "$O"
+        printf '  %s  --device /dev/kvm --security-opt seccomp=unconfined --cap-add SYS_ADMIN%s\n' "$D" "$O"
+        printf '  %swould unlock both blocked items. Otherwise see HOST_TASKS.DNC.md.%s\n' "$D" "$O"
+    fi
+}
+
+cmd_doctor() {
+    if [ "${1:-}" = "--install-hooks" ]; then
+        [ -d "$REPO_ROOT/.git" ] || die "not a git repo: $REPO_ROOT"
+        for h in pre-commit pre-push; do
+            ln -sf "../../ci/hooks/$h" "$REPO_ROOT/.git/hooks/$h"
+            printf '  %sok%s  installed .git/hooks/%s -> ci/hooks/%s\n' "$G" "$O" "$h" "$h"
+        done
+        printf '%sHooks are symlinks into ci/hooks/, so they follow the repo.%s\n' "$D" "$O"
+        return 0
+    fi
+    printf '%sslax-kitchen doctor%s  (%s)\n\n' "$B" "$O" "$KITCHEN_VERSION"
+    doctor_tools
+    doctor_tier "$(doctor_caps)"
+    printf '\n%shooks%s  ' "$B" "$O"
+    if [ -L "$REPO_ROOT/.git/hooks/pre-commit" ]; then printf '%sinstalled%s\n' "$G" "$O"
+    else printf '%snot installed%s  (kitchen doctor --install-hooks)\n' "$Y" "$O"; fi
+}
+
+# --------------------------------------------------------------- dispatch ----
+cmd=${1:-}
+[ $# -gt 0 ] && shift
+case "$cmd" in
+    doctor)        cmd_doctor "$@" ;;
+    selftest)      exec "$REPO_ROOT/ci/run-checks.sh" "${1:-ci}" ;;
+    version|--version|-V) echo "kitchen $KITCHEN_VERSION" ;;
+    help|--help|-h|'')    usage ;;
+    unpack)        kitchen_unpack "$@" ;;
+    pack)          kitchen_pack "$@" ;;
+    probe|fetch|apply|build|test|shell|diff|upstream-diff)
+        die "'$cmd' is not implemented yet -- see INITIAL_TASKS.DNC.md (T-2xx)" ;;
+    *)             usage; die "unknown command: $cmd" ;;
+esac
