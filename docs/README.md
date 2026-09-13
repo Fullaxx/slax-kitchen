@@ -19,7 +19,8 @@ exist yet. Read this before relying on anything.
 
 **I want to understand how Slax works.**
 [known upstream issues](30-inventory/known-upstream-bugs.md) is the fastest way in — it is written
-around the things that are surprising. Then `15-upstream/` for the annotated source of truth.
+around the things that are surprising. Then [15-upstream](15-upstream/) for the annotated source
+of truth, every claim citing a file and line in the pinned `vendor/linux-live`.
 
 **I want to contribute.**
 [container vs host](40-workflow/container-vs-host.md) — what needs privilege and what does not —
@@ -37,7 +38,7 @@ then the commit gates in `ci/checks/`.
 | `70-compat/` | [Fingerprints and `kitchen probe`](70-compat/fingerprints.md) | partial |
 | `05-using-slax/` | [Using Slax itself](05-using-slax/): media, persistence, boot modes, everyday tasks | **current** |
 | `10-anatomy/` | How a Slax ISO is put together, component by component | planned |
-| `15-upstream/` | `vendor/linux-live` as source of truth, annotated | planned |
+| `15-upstream/` | [`vendor/linux-live` as source of truth](15-upstream/), annotated | **current** |
 | `20-boot-sequence/` | Firmware → loader → kernel → init → chroot, per medium | planned |
 | `50-cookbook/` | [all 7 pages](50-cookbook/) incl. [uefi-bootable](50-cookbook/uefi-bootable.md) and [isohybrid](50-cookbook/isohybrid.md) | partial |
 | `60-testing/` | [CI](60-testing/ci.md); QEMU and boot tests | partial |
