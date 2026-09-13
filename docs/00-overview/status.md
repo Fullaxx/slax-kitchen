@@ -103,9 +103,11 @@ clear message naming what *is* available, rather than silently skipping.
 
 ### Documentation
 
-`30-inventory/`, `40-workflow/`, `50-cookbook/` and `70-compat/` are partial. `05-using-slax/`,
-`10-anatomy/`, `15-upstream/`, `20-boot-sequence/`, `60-testing/` and `90-reference/` are planned
-but empty — see [the index](../README.md).
+`05-using-slax/` (9 pages) and `50-cookbook/` (7 pages, one per shipped recipe) are complete.
+`30-inventory/`, `40-workflow/`, `60-testing/`, `70-compat/` and `90-reference/` are partial.
+`10-anatomy/`, `15-upstream/` and `20-boot-sequence/` are **planned but empty** — those are the
+Phase 1 "how is the ISO constructed" and "boot sequence" deliverables and are the largest remaining
+documentation gap. See [the index](../README.md).
 
 ---
 

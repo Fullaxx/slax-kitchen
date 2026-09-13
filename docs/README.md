@@ -9,6 +9,10 @@ exist yet. Read this before relying on anything.
 
 ## Start here
 
+**I just want to use Slax.**
+[quick-start](05-using-slax/quick-start.md) → [persistence](05-using-slax/persistence-perch.md) →
+[boot modes](05-using-slax/boot-modes-and-tricks.md)
+
 **I want to customize an ISO.**
 [unpack](40-workflow/unpack.md) → [edit bundles](40-workflow/edit-bundles.md) →
 [repack](40-workflow/repack-iso.md)
@@ -31,11 +35,11 @@ then the commit gates in `ci/checks/`.
 | `30-inventory/` | Software inventory + [known upstream issues](30-inventory/known-upstream-bugs.md) | partial |
 | `40-workflow/` | [unpack](40-workflow/unpack.md), [edit bundles](40-workflow/edit-bundles.md), [repack](40-workflow/repack-iso.md), [container vs host](40-workflow/container-vs-host.md) | partial |
 | `70-compat/` | [Fingerprints and `kitchen probe`](70-compat/fingerprints.md) | partial |
-| `05-using-slax/` | Using Slax itself: media, persistence, boot modes | planned |
+| `05-using-slax/` | [Using Slax itself](05-using-slax/): media, persistence, boot modes, everyday tasks | **current** |
 | `10-anatomy/` | How a Slax ISO is put together, component by component | planned |
 | `15-upstream/` | `vendor/linux-live` as source of truth, annotated | planned |
 | `20-boot-sequence/` | Firmware → loader → kernel → init → chroot, per medium | planned |
-| `50-cookbook/` | [add-packages](50-cookbook/add-packages.md), [memtest86plus](50-cookbook/memtest86plus.md), [remove-bundle](50-cookbook/remove-bundle.md), [remove-chromium](50-cookbook/remove-chromium.md), [rootcopy-overlay](50-cookbook/rootcopy-overlay.md) | partial |
+| `50-cookbook/` | [all 7 pages](50-cookbook/) incl. [uefi-bootable](50-cookbook/uefi-bootable.md) and [isohybrid](50-cookbook/isohybrid.md) | partial |
 | `60-testing/` | [CI](60-testing/ci.md); QEMU and boot tests | partial |
 | `90-reference/` | [CLI reference](90-reference/cli.md) + profile format | partial |
 
