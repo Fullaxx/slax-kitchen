@@ -21,6 +21,8 @@ have() { command -v "$1" >/dev/null 2>&1; }
 . "$REPO_ROOT/lib/unpack.sh"
 # shellcheck source=lib/pack.sh
 . "$REPO_ROOT/lib/pack.sh"
+# shellcheck source=lib/build.sh
+. "$REPO_ROOT/lib/build.sh"
 
 usage() {
     cat <<USAGE
@@ -39,8 +41,8 @@ ${B}COMMANDS${O}
   apply <recipe>... [-w DIR] apply recipes to a work tree (-n for a dry run)
   validate <file.yaml>...    check a recipe or profile against its schema
   pack [-o FILE|DIR]         rebuild an ISO from a work tree      (default: ./out/<name>-custom.iso)
-  build <profile>            fetch -> unpack -> apply -> pack -> test
-  test <iso> [--structure|--bios|--uefi|--usb|--persistence]
+  build <profile>            unpack -> apply -> pack -> test, from one profile
+  test <iso> [--structure] [--bios] [--uefi]
   shell <bundle|work>        chroot/proot into a bundle for exploration
   diff <isoA> <isoB>         structural + per-file diff
   upstream-diff              regenerate docs/15-upstream/drift-report.md
@@ -184,7 +186,9 @@ case "$cmd" in
     fingerprint)   exec "$REPO_ROOT/lib/fingerprint.py" "$@" ;;
     unpack)        kitchen_unpack "$@" ;;
     pack)          kitchen_pack "$@" ;;
-    fetch|build|test|shell|diff|upstream-diff)
+    build)         kitchen_build "$@" ;;
+    test)          kitchen_test "$@" ;;
+    fetch|shell|diff|upstream-diff)
         die "'$cmd' is not implemented yet -- see INITIAL_TASKS.DNC.md (T-2xx)" ;;
     *)             usage; die "unknown command: $cmd" ;;
 esac

@@ -37,7 +37,7 @@ then the commit gates in `ci/checks/`.
 | `20-boot-sequence/` | Firmware → loader → kernel → init → chroot, per medium | planned |
 | `50-cookbook/` | [add-packages](50-cookbook/add-packages.md), [memtest86plus](50-cookbook/memtest86plus.md), [remove-bundle](50-cookbook/remove-bundle.md), [rootcopy-overlay](50-cookbook/rootcopy-overlay.md) | partial |
 | `60-testing/` | QEMU, automated boot tests, CI | planned |
-| `90-reference/` | CLI and schema reference | planned |
+| `90-reference/` | [CLI reference](90-reference/cli.md) + profile format | partial |
 
 ## Two things worth knowing up front
 

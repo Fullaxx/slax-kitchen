@@ -24,6 +24,8 @@ the resulting ISO in QEMU and reading the console.
 | `kitchen doctor` | ✅ reports tool + capability matrix and which recipes this machine can run |
 | `kitchen validate` | ✅ JSON Schema, validated post-variable-substitution |
 | `kitchen apply` | ✅ dep ordering, `when:` guards, dry run, journalling, pack hints |
+| `kitchen build` | ✅ whole pipeline from one profile, ~4 s for four recipes; derives test expectations from the recipe list |
+| `kitchen test` | ✅ `--structure` (18 assertions, ~1 s), `--bios`, `--uefi` |
 
 ### Recipes
 
@@ -77,8 +79,8 @@ Full reasoning: [add-packages cookbook page](../50-cookbook/add-packages.md).
 
 ### CLI
 
-`fetch`, `build`, `test`, `shell`, `diff`, `upstream-diff` are declared in `--help` and **error out
-explicitly** rather than pretending to work.
+`fetch`, `shell`, `diff`, `upstream-diff` are declared in `--help` and **error out explicitly**
+rather than pretending to work.
 
 ### Verbs
 

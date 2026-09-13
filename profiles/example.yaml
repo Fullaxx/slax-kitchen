@@ -1,0 +1,21 @@
+apiVersion: slax-kitchen/v1
+kind: Profile
+metadata:
+  name: example
+  summary: A Slax that boots on UEFI, can be dd'd to a stick, and carries a memory tester
+base:
+  flavour: debian
+  arch: 64bit
+  version: "12.2.0"
+recipes:
+  # Order matters: uefi-bootable builds the GRUB menu by parsing isolinux.cfg, so it has
+  # to run after anything that adds a menu entry. Keep it last.
+  - memtest86plus
+  - serial-console
+  - isohybrid
+  - uefi-bootable
+output:
+  name: "slax-example-{{version}}.iso"
+  hybrid: true
+test:
+  - structure

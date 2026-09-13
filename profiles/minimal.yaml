@@ -1,0 +1,16 @@
+apiVersion: slax-kitchen/v1
+kind: Profile
+metadata:
+  name: minimal
+  summary: Smallest useful Slax -- no browser, no dev tools, still boots to a desktop
+base:
+  flavour: debian
+  arch: 64bit
+  version: "12.2.0"
+recipes:
+  - remove-bundle
+  - rootcopy-overlay
+output:
+  name: "slax-minimal-{{version}}.iso"
+test:
+  - structure
