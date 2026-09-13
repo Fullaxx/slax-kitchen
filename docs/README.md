@@ -37,7 +37,7 @@ then the commit gates in `ci/checks/`.
 | `40-workflow/` | [unpack](40-workflow/unpack.md), [edit bundles](40-workflow/edit-bundles.md), [repack](40-workflow/repack-iso.md), [container vs host](40-workflow/container-vs-host.md) | partial |
 | `70-compat/` | [Fingerprints and `kitchen probe`](70-compat/fingerprints.md) | partial |
 | `05-using-slax/` | [Using Slax itself](05-using-slax/): media, persistence, boot modes, everyday tasks | **current** |
-| `10-anatomy/` | How a Slax ISO is put together, component by component | planned |
+| `10-anatomy/` | [How a Slax ISO is put together](10-anatomy/), component by component | **current** |
 | `15-upstream/` | [`vendor/linux-live` as source of truth](15-upstream/), annotated | **current** |
 | `20-boot-sequence/` | Firmware → loader → kernel → init → chroot, per medium | planned |
 | `50-cookbook/` | [all 7 pages](50-cookbook/) incl. [uefi-bootable](50-cookbook/uefi-bootable.md) and [isohybrid](50-cookbook/isohybrid.md) | partial |
