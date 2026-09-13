@@ -1,0 +1,43 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: rootcopy-overlay
+  summary: Drop files straight onto the live filesystem, with no squashfs rebuild
+  tags: [rootcopy, template, quick]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+steps:
+  # The cheapest customization Slax offers, and the only one that needs no squashfs work
+  # at all. livekit's copy_rootcopy_content() does `cp -a <data>/rootcopy/* <union>` right
+  # before change_root, so anything under /slax/rootcopy/ lands on the running filesystem.
+  #
+  # Upstream ships NO rootcopy directory -- livekit looks for one and silently skips when
+  # it is absent -- so this creates it.
+  #
+  # Two properties worth understanding:
+  #   * It is a COPY, not a union branch. Files land in the writable layer, so they beat
+  #     every bundle including 99-changes-*.sb, and they are not visible to `slax list`.
+  #   * On a writable medium you can edit /slax/rootcopy/ on the stick itself and the
+  #     change takes effect next boot -- no rebuild, no ISO.
+  - verb: rootcopy.files
+    files:
+      - dest: /etc/motd
+        mode: "0644"
+        content: |
+          This Slax was customized with slax-kitchen.
+          Files under /slax/rootcopy/ on the boot medium are copied here at every boot,
+          so you can change them without rebuilding anything.
+
+  # livekit SOURCES this just before change_root, with the union directory as $1 -- the
+  # last point at which you can touch the filesystem the system is about to boot into.
+  # Output appears inline in the boot messages, which also makes it the simplest way to
+  # prove rootcopy fired at all.
+  - verb: rootcopy.preinit
+    script: |
+      echo "* rootcopy-overlay: preinit running, union is at $1"
+      # $1 is the assembled union. Anything written here is live at boot.
+      echo "slax-kitchen was here: $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$1/etc/slax-kitchen-stamp"
+      echo "* rootcopy-overlay: wrote /etc/slax-kitchen-stamp"

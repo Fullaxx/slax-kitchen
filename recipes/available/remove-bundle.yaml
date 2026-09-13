@@ -1,0 +1,29 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: remove-bundle
+  summary: Drop bundles from the ISO to slim it down
+  tags: [bundle, size]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  # Regex over bundle FILENAMES. 05-chromium is the usual first candidate: it is the
+  # single largest optional bundle (79 MiB on Debian, 115 MiB on Slackware) and Slax can
+  # re-fetch it on demand at runtime -- /usr/bin/fbliveapp downloads it from slax.org and
+  # `slax activate`s it the first time you click the browser icon.
+  #
+  # Other useful values:
+  #   "06-devel"                      Slackware only, 81 MiB of gcc/headers
+  #   "05-chromium|06-devel"          both
+  #   "01-firmware"                   only if you know the target hardware
+  #
+  # Do NOT remove 01-core: it is the root filesystem. 02-xorg and 03-desktop leave a
+  # console-only system, which is a legitimate thing to want -- pair with a `text` boot
+  # parameter so the X autostart unit does not fire.
+  drop: "05-chromium"
+steps:
+  - verb: bundle.remove
+    match: "{{drop}}"

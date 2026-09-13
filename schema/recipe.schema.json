@@ -411,6 +411,87 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "rootcopy.preinit"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "properties": {
+              "script": {
+                "type": "string",
+                "description": "inline shell; a #!/bin/sh line is added if absent"
+              },
+              "src": {
+                "type": "string",
+                "description": "script file, relative to the recipe"
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "script"
+                ]
+              },
+              {
+                "required": [
+                  "src"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "rootcopy.files"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "required": [
+              "files"
+            ],
+            "properties": {
+              "files": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "dest"
+                  ],
+                  "properties": {
+                    "src": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "dest": {
+                      "type": "string",
+                      "description": "path INSIDE the running system, e.g. /etc/motd"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "pattern": "^[0-7]{3,4}$"
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       ]
     },

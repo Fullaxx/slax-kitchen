@@ -229,6 +229,41 @@ def v_rootcopy_files(ctx: Ctx, step: dict) -> None:
         ctx.say(f"rootcopy: {spec['dest']}")
 
 
+@verb("rootcopy.preinit")
+def v_rootcopy_preinit(ctx: Ctx, step: dict) -> None:
+    """Install /slax/rootcopy/run/preinit.sh -- livekit's official pre-boot hook.
+
+    livekitlib's user_preinit() SOURCES this file (it does `. "$SRC" "$2"`) just before
+    change_root, with the assembled union directory as $1. So it runs after the bundles
+    are mounted and the union exists, but before the real init starts -- the last point
+    at which you can touch the filesystem the system is about to boot into.
+
+    Being sourced rather than executed has two consequences worth knowing: a shebang is
+    decorative, and anything the script does to the initramfs shell's environment (cd,
+    exported vars, `exit`) affects init itself. Prefer a subshell for anything risky.
+    """
+    script = step.get("script")
+    src = step.get("src")
+    if not script and not src:
+        raise RuntimeError("rootcopy.preinit: need `script` or `src`")
+    dest = ctx.p("slax", "rootcopy", "run", "preinit.sh")
+    if ctx.dry:
+        ctx.say("would install slax/rootcopy/run/preinit.sh")
+        return
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    if script:
+        with open(dest, "w") as f:
+            if not script.startswith("#!"):
+                f.write("#!/bin/sh\n")
+            f.write(script if script.endswith("\n") else script + "\n")
+    else:
+        local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+        shutil.copy2(local, dest)
+    os.chmod(dest, 0o755)
+    ctx.say(f"slax/rootcopy/run/preinit.sh ({os.path.getsize(dest)} bytes) "
+            "-- sourced by livekit just before change_root")
+
+
 @verb("bundle.remove")
 def v_bundle_remove(ctx: Ctx, step: dict) -> None:
     pat = re.compile(step["match"])

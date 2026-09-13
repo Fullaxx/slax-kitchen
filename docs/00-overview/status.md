@@ -33,6 +33,8 @@ the resulting ISO in QEMU and reading the console.
 | `isohybrid` | ✅ MBR + GPT + type-`0xEF` partition verified in the image |
 | `serial-console` | ✅ entry present in both configs |
 | `memtest86plus` | ✅ **booted on BIOS and UEFI** — Memtest86+ 8.10 selected from each menu and running |
+| `remove-bundle` | ✅ **booted** — ISO 416 → 336 MiB, five bundles instead of six |
+| `rootcopy-overlay` | ✅ **booted** — file copy and preinit hook both confirmed firing |
 | `add-packages` | ✅ **booted** on Debian — bundle mounts last, `Live Kit done, starting slax` |
 
 The same ISO boots on **both** BIOS and UEFI after `uefi-bootable` + `isohybrid`, which stock Slax
@@ -80,21 +82,20 @@ explicitly** rather than pretending to work.
 
 ### Verbs
 
-9 of 25 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
+10 of 25 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
 clear message naming what *is* available, rather than silently skipping.
 
 **Implemented:** `boot.cmdline` `boot.isohybrid` `boot.menu` `boot.payload` `boot.uefi`
-`bundle.packages` `bundle.remove` `iso.files` `rootcopy.files`
+`bundle.packages` `bundle.remove` `iso.files` `rootcopy.files` `rootcopy.preinit`
 
 **Not yet:** `boot.branding` `boot.grub` `boot.secureboot` `bundle.files` `bundle.fromDir`
 `bundle.fromTarball` `bundle.renumber` `bundle.script` `initramfs.config` `initramfs.files`
 `initramfs.modules` `initramfs.patch` `iso.checksums` `iso.metadata` `kernel.replace`
-`rootcopy.preinit`
 
 ### Recipes
 
-5 of the ~32 planned. Missing notably: `remove-bundle`, `rootcopy-overlay`, `branding`,
-`ssh-server`, `initramfs-busybox`.
+7 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
+`initramfs-busybox`, `kernel-replace`.
 
 ### Documentation
 
