@@ -3,15 +3,33 @@
 # clobber these URLs.
 #
 # The official download link (slax.org/download-slax.php) is not usable for automation:
-# it 302s to a one-shot token URL on a third-party host. The author's own mirror serves
-# the same files at stable, versioned paths -- verified byte-for-byte identical.
+# it 302s to a one-shot token URL on a third-party host. Both mirrors below serve the
+# same files at stable paths -- every one verified byte-for-byte against the canonical
+# release.
 #
-# sha256 and size are the authority. `kitchen fetch` verifies both and refuses anything
-# that does not match, so an untrustworthy mirror cannot poison a build.
+# sha256 and size are the authority. `kitchen fetch` verifies both after every download
+# and deletes anything that does not match before falling through to the next mirror,
+# so an untrustworthy mirror cannot poison a build. Mirror ORDER is therefore a
+# courtesy and throughput decision, not a trust one.
+#
+# images.rapidlinux.org is listed first because CI pulls ~1.8 GB across four parallel
+# matrix jobs whenever the cache is cold, and ftp.linux.cz is a volunteer community
+# mirror -- pointing bulk automation at it by default is impolite. It remains the
+# canonical fallback.
+#
+# Adding a mirror needs no code change: lib/fetch.py iterates this list in order, and
+# `layout` is a str.format template over the target's own keys, so a flat "{file}"
+# works as well as "{tree}/{file}". ci/upstream-watch.sh HEADs every target on every
+# mirror weekly, so a new entry here is monitored for rot automatically.
 apiVersion: slax-kitchen/v1
 kind: Sources
 
 mirrors:
+  # Verified 2026-09-13: all four ISOs HTTP/2 200, size exact, sha256 exact,
+  # Range honoured (206 Partial Content), TLS valid, ~27 MB/s.
+  - name: images.rapidlinux.org
+    base: https://images.rapidlinux.org/slax_isos
+    layout: "{file}"
   - name: ftp.linux.cz
     base: https://ftp.linux.cz/pub/linux/slax
     layout: "{tree}/{file}"

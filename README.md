@@ -43,6 +43,11 @@ cd slax-kitchen
 `kitchen doctor` tells you which tools are missing and what provides them. Nothing destructive runs
 without checking its requirements first.
 
+`kitchen fetch` downloads from a mirror list and checks **both** size and sha256 against
+`compat/sources.yaml` before accepting the file, falling through to the next mirror if either
+fails — so a stale or hostile mirror cannot poison a build. An ISO you already have works too:
+`kitchen build --base /path/to.iso`.
+
 ### Two things the stock ISO cannot do
 
 Both were confirmed by parsing the official images byte for byte, and both are fixed by recipes here:
