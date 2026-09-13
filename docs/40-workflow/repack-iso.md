@@ -5,10 +5,43 @@
 ## TL;DR
 
 ```sh
-kitchen unpack isos/slax-64bit-debian-12.2.0.iso -o work
-# ... edit work/iso/ ...
-kitchen pack -s work/iso -o out/slax-custom.iso
+kitchen unpack isos/slax-64bit-debian-12.2.0.iso    # -> ./work/iso/
+# ... edit work/iso/, or run recipes ...
+kitchen pack                                        # -> ./out/slax-64bit-debian-12.2.0-custom.iso
 ```
+
+## Where the new ISO goes
+
+With no flags, into **`./out/`**, under a name derived from whatever the work tree was unpacked
+from, plus a `-custom` suffix so it can never be mistaken for the stock download:
+
+```
+isos/slax-64bit-debian-12.2.0.iso   ->   out/slax-64bit-debian-12.2.0-custom.iso
+```
+
+The name comes from `work/.kitchen/origin.yaml`, which `kitchen unpack` writes with the source
+path, sha256 and size. You never have to name the output unless you want to.
+
+| You type | Result |
+|---|---|
+| `kitchen pack` | `./out/<source>-custom.iso` |
+| `kitchen pack -o my.iso` | `./my.iso` |
+| `kitchen pack -o release/` | `./release/<source>-custom.iso` |
+| `kitchen pack -o release/v2` | `./release/v2.iso` (`.iso` appended if missing) |
+
+Two rules worth knowing:
+
+- **Paths are relative to your current directory, not the repo.** `work/` and `out/` behave like any
+  build directory. Both are in the repo's `.gitignore`, so running from a clone keeps artifacts out
+  of git automatically.
+- **An existing ISO is never overwritten without `--force`.** Rebuilding is cheap (about a second)
+  but a customized ISO may represent a lot of work, so clobbering is opt-in:
+  ```
+  error: pack: out/slax-64bit-debian-12.2.0-custom.iso already exists (use --force to overwrite)
+  ```
+
+`kitchen build <profile>` uses the profile's `output.name` instead, falling back to the same
+derived name.
 
 ## What upstream actually runs
 

@@ -35,15 +35,23 @@ ${B}COMMANDS${O}
   probe <iso>                match an ISO against compat/ and report what differs
   fingerprint <iso> [-o F]   generate a compat fingerprint
   fetch <flavour> <arch> <ver>   download + verify a base ISO into isos/
-  unpack <iso> [-o DIR]      explode an ISO into a work tree
+  unpack <iso> [-o DIR]      explode an ISO into a work tree      (default: ./work)
   apply <recipe>...          apply recipes to a work tree
-  pack -o <iso>              rebuild an ISO from a work tree
+  pack [-o FILE|DIR]         rebuild an ISO from a work tree      (default: ./out/<name>-custom.iso)
   build <profile>            fetch -> unpack -> apply -> pack -> test
   test <iso> [--structure|--bios|--uefi|--usb|--persistence]
   shell <bundle|work>        chroot/proot into a bundle for exploration
   diff <isoA> <isoB>         structural + per-file diff
   upstream-diff              regenerate docs/15-upstream/drift-report.md
   version                    print version
+
+${B}TYPICAL RUN${O}
+  kitchen unpack isos/slax-64bit-debian-12.2.0.iso   # -> ./work/iso/
+  kitchen apply recipes/available/uefi-bootable.yaml
+  kitchen pack                                       # -> ./out/slax-64bit-debian-12.2.0-custom.iso
+
+Output paths are relative to your current directory, not to the repo. An existing ISO is
+never overwritten without --force.
 
 ${B}DOCS${O}  docs/README.md        ${B}COOKBOOK${O}  docs/50-cookbook/
 USAGE

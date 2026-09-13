@@ -18,12 +18,33 @@
 #                ISO on that one field.
 #
 # Default: genisoimage when neither --uefi nor --hybrid is requested, xorriso otherwise.
+#
+# OUTPUT PATH. With no -o, the ISO lands in ./out/ under a name derived from whatever
+# the work tree was unpacked from (recorded in <work>/.kitchen/origin.yaml at unpack
+# time), with a "-custom" suffix so it can never be confused with the stock download:
+#
+#     kitchen unpack isos/slax-64bit-debian-12.2.0.iso
+#     kitchen pack                 ->  out/slax-64bit-debian-12.2.0-custom.iso
+#
+# -o accepts a file path OR a directory (in which case the derived name is used inside
+# it). An existing file is never overwritten without --force.
+
+# Work out the default output filename from the work tree's provenance.
+_pack_derive_name() {
+    _wt=$(dirname "$1")                       # work/iso -> work
+    _origin="$_wt/.kitchen/origin.yaml"
+    _base=""
+    [ -f "$_origin" ] && _base=$(sed -n 's|^source_iso: .*/||p' "$_origin" | sed 's/\.iso$//')
+    [ -n "$_base" ] || _base="slax"
+    echo "${_base}-custom.iso"
+}
 
 kitchen_pack() {
-    src="work/iso" out="" backend="" uefi=0 hybrid=0 volid="slax" appid="slax" sysid="LINUX" mdate=""
+    src="work/iso" out="" backend="" uefi=0 hybrid=0 volid="slax" appid="slax" sysid="LINUX" mdate="" force=0
     while [ $# -gt 0 ]; do
         case "$1" in
             -o|--output)  out=$2; shift 2 ;;
+            -f|--force)   force=1; shift ;;
             -s|--source)  src=$2; shift 2 ;;
             --backend)    backend=$2; shift 2 ;;
             --uefi)       uefi=1; shift ;;
@@ -35,8 +56,19 @@ kitchen_pack() {
             *)  out=$1; shift ;;
         esac
     done
-    [ -n "$out" ] || die "pack: need -o <output.iso>"
     [ -d "$src" ] || die "pack: no work tree at $src (run 'kitchen unpack' first)"
+
+    # Default destination: ./out/<source-name>-custom.iso
+    if [ -z "$out" ]; then
+        out="out/$(_pack_derive_name "$src")"
+    elif [ -d "$out" ]; then
+        out="${out%/}/$(_pack_derive_name "$src")"
+    fi
+    case "$out" in *.iso) ;; *) out="$out.iso" ;; esac
+
+    if [ -e "$out" ] && [ "$force" != 1 ]; then
+        die "pack: $out already exists (use --force to overwrite)"
+    fi
     [ -f "$src/slax/boot/isolinux.bin" ] || die "pack: $src does not look like a Slax tree (no slax/boot/isolinux.bin)"
 
     if [ -z "$backend" ]; then
@@ -80,7 +112,9 @@ kitchen_pack() {
       *) die "pack: unknown backend '$backend' (want genisoimage or xorriso)" ;;
     esac
 
-    printf '  %sok%s   %s  (%s bytes)\n' "$G" "$O" "$out" "$(stat -c%s "$out")"
+    _abs=$(cd "$(dirname "$out")" && pwd)/$(basename "$out")
+    _mib=$(( $(stat -c%s "$out") / 1048576 ))
+    printf '  %sok%s   wrote %s  (%s MiB)\n' "$G" "$O" "$_abs" "$_mib"
     [ "$backend" = xorriso ] && [ "$appid" != "$(printf '%s' "$appid" | tr a-z A-Z)" ] && \
         printf '  %snote: xorriso uppercased the application id to %s%s\n' "$Y" \
                "$(printf '%s' "$appid" | tr a-z A-Z)" "$O"
