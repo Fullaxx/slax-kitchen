@@ -20,6 +20,7 @@ import argparse
 import hashlib
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -59,7 +60,7 @@ VERB_REQUIRES: dict[str, dict] = {
     "bundle.fromDir": {"tools": ["mksquashfs"]},
     "bundle.fromTarball": {"tools": ["mksquashfs"]},
     "initramfs.files": {"tools": ["cpio", "xz"]},
-    "initramfs.modules": {"tools": ["cpio", "xz"]},
+    "initramfs.modules": {"tools": ["cpio", "xz", "unsquashfs"]},
     "initramfs.patch": {"tools": ["cpio", "xz"]},
     "initramfs.config": {"tools": ["cpio", "xz"]},
 }
@@ -317,6 +318,269 @@ def v_iso_files(ctx: Ctx, step: dict) -> None:
         if "mode" in spec and os.path.isfile(dest):
             os.chmod(dest, int(spec["mode"], 8))
         ctx.say(f"wrote {spec['dest']}")
+
+
+# --------------------------------------------------------- initramfs --------
+#
+# initrfs.img is an xz'd SVR4/newc cpio. Editing it is open, change, close -- but three
+# details are load-bearing and every one of them fails silently:
+#
+#   1. xz MUST use --check=crc32. The kernel's built-in xz decoder does not implement
+#      CRC64, which is xz's default. Get this wrong and the machine reboot-loops with no
+#      message, because the thing that would report the error is inside the archive that
+#      failed to decompress.
+#   2. The archive holds seven real device nodes. A non-root cpio silently turns them
+#      into empty regular files, and the result cannot open its own console.
+#   3. The module directory is version-specific: lib/modules/6.1.38 on 64-bit but
+#      6.1.38-smp on 32-bit. Anything hardcoding the former breaks half the targets.
+#
+# Upstream's own pack command has no `sort`, so archive order follows readdir order and
+# is not stable -- on overlayfs, five runs over an unchanged tree gave five orders. We
+# add `LC_ALL=C sort`, which changes nothing at boot (cpio order is irrelevant to
+# extraction) and makes a repack diffable.
+
+INITRAMFS_REL = os.path.join("slax", "boot", "initrfs.img")
+
+
+def _initramfs_unpack(ctx: "Ctx", workdir: str) -> str:
+    """Extract initrfs.img into workdir/tree and return that path."""
+    img = ctx.p("slax", "boot", "initrfs.img")
+    if not os.path.isfile(img):
+        raise RuntimeError(f"initramfs: {img} missing -- is this a Slax tree?")
+    tree = os.path.join(workdir, "tree")
+    os.makedirs(tree, exist_ok=True)
+    r = subprocess.run(f"xz -dc {shlex.quote(img)} | cpio -id --quiet",
+                       shell=True, cwd=tree, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"initramfs unpack failed: {r.stderr.strip()[:300]}")
+    nodes = sum(1 for dirpath, _, files in os.walk(tree) for f in files
+                if _is_dev_node(os.path.join(dirpath, f)))
+    if nodes == 0:
+        raise RuntimeError(
+            "initramfs unpack produced no device nodes -- cpio ran without CAP_MKNOD. "
+            "The tree is not repackable; run as root.")
+    files = sum(len(f) for _, _, f in os.walk(tree))
+    dirs = sum(len(d) for _, d, _ in os.walk(tree))
+    ctx.say(f"unpacked initrfs.img ({files:,} files, {dirs:,} dirs, "
+            f"{nodes} device nodes preserved)")
+    return tree
+
+
+def _is_dev_node(path: str) -> bool:
+    import stat as _stat
+    try:
+        m = os.lstat(path).st_mode
+    except OSError:
+        return False
+    return _stat.S_ISBLK(m) or _stat.S_ISCHR(m)
+
+
+def _initramfs_module_dir(tree: str) -> str:
+    """lib/modules/<release>, read from the tree -- never hardcoded."""
+    base = os.path.join(tree, "lib", "modules")
+    dirs = [d for d in sorted(os.listdir(base)) if os.path.isdir(os.path.join(base, d))] \
+        if os.path.isdir(base) else []
+    if not dirs:
+        raise RuntimeError(f"initramfs: no lib/modules/<release> in {tree}")
+    if len(dirs) > 1:
+        raise RuntimeError(f"initramfs: several module dirs {dirs}; refusing to guess")
+    return os.path.join(base, dirs[0])
+
+
+def _initramfs_pack(ctx: "Ctx", tree: str) -> None:
+    """Repack tree over slax/boot/initrfs.img, with upstream's exact parameters."""
+    img = ctx.p("slax", "boot", "initrfs.img")
+    before = os.path.getsize(img)
+    tmp = img + ".new"
+    cmd = ("find . -print | LC_ALL=C sort | cpio -o -H newc --quiet "
+           f"| xz -T0 -f --extreme --check=crc32 > {shlex.quote(tmp)}")
+    r = subprocess.run(cmd, shell=True, cwd=tree, capture_output=True, text=True)
+    if r.returncode != 0 or not os.path.isfile(tmp) or os.path.getsize(tmp) == 0:
+        raise RuntimeError(f"initramfs pack failed: {r.stderr.strip()[:300]}")
+
+    # Never ship an image the kernel cannot decompress. xz reports the check type, so
+    # this is cheap and catches the one mistake that produces a silent reboot loop.
+    chk = subprocess.run(["xz", "--list", tmp], capture_output=True, text=True)
+    if "CRC32" not in chk.stdout:
+        os.unlink(tmp)
+        raise RuntimeError("initramfs pack produced a non-CRC32 image; the kernel's xz "
+                           "decoder cannot read it. Refusing to ship it.")
+    os.replace(tmp, img)
+    after = os.path.getsize(img)
+    ctx.say(f"repacked initrfs.img  {before:,} -> {after:,} bytes ({after - before:+,})")
+    ctx.changes.append("slax/boot/initrfs.img")
+
+
+@verb("initramfs.files")
+def v_initramfs_files(ctx: Ctx, step: dict) -> None:
+    """Add files to the initramfs -- static binaries, scripts, config.
+
+    Anything executable placed here must be STATIC: the initramfs carries no dynamic
+    loader, so a dynamically linked binary fails with a bare "not found" that names the
+    interpreter, not the binary. i386 is the safe choice because every one of the eight
+    shipped binaries is i386 even on the 64-bit images, which is why the kernel is built
+    with CONFIG_IA32_EMULATION. An x86-64 static binary works on the 64-bit targets only.
+
+    Both are checked and warned about rather than refused -- a data file is a legitimate
+    thing to add, and so is a deliberately 64-bit-only tool.
+    """
+    files = step.get("files") or []
+    if not files:
+        raise RuntimeError("initramfs.files: no files listed")
+    if ctx.dry:
+        for spec in files:
+            ctx.say(f"would add {spec['dest']} to initrfs.img")
+        return
+
+    import tempfile
+    work = tempfile.mkdtemp(prefix="kitchen-irfs-", dir=os.path.dirname(os.path.abspath(ctx.work)))
+    try:
+        tree = _initramfs_unpack(ctx, work)
+        for spec in files:
+            rel = spec["dest"].lstrip("/")
+            dest = os.path.join(tree, rel)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+
+            # Never let an added file clobber blkid or eject. They are real binaries
+            # shadowing busybox applets of the same name, and livekitlib parses
+            # `blkid -o full`, an option busybox's applet does not have. Overwriting one
+            # breaks device detection at boot with no diagnostic.
+            if os.path.basename(rel) in ("blkid", "eject") and os.path.exists(dest) \
+                    and not step.get("force"):
+                raise RuntimeError(
+                    f"initramfs.files: {rel} shadows a standalone binary livekitlib "
+                    f"depends on. Pass force: true if you really mean to replace it.")
+
+            if "content" in spec:
+                with open(dest, "w") as f:
+                    f.write(spec["content"])
+            else:
+                src = spec["src"]
+                local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+                if not os.path.isfile(local):
+                    raise RuntimeError(f"initramfs.files: no such source file: {local}")
+                shutil.copy2(local, dest)
+            if "mode" in spec:
+                os.chmod(dest, int(str(spec["mode"]), 8))
+
+            note = _elf_note(dest)
+            ctx.say(f"initramfs: + {spec['dest']}{note}")
+        _initramfs_pack(ctx, tree)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _elf_note(path: str) -> str:
+    """Describe an ELF's arch and linkage, so a bad addition is obvious in the log."""
+    if not shutil.which("file"):
+        return ""
+    r = subprocess.run(["file", "-bL", path], capture_output=True, text=True)
+    d = r.stdout.strip()
+    if "ELF" not in d:
+        return ""
+    bits = "i386" if "80386" in d or "Intel 80386" in d else \
+           "x86-64" if "x86-64" in d else "?"
+    if "dynamically linked" in d:
+        return f"  [{bits}, DYNAMIC -- the initramfs has no loader; this will not run]"
+    if bits == "x86-64":
+        return f"  [{bits} static -- 64-bit targets only; i386 works on all four]"
+    return f"  [{bits} static]"
+
+
+def _find_bundle(ctx: "Ctx", want: str) -> str:
+    """Resolve a bundle by name prefix, e.g. '01-core' -> slax/modules/01-core.sb."""
+    mods = ctx.p("slax", "modules")
+    hit = next((n for n in sorted(os.listdir(mods))
+                if n.startswith(want) and n.endswith(".sb")), None)
+    if hit is None:
+        raise RuntimeError(f"no bundle matching {want!r} in slax/modules")
+    return os.path.join(mods, hit)
+
+
+@verb("initramfs.modules")
+def v_initramfs_modules(ctx: Ctx, step: dict) -> None:
+    """Add kernel modules to the initramfs -- NVMe, RAID, iSCSI, exotic NICs.
+
+    The destination is lib/modules/<release>/, and <release> is READ FROM THE TREE.
+    Hardcoding it breaks 32-bit, where the kernel carries LOCALVERSION=-smp and the
+    directory is 6.1.38-smp rather than 6.1.38.
+
+    No depmod is needed: modprobe_everything() finds modules by walking the tree with
+    `find /lib/modules/ | fgrep .ko`, not by consulting modules.dep.
+    """
+    mods = step.get("modules") or []
+    if not mods:
+        raise RuntimeError("initramfs.modules: no modules listed")
+    subdir = (step.get("subdir") or "kernel/extra").strip("/")
+    from_bundle = step.get("from_bundle")
+    if ctx.dry:
+        src = f" from {from_bundle}" if from_bundle else ""
+        for m in mods:
+            ctx.say(f"would add {os.path.basename(m)}{src} to lib/modules/<release>/{subdir}/")
+        return
+
+    import tempfile
+    work = tempfile.mkdtemp(prefix="kitchen-irfs-", dir=os.path.dirname(os.path.abspath(ctx.work)))
+    try:
+        # The ISO already carries far more modules than the initramfs does -- 4,766 in
+        # 01-core.sb against 301 in initrfs.img on 64-bit Debian, because
+        # initramfs_create copies whole subtrees by directory and skips most of them.
+        # Promoting one from a bundle needs no external file and is the usual answer to
+        # "Slax boots on this machine but cannot find its own data".
+        pool = None
+        if from_bundle:
+            pool = os.path.join(work, "pool")
+            hit = _find_bundle(ctx, from_bundle)
+            # Debian's bundles are merged-usr (lib -> usr/lib), Slackware's are not, so
+            # the module tree is at usr/lib/modules on one flavour and lib/modules on
+            # the other. Extracting only one silently yields an empty pool.
+            r = subprocess.run(["unsquashfs", "-f", "-n", "-q", "-d", pool, hit,
+                                "lib/modules", "usr/lib/modules"],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"initramfs.modules: unsquashfs {os.path.basename(hit)}: "
+                                   f"{r.stderr.strip()[:200]}")
+            n = sum(len(f) for _, _, f in os.walk(pool))
+            if n == 0:
+                raise RuntimeError(
+                    f"initramfs.modules: {os.path.basename(hit)} contains no module tree "
+                    f"at lib/modules or usr/lib/modules")
+            ctx.say(f"module pool: {os.path.basename(hit)} ({n:,} files)")
+
+        tree = _initramfs_unpack(ctx, work)
+        mdir = _initramfs_module_dir(tree)
+        release = os.path.basename(mdir)
+        target = os.path.join(mdir, subdir)
+        os.makedirs(target, exist_ok=True)
+        for m in mods:
+            if pool:
+                want = m if m.endswith(".ko") else m + ".ko"
+                found = [os.path.join(dp, f) for dp, _, fs in os.walk(pool)
+                         for f in fs if f == os.path.basename(want)]
+                if not found:
+                    raise RuntimeError(
+                        f"initramfs.modules: {want} not found in {from_bundle}. "
+                        f"Note many common storage drivers (dm-mod, md-mod, raid1, "
+                        f"virtio_*) are compiled INTO the Slax kernel, not shipped as "
+                        f"modules, so they need no promotion.")
+                local = found[0]
+            else:
+                local = m if os.path.isabs(m) else os.path.join(ctx.recipe_dir, m)
+            if not os.path.isfile(local):
+                raise RuntimeError(f"initramfs.modules: no such module: {local}")
+            name = os.path.basename(local)
+            if not name.endswith(".ko"):
+                # initramfs_create decompresses .ko.gz/.ko.xz at build time because the
+                # shipped modprobe (busybox 1.26.2) cannot read compressed modules.
+                raise RuntimeError(
+                    f"initramfs.modules: {name} is not a plain .ko. Decompress it first "
+                    f"-- the shipped busybox modprobe cannot load compressed modules.")
+            shutil.copy2(local, os.path.join(target, name))
+            ctx.say(f"initramfs: + lib/modules/{release}/{subdir}/{name}")
+        ctx.say(f"module directory read from the tree: {release}")
+        _initramfs_pack(ctx, tree)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 @verb("rootcopy.files")

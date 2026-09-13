@@ -156,7 +156,7 @@ steps:
 ./kitchen pack                     # -> out/slax-...-custom.iso
 ```
 
-Eight recipes ship today, all verified by booting the result:
+Ten recipes ship today, all verified by booting the result:
 
 | | |
 |---|---|
@@ -168,6 +168,8 @@ Eight recipes ship today, all verified by booting the result:
 | `remove-bundle` | drop any bundle by regex |
 | `rootcopy-overlay` | drop files onto the live system with no rebuild |
 | `serial-console` | add a serial boot entry, for headless and CI |
+| `initramfs-add-binary` | put a static tool into early boot |
+| `initramfs-add-modules` | promote drivers into the initramfs so `find_data` sees your disk |
 
 See [the cookbook](docs/50-cookbook/) and [the CLI reference](docs/90-reference/cli.md).
 
@@ -192,7 +194,7 @@ the recipes that caused them. A weekly CI job watches for a new release.
 
 See **[docs/00-overview/status.md](docs/00-overview/status.md)** for what is verified, what is
 written but unsupported, and what does not exist yet. Short version: the core loop
-(unpack → apply → pack → test) and eight recipes are boot-verified, and the documentation of Slax
+(unpack → apply → pack → test) and ten recipes are boot-verified, and the documentation of Slax
 itself is complete; roughly two thirds of the planned recipes are not written yet.
 
 ## Licensing

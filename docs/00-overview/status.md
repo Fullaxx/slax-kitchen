@@ -41,6 +41,8 @@ the resulting ISO in QEMU and reading the console.
 | `remove-chromium` | ✅ named preset for the above; 416 → 336 MiB (Debian), 455 → 340 MiB (Slackware) |
 | `rootcopy-overlay` | ✅ **booted** — file copy and preinit hook both confirmed firing |
 | `add-packages` | ✅ **booted** on Debian — bundle mounts last, `Live Kit done, starting slax` |
+| `initramfs-add-binary` | ✅ **booted** — file survives the repack, image still reaches `slax login:` |
+| `initramfs-add-modules` | ✅ **booted** — promotes from a bundle; verified on both flavours and both arches |
 
 The same ISO boots on **both** BIOS and UEFI after `uefi-bootable` + `isohybrid`, which stock Slax
 cannot do at all.
@@ -87,19 +89,20 @@ pretending to work. (`fetch` is implemented and verified — it was listed here 
 
 ### Verbs
 
-10 of 25 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
+12 of 25 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
 clear message naming what *is* available, rather than silently skipping.
 
 **Implemented:** `boot.cmdline` `boot.isohybrid` `boot.menu` `boot.payload` `boot.uefi`
-`bundle.packages` `bundle.remove` `iso.files` `rootcopy.files` `rootcopy.preinit`
+`bundle.packages` `bundle.remove` `initramfs.files` `initramfs.modules` `iso.files`
+`rootcopy.files` `rootcopy.preinit`
 
 **Not yet:** `boot.branding` `boot.grub` `boot.secureboot` `bundle.files` `bundle.fromDir`
-`bundle.fromTarball` `bundle.renumber` `bundle.script` `initramfs.config` `initramfs.files`
-`initramfs.modules` `initramfs.patch` `iso.checksums` `iso.metadata` `kernel.replace`
+`bundle.fromTarball` `bundle.renumber` `bundle.script` `initramfs.config` `initramfs.patch`
+`iso.checksums` `iso.metadata` `kernel.replace`
 
 ### Recipes
 
-8 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
+10 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
 `initramfs-busybox`, `kernel-replace`.
 
 ### Documentation

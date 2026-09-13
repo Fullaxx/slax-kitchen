@@ -1,0 +1,35 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: initramfs-add-binary
+  summary: Add a static binary or script to the initramfs, for use during early boot
+  tags: [initramfs, template]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+steps:
+  # The initramfs runs before any bundle is mounted, so anything you want during
+  # find_data, persistent_changes or a preinit hook has to live here rather than in a
+  # bundle. Two hard constraints, both checked and reported by the verb:
+  #
+  #   static   there is no dynamic loader in the initramfs. A dynamically linked
+  #            binary fails with "not found" naming the interpreter, not the binary.
+  #   i386     all eight shipped binaries are i386 even on the 64-bit images, which is
+  #            why the kernel needs CONFIG_IA32_EMULATION. An x86-64 binary works, but
+  #            only on the two 64-bit targets; i386 serves all four.
+  #
+  # This ships a shell script rather than a binary so the recipe is self-contained and
+  # testable -- swap in `src:` pointing at your own static binary.
+  - verb: initramfs.files
+    files:
+      - dest: /bin/slax-kitchen-hello
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          # Added by the slax-kitchen initramfs-add-binary recipe.
+          # Runnable from a `debug` shell: /init drops to one at six points.
+          echo "slax-kitchen: initramfs addition present"
+          echo "  module dir: $(ls -1d /lib/modules/* 2>/dev/null)"
+          echo "  busybox   : $(busybox 2>&1 | head -1)"

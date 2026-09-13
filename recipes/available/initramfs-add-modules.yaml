@@ -1,0 +1,32 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: initramfs-add-modules
+  summary: Promote kernel modules from a bundle into the initramfs, for early-boot hardware
+  tags: [initramfs, hardware, template]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+steps:
+  # find_data cannot mount what the kernel cannot see, and the initramfs carries only a
+  # fraction of what the ISO ships: 301 modules against 4,766 in 01-core.sb on 64-bit
+  # Debian. initramfs_create picks by DIRECTORY -- drivers/net/ethernet, drivers/usb,
+  # drivers/nvme -- so whole classes are absent from early boot while sitting unused in
+  # a bundle. "Slax boots on this machine but cannot find its own data" is usually this.
+  #
+  # from_bundle promotes them, so nothing external is needed and the modules are
+  # guaranteed to match the running kernel's ABI.
+  #
+  # Note many obvious candidates are NOT modules at all: dm-mod, md-mod, raid1, raid456
+  # and the virtio_* drivers are compiled into the Slax kernel, so they need no
+  # promotion and cannot be found by this verb.
+  #
+  # nbd is the demonstration here because it is real, small, dependency-free and
+  # genuinely absent from the initramfs. Replace the list with what your hardware needs.
+  - verb: initramfs.modules
+    from_bundle: 01-core
+    subdir: kernel/extra
+    modules:
+      - nbd

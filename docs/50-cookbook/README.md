@@ -2,7 +2,7 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Eight recipes ship today**, all verified by booting the result. The plan lists roughly 32; the
+**Ten recipes ship today**, all verified by booting the result. The plan lists roughly 32; the
 other two thirds do not exist yet, and this index says so rather than implying a fuller shelf than
 there is. [Project status](../00-overview/status.md) has the honest ledger.
 
@@ -25,6 +25,16 @@ kitchen build <profile>             # fetch -> unpack -> apply* -> pack -> test
 The first two fix real gaps in every stock image, and together produce one file that boots four
 ways: BIOS optical, UEFI optical, BIOS `dd`'d stick, UEFI `dd`'d stick.
 
+### initramfs
+
+| | | priv |
+|---|---|---|
+| [`initramfs-add-binary`](initramfs-add-binary.md) | put a static binary or script into early boot | ○ |
+| [`initramfs-add-modules`](initramfs-add-modules.md) | promote drivers from a bundle so `find_data` can see your disk | ○ |
+
+Early boot runs before any bundle is mounted, so anything `find_data` or a `debug` shell needs has
+to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
+
 ### Software
 
 | | | priv |
@@ -43,6 +53,7 @@ Cheapest first. Prefer the first one that solves your problem:
 
 | you want | use | cost |
 |---|---|---|
+| Slax to see a disk it currently cannot find | [`initramfs-add-modules`](initramfs-add-modules.md) | one repack, ~10 KiB |
 | a config file, a script, an ssh key on the live system | [`rootcopy-overlay`](rootcopy-overlay.md) | **nothing** — copied in at boot |
 | extra software | [`add-packages`](add-packages.md) | one `mksquashfs`, ~450 KiB |
 | a smaller image | [`remove-chromium`](remove-chromium.md) | one bundle deleted |
@@ -98,6 +109,6 @@ directions.
 ## Not written yet
 
 The larger gaps, roughly in the order they would be useful: `branding`, `ssh-server`, `boot-tools`
-(`hdt.c32`, `memdisk`, `chain.c32`), `bundle-from-dir`, `initramfs-add-modules`, `firmware-refresh`
+(`hdt.c32`, `memdisk`, `chain.c32`), `bundle-from-dir`, `firmware-refresh`
 (the stock `01-firmware` contains **no GPU firmware** on either flavour), `initramfs-busybox` (the
 shipped busybox is from 2017), and `kernel-replace`.
