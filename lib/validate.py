@@ -14,6 +14,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCHEMA_FOR_KIND = {
     "Recipe": "recipe.schema.json",
     "Profile": "profile.schema.json",
+    "Sources": "sources.schema.json",
+    "UpstreamBaseline": "upstream-baseline.schema.json",
 }
 
 
@@ -73,6 +75,17 @@ def validate_file(path: str) -> list[str]:
         problems.append(f"{where}: {err.message}")
 
     # Cross-checks the schema cannot express.
+    if kind == "Sources":
+        # A layout referencing a field no target defines would only fail at download
+        # time, in CI, after a long apt install.
+        import string
+        fields = {f for _, f, _, _ in string.Formatter().parse(
+            " ".join(m["layout"] for m in doc.get("mirrors", []))) if f}
+        for name, spec in (doc.get("targets") or {}).items():
+            missing = fields - set(spec)
+            if missing:
+                problems.append(f"target {name} has no {', '.join(sorted(missing))} "
+                                "but a mirror layout references it")
     if kind == "Recipe":
         stem = os.path.basename(path).rsplit(".", 1)[0]
         name = doc.get("metadata", {}).get("name")

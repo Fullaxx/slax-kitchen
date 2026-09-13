@@ -1,0 +1,55 @@
+name: upstream-watch
+
+# Slax has shipped nothing since 2023-10-10 and linux-live has not been touched since
+# 2024-11-14, so any movement here is genuinely notable. Mirrors also rot silently --
+# slackonly.com went NXDOMAIN and broke slackpkg on every stock Slax image.
+on:
+  schedule:
+    - cron: "17 6 * * 1"      # Mondays, 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet PyYAML
+      - id: watch
+        run: |
+          set +e
+          ./ci/upstream-watch.sh | tee watch.txt
+          echo "changed=$?" >> "$GITHUB_OUTPUT"
+      - name: open an issue when upstream moves
+        if: steps.watch.outputs.changed != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('watch.txt', 'utf8');
+            const title = 'upstream moved: review compat fingerprints';
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'upstream-watch',
+            });
+            const text = [
+              '`ci/upstream-watch.sh` detected a change.',
+              '', '```', body.trim(), '```', '',
+              'Adoption procedure: `docs/70-compat/fingerprints.md`.',
+              'In short: `kitchen probe` each ISO, regenerate the fingerprint,',
+              'run `kitchen selftest ci`, then fix whatever breaks.',
+            ].join('\n');
+            if (open.data.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: open.data[0].number, body: text,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body: text, labels: ['upstream-watch'],
+              });
+            }

@@ -1,0 +1,142 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------- gates --
+  # Fast, no ISOs, no network beyond apt. Runs the exact same scripts the local
+  # pre-commit hook runs -- ci/checks/*.sh is the single implementation, so a hook
+  # can never drift from CI.
+  gates:
+    name: commit gates
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true          # 20-vendor-pristine needs the submodule present
+      - name: install lint tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck yamllint
+          pip install --quiet PyYAML jsonschema
+      - run: ./ci/run-checks.sh ci
+
+  # ----------------------------------------------------------------- build --
+  # One job per supported target. This is what catches a recipe that silently only
+  # works on 64-bit Debian.
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    needs: gates
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: debian-64bit-12.2.0
+            iso: slax-64bit-debian-12.2.0.iso
+          - target: debian-32bit-12.2.0
+            iso: slax-32bit-debian-12.2.0.iso
+          - target: slackware-64bit-15.0.4
+            iso: slax-64bit-slackware-15.0.4.iso
+          - target: slackware-32bit-15.0.4
+            iso: slax-32bit-slackware-15.0.4.iso
+    steps:
+      - uses: actions/checkout@v4
+        with: {submodules: true}
+
+      - name: install toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            squashfs-tools cpio xz-utils xorriso genisoimage \
+            syslinux syslinux-common syslinux-utils isolinux extlinux \
+            mtools dosfstools grub-efi-amd64-bin grub-common
+          pip install --quiet PyYAML jsonschema
+
+      # The base ISOs are 416-476 MiB each and never change -- upstream has not shipped
+      # a release since 2023 -- so cache on the content hash and download at most once.
+      - name: cache base ISO
+        id: cache-iso
+        uses: actions/cache@v4
+        with:
+          path: isos/${{ matrix.iso }}
+          key: iso-${{ matrix.target }}-${{ hashFiles('compat/sources.yaml') }}
+
+      - name: fetch base ISO
+        if: steps.cache-iso.outputs.cache-hit != 'true'
+        run: ./kitchen fetch ${{ matrix.target }}
+
+      - name: verify base ISO
+        run: ./kitchen fetch ${{ matrix.target }} --verify-only
+
+      # A stock ISO must match its committed fingerprint. If this fails, either upstream
+      # republished something or the fingerprint is wrong -- both worth knowing.
+      - name: probe stock ISO
+        run: ./kitchen probe isos/${{ matrix.iso }}
+
+      # Apply every compatible recipe individually, so one failure names one recipe.
+      # Recipes that need a chroot are run under sudo; runners allow it.
+      - name: recipe matrix
+        run: ./ci/recipe-matrix.sh ${{ matrix.target }} isos/${{ matrix.iso }}
+
+      - name: round-trip fidelity
+        run: ./ci/roundtrip.sh isos/${{ matrix.iso }}
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: logs-${{ matrix.target }}
+          path: |
+            out/**/*.log
+            ci-logs/
+          if-no-files-found: ignore
+
+  # ------------------------------------------------------------------ boot --
+  # Tier B. GitHub runners have no /dev/kvm, so QEMU falls back to TCG and a boot to
+  # livekit takes minutes rather than seconds. Kept to one target and off the
+  # per-push path for that reason.
+  boot:
+    name: boot test (TCG)
+    runs-on: ubuntu-24.04
+    needs: build
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'boot-test')
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: {submodules: true}
+      - name: install toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            squashfs-tools cpio xz-utils xorriso genisoimage \
+            syslinux syslinux-common syslinux-utils isolinux \
+            mtools dosfstools grub-efi-amd64-bin grub-common \
+            qemu-system-x86 ovmf
+          pip install --quiet PyYAML jsonschema
+      - uses: actions/cache@v4
+        with:
+          path: isos/slax-64bit-debian-12.2.0.iso
+          key: iso-debian-64bit-12.2.0-${{ hashFiles('compat/sources.yaml') }}
+      - run: ./kitchen fetch debian-64bit-12.2.0
+      - run: ./kitchen build example --keep
+      - name: BIOS and UEFI boot
+        run: |
+          ./kitchen test out/slax-example-12.2.0.iso --bios --seconds 120
+          ./kitchen test out/slax-example-12.2.0.iso --uefi --seconds 120
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boot-evidence
+          path: out/boot-tests/
+          if-no-files-found: warn

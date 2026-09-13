@@ -6,7 +6,7 @@
 have yamllint || warn "yamllint not installed - skipping lint half"
 [ -d "$REPO_ROOT/schema" ] || { note "schema/ not present yet - skipping"; exit 0; }
 
-check_files_nl | grep -E '^(recipes|profiles|compat)/.*\.(ya?ml)$' > /tmp/.kitchen-yaml.$$ || true
+check_files_nl | grep -E '^(recipes|profiles|compat|schema)/.*\.(ya?ml)$' > /tmp/.kitchen-yaml.$$ || true
 
 if [ -s /tmp/.kitchen-yaml.$$ ]; then
     if have yamllint; then

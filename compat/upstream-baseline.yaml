@@ -1,0 +1,18 @@
+# What upstream looked like when we last checked. ci/upstream-watch.sh compares against
+# this and fails when something moves, which is the signal to re-run `kitchen probe`,
+# regenerate fingerprints and work through docs/70-compat/.
+#
+# Upstream has shipped nothing since 2023-10-10 and the linux-live repo has not been
+# touched since 2024-11-14, so a change here is genuinely notable.
+apiVersion: slax-kitchen/v1
+kind: UpstreamBaseline
+linux_live_head: "9825e937570072a015e2e35ad3330ead9055d21d"
+linux_live_date: "2024-11-14"
+# Slax ships TWO current releases, one per flavour, published the same day. The
+# changelog lists both, so a single "latest version" string is meaningless here --
+# the watch compares the whole set and reports anything not in it.
+latest_releases:
+  - "12.2.0"     # Debian-based
+  - "15.0.4"     # Slackware-based
+latest_release_date: "2023-10-10"
+checked: "2026-09-13"

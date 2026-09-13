@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Fullaxx/slax-kitchen/schema/sources.schema.json",
+  "title": "slax-kitchen base-ISO sources",
+  "type": "object",
+  "required": ["apiVersion", "kind", "mirrors", "targets"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "slax-kitchen/v1" },
+    "kind": { "const": "Sources" },
+    "mirrors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "base", "layout"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "base": { "type": "string", "pattern": "^https?://" },
+          "layout": { "type": "string",
+                      "description": "python format string over the target's fields" }
+        }
+      }
+    },
+    "targets": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^(debian|slackware)-(32|64)bit-[0-9.]+$" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["file", "tree", "size", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "file": { "type": "string", "pattern": "\\.iso$" },
+          "tree": { "type": "string" },
+          "size": { "type": "integer", "minimum": 1 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    }
+  }
+}

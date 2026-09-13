@@ -1,0 +1,39 @@
+# Where to download base ISOs. Curated by hand and kept SEPARATE from the generated
+# fingerprints in this directory, so `kitchen fingerprint` regenerating one cannot
+# clobber these URLs.
+#
+# The official download link (slax.org/download-slax.php) is not usable for automation:
+# it 302s to a one-shot token URL on a third-party host. The author's own mirror serves
+# the same files at stable, versioned paths -- verified byte-for-byte identical.
+#
+# sha256 and size are the authority. `kitchen fetch` verifies both and refuses anything
+# that does not match, so an untrustworthy mirror cannot poison a build.
+apiVersion: slax-kitchen/v1
+kind: Sources
+
+mirrors:
+  - name: ftp.linux.cz
+    base: https://ftp.linux.cz/pub/linux/slax
+    layout: "{tree}/{file}"
+
+targets:
+  debian-64bit-12.2.0:
+    file: slax-64bit-debian-12.2.0.iso
+    tree: Slax-Debian-12.x
+    size: 435853312
+    sha256: 61d9fdcc006938d6fd6f231e22d8af926ae8f48fdf0487b8010e69f3bd17cf70
+  debian-32bit-12.2.0:
+    file: slax-32bit-debian-12.2.0.iso
+    tree: Slax-Debian-12.x
+    size: 436060160
+    sha256: 03b85cd259883f6781b3a3f30ed409b0b6a542b8f510094594c7600bd94e546b
+  slackware-64bit-15.0.4:
+    file: slax-64bit-slackware-15.0.4.iso
+    tree: Slax-Slackware-15.x
+    size: 476710912
+    sha256: f5c26dfc275bbdccbaf8d3b90853ad1f3322f09c524c871dd3926356d2224a46
+  slackware-32bit-15.0.4:
+    file: slax-32bit-slackware-15.0.4.iso
+    tree: Slax-Slackware-15.x
+    size: 470161408
+    sha256: c68913707edab9ffd0b0797f73010ebde21d625632ee2d37fc2d00b81fc81015

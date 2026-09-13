@@ -36,7 +36,7 @@ ${B}COMMANDS${O}
   selftest [stage]           run the commit gates (stage: pre-commit|pre-push|ci)
   probe <iso>                match an ISO against compat/ and report what differs
   fingerprint <iso> [-o F]   generate a compat fingerprint
-  fetch <flavour> <arch> <ver>   download + verify a base ISO into isos/
+  fetch [target|--all]       download + verify a base ISO into isos/ (no args: list)
   unpack <iso> [-o DIR]      explode an ISO into a work tree      (default: ./work)
   apply <recipe>... [-w DIR] apply recipes to a work tree (-n for a dry run)
   validate <file.yaml>...    check a recipe or profile against its schema
@@ -183,12 +183,13 @@ case "$cmd" in
     probe)         exec "$REPO_ROOT/lib/probe.py" "$@" ;;
     apply)         exec "$REPO_ROOT/lib/apply.py" "$@" ;;
     validate)      exec "$REPO_ROOT/lib/validate.py" "$@" ;;
+    fetch)         exec "$REPO_ROOT/lib/fetch.py" "$@" ;;
     fingerprint)   exec "$REPO_ROOT/lib/fingerprint.py" "$@" ;;
     unpack)        kitchen_unpack "$@" ;;
     pack)          kitchen_pack "$@" ;;
     build)         kitchen_build "$@" ;;
     test)          kitchen_test "$@" ;;
-    fetch|shell|diff|upstream-diff)
+    shell|diff|upstream-diff)
         die "'$cmd' is not implemented yet -- see INITIAL_TASKS.DNC.md (T-2xx)" ;;
     *)             usage; die "unknown command: $cmd" ;;
 esac
