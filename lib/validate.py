@@ -7,6 +7,7 @@ a malformed recipe should fail at the gate, not halfway through mutating a work 
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -14,6 +15,22 @@ SCHEMA_FOR_KIND = {
     "Recipe": "recipe.schema.json",
     "Profile": "profile.schema.json",
 }
+
+
+def _subst(obj, vars_: dict):
+    """Same {{name}} substitution apply.py performs, so validation sees what will run.
+
+    Unknown names are left intact rather than raising: apply.py is the place that
+    reports them, with the step number.
+    """
+    if isinstance(obj, str):
+        return re.sub(r"\{\{([^}]+)\}\}",
+                      lambda m: vars_.get(m.group(1).strip(), m.group(0)), obj)
+    if isinstance(obj, dict):
+        return {k: _subst(v, vars_) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_subst(v, vars_) for v in obj]
+    return obj
 
 
 def validate_file(path: str) -> list[str]:
@@ -30,6 +47,12 @@ def validate_file(path: str) -> list[str]:
         return [f"not valid YAML: {e}"]
     if not isinstance(doc, dict):
         return ["top level must be a mapping"]
+
+    # Validate the RESOLVED document. A recipe's vars are substituted into step strings
+    # at apply time, so validating the raw form would reject a perfectly good
+    # bundle: "{{bundle}}" against the NN-name pattern the verb actually requires.
+    if isinstance(doc.get("vars"), dict):
+        doc = _subst(doc, {k: str(v) for k, v in doc["vars"].items()})
 
     kind = doc.get("kind")
     if kind == "Fingerprint":

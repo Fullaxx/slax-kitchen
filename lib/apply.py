@@ -432,6 +432,223 @@ def v_boot_uefi(ctx: Ctx, step: dict) -> None:
     ctx.hint("uefi", True)
 
 
+
+# Paths that must never enter an output bundle. Mirrors the EXCLUDE list in upstream's
+# /usr/bin/savechanges, plus the scaffolding we add for the build itself. Getting this
+# wrong ships a bundle that clobbers the live system's /etc/fstab or /etc/resolv.conf.
+BUNDLE_EXCLUDE = re.compile(
+    r"^(boot|dev|mnt|proc|run|sys|tmp)(/|$)"
+    r"|^var/(cache|backups|tmp|log)/"
+    r"|^var/lib/apt/"
+    r"|^var/lib/dpkg/(lock|lock-frontend|triggers/Lock)$"
+    r"|^etc/(resolv\.conf|mtab|fstab)$"
+    r"|^usr/sbin/policy-rc\.d$"
+    r"|^etc/apt/apt\.conf\.d/00kitchen$"
+    r"|^etc/ld\.so\.cache$"
+    r"|^\.wh\."
+)
+
+# livekit's change_root() creates these at boot; a bundle does not contain them, so a
+# chroot build has to make them or apt dies with "Unable to mkstemp /tmp/...".
+RUNTIME_DIRS = ["boot", "dev", "proc", "sys", "tmp", "media", "mnt", "run"]
+RUNTIME_NODES = [("null", 1, 3), ("zero", 1, 5), ("full", 1, 7), ("random", 1, 8),
+                 ("urandom", 1, 9), ("tty", 5, 0), ("console", 5, 1)]
+
+
+def _manifest(root: str) -> dict:
+    """Snapshot every entry as (type, size, mtime_ns, mode).
+
+    Size+mtime+mode, not just names: a filename-only diff misses MODIFIED files, and the
+    most important modified file is var/lib/dpkg/status. Ship a bundle without it and the
+    new binaries are invisible to the package database. Upstream's savechanges never hits
+    this because aufs copy-up puts modified files physically in the changes layer.
+    """
+    out = {}
+    rl = len(root.rstrip("/")) + 1
+    for dirpath, dirnames, filenames in os.walk(root):
+        for n in list(dirnames) + filenames:
+            p = os.path.join(dirpath, n)
+            try:
+                st = os.lstat(p)
+            except OSError:
+                continue
+            out[p[rl:]] = (os.path.isdir(p) and not os.path.islink(p),
+                           st.st_size, st.st_mtime_ns, st.st_mode)
+    return out
+
+
+def _prepare_chroot(root: str) -> None:
+    for d in RUNTIME_DIRS:
+        os.makedirs(os.path.join(root, d), exist_ok=True)
+    os.chmod(os.path.join(root, "tmp"), 0o1777)
+    for name, major, minor in RUNTIME_NODES:
+        dev = os.path.join(root, "dev", name)
+        if not os.path.exists(dev):
+            try:
+                os.mknod(dev, 0o600 | 0o020000, os.makedev(major, minor))
+                os.chmod(dev, 0o666)
+            except OSError as e:
+                raise RuntimeError(
+                    f"cannot create {dev}: {e}. bundle.packages needs CAP_MKNOD.") from e
+    # Stop maintainer scripts from trying to start services in the chroot.
+    prc = os.path.join(root, "usr", "sbin", "policy-rc.d")
+    os.makedirs(os.path.dirname(prc), exist_ok=True)
+    with open(prc, "w") as f:
+        f.write("#!/bin/sh\nexit 101\n")
+    os.chmod(prc, 0o755)
+    # The bundle's resolv.conf points at 8.8.8.8, which may not be reachable.
+    if os.path.isfile("/etc/resolv.conf"):
+        shutil.copy2("/etc/resolv.conf", os.path.join(root, "etc", "resolv.conf"))
+
+
+def _in_chroot(root: str, argv: list[str], env: dict | None = None) -> subprocess.CompletedProcess:
+    e = dict(os.environ)
+    e.update({"DEBIAN_FRONTEND": "noninteractive", "LC_ALL": "C", "LANG": "C",
+              "PATH": "/usr/sbin:/usr/bin:/sbin:/bin"})
+    if env:
+        e.update(env)
+    return subprocess.run(["chroot", root] + argv, capture_output=True, text=True, env=e)
+
+
+def _detect_flavour(tree: str) -> str:
+    mods = os.path.join(tree, "slax", "modules")
+    for n in sorted(os.listdir(mods)) if os.path.isdir(mods) else []:
+        if n.startswith("01-core"):
+            r = subprocess.run(["unsquashfs", "-l", os.path.join(mods, n)],
+                               capture_output=True, text=True)
+            if "slackware-version" in r.stdout:
+                return "slackware"
+            if "debian_version" in r.stdout:
+                return "debian"
+    return "debian"
+
+
+@verb("bundle.packages")
+def v_bundle_packages(ctx: Ctx, step: dict) -> None:
+    """Install distro packages into a NEW bundle, built from the ISO's own bundles.
+
+    01-core.sb IS a complete Debian 12 / Slackware 15 root filesystem with apt / pkgtools
+    already in it, so no debootstrap and no external base image is needed -- and the
+    result is guaranteed to match the shipped kernel's ABI.
+
+    Needs real chroot (CAP_SYS_CHROOT + CAP_MKNOD). proot is NOT an acceptable
+    substitute: proot 5.1.0 does not translate statx(), so stat escapes the rootfs and
+    reads the host filesystem, silently and selectively. See docs/40-workflow/edit-bundles.md.
+    """
+    for tool in ("unsquashfs", "mksquashfs", "chroot"):
+        if not shutil.which(tool):
+            raise RuntimeError(f"bundle.packages: {tool} not installed")
+
+    packages = step.get("packages") or []
+    if not packages:
+        raise RuntimeError("bundle.packages: no packages listed")
+    out_name = step.get("bundle") or "07-packages.sb"
+    if not out_name.endswith(".sb"):
+        out_name += ".sb"
+    if not re.match(r"^\d\d-", out_name):
+        raise RuntimeError(f"bundle.packages: bundle name must start with NN- "
+                           f"(load order is the numeric prefix); got {out_name!r}")
+
+    mods = ctx.p("slax", "modules")
+    stack = step.get("from") or ["01-core"]
+    flavour = step.get("flavour") or _detect_flavour(ctx.tree)
+
+    if ctx.dry:
+        ctx.say(f"would install {', '.join(packages)} into {out_name} "
+                f"(flavour={flavour}, stack={'+'.join(stack)})")
+        return
+
+    import tempfile
+    build = tempfile.mkdtemp(prefix="kitchen-pkg-", dir=os.path.dirname(os.path.abspath(ctx.work)))
+    root = os.path.join(build, "root")
+    try:
+        # 1. Stack the source bundles in numeric order so later ones win, exactly as
+        #    the union does at boot.
+        os.makedirs(root, exist_ok=True)
+        picked = []
+        for want in stack:
+            hit = next((n for n in sorted(os.listdir(mods))
+                        if n.startswith(want) and n.endswith(".sb")), None)
+            if hit is None:
+                raise RuntimeError(f"bundle.packages: no bundle matching {want!r} in slax/modules")
+            picked.append(hit)
+        for n in picked:
+            r = subprocess.run(["unsquashfs", "-f", "-n", "-q", "-d", root,
+                                os.path.join(mods, n)], capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"unsquashfs {n}: {r.stderr.strip()[:300]}")
+        ctx.say(f"unpacked {' + '.join(picked)} as the build root")
+
+        # 2. Make it a usable root filesystem (see RUNTIME_DIRS).
+        _prepare_chroot(root)
+
+        # 3. Snapshot, install, snapshot.
+        before = _manifest(root)
+        if flavour == "debian":
+            with open(os.path.join(root, "etc/apt/apt.conf.d/00kitchen"), "w") as f:
+                f.write('APT::Sandbox::User "root";\nAcquire::Retries "3";\n')
+            if step.get("apt", {}).get("update", True):
+                r = _in_chroot(root, ["apt-get", "update", "-qq"])
+                if r.returncode != 0:
+                    raise RuntimeError("apt-get update failed:\n" + r.stderr.strip()[-1500:])
+            argv = ["apt-get", "install", "-y", "-qq"]
+            if step.get("apt", {}).get("no_recommends", True):
+                argv.append("--no-install-recommends")
+            r = _in_chroot(root, argv + list(packages))
+        elif flavour == "slackware":
+            # slackpkg + slackpkg+ are preconfigured in Slax's 01-core.
+            r = _in_chroot(root, ["slackpkg", "-batch=on", "-default_answer=y", "update"])
+            if r.returncode != 0:
+                raise RuntimeError("slackpkg update failed:\n" + r.stderr.strip()[-1500:])
+            r = _in_chroot(root, ["slackpkg", "-batch=on", "-default_answer=y",
+                                  "install"] + list(packages))
+        else:
+            raise RuntimeError(f"bundle.packages: unknown flavour {flavour!r}")
+        if r.returncode != 0:
+            raise RuntimeError(f"package install failed (exit {r.returncode}):\n"
+                               + (r.stderr.strip() or r.stdout.strip())[-1500:])
+        after = _manifest(root)
+
+        # 4. Delta = added OR modified. Names alone are not enough.
+        added = [k for k in after if k not in before]
+        modified = [k for k in after if k in before and after[k] != before[k]]
+        keep = sorted(k for k in added + modified if not BUNDLE_EXCLUDE.search(k))
+        ctx.say(f"delta: {len(added)} added, {len(modified)} modified, "
+                f"{len(keep)} kept after exclusions")
+        if not keep:
+            raise RuntimeError("bundle.packages: nothing to package "
+                               "(were the packages already present in the base?)")
+
+        # 5. Stage just the delta, preserving parent directory metadata.
+        stage = os.path.join(build, "stage")
+        for rel in keep:
+            src, dst = os.path.join(root, rel), os.path.join(stage, rel)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            if os.path.islink(src):
+                lnk = os.readlink(src)
+                if not os.path.lexists(dst):
+                    os.symlink(lnk, dst)
+            elif os.path.isdir(src):
+                os.makedirs(dst, exist_ok=True)
+                shutil.copystat(src, dst)
+            else:
+                shutil.copy2(src, dst)
+                st = os.lstat(src)
+                os.chown(dst, st.st_uid, st.st_gid)
+
+        # 6. Build with upstream's exact parameters (livekitlib create_bundle / dir2sb).
+        target = os.path.join(mods, out_name)
+        r = subprocess.run(["mksquashfs", stage, target, "-comp", "xz", "-b", "1024K",
+                            "-Xbcj", "x86", "-always-use-fragments", "-noappend"],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"mksquashfs failed: {r.stderr.strip()[:300]}")
+        ctx.say(f"built slax/modules/{out_name} "
+                f"({os.path.getsize(target) // 1024} KiB, {len(keep)} paths)")
+    finally:
+        shutil.rmtree(build, ignore_errors=True)
+
+
 # ------------------------------------------------------------- engine --------
 
 def load_recipe(path: str) -> dict:

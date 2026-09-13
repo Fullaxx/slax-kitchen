@@ -1,0 +1,34 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: add-packages
+  summary: Install extra distro packages into a new bundle (the template recipe)
+  tags: [bundle, packages, template]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: chroot
+vars:
+  bundle: 07-extras
+steps:
+  # Copy this recipe and change `packages`. The build root is stacked from the ISO's own
+  # bundles, so there is no debootstrap and no external base image, and the result is
+  # guaranteed to match the shipped kernel's ABI.
+  #
+  # The bundle number matters: load order is the numeric prefix and HIGHER WINS, because
+  # union_append_bundles inserts each branch at aufs index 1. Stock bundles occupy 01-06
+  # and savechanges writes 99-changes-N.sb, so 07 overrides everything stock while still
+  # losing to a user's saved session.
+  #
+  # Needs real chroot. proot cannot be used -- it does not translate statx() and silently
+  # reads the host filesystem instead. See docs/40-workflow/edit-bundles.md.
+  - verb: bundle.packages
+    bundle: "{{bundle}}"
+    from: [01-core]
+    packages:
+      - tmux
+      - ncdu
+    apt:
+      update: true
+      no_recommends: true
