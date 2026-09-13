@@ -32,6 +32,7 @@ the resulting ISO in QEMU and reading the console.
 | `uefi-bootable` | ✅ **booted** — OVMF loads GRUB 2.12 from our ESP, `efifb` comes up, livekit mounts all bundles |
 | `isohybrid` | ✅ MBR + GPT + type-`0xEF` partition verified in the image |
 | `serial-console` | ✅ entry present in both configs |
+| `memtest86plus` | ✅ **booted on BIOS and UEFI** — Memtest86+ 8.10 selected from each menu and running |
 | `add-packages` | ✅ **booted** on Debian — bundle mounts last, `Live Kit done, starting slax` |
 
 The same ISO boots on **both** BIOS and UEFI after `uefi-bootable` + `isohybrid`, which stock Slax
@@ -92,8 +93,8 @@ clear message naming what *is* available, rather than silently skipping.
 
 ### Recipes
 
-4 of the ~32 planned. Missing notably: `memtest86plus`, `remove-bundle`, `rootcopy-overlay`,
-`branding`, `ssh-server`, `initramfs-busybox`.
+5 of the ~32 planned. Missing notably: `remove-bundle`, `rootcopy-overlay`, `branding`,
+`ssh-server`, `initramfs-busybox`.
 
 ### Documentation
 

@@ -100,25 +100,71 @@ def subst(obj, vars_: dict):
 
 # ------------------------------------------------------------------ verbs ----
 
+def _extract_member(archive: str, member: str, dest: str) -> None:
+    """Pull one file out of a .zip or .tar.* without unpacking the rest.
+
+    Type is detected from the CONTENT, not the filename: a download lands in a temp file
+    named after its destination (memtest.bin.part), so a name-based check would send a
+    zip to the tar reader.
+    """
+    with open(archive, "rb") as fh:
+        magic = fh.read(6)
+    if magic[:4] in (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"):
+        import zipfile
+        with zipfile.ZipFile(archive) as z:
+            names = z.namelist()
+            hit = member if member in names else next(
+                (n for n in names if os.path.basename(n) == member), None)
+            if hit is None:
+                raise RuntimeError(f"{member!r} not in archive (has: {', '.join(names[:10])})")
+            with z.open(hit) as src, open(dest, "wb") as out:
+                shutil.copyfileobj(src, out)
+        return
+    import tarfile
+    with tarfile.open(archive) as t:
+        names = t.getnames()
+        hit = member if member in names else next(
+            (n for n in names if os.path.basename(n) == member), None)
+        if hit is None:
+            raise RuntimeError(f"{member!r} not in archive (has: {', '.join(names[:10])})")
+        f = t.extractfile(hit)
+        if f is None:
+            raise RuntimeError(f"{member!r} is not a regular file")
+        with open(dest, "wb") as out:
+            shutil.copyfileobj(f, out)
+
+
 @verb("boot.payload")
 def v_boot_payload(ctx: Ctx, step: dict) -> None:
-    """Put a file into slax/boot/ -- a memtest binary, a .c32 module, an EFI blob."""
+    """Put a file into slax/boot/ -- a memtest binary, a .c32 module, an EFI blob.
+
+    `extract:` pulls a single member out of a downloaded .zip/.tar.*, because upstreams
+    often publish only archives. The sha256 is checked against the ARCHIVE, which is what
+    the publisher actually signs off on, before anything is taken out of it.
+    """
     dest = ctx.p(step["dest"])
     src = step.get("src")
     want = step.get("sha256")
+    member = step.get("extract")
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     if ctx.dry:
-        ctx.say(f"would install {step['dest']} from {src}")
+        via = f" (extract {member})" if member else ""
+        ctx.say(f"would install {step['dest']} from {src}{via}")
         return
     if src and re.match(r"^https?://", src):
         tmp = dest + ".part"
-        with urllib.request.urlopen(src, timeout=60) as r, open(tmp, "wb") as f:
+        with urllib.request.urlopen(src, timeout=120) as r, open(tmp, "wb") as f:
             shutil.copyfileobj(r, f)
         got = sha256(tmp)
         if want and got != want:
             os.unlink(tmp)
             raise RuntimeError(f"{step['dest']}: sha256 mismatch\n  want {want}\n  got  {got}")
-        os.replace(tmp, dest)
+        if member:
+            _extract_member(tmp, member, dest)
+            os.unlink(tmp)
+            ctx.say(f"extracted {member} from {os.path.basename(src)}")
+        else:
+            os.replace(tmp, dest)
     elif src:
         local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
         if not os.path.isfile(local):
@@ -126,7 +172,10 @@ def v_boot_payload(ctx: Ctx, step: dict) -> None:
         got = sha256(local)
         if want and got != want:
             raise RuntimeError(f"{step['dest']}: sha256 mismatch\n  want {want}\n  got  {got}")
-        shutil.copy2(local, dest)
+        if member:
+            _extract_member(local, member, dest)
+        else:
+            shutil.copy2(local, dest)
     if "mode" in step:
         os.chmod(dest, int(step["mode"], 8))
     ctx.say(f"installed {step['dest']} ({os.path.getsize(dest)} bytes)")

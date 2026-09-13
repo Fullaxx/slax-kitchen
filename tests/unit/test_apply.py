@@ -82,8 +82,40 @@ def test_subst():
         pass
 
 
+def test_extract_member():
+    """Archive type must come from CONTENT, not filename.
+
+    A download lands in a temp file named after its destination (memtest.bin.part), so a
+    name-based check sends a zip to the tar reader and the whole step fails.
+    """
+    import tarfile
+    import tempfile
+    import zipfile
+    d = tempfile.mkdtemp()
+    z = os.path.join(d, "a.part")
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("dir/hello.txt", "ZIP-OK")
+    apply._extract_member(z, "hello.txt", os.path.join(d, "o1"))
+    check("extract from zip named .part", open(os.path.join(d, "o1")).read(), "ZIP-OK")
+
+    t = os.path.join(d, "b.part")
+    src = os.path.join(d, "h2.txt")
+    open(src, "w").write("TAR-OK")
+    with tarfile.open(t, "w:gz") as tf:
+        tf.add(src, arcname="x/h2.txt")
+    apply._extract_member(t, "h2.txt", os.path.join(d, "o2"))
+    check("extract from tar.gz named .part", open(os.path.join(d, "o2")).read(), "TAR-OK")
+
+    try:
+        apply._extract_member(z, "nope.txt", os.path.join(d, "o3"))
+        FAILURES.append("extract: missing member should raise")
+    except RuntimeError:
+        pass
+
+
 def main():
-    for fn in [test_bundle_exclude, test_slackware_pkgname, test_when_guard, test_subst]:
+    for fn in [test_bundle_exclude, test_slackware_pkgname, test_when_guard, test_subst,
+               test_extract_member]:
         fn()
     if FAILURES:
         for f in FAILURES:

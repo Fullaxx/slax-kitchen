@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -60,7 +61,25 @@ class Qmp:
         self.s.close()
 
 
-def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048) -> dict:
+def send_keys(q: "Qmp", spec: str) -> None:
+    """Drive a boot menu. spec is comma-separated qcodes, optionally with a delay:
+    'down,down,ret' or '2s,down,ret' -- an Ns token waits before the next key.
+
+    Needed because a bootloader menu is the one thing serial cannot reach: isolinux and
+    GRUB draw to the video console, so selecting a non-default entry means synthesising
+    real keystrokes.
+    """
+    for tok in [t.strip() for t in spec.split(",") if t.strip()]:
+        m = re.fullmatch(r"(\d+(?:\.\d+)?)s", tok)
+        if m:
+            time.sleep(float(m.group(1)))
+            continue
+        q.cmd("send-key", keys=[{"type": "qcode", "data": tok}])
+        time.sleep(0.25)
+
+
+def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
+         keys: str | None = None) -> dict:
     os.makedirs(outdir, exist_ok=True)
     tag = f"{os.path.basename(iso).rsplit('.', 1)[0]}-{mode}"
     serial = os.path.join(outdir, tag + ".serial.log")
@@ -88,6 +107,8 @@ def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048) -> dic
               "kvm": "-enable-kvm" in cmd}
     try:
         q = Qmp(qmp)
+        if keys:
+            send_keys(q, keys)
         time.sleep(seconds)
         # QEMU writes PPM unless told otherwise -- the filename extension is NOT
         # enough, and a .png that is really a PPM silently breaks every image reader
@@ -121,12 +142,13 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--out", default="out/boot-tests")
     ap.add_argument("--expect", action="append", default=[],
                     help="string that must appear in the serial log")
+    ap.add_argument("--keys", help="menu keystrokes, e.g. '6s,down,down,ret'")
     a = ap.parse_args(argv[1:])
     if not os.path.isfile(a.iso):
         print(f"no such file: {a.iso}", file=sys.stderr)
         return 2
 
-    r = boot(a.iso, a.mode, a.seconds, a.out)
+    r = boot(a.iso, a.mode, a.seconds, a.out, keys=a.keys)
     print(f"boot {a.mode}: {os.path.basename(a.iso)}"
           f"   ({'KVM' if r['kvm'] else 'TCG -- slow'})")
     print(f"  serial log : {r['serial']} ({len(r['serial_text'])} bytes)")

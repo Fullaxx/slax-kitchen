@@ -187,6 +187,10 @@
               "mode": {
                 "type": "string",
                 "pattern": "^[0-7]{3,4}$"
+              },
+              "extract": {
+                "type": "string",
+                "description": "pull this member out of a downloaded .zip/.tar.*; sha256 is checked against the archive"
               }
             },
             "dependentRequired": {

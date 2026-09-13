@@ -1,0 +1,56 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: memtest86plus
+  summary: Add Memtest86+ to the boot menu, bootable on both BIOS and UEFI
+  tags: [boot, diagnostics]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  version: "8.10"
+  zip_sha256: "7e6c5162cb84ab959aeb9d13c9cfd6976b0dec3b34936b73820b20c55eb26c29"
+steps:
+  # Memtest86+ 8.10 ships each x86 build as a SINGLE file that is simultaneously a Linux
+  # bzImage and a PE32+ EFI application (verified: MZ header, "HdrS" at 0x202, and a
+  # PE\0\0 signature at 0x471). So one binary covers both firmwares -- syslinux boots it
+  # with KERNEL on BIOS, and GRUB boots the same file with `linux` on UEFI. No separate
+  # .bin and .efi, which older Memtest86+ releases and most guides still assume.
+  #
+  # Upstream publishes no loose binaries -- the GitHub release has zero assets -- so the
+  # source is the binaries zip and `extract:` pulls the one member out. The sha256 is
+  # checked against the ARCHIVE, which is what upstream actually publishes.
+
+  - verb: boot.payload
+    when: arch==64bit
+    src: "https://www.memtest.org/download/v{{version}}/mt86plus_{{version}}.binaries.zip"
+    sha256: "{{zip_sha256}}"
+    extract: "mt86p_810_x86_64"
+    dest: slax/boot/memtest.bin
+    mode: "0644"
+
+  - verb: boot.payload
+    when: arch==32bit
+    src: "https://www.memtest.org/download/v{{version}}/mt86plus_{{version}}.binaries.zip"
+    sha256: "{{zip_sha256}}"
+    extract: "mt86p_810_i586"
+    dest: slax/boot/memtest.bin
+    mode: "0644"
+
+  # Added to both configs: isolinux.cfg is the CD menu, syslinux.cfg the USB/HDD one, and
+  # upstream keeps them deliberately different (the CD one has no persistence entries).
+  # If you also apply uefi-bootable, list it AFTER this recipe -- it generates the GRUB
+  # menu by parsing isolinux.cfg, so it will mirror this entry automatically.
+  #
+  # `linux:` and NOT `kernel:`. This is not cosmetic: with KERNEL, syslinux 6.03 loads
+  # the memtest bzImage and then shows a black screen forever -- no error, no output.
+  # KERNEL auto-detects the image type and picks the wrong handler for this image;
+  # LINUX forces the Linux boot protocol. Verified both ways in QEMU.
+  - verb: boot.menu
+    targets: [isolinux.cfg, syslinux.cfg]
+    add:
+      label: memtest
+      menu_label: "Memory test (Memtest86+ {{version}})"
+      linux: /slax/boot/memtest.bin
