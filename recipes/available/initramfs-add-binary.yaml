@@ -8,7 +8,7 @@ compat:
   flavours: [debian, slackware]
   arch: [32bit, 64bit]
   slax: ">=12.0.0"
-  privilege: none
+  privilege: mknod
 steps:
   # The initramfs runs before any bundle is mounted, so anything you want during
   # find_data, persistent_changes or a preinit hook has to live here rather than in a

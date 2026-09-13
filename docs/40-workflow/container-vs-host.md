@@ -68,6 +68,21 @@ finished bundle (`BUNDLE_EXCLUDE`). See [edit-bundles](edit-bundles.md).
 Real `chroot` works and is the only supported backend. `proot` is no longer listed by
 `kitchen doctor` for this reason.
 
+## initramfs recipes need `CAP_MKNOD`
+
+Not `CAP_SYS_ADMIN` — just the ability to create device nodes. `initrfs.img` contains seven of them,
+and a `cpio` without the capability silently turns them into **empty regular files**; the repacked
+image then cannot open its own console. Both `kitchen doctor` and `apply`'s preflight check for it,
+and preflight refuses before anything is unpacked:
+
+```
+preflight failed -- 1 unmet requirement(s), nothing has been modified:
+  - no mknod capability, needed by initramfs-add-binary
+```
+
+Recipes declare this as `compat.privilege: mknod`. In CI, `ci/recipe-matrix.sh` runs any recipe with
+a privilege above `none` under `sudo`.
+
 ## The one real exception
 
 **The Tier C boot matrix** (BIOS + UEFI + USB + persistence, booting all the way to a desktop)

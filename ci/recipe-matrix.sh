@@ -63,8 +63,11 @@ PY
         fail=$((fail+1)); continue
     fi
 
-    # bundle.packages needs a real chroot; runners allow sudo, this container is root.
-    if [ "$priv" = chroot ] && [ "$(id -u)" != 0 ]; then
+    # Any privilege above "none" needs root here. bundle.packages wants a real chroot;
+    # the initramfs verbs want CAP_MKNOD, because the archive holds seven device nodes
+    # and a non-root cpio silently turns them into empty files. Runners allow sudo; the
+    # dev container is already root.
+    if [ "$priv" != none ] && [ "$priv" != kvm ] && [ "$(id -u)" != 0 ]; then
         RUN="sudo -E"
     else
         RUN=""

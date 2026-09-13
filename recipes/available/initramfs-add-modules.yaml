@@ -8,7 +8,7 @@ compat:
   flavours: [debian, slackware]
   arch: [32bit, 64bit]
   slax: ">=12.0.0"
-  privilege: none
+  privilege: mknod
 steps:
   # find_data cannot mount what the kernel cannot see, and the initramfs carries only a
   # fraction of what the ISO ships: 301 modules against 4,766 in 01-core.sb on 64-bit

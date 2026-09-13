@@ -87,6 +87,7 @@
         "privilege": {
           "enum": [
             "none",
+            "mknod",
             "chroot",
             "kvm"
           ],

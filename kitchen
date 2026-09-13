@@ -127,7 +127,15 @@ doctor_tier() {
     done
 
     printf '\n%sWhat this machine can run%s\n' "$B" "$O"
-    printf '  %so%s  unprivileged recipes .............. %syes%s  (bundles, initramfs, boot, ISO)\n' "$B" "$O" "$G" "$O"
+    printf '  %so%s  unprivileged recipes .............. %syes%s  (bundles, boot, ISO, rootcopy)\n' "$B" "$O" "$G" "$O"
+
+    # The initramfs holds seven device nodes; a cpio without CAP_MKNOD turns them into
+    # empty regular files and the repacked image cannot open its own console.
+    if cap mknod; then
+        printf '  %sm%s  initramfs recipes ................ %syes%s\n' "$B" "$O" "$G" "$O"
+    else
+        printf '  %sm%s  initramfs recipes ................ %sno%s  needs mknod (run as root)\n' "$B" "$O" "$R" "$O"
+    fi
 
     # bundle.packages needs chroot + mknod only. Measured: apt-get update and a full
     # apt-get install with maintainer scripts both exit 0 inside an extracted 01-core.sb

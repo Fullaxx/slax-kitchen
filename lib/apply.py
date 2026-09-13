@@ -59,10 +59,10 @@ VERB_REQUIRES: dict[str, dict] = {
                         "caps": ["chroot", "mknod"], "network": True},
     "bundle.fromDir": {"tools": ["mksquashfs"]},
     "bundle.fromTarball": {"tools": ["mksquashfs"]},
-    "initramfs.files": {"tools": ["cpio", "xz"]},
-    "initramfs.modules": {"tools": ["cpio", "xz", "unsquashfs"]},
-    "initramfs.patch": {"tools": ["cpio", "xz"]},
-    "initramfs.config": {"tools": ["cpio", "xz"]},
+    "initramfs.files": {"tools": ["cpio", "xz"], "caps": ["mknod"]},
+    "initramfs.modules": {"tools": ["cpio", "xz", "unsquashfs"], "caps": ["mknod"]},
+    "initramfs.patch": {"tools": ["cpio", "xz"], "caps": ["mknod"]},
+    "initramfs.config": {"tools": ["cpio", "xz"], "caps": ["mknod"]},
 }
 
 
