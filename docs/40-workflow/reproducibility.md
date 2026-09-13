@@ -13,7 +13,7 @@ turns a repack into something you can diff.
 |---|---|---|
 | **bundles** (`.sb`) | ✅ yes, given the same input tree | `mksquashfs` with fixed flags; no timestamps in the output beyond the files' own |
 | **initramfs** (`initrfs.img`) | ❌ **no** — `find` has no `sort` | fixable in one pipe |
-| **ISO** (`genisoimage`) | ❌ no — volume timestamps | fixable with the xorriso backend |
+| **ISO** (`genisoimage`) | ❌ no — volume timestamps **and extent order** | fixable with the xorriso backend |
 | **ISO** (`xorriso`) | ✅ yes with `--date` | but it uppercases the application id |
 
 ## The initramfs — the interesting one
@@ -62,7 +62,16 @@ controlled.
 
 ## The ISO
 
-### `genisoimage` cannot pin its timestamps
+### `genisoimage` varies in two ways
+
+**Timestamps**, and **extent order** — file data is laid out in directory-scan order, so the same
+tree on a different filesystem produces the same files at different LBAs. Measured: an identical
+38-file tree rebuilt on a GitHub runner put `bootx64.efi` at LBA 10877 where the reference image has
+it at 212257. Same size, same contents, 99.9% of sectors different.
+
+`-sort` can pin the order if you need it, at the cost of no longer matching upstream's own layout.
+
+### Timestamps
 
 Round-tripping the stock 64-bit Debian ISO through `unpack` → `pack` with the genisoimage backend:
 
@@ -136,9 +145,18 @@ kitchen pack --backend xorriso --date <fixed>
 ci/roundtrip.sh isos/slax-64bit-debian-12.2.0.iso
 ```
 
-It unpacks and repacks with no recipes, then asserts the size is identical and that differing sectors
-stay under a threshold (64 by default; the real figure is 19). That is a fidelity test, not a
-reproducibility test, and it is the one wired into CI — because "the payload survived" is what
+It unpacks, repacks with no recipes, and extracts both images again, then asserts that **every file
+is byte-identical, every mode is preserved**, Rock Ridge and Joliet survived, the volume identifiers
+match, the El Torito shape is unchanged, and the rebuilt boot-info-table is self-consistent.
+
+It deliberately does **not** compare sector positions. genisoimage allocates file extents in
+directory-scan order, and readdir order varies by filesystem — a perfectly valid rebuild on a GitHub
+runner moved `/slax/boot/EFI/Boot/*` from LBA 212257 to 10877, which a sector comparison scored as
+99.9% corrupted. Comparing layout position tests the build host, not the build; the script reports
+moves as a note and moves on.
+
+That is a fidelity test, not a reproducibility test, and it is the one wired into CI — because
+"the payload survived" is what
 actually matters for an ISO that has to boot.
 
 ## What is never reproducible, and does not need to be
