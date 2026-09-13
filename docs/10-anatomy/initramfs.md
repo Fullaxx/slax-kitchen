@@ -186,7 +186,7 @@ build has 10 the 64-bit lacks, all ISA-era NICs (`3c509`, `3c515`, `ne`, `wd`, `
 | Debian ↔ Slackware | Slackware adds `usr/share/terminfo/l/linux` (4 entries). Nothing else |
 | 64-bit ↔ 32-bit | the module directory name, and 21 network drivers |
 
-Everything else — `/init`, `livekitlib`, `config`, `shutdown`, all eight binaries, all 246 applet
+Everything else — `/init`, `livekitlib`, `config`, `shutdown`, all eight binaries, all 246
 symlinks, `/etc/passwd`, the device nodes — is byte-identical on all four. **One rebuilt initramfs
 userland serves every target**, which is the finding that makes an `initramfs-busybox` recipe
 tractable: build one i386 static binary, use it four times.

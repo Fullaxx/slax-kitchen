@@ -19,6 +19,7 @@ the resulting ISO in QEMU and reading the console.
 | `kitchen unpack` | ✅ xorriso osirrox, Rock Ridge modes preserved (`bootinst.sh` returns as `0755`) |
 | `kitchen pack` | ✅ two backends; defaults to `./out/<source>-custom.iso`, never clobbers without `--force` |
 | Round-trip fidelity | ✅ identical size; **19 of 212,819 sectors differ, and all 19 are PVD timestamp fields**. Payload byte-identical, boot-info-table checksum unchanged |
+| `kitchen fetch` | ✅ downloads + verifies size and sha256; ordered mirror list with per-mirror verify and fall-through, both paths exercised |
 | `kitchen fingerprint` | ✅ ~3.5 s per ISO, mount-free |
 | `kitchen probe` | ✅ all four stock ISOs report `MATCH`; classifies differences as benign / explained / unexplained / critical |
 | `kitchen doctor` | ✅ reports tool + capability matrix and which recipes this machine can run |
@@ -46,7 +47,7 @@ cannot do at all.
 
 ### Quality
 
-9 commit gates, shared by hooks and CI so they cannot drift. Unit tests for the recipe engine's pure
+10 commit gates, shared by hooks and CI so they cannot drift. Unit tests for the recipe engine's pure
 logic run in milliseconds with no ISO. The gates have caught real bugs in their own authors' code
 repeatedly — including a `$'\r'` that silently degraded to matching `$r` under `dash`, and a link
 checker that only examined one link per line.
@@ -81,8 +82,8 @@ Full reasoning: [add-packages cookbook page](../50-cookbook/add-packages.md).
 
 ### CLI
 
-`fetch`, `shell`, `diff`, `upstream-diff` are declared in `--help` and **error out explicitly**
-rather than pretending to work.
+`shell`, `diff`, `upstream-diff` are declared in `--help` and **error out explicitly** rather than
+pretending to work. (`fetch` is implemented and verified — it was listed here in error.)
 
 ### Verbs
 
@@ -110,7 +111,7 @@ it boots on every medium, what software is in it, and the upstream source of tru
 `40-workflow/` is also complete — 10 pages, every procedure written to work by hand with the
 `kitchen` verb noted alongside.
 
-Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (7 pages, one per
+Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 8 pages, one per
 shipped recipe — the other ~24 recipes do not exist yet), `60-testing/`, `70-compat/`,
 `90-reference/`. See [the index](../README.md).
 

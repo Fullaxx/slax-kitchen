@@ -110,6 +110,54 @@ Rebuilds an ISO from a work tree. Default output is `./out/<source>-custom.iso`,
 
 See [repack-iso.md](../40-workflow/repack-iso.md) for why there are two backends.
 
+## `fetch [target|--all] [--verify-only] [-o DIR]`
+
+Download a base ISO and verify it. With no argument, lists the known targets and whether each is
+already present.
+
+```sh
+kitchen fetch                          # what do I have?
+kitchen fetch debian-64bit-12.2.0      # ~416 MiB
+kitchen fetch --all                    # all four, ~1.8 GiB
+kitchen fetch --all --verify-only      # check what is on disk, download nothing
+```
+
+| | |
+|---|---|
+| `target` | `<flavour>-<arch>-<version>`, e.g. `slackware-32bit-15.0.4` |
+| `--all` | every target in `compat/sources.yaml` |
+| `--verify-only` | verify what is on disk and exit non-zero if anything is wrong |
+| `-o`, `--output-dir` | default `isos/`, which is gitignored |
+
+**Verification is not optional.** Size *and* sha256 are checked against `compat/sources.yaml` after
+every download. A file that already verifies is left alone, so re-running is free.
+
+### Mirrors
+
+`compat/sources.yaml` holds an ordered mirror list. Each is tried in turn; a mirror that fails to
+connect, or serves a file that does not verify, is reported and the bad file deleted before the next
+is tried:
+
+```
+$ kitchen fetch debian-32bit-12.2.0
+  fetching slax-32bit-debian-12.2.0.iso  from images.rapidlinux.org
+  images.rapidlinux.org failed: <urlopen error [Errno -2] Name or service not known>
+  fetching slax-32bit-debian-12.2.0.iso  from ftp.linux.cz
+  ok       slax-32bit-debian-12.2.0.iso verified
+```
+
+Because both hashes and sizes are pinned, mirror **order** is a courtesy and throughput decision
+rather than a trust one — no mirror can poison a build. Adding one needs no code change: append to
+`mirrors:` with a `layout` template over the target's keys (`"{file}"` or `"{tree}/{file}"`).
+
+`ci/upstream-watch.sh` HEADs every target on every mirror weekly, so a new entry is monitored for
+rot automatically.
+
+### Bring your own ISO
+
+Nothing requires `fetch`. `kitchen build --base /path/to.iso` and `kitchen unpack /path/to.iso`
+accept any image — an ISO you already have, a corporate mirror, or one you previously customized.
+
 ## `probe <iso>` / `fingerprint <iso> [-o FILE]`
 
 `probe` matches an ISO against `compat/` and classifies every difference as benign, explained by a
@@ -136,8 +184,15 @@ never drift from CI.
 
 ## Not implemented yet
 
-`fetch`, `shell`, `diff` and `upstream-diff` are listed in `--help` and **error out explicitly**
-rather than pretending to work. See [project status](../00-overview/status.md).
+`shell`, `diff` and `upstream-diff` are listed in `--help` and **error out explicitly** rather than
+pretending to work:
+
+```
+$ kitchen diff a.iso b.iso
+error: 'diff' is not implemented yet -- see INITIAL_TASKS.DNC.md (T-2xx)
+```
+
+See [project status](../00-overview/status.md).
 
 ---
 
