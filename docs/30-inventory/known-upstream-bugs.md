@@ -102,6 +102,28 @@ has existed since well before the shipped 1.26.2 and is the documented way. Rele
 ## 11. The shipped busybox is from 2017
 
 `BusyBox v1.26.2 (2017-12-14)`, identical on all four ISOs. Notable reachable issues include
-CVE-2017-16544 (terminal-escape RCE via `ash` tab completion — and `/init` calls `debug_shell` five
+CVE-2017-16544 (terminal-escape RCE via `ash` tab completion — and `/init` calls `debug_shell` six
 times) and CVE-2022-48174 (`ash` stack overflow). It also predates `CONFIG_TIME64`, so `date -r` on
 a post-2038 mtime already misbehaves.
+
+## 12. `noautomount` is honoured by one component and ignored by the other
+
+`fstab_create` in the initramfs tests `grep -vq automount /proc/cmdline`. The string `noautomount`
+*contains* `automount`, so the test fails to short-circuit and automount proceeds:
+
+```sh
+$ echo 'vga=normal rw noautomount' > /tmp/c
+$ grep -vq automount /tmp/c && echo skip || echo "proceed  <-- noautomount ignored"
+proceed  <-- noautomount ignored
+```
+
+`slax-automount`, the udev-driven half, checks `grep -q noautomount` first and exits correctly. The
+net effect of booting with `noautomount` is that `/media/*` entries are still written into
+`/etc/fstab` at boot, but no new hotplug mounts appear afterwards.
+
+**Workaround:** omit `automount` rather than negating it. The stock menu entries include it, so it
+has to be removed from the `APPEND` line — `boot.cmdline` can do that.
+
+The same substring-matching pattern applies to `debug`, `perch` and `toram`; only `text` is
+word-anchored (`grep -q -w`). `perch` is the one case where the loose match is intentional, since
+`perchdir=` and `perchsize=` are meant to imply it.

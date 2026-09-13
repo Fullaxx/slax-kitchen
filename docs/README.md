@@ -39,7 +39,7 @@ then the commit gates in `ci/checks/`.
 | `05-using-slax/` | [Using Slax itself](05-using-slax/): media, persistence, boot modes, everyday tasks | **current** |
 | `10-anatomy/` | [How a Slax ISO is put together](10-anatomy/), component by component | **current** |
 | `15-upstream/` | [`vendor/linux-live` as source of truth](15-upstream/), annotated | **current** |
-| `20-boot-sequence/` | Firmware → loader → kernel → init → chroot, per medium | planned |
+| `20-boot-sequence/` | [Firmware → loader → kernel → init → chroot](20-boot-sequence/), per medium | **current** |
 | `50-cookbook/` | [all 7 pages](50-cookbook/) incl. [uefi-bootable](50-cookbook/uefi-bootable.md) and [isohybrid](50-cookbook/isohybrid.md) | partial |
 | `60-testing/` | [CI](60-testing/ci.md); QEMU and boot tests | partial |
 | `90-reference/` | [CLI reference](90-reference/cli.md) + profile format | partial |
