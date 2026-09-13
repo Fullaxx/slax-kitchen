@@ -32,7 +32,8 @@ ${B}USAGE${O}
 ${B}COMMANDS${O}
   doctor [--install-hooks]   check tools + capabilities; report what this machine can run
   selftest [stage]           run the commit gates (stage: pre-commit|pre-push|ci)
-  probe <iso>                fingerprint an ISO and report compatibility
+  probe <iso>                match an ISO against compat/ and report what differs
+  fingerprint <iso> [-o F]   generate a compat fingerprint
   fetch <flavour> <arch> <ver>   download + verify a base ISO into isos/
   unpack <iso> [-o DIR]      explode an ISO into a work tree
   apply <recipe>...          apply recipes to a work tree
@@ -168,9 +169,11 @@ case "$cmd" in
     selftest)      exec "$REPO_ROOT/ci/run-checks.sh" "${1:-ci}" ;;
     version|--version|-V) echo "kitchen $KITCHEN_VERSION" ;;
     help|--help|-h|'')    usage ;;
+    probe)         exec "$REPO_ROOT/lib/probe.py" "$@" ;;
+    fingerprint)   exec "$REPO_ROOT/lib/fingerprint.py" "$@" ;;
     unpack)        kitchen_unpack "$@" ;;
     pack)          kitchen_pack "$@" ;;
-    probe|fetch|apply|build|test|shell|diff|upstream-diff)
+    fetch|apply|build|test|shell|diff|upstream-diff)
         die "'$cmd' is not implemented yet -- see INITIAL_TASKS.DNC.md (T-2xx)" ;;
     *)             usage; die "unknown command: $cmd" ;;
 esac
