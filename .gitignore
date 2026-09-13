@@ -1,0 +1,35 @@
+# ---------------------------------------------------------------------------
+# Working files — deliberately NOT part of project history.
+# Also hard-rejected by the pre-commit gate (ci/checks/10-no-dnc.sh).
+# ---------------------------------------------------------------------------
+*.DNC.md
+
+# ---------------------------------------------------------------------------
+# Base ISOs and build artifacts. NEVER commit these.
+# `isos/` is a download cache populated by `kitchen fetch`.
+# Also hard-rejected by the pre-commit gate (ci/checks/00-no-binaries.sh).
+# ---------------------------------------------------------------------------
+isos/
+work/
+out/
+
+*.iso
+*.sb
+*.img
+*.squashfs
+vmlinuz
+initrfs.img
+*.efi
+*.c32
+*.bin
+!ci/**/*.bin
+
+# ---------------------------------------------------------------------------
+# Scratch
+# ---------------------------------------------------------------------------
+*.swp
+*~
+.DS_Store
+__pycache__/
+*.pyc
+.venv/

@@ -1,0 +1,3 @@
+[submodule "vendor/linux-live"]
+	path = vendor/linux-live
+	url = https://github.com/Tomas-M/linux-live

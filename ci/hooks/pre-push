@@ -1,0 +1,3 @@
+#!/bin/sh
+# slax-kitchen pre-push hook -- installed by `kitchen doctor --install-hooks`.
+exec "$(git rev-parse --show-toplevel)/ci/run-checks.sh" pre-push

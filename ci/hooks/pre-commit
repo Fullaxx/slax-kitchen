@@ -1,0 +1,4 @@
+#!/bin/sh
+# slax-kitchen pre-commit hook -- installed by `kitchen doctor --install-hooks`.
+# Thin wrapper: all logic lives in ci/checks/*.sh so hooks can never drift from CI.
+exec "$(git rev-parse --show-toplevel)/ci/run-checks.sh" pre-commit
