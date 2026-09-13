@@ -33,7 +33,7 @@ then the commit gates in `ci/checks/`.
 | Section | Contents | Status |
 |---|---|---|
 | `00-overview/` | [Project status](00-overview/status.md) | current |
-| `30-inventory/` | Software inventory + [known upstream issues](30-inventory/known-upstream-bugs.md) | partial |
+| `30-inventory/` | [Software inventory](30-inventory/) + [known upstream issues](30-inventory/known-upstream-bugs.md) | **current** |
 | `40-workflow/` | [unpack](40-workflow/unpack.md), [edit bundles](40-workflow/edit-bundles.md), [repack](40-workflow/repack-iso.md), [container vs host](40-workflow/container-vs-host.md) | partial |
 | `70-compat/` | [Fingerprints and `kitchen probe`](70-compat/fingerprints.md) | partial |
 | `05-using-slax/` | [Using Slax itself](05-using-slax/): media, persistence, boot modes, everyday tasks | **current** |

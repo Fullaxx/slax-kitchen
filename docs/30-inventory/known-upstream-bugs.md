@@ -42,8 +42,26 @@ argument sets are compatible, so `ln -s mkisofs /usr/bin/genisoimage` fixes it.
 
 ## 5. `pxe` calls tools the Slackware flavour does not have
 
-`/usr/bin/pxe` calls `dhclient` (Slackware uses `dhcpcd`) and `busybox httpd` (there is no busybox in
-the Slackware rootfs — only inside the initramfs).
+`/usr/bin/pxe` is **byte-identical on both flavours** — it is not a Slackware port that went wrong,
+it is one script that happens to work on Debian and not here. Two lines fail:
+
+```sh
+16:   killall dhclient 2>/dev/null          # Slackware has dhcpcd, not dhclient
+86: busybox httpd -p 7529 -h /var/state/dnsmasq/root
+```
+
+Debian ships a real `busybox` package at `/usr/bin/busybox`, so line 86 works there. Slackware ships
+**no `busybox` command at all** — only two symlinks that reach back into the preserved initramfs:
+
+```
+/usr/bin/vi       -> /run/initramfs/bin/busybox
+/usr/bin/nslookup -> /run/initramfs/bin/busybox
+```
+
+Calling `busybox <applet>` by name therefore fails. (`/run/initramfs/bin/busybox httpd` would work,
+which is what a one-line fix would use.)
+
+Line 16 is only a `killall`, so it is harmless on its own; line 86 is fatal to the feature.
 
 ## 6. `savechanges`' automount exclusion silently no-ops on Slackware
 
