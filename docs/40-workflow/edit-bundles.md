@@ -122,6 +122,40 @@ aufs index 1, so each insertion outranks the previous. Stock bundles run `01`–
 writes `99-changes-N.sb`. A new bundle at `07` therefore overrides everything stock while still
 losing to a user's saved session, which is almost always what you want.
 
+## Slackware is a different animal
+
+The Debian path is straightforward. Slackware needed four separate fixes, all of them cases where
+something reported success while doing nothing:
+
+**1. `-batch=on` does not silence every prompt.** The stock mirror is `slackware64-current` while the
+base reports `15.0+`, so slackpkg asks *"Is this really what you want?"*. With no stdin it takes the
+default (No), installs nothing, and **exits 0**. This produced a cheerful `built 07-extras.sb
+(4 KiB)` containing no packages. Feed `y` on stdin.
+
+**2. `slackonly.com` is NXDOMAIN.** Slax 15.0.4 ships `REPOPLUS=( slackpkgplus slackonly )`, and
+that host no longer resolves. `slackpkg update` fails on an unreachable repo, so a stock Slackware
+Slax can install nothing at all today. `bundle.packages` resolves every `MIRRORPLUS` host and prunes
+dead repos from `REPOPLUS` first. Expect more of this: the release has been dormant since 2023.
+
+**3. slackpkg's exit code is unreliable in *both* directions.** It returns 0 after declining its own
+prompt and doing nothing, and returns **1 after a completely successful update** — it prints a
+"you are running 15.0+, be sure to run these steps" advisory and exits non-zero. So `update` is
+judged by whether `var/lib/slackpkg/PACKAGES.TXT` actually landed, not by `$?`.
+
+**4. Verify against the package database, always.** After any install, `bundle.packages` checks
+`dpkg-query` (Debian) or `/var/lib/pkgtools/packages/` (Slackware) for every requested package and
+fails loudly if one is missing. Parsing the Slackware side needs care: entries are
+`<name>-<version>-<arch>-<build>`, and the name may itself contain hyphens, so strip exactly the last
+three fields — a prefix match would let `gcc` match `gcc-g++-13.2.0-x86_64-1`.
+
+Two more differences worth knowing:
+
+- **Slackware does no dependency resolution.** Neither `installpkg` nor `slackpkg` pulls deps in —
+  that is Slackware's design, not a limitation here. Name every dependency explicitly.
+- **Package names differ.** `ncdu` is in Debian proper but only in third-party Slackware repos, so
+  the `add-packages` template uses `when: flavour==debian` / `when: flavour==slackware` to carry a
+  different list per flavour.
+
 ## Mirror pinning
 
 Debian 12 is oldstable, and Slackware `-current` has moved a long way past the 2023 snapshot Slax was

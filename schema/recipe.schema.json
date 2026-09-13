@@ -399,6 +399,11 @@
                     "default": true
                   }
                 }
+              },
+              "mirror": {
+                "type": "string",
+                "format": "uri",
+                "description": "Slackware only: pin slackpkg to this mirror. The stock config points at slackware64-current, which has moved far past the 2023 base."
               }
             }
           }
