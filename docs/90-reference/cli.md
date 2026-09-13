@@ -55,6 +55,38 @@ Explodes an ISO into `DIR/iso` (default `work/`) using xorriso's osirrox mode, w
 Ridge names and permission bits. Writes `DIR/.kitchen/origin.yaml` with the source path, sha256 and
 size — that provenance is what `pack` uses to name its output.
 
+## Preflight
+
+**`apply` and `build` check every tool, file and kernel capability the whole plan needs before
+touching anything**, and report all of them at once:
+
+```
+preflight failed -- 2 unmet requirement(s), nothing has been modified:
+  - missing tool 'grub-mkstandalone' needed by uefi-bootable  (apt-get install grub-efi-amd64-bin)
+  - missing file '/usr/lib/ISOLINUX/isohdpfx.bin' needed by isohybrid  (apt-get install isolinux)
+```
+
+This exists because the alternative was measured and is unpleasant: applying four recipes with one
+tool missing downloaded a 164 KB binary, edited two bootloader configs and wrote a pack hint before
+dying on the fourth, leaving a half-modified work tree to clean up by hand.
+
+Three details worth knowing:
+
+- **`build` preflights before unpacking**, using the flavour and arch from the profile, so it fails
+  in a second rather than after writing 400+ MiB. It also checks `pack`'s own requirements — the
+  ISO backend, and `isohdpfx.bin` when the profile asks for `hybrid` — rather than discovering them
+  after the whole build has run.
+- **`when:` guards are evaluated first**, so a step that will be skipped does not demand its tools.
+  A Slackware-only step never asks for Slackware tools on a Debian build.
+- **Capabilities are probed by using them**, not by reading `CapEff`. A container runtime can
+  present a capability that seccomp then blocks, so `bundle.packages` actually attempts a `chroot`
+  and a `mknod`.
+
+`--skip-preflight` exists for odd cases. `--preflight-only` checks and exits, touching nothing.
+
+Requirements are declared per verb in `VERB_REQUIRES` (`lib/apply.py`); a new verb adds one entry
+there and gets preflight, `doctor` reporting and the error messages for free.
+
 ## `apply <recipe>... [-w DIR]`
 
 Applies recipes to a work tree. Names resolve against `recipes/available/`, `recipes/examples/` and

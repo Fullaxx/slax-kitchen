@@ -113,9 +113,45 @@ def test_extract_member():
         pass
 
 
+def test_preflight():
+    """Preflight must cover the WHOLE plan before anything runs.
+
+    Without it, applying four recipes with one tool missing downloaded a binary,
+    edited two bootloader configs and wrote a pack hint before dying on the fourth.
+    """
+    # a step whose requirements are all satisfiable
+    ok_plan = [("r", {"verb": "boot.menu", "targets": ["isolinux.cfg"]})]
+    check("preflight clean plan", apply.preflight(ok_plan, check_network=False), [])
+
+    # requirements are collected per verb, and attributed to the recipe asking
+    reqs = apply.step_requires({"verb": "boot.uefi"})
+    check("boot.uefi needs grub", "grub-mkstandalone" in reqs["tools"], True)
+    check("boot.uefi needs mcopy", "mcopy" in reqs["tools"], True)
+
+    # boot.payload needs the network ONLY when its source is a URL
+    check("payload url needs net",
+          apply.step_requires({"verb": "boot.payload", "src": "https://x/y.zip"}).get("network"),
+          True)
+    check("payload local needs no net",
+          apply.step_requires({"verb": "boot.payload", "src": "files/y.bin"}).get("network"),
+          None)
+
+    # a missing tool is reported with the package that provides it
+    saved = apply.shutil.which
+    try:
+        apply.shutil.which = lambda t: None if t == "mcopy" else "/usr/bin/" + t
+        probs = apply.preflight([("uefi-bootable", {"verb": "boot.uefi"})],
+                                check_network=False)
+        check("missing tool reported", len(probs), 1)
+        check("names the recipe", "uefi-bootable" in probs[0], True)
+        check("names the package", "mtools" in probs[0], True)
+    finally:
+        apply.shutil.which = saved
+
+
 def main():
     for fn in [test_bundle_exclude, test_slackware_pkgname, test_when_guard, test_subst,
-               test_extract_member]:
+               test_extract_member, test_preflight]:
         fn()
     if FAILURES:
         for f in FAILURES:

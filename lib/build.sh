@@ -77,6 +77,24 @@ kitchen_build() {
     printf '  recipes %s\n' "$RECIPES"
     printf '  output  out/%s\n\n' "$OUTPUT_NAME"
 
+    # Preflight BEFORE unpacking 400+ MiB. Facts come from the profile, so `when:`
+    # guards resolve without needing a work tree that does not exist yet.
+    if [ -n "$RECIPES" ]; then
+        # shellcheck disable=SC2086
+        python3 "$REPO_ROOT/lib/apply.py" $RECIPES --preflight-only \
+            --facts "flavour=$BASE_FLAVOUR,arch=$BASE_ARCH" || exit 1
+    fi
+    # pack's own tools, checked here rather than after the build has run.
+    _backend=${OUTPUT_BACKEND:-}
+    if [ -z "$_backend" ]; then
+        if [ -n "$OUTPUT_HYBRID" ]; then _backend=xorriso; else _backend=genisoimage; fi
+    fi
+    have "$_backend" || die "build: $_backend not installed (needed to write the ISO)"
+    if [ -n "$OUTPUT_HYBRID" ] && [ ! -f /usr/lib/ISOLINUX/isohdpfx.bin ]; then
+        die "build: /usr/lib/ISOLINUX/isohdpfx.bin missing (apt-get install isolinux) -- needed for --hybrid"
+    fi
+    echo
+
     if [ ! -f "$BASE_ISO" ]; then
         printf '%serror:%s base ISO not found: %s\n' "$R" "$O" "$BASE_ISO" >&2
         [ "$BASE_ISO_SOURCE" = derived ] && {

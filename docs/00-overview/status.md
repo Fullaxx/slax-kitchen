@@ -24,6 +24,7 @@ the resulting ISO in QEMU and reading the console.
 | `kitchen doctor` | ✅ reports tool + capability matrix and which recipes this machine can run |
 | `kitchen validate` | ✅ JSON Schema, validated post-variable-substitution |
 | `kitchen apply` | ✅ dep ordering, `when:` guards, dry run, journalling, pack hints |
+| preflight | ✅ every tool/file/capability the plan needs checked up front; `build` checks before unpacking |
 | `kitchen build` | ✅ whole pipeline from one profile, ~4 s for four recipes; derives test expectations from the recipe list |
 | `kitchen test` | ✅ `--structure` (18 assertions, ~1 s), `--bios`, `--uefi` |
 

@@ -31,6 +31,121 @@ from validate import validate_file  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERBS: dict = {}
 
+# Which Debian/Ubuntu package provides each tool, so a failure can say what to install
+# rather than just what is absent.
+TOOL_PKG = {
+    "xorriso": "xorriso", "genisoimage": "genisoimage",
+    "mksquashfs": "squashfs-tools", "unsquashfs": "squashfs-tools",
+    "cpio": "cpio", "xz": "xz-utils",
+    "grub-mkstandalone": "grub-efi-amd64-bin", "mkfs.vfat": "dosfstools",
+    "mmd": "mtools", "mcopy": "mtools",
+    "isohybrid": "syslinux-utils", "extlinux": "extlinux", "syslinux": "syslinux",
+    "qemu-system-x86_64": "qemu-system-x86", "chroot": "coreutils",
+}
+
+# What each verb needs BEFORE it runs. `tools` are executables on PATH, `files` are
+# data files a package must have installed, `caps` are kernel capabilities, and
+# `network` means the step reaches the internet.
+#
+# This exists because verbs used to check their own tools on entry, which is far too
+# late: applying four recipes with grub-mkstandalone missing downloaded a memtest
+# binary, edited two bootloader configs and wrote a pack hint before dying on the
+# fourth, leaving a half-modified work tree to clean up by hand.
+VERB_REQUIRES: dict[str, dict] = {
+    "boot.uefi": {"tools": ["grub-mkstandalone", "mkfs.vfat", "mmd", "mcopy"]},
+    "boot.isohybrid": {"files": {"/usr/lib/ISOLINUX/isohdpfx.bin": "isolinux"}},
+    "bundle.packages": {"tools": ["unsquashfs", "mksquashfs", "chroot"],
+                        "caps": ["chroot", "mknod"], "network": True},
+    "bundle.fromDir": {"tools": ["mksquashfs"]},
+    "bundle.fromTarball": {"tools": ["mksquashfs"]},
+    "initramfs.files": {"tools": ["cpio", "xz"]},
+    "initramfs.modules": {"tools": ["cpio", "xz"]},
+    "initramfs.patch": {"tools": ["cpio", "xz"]},
+    "initramfs.config": {"tools": ["cpio", "xz"]},
+}
+
+
+def _have_cap(cap: str) -> bool:
+    """Probe a kernel capability by using it, not by parsing CapEff.
+
+    Container runtimes can present a capability that seccomp then blocks, so the only
+    honest answer comes from trying.
+    """
+    import tempfile
+    if cap == "chroot":
+        return subprocess.run(["chroot", "/", "/bin/true"],
+                              capture_output=True).returncode == 0
+    if cap == "mknod":
+        d = tempfile.mkdtemp()
+        try:
+            os.mknod(os.path.join(d, "n"), 0o600 | 0o020000, os.makedev(1, 3))
+            return True
+        except OSError:
+            return False
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+    return True
+
+
+def step_requires(step: dict) -> dict:
+    """Requirements for one step, including the ones that depend on its arguments."""
+    req = {k: (dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v)
+           for k, v in VERB_REQUIRES.get(step.get("verb", ""), {}).items()}
+    # boot.payload only touches the network when its source is a URL.
+    if step.get("verb") == "boot.payload" and re.match(r"^https?://", str(step.get("src", ""))):
+        req["network"] = True
+    return req
+
+
+def preflight(plan: list[tuple[str, dict]], check_network: bool = True) -> list[str]:
+    """Check everything the whole plan needs, before any of it runs.
+
+    `plan` is (recipe_name, step) pairs. Returns human-readable problems; empty is good.
+    Reports EVERY missing thing at once -- fixing them one round-trip at a time is the
+    thing that makes a late failure annoying.
+    """
+    need_tools: dict[str, set] = {}
+    need_files: dict[str, tuple] = {}
+    need_caps: dict[str, set] = {}
+    need_net: set = set()
+
+    for recipe, step in plan:
+        req = step_requires(step)
+        for t in req.get("tools", []):
+            need_tools.setdefault(t, set()).add(recipe)
+        for f, pkg in (req.get("files") or {}).items():
+            need_files[f] = (pkg, recipe)
+        for c in req.get("caps", []):
+            need_caps.setdefault(c, set()).add(recipe)
+        if req.get("network"):
+            need_net.add(recipe)
+
+    problems = []
+    for tool in sorted(need_tools):
+        if not shutil.which(tool):
+            pkg = TOOL_PKG.get(tool)
+            who = ", ".join(sorted(need_tools[tool]))
+            hint = f"  (apt-get install {pkg})" if pkg else ""
+            problems.append(f"missing tool '{tool}' needed by {who}{hint}")
+    for f in sorted(need_files):
+        if not os.path.exists(f):
+            pkg, who = need_files[f]
+            problems.append(f"missing file '{f}' needed by {who}  (apt-get install {pkg})")
+    for cap in sorted(need_caps):
+        if not _have_cap(cap):
+            who = ", ".join(sorted(need_caps[cap]))
+            problems.append(
+                f"no {cap} capability, needed by {who} -- this container/host cannot "
+                f"run it (see docs/40-workflow/container-vs-host.md)")
+    if need_net and check_network:
+        try:
+            import socket
+            socket.setdefaulttimeout(5)
+            socket.getaddrinfo("deb.debian.org", 80)
+        except OSError:
+            problems.append("no network, needed by " + ", ".join(sorted(need_net)))
+    return problems
+
 
 def verb(name: str):
     def deco(fn):
@@ -951,19 +1066,34 @@ def check_compat(doc: dict, work: str) -> list[str]:
     return warn
 
 
-def apply_recipe(path: str, work: str, dry: bool = False) -> int:
+def plan_recipe(path: str, facts: dict) -> tuple[dict, list[tuple[int, dict, bool]]]:
+    """Resolve a recipe into (doc, [(index, step, will_run)]).
+
+    Shared by preflight and apply so they cannot disagree about which steps run --
+    demanding a tool for a step that `when:` is going to skip would be its own bug.
+    """
     doc = load_recipe(path)
+    vars_ = dict(doc.get("vars", {}) or {})
+    steps = []
+    for i, raw in enumerate(doc["steps"], 1):
+        step = subst(raw, vars_)
+        run = "when" not in step or _when_ok(step["when"], facts)
+        steps.append((i, step, run))
+    return doc, steps
+
+
+def apply_recipe(path: str, work: str, dry: bool = False) -> int:
+    facts = _tree_facts(work, os.path.join(work, "iso"))
+    doc, steps = plan_recipe(path, facts)
     name = doc["metadata"]["name"]
     ctx = Ctx(work, os.path.dirname(os.path.abspath(path)), name, dry)
+    ctx.facts = facts
     print(f"  {name}: {doc['metadata']['summary']}")
     for w in check_compat(doc, work):
         print(f"    warning: {w}", file=sys.stderr)
 
-    ctx.facts = _tree_facts(work, ctx.tree)
-    vars_ = dict(doc.get("vars", {}) or {})
-    for i, raw in enumerate(doc["steps"], 1):
-        step = subst(raw, vars_)
-        if "when" in step and not _when_ok(step["when"], ctx.facts):
+    for i, step, run in steps:
+        if not run:
             print(f"    skip step {i} ({step['verb']}): when {step['when']} is false "
                   f"[{', '.join(f'{k}={v}' for k, v in sorted(ctx.facts.items()))}]")
             continue
@@ -989,8 +1119,21 @@ def main(argv: list[str]) -> int:
     ap.add_argument("recipes", nargs="+")
     ap.add_argument("-w", "--work", default="work")
     ap.add_argument("-n", "--dry-run", action="store_true")
+    ap.add_argument("--skip-preflight", action="store_true",
+                    help="do not check tools/capabilities first (not recommended)")
+    ap.add_argument("--preflight-only", action="store_true",
+                    help="check requirements and exit; touches nothing")
+    ap.add_argument("--facts", metavar="k=v,k=v",
+                    help="override the facts used for `when:` guards. kitchen build uses "
+                         "this to preflight from the profile BEFORE unpacking 400+ MiB")
     a = ap.parse_args(argv[1:])
-    if not os.path.isdir(os.path.join(a.work, "iso")):
+    override = {}
+    if a.facts:
+        for pair in a.facts.split(","):
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                override[k.strip()] = v.strip()
+    if not a.preflight_only and not os.path.isdir(os.path.join(a.work, "iso")):
         print(f"no work tree at {a.work}/iso (run 'kitchen unpack' first)", file=sys.stderr)
         return 2
     search = [os.path.join(ROOT, "recipes", "available"),
@@ -1000,7 +1143,45 @@ def main(argv: list[str]) -> int:
     except RuntimeError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
-    print(f"apply {len(paths)} recipe(s) to {a.work}" + ("  [dry run]" if a.dry_run else ""))
+    if a.preflight_only:
+        print(f"preflight {len(paths)} recipe(s)"
+              + (f"  [{a.facts}]" if a.facts else ""))
+    else:
+        print(f"apply {len(paths)} recipe(s) to {a.work}"
+              + ("  [dry run]" if a.dry_run else ""))
+
+    # Check everything the WHOLE plan needs before touching anything. Without this the
+    # first three recipes apply, download files and edit configs, and the fourth dies on
+    # a missing tool -- leaving a half-modified tree.
+    if not a.skip_preflight:
+        facts = dict(override) if override else _tree_facts(a.work, os.path.join(a.work, "iso"))
+        plan: list[tuple[str, dict]] = []
+        for p in paths:
+            try:
+                doc, steps = plan_recipe(p, facts)
+            except RuntimeError as e:
+                print(f"error: {os.path.basename(p)}: {e}", file=sys.stderr)
+                return 2
+            for _i, step, run in steps:
+                if run:
+                    plan.append((doc["metadata"]["name"], step))
+        problems = preflight(plan)
+        if problems:
+            # stdout is block-buffered when piped; without this the error lands above
+            # its own header and reads as if it happened first.
+            sys.stdout.flush()
+            print(f"\npreflight failed -- {len(problems)} unmet requirement(s), "
+                  "nothing has been modified:", file=sys.stderr)
+            for pr in problems:
+                print(f"  - {pr}", file=sys.stderr)
+            print("\nRun `kitchen doctor` for the full tool and capability report.",
+                  file=sys.stderr)
+            sys.stderr.flush()
+            return 2
+        print(f"  preflight ok ({len(plan)} steps)")
+    if a.preflight_only:
+        return 0
+
     for p in paths:
         try:
             apply_recipe(p, a.work, a.dry_run)
