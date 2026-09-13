@@ -35,7 +35,7 @@ then the commit gates in `ci/checks/`.
 | `10-anatomy/` | How a Slax ISO is put together, component by component | planned |
 | `15-upstream/` | `vendor/linux-live` as source of truth, annotated | planned |
 | `20-boot-sequence/` | Firmware → loader → kernel → init → chroot, per medium | planned |
-| `50-cookbook/` | [add-packages](50-cookbook/add-packages.md), [memtest86plus](50-cookbook/memtest86plus.md), [remove-bundle](50-cookbook/remove-bundle.md), [rootcopy-overlay](50-cookbook/rootcopy-overlay.md) | partial |
+| `50-cookbook/` | [add-packages](50-cookbook/add-packages.md), [memtest86plus](50-cookbook/memtest86plus.md), [remove-bundle](50-cookbook/remove-bundle.md), [remove-chromium](50-cookbook/remove-chromium.md), [rootcopy-overlay](50-cookbook/rootcopy-overlay.md) | partial |
 | `60-testing/` | [CI](60-testing/ci.md); QEMU and boot tests | partial |
 | `90-reference/` | [CLI reference](90-reference/cli.md) + profile format | partial |
 

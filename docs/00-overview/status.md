@@ -36,6 +36,7 @@ the resulting ISO in QEMU and reading the console.
 | `serial-console` | ✅ entry present in both configs |
 | `memtest86plus` | ✅ **booted on BIOS and UEFI** — Memtest86+ 8.10 selected from each menu and running |
 | `remove-bundle` | ✅ **booted** — ISO 416 → 336 MiB, five bundles instead of six |
+| `remove-chromium` | ✅ named preset for the above; 416 → 336 MiB (Debian), 455 → 340 MiB (Slackware) |
 | `rootcopy-overlay` | ✅ **booted** — file copy and preinit hook both confirmed firing |
 | `add-packages` | ✅ **booted** on Debian — bundle mounts last, `Live Kit done, starting slax` |
 
@@ -96,7 +97,7 @@ clear message naming what *is* available, rather than silently skipping.
 
 ### Recipes
 
-7 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
+8 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
 `initramfs-busybox`, `kernel-replace`.
 
 ### Documentation
