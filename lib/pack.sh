@@ -71,6 +71,17 @@ kitchen_pack() {
     fi
     [ -f "$src/slax/boot/isolinux.bin" ] || die "pack: $src does not look like a Slax tree (no slax/boot/isolinux.bin)"
 
+    # Recipes record intent in <work>/.kitchen/pack.yaml rather than knowing xorriso
+    # flags themselves: boot.isohybrid sets hybrid=true, boot.uefi sets uefi=true.
+    # An explicit --uefi/--hybrid on the command line still wins.
+    _hints="$(dirname "$src")/.kitchen/pack.yaml"
+    if [ -f "$_hints" ]; then
+        grep -q '^hybrid: *true' "$_hints" && [ "$hybrid" = 0 ] && {
+            hybrid=1; printf '  %shint%s hybrid MBR/GPT requested by a recipe\n' "$D" "$O"; }
+        grep -q '^uefi: *true' "$_hints" && [ "$uefi" = 0 ] && {
+            uefi=1; printf '  %shint%s UEFI El Torito entry requested by a recipe\n' "$D" "$O"; }
+    fi
+
     if [ -z "$backend" ]; then
         if [ "$uefi" = 1 ] || [ "$hybrid" = 1 ]; then backend=xorriso; else backend=genisoimage; fi
     fi

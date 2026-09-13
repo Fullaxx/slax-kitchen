@@ -1,0 +1,20 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: isohybrid
+  summary: Make the ISO dd-able to a USB stick (adds an MBR, and a GPT alongside UEFI)
+  tags: [boot, usb, flagship]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+steps:
+  # A stock Slax ISO has bytes 0..512 all zero -- no MBR signature, no partition table,
+  # no GPT. `dd if=slax.iso of=/dev/sdX` therefore yields a stick that boots on nothing.
+  # Upstream's only supported USB path is "copy /slax/ onto FAT, then run bootinst".
+  #
+  # The MBR is stamped at mastering time by xorriso, so this step only records intent
+  # and verifies the SYSLINUX MBR template is installed. Combine with uefi-bootable to
+  # get -isohybrid-gpt-basdat as well, which is what makes the stick boot on UEFI too.
+  - verb: boot.isohybrid

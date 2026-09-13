@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Fullaxx/slax-kitchen/schema/profile.schema.json",
+  "title": "slax-kitchen Profile",
+  "description": "One build: a base ISO plus an ordered list of recipes.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "base", "recipes"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "slax-kitchen/v1" },
+    "kind": { "const": "Profile" },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "summary": { "type": "string" }
+      }
+    },
+    "base": {
+      "type": "object",
+      "required": ["flavour", "arch", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "flavour": { "enum": ["debian", "slackware"] },
+        "arch": { "enum": ["32bit", "64bit"] },
+        "version": { "type": "string" },
+        "iso": { "type": "string", "description": "explicit path; otherwise kitchen fetch" }
+      }
+    },
+    "recipes": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "hybrid": { "type": "boolean", "default": false },
+        "backend": { "enum": ["genisoimage", "xorriso"] }
+      }
+    },
+    "test": {
+      "type": "array",
+      "items": { "enum": ["structure", "bios-boot", "uefi-boot", "usb", "persistence"] }
+    }
+  }
+}

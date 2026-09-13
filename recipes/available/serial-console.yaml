@@ -1,0 +1,28 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: serial-console
+  summary: Add a boot entry that logs the whole boot to the serial port
+  tags: [boot, testing, headless]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  port: ttyS0
+  speed: "115200"
+steps:
+  # A serial entry is the prerequisite for every automated boot test: QEMU can capture
+  # ttyS0 with -nographic, so the livekit init messages become machine-readable. The
+  # stock menu has no such entry, which is why boot testing needs this first.
+  - verb: boot.menu
+    targets: [isolinux.cfg, syslinux.cfg]
+    add:
+      label: serial
+      menu_label: "Slax (serial console on {{port}})"
+      kernel: /slax/boot/vmlinuz
+      append: >-
+        vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw
+        printk.time=0 consoleblank=0 automount
+        console={{port}},{{speed}}n8 console=tty0

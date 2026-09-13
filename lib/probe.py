@@ -156,6 +156,13 @@ def main(argv: list[str]) -> int:
         for f, frm, to, recipe in EXPLAINS:
             if k == f and e == frm and act == to:
                 explained.append((k, recipe)); real.remove((k, e, act))
+    # Knock-on effects: adding an EFI El Torito section necessarily grows the entry
+    # list, so do not report that as a separate unexplained difference.
+    if any(k == "eltorito.uefi_bootable" for k, _r in explained):
+        for d in list(real):
+            if d[0] == "eltorito.entries":
+                explained.append((d[0], "uefi-bootable (adds the EFI section)"))
+                real.remove(d)
 
     if critical:
         verdict = "DIFFERENT RELEASE"

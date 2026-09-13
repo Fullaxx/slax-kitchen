@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Fullaxx/slax-kitchen/schema/recipe.schema.json",
+  "title": "slax-kitchen Recipe",
+  "description": "A declarative modification to a Slax ISO work tree.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "slax-kitchen/v1" },
+    "kind": { "const": "Recipe" },
+    "metadata": {
+      "type": "object",
+      "required": ["name", "summary"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "description": "must match the filename stem"
+        },
+        "summary": { "type": "string", "minLength": 8 },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "authors": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "compat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "flavours": {
+          "type": "array",
+          "items": { "enum": ["debian", "slackware"] },
+          "minItems": 1
+        },
+        "arch": {
+          "type": "array",
+          "items": { "enum": ["32bit", "64bit"] },
+          "minItems": 1
+        },
+        "slax": {
+          "type": "string",
+          "description": "semver range, e.g. '>=12.0.0 <13.0.0'"
+        },
+        "requires": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "recipe names applied before this one"
+        },
+        "privilege": {
+          "enum": ["none", "chroot", "kvm"],
+          "default": "none",
+          "description": "none runs anywhere; chroot needs CAP_SYS_ADMIN or proot; kvm is verify-only"
+        }
+      }
+    },
+    "vars": {
+      "type": "object",
+      "description": "substituted into step strings as {{name}}",
+      "additionalProperties": { "type": ["string", "number", "boolean"] }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/step" }
+    }
+  },
+  "$defs": {
+    "step": {
+      "type": "object",
+      "required": ["verb"],
+      "properties": {
+        "verb": {
+          "enum": [
+            "bundle.fromDir", "bundle.fromTarball", "bundle.files",
+            "bundle.remove", "bundle.renumber", "bundle.packages", "bundle.script",
+            "rootcopy.files", "rootcopy.preinit",
+            "boot.menu", "boot.cmdline", "boot.branding", "boot.payload",
+            "boot.uefi", "boot.isohybrid", "boot.grub", "boot.secureboot",
+            "initramfs.files", "initramfs.modules", "initramfs.config",
+            "initramfs.patch", "kernel.replace",
+            "iso.files", "iso.metadata", "iso.checksums"
+          ]
+        },
+        "when": {
+          "type": "string",
+          "description": "skip unless this matches, e.g. 'flavour==debian'"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "verb": { "const": "boot.payload" } }, "required": ["verb"] },
+          "then": {
+            "required": ["dest"],
+            "properties": {
+              "src": { "type": "string", "description": "URL or path relative to the recipe" },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "dest": { "type": "string", "pattern": "^slax/" },
+              "mode": { "type": "string", "pattern": "^[0-7]{3,4}$" }
+            },
+            "dependentRequired": { "src": ["sha256"] }
+          }
+        },
+        {
+          "if": { "properties": { "verb": { "const": "boot.menu" } }, "required": ["verb"] },
+          "then": {
+            "properties": {
+              "targets": {
+                "type": "array",
+                "items": { "enum": ["isolinux.cfg", "syslinux.cfg"] },
+                "minItems": 1
+              },
+              "add": { "$ref": "#/$defs/menuEntry" },
+              "remove": { "type": "string", "description": "LABEL to delete" },
+              "default": { "type": "string" },
+              "timeout": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "verb": { "const": "boot.cmdline" } }, "required": ["verb"] },
+          "then": {
+            "properties": {
+              "targets": { "type": "array", "items": { "type": "string" } },
+              "labels": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "which LABELs to touch; omit for all"
+              },
+              "append": { "type": "array", "items": { "type": "string" } },
+              "remove": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "verb": { "const": "bundle.remove" } }, "required": ["verb"] },
+          "then": {
+            "required": ["match"],
+            "properties": { "match": { "type": "string", "description": "regex over bundle filenames" } }
+          }
+        },
+        {
+          "if": { "properties": { "verb": { "const": "iso.files" } }, "required": ["verb"] },
+          "then": {
+            "required": ["files"],
+            "properties": {
+              "files": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["dest"],
+                  "properties": {
+                    "src": { "type": "string" },
+                    "content": { "type": "string" },
+                    "dest": { "type": "string" },
+                    "mode": { "type": "string", "pattern": "^[0-7]{3,4}$" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "menuEntry": {
+      "type": "object",
+      "required": ["label", "menu_label"],
+      "properties": {
+        "label": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+        "menu_label": { "type": "string" },
+        "kernel": { "type": "string" },
+        "linux": { "type": "string" },
+        "com32": { "type": "string" },
+        "initrd": { "type": "string" },
+        "append": { "type": "string" },
+        "position": { "enum": ["top", "bottom"], "default": "bottom" }
+      }
+    }
+  }
+}

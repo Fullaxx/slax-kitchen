@@ -36,7 +36,8 @@ ${B}COMMANDS${O}
   fingerprint <iso> [-o F]   generate a compat fingerprint
   fetch <flavour> <arch> <ver>   download + verify a base ISO into isos/
   unpack <iso> [-o DIR]      explode an ISO into a work tree      (default: ./work)
-  apply <recipe>...          apply recipes to a work tree
+  apply <recipe>... [-w DIR] apply recipes to a work tree (-n for a dry run)
+  validate <file.yaml>...    check a recipe or profile against its schema
   pack [-o FILE|DIR]         rebuild an ISO from a work tree      (default: ./out/<name>-custom.iso)
   build <profile>            fetch -> unpack -> apply -> pack -> test
   test <iso> [--structure|--bios|--uefi|--usb|--persistence]
@@ -178,10 +179,12 @@ case "$cmd" in
     version|--version|-V) echo "kitchen $KITCHEN_VERSION" ;;
     help|--help|-h|'')    usage ;;
     probe)         exec "$REPO_ROOT/lib/probe.py" "$@" ;;
+    apply)         exec "$REPO_ROOT/lib/apply.py" "$@" ;;
+    validate)      exec "$REPO_ROOT/lib/validate.py" "$@" ;;
     fingerprint)   exec "$REPO_ROOT/lib/fingerprint.py" "$@" ;;
     unpack)        kitchen_unpack "$@" ;;
     pack)          kitchen_pack "$@" ;;
-    fetch|apply|build|test|shell|diff|upstream-diff)
+    fetch|build|test|shell|diff|upstream-diff)
         die "'$cmd' is not implemented yet -- see INITIAL_TASKS.DNC.md (T-2xx)" ;;
     *)             usage; die "unknown command: $cmd" ;;
 esac

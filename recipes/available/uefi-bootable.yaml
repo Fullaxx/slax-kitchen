@@ -1,0 +1,25 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: uefi-bootable
+  summary: Make the ISO boot on UEFI firmware, which the stock ISO cannot do
+  tags: [boot, uefi, flagship]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+steps:
+  # The stock El Torito catalog has exactly ONE entry, platform 0x00 (x86 BIOS). There
+  # is no 0xEF section header and no EFI System Partition, so UEFI firmware has nothing
+  # to boot. /slax/boot/EFI/Boot/bootx64.efi does exist -- but it is a copy of
+  # syslinux.efi, which can only read FAT, and bootinst.sh relocates it to the root of a
+  # FAT USB stick. On the ISO9660 filesystem it is unreachable dead weight.
+  #
+  # This adds a small FAT ESP holding GRUB instead, because GRUB can read iso9660: the
+  # kernel and initramfs stay where they are on the ISO and only BOOTX64.EFI lives in
+  # the ESP. The GRUB menu is generated from isolinux.cfg, so entries added by other
+  # recipes are mirrored automatically -- which is why this recipe should run last.
+  #
+  # Note x86_64 only: upstream ships no bootia32.efi and neither do we.
+  - verb: boot.uefi
