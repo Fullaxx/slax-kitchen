@@ -4,6 +4,9 @@ Slax and Linux Live Kit are the work of **Tomáš Matějíček** — <https://ww
 <https://github.com/Tomas-M/linux-live>. This project customizes his work. See
 [NOTICE.md](../NOTICE.md).
 
+**[Project status](00-overview/status.md)** — what is verified, what is unsupported, what does not
+exist yet. Read this before relying on anything.
+
 ## Start here
 
 **I want to customize an ISO.**
@@ -24,6 +27,7 @@ then the commit gates in `ci/checks/`.
 |---|---|
 | Section | Contents | Status |
 |---|---|---|
+| `00-overview/` | [Project status](00-overview/status.md) | current |
 | `30-inventory/` | Software inventory + [known upstream issues](30-inventory/known-upstream-bugs.md) | partial |
 | `40-workflow/` | [unpack](40-workflow/unpack.md), [edit bundles](40-workflow/edit-bundles.md), [repack](40-workflow/repack-iso.md), [container vs host](40-workflow/container-vs-host.md) | partial |
 | `70-compat/` | [Fingerprints and `kitchen probe`](70-compat/fingerprints.md) | partial |
@@ -31,7 +35,7 @@ then the commit gates in `ci/checks/`.
 | `10-anatomy/` | How a Slax ISO is put together, component by component | planned |
 | `15-upstream/` | `vendor/linux-live` as source of truth, annotated | planned |
 | `20-boot-sequence/` | Firmware → loader → kernel → init → chroot, per medium | planned |
-| `50-cookbook/` | One page per recipe | planned |
+| `50-cookbook/` | [add-packages](50-cookbook/add-packages.md); one page per recipe | partial |
 | `60-testing/` | QEMU, automated boot tests, CI | planned |
 | `90-reference/` | CLI and schema reference | planned |
 

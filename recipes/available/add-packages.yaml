@@ -5,7 +5,12 @@ metadata:
   summary: Install extra distro packages into a new bundle (the template recipe)
   tags: [bundle, packages, template]
 compat:
-  flavours: [debian, slackware]
+  # Debian only, deliberately. The Slackware path is implemented and does work -- it
+  # builds a correct, bootable bundle -- but it cannot be *relied* on, for two reasons
+  # outside this repo's control: Slackware has no dependency resolution, and the stock
+  # mirror is -current which has drifted years past this 2023 base.
+  # See docs/50-cookbook/add-packages.md.
+  flavours: [debian]
   arch: [32bit, 64bit]
   slax: ">=12.0.0"
   privilege: chroot
@@ -36,11 +41,13 @@ steps:
       update: true
       no_recommends: true
 
-  - verb: bundle.packages
-    when: flavour==slackware
-    bundle: "{{bundle}}"
-    from: [01-core]
-    packages: [tmux]
-    # Slax 15.0.4 points slackpkg at slackware64-current, which has moved years past this
-    # 2023 base. Pin a mirror here if you need reproducibility or ABI safety, e.g.
-    #   mirror: https://mirrors.slackware.com/slackware/slackware64-15.0/
+  # A Slackware step would look like the below. It is left commented out because the
+  # flavour is unsupported, not because it fails -- see the cookbook page. If you enable
+  # it, name every transitive dependency yourself and pin a mirror:
+  #
+  #   - verb: bundle.packages
+  #     when: flavour==slackware
+  #     bundle: "{{bundle}}"
+  #     from: [01-core]
+  #     packages: [tmux, libevent]
+  #     mirror: https://mirrors.slackware.com/slackware/slackware64-15.0/
