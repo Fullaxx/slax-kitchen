@@ -57,13 +57,24 @@ if rc:
     payload = [d for d in diff if d > 256]
     if payload:
         s0 = payload[0]
-        a.seek(s0 * SEC); b.seek(s0 * SEC)
-        xa, xb = a.read(64), b.read(64)
+        # Reopen: the comparison above ran inside a `with`, so a/b are closed here.
+        with open(a_p, "rb") as fa, open(b_p, "rb") as fb:
+            fa.seek(s0 * SEC); fb.seek(s0 * SEC)
+            xa, xb = fa.read(64), fb.read(64)
         print(f"  sector {s0} (offset 0x{s0*SEC:x}) -- first payload difference")
         print(f"    original: {xa[:32].hex()}")
         print(f"    rebuilt : {xb[:32].hex()}")
         print(f"    original ascii: {xa[:32]!r}")
         print(f"    rebuilt  ascii: {xb[:32]!r}")
+        # Where does each side's payload actually start? If the rebuild merely shifted,
+        # the same bytes appear at a different LBA.
+        import subprocess as sp
+        for tag, path in (("original", a_p), ("rebuilt ", b_p)):
+            r = sp.run(["xorriso", "-indev", path, "-find", "/", "-exec", "report_lba", "--"],
+                       capture_output=True, text=True)
+            rows = [l for l in r.stdout.splitlines() if l.startswith("File data")][:4]
+            for row in rows:
+                print(f"    {tag} lba: {row.strip()}")
         runs, start, prev = [], payload[0], payload[0]
         for d in payload[1:]:
             if d != prev + 1:
