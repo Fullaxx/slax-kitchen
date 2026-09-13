@@ -11,8 +11,11 @@ check_files_nl | grep -E '\.md$' | grep -v '^vendor/' > /tmp/.kitchen-md.$$ || t
 while IFS= read -r f; do
     [ -f "$REPO_ROOT/$f" ] || continue
     dir=$(dirname "$REPO_ROOT/$f")
-    # [text](target) where target is relative (no scheme, not a bare anchor)
-    sed -nE 's/.*\]\(([^)#[:space:]]+)(#[^)]*)?\).*/\1/p' "$REPO_ROOT/$f" \
+    # [text](target) for every link on the line. grep -o, not sed -n s///p: a
+    # substitution yields at most ONE match per line, so a line carrying two links
+    # only ever got one of them checked.
+    grep -oE '\]\([^)#[:space:]]+' "$REPO_ROOT/$f" 2>/dev/null \
+      | sed 's/^](//' \
       | grep -vE '^(https?|mailto|ftp):' \
       | while IFS= read -r target; do
             [ -n "$target" ] || continue
