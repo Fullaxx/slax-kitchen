@@ -40,6 +40,7 @@ silently did nothing is exactly what this catches.
 kitchen test out/slax-example-12.2.0.iso                 # structure (default)
 kitchen test out/x.iso --structure --expect-uefi --expect-hybrid
 kitchen test out/x.iso --bios --uefi --seconds 40
+kitchen test out/x.iso --kernel --expect 'dpkg-status: 600 packages'
 ```
 
 `--structure` runs `tests/structure/iso_assert.py`: El Torito shape, Rock Ridge, Joliet,
@@ -48,6 +49,12 @@ boot-info-table consistency, squashfs parameters on every bundle, and required f
 `--bios` / `--uefi` boot the ISO in QEMU and capture a serial log plus a screenshot into
 `<iso-dir>/boot-tests/`. Without `/dev/kvm` these run under TCG and are slow; the command says so
 rather than appearing to hang.
+
+`--kernel` boots the kernel directly, bypassing the bootloader. It is the mode that can actually
+fail on its own, because it puts the kernel on `ttyS0` by construction and requires livekit's
+three markers in the serial log. `--expect STRING` adds your own requirements, repeatably — pair it
+with the [`testkit`](../50-cookbook/testkit.md) recipe, which prints facts about the assembled
+union just before `change_root`, and a structural claim becomes a boot assertion.
 
 ## `unpack <iso> [-o DIR]`
 
@@ -333,21 +340,53 @@ covered the day it is written and a hardcoded table cannot rot — which is the 
 this command exists to catch. `--write` regenerates
 [drift-report.md](../15-upstream/drift-report.md).
 
-## `doctor [--install-hooks]`
+## `doctor [--report|--install-hooks]`
 
 Reports every required tool, the kernel/container capabilities this machine has, and which recipe
 tiers it can therefore run. `--install-hooks` symlinks `.git/hooks/{pre-commit,pre-push}` into
 `ci/hooks/`.
+
+**`--report` is the one to paste into a bug report.** One plain-text block, no colour, and unlike
+the default view it carries **tool versions** — which is what "works here, fails there" usually
+comes down to:
+
+```
+kitchen:  0.1.0-dev (3b2f6e0)
+uname:    Linux 6.8.0-124-generic x86_64 GNU/Linux
+os:       Ubuntu 24.04.4 LTS
+uid:      0 (root)
+tools:
+  mksquashfs           mksquashfs version 4.6.1 (2023/03/25)
+  xz                   xz (XZ Utils) 5.4.5
+toolchain:
+  xz --check=crc32: yes
+  squashfs-tools >= 4.2: yes (4.6.1)
+capabilities:
+  mknod=yes  chroot=yes  kvm=no ...
+```
+
+The `toolchain` block **probes** the two facts that decide correctness rather than convenience:
+the kernel's xz decoder cannot do CRC64, which is xz's default, so an initramfs built without
+`--check=crc32` is an image that will not boot. Both were asserted in prose here for a long time
+and tested nowhere.
 
 ## `validate <file.yaml>...`
 
 Checks recipes and profiles against their JSON Schemas. Variables are substituted **before**
 validation, so a templated `bundle: "{{bundle}}"` is checked against its resolved value.
 
-## `selftest [stage]`
+## `selftest [stage] [scope]`
 
 Runs the commit gates: `pre-commit`, `pre-push` or `ci`. Hooks call the same script, so a hook can
 never drift from CI.
+
+Every gate runs at every stage; the stage only decides the default *scope* — `staged` for
+`pre-commit`, `tree` for the other two. Pass a scope explicitly to override it.
+
+## `help [command]`, and `--help`
+
+`kitchen help` lists the commands; `kitchen help <command>` or `kitchen <command> --help` gives
+detail for one. This works on **every** subcommand.
 
 ---
 

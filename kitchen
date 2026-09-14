@@ -17,6 +17,18 @@ else B=; G=; Y=; R=; D=; O=; fi
 die() { printf '%serror:%s %s\n' "$R" "$O" "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# The version string alone cannot pin a build. There are no tags, so --always gives the
+# short SHA and --dirty flags uncommitted work -- both of which a bug report needs and
+# "0.1.0-dev" cannot supply. Falls back to the bare version outside a checkout.
+kitchen_version() {
+    _v=$KITCHEN_VERSION
+    if [ -d "$REPO_ROOT/.git" ] && have git; then
+        _c=$(git -C "$REPO_ROOT" describe --always --dirty 2>/dev/null || true)
+        [ -n "${_c:-}" ] && _v="$_v ($_c)"
+    fi
+    printf '%s' "$_v"
+}
+
 # shellcheck source=lib/unpack.sh
 . "$REPO_ROOT/lib/unpack.sh"
 # shellcheck source=lib/pack.sh
@@ -26,10 +38,11 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 usage() {
     cat <<USAGE
-${B}kitchen${O} $KITCHEN_VERSION -- customize a Slax ISO from declarative recipes
+${B}kitchen${O} $(kitchen_version) -- customize a Slax ISO from declarative recipes
 
 ${B}USAGE${O}
   kitchen <command> [options]
+  kitchen help <command>     detail for one command
 
 ${B}COMMANDS${O}
   doctor [--install-hooks]   check tools + capabilities; report what this machine can run
@@ -47,7 +60,7 @@ ${B}COMMANDS${O}
   shell <bundle|work>        chroot into a bundle for exploration
   diff <isoA> <isoB>         structural + per-file diff
   upstream-diff              regenerate docs/15-upstream/drift-report.md
-  version                    print version
+  version                    print the version and git commit
 
 ${B}TYPICAL RUN${O}
   kitchen unpack isos/slax-64bit-debian-12.2.0.iso   # -> ./work/iso/
@@ -164,7 +177,102 @@ doctor_tier() {
     fi
 }
 
+# Version of one tool, in one line. Every one of these spells it differently, and a
+# couple read stdin when confused, so: no shared flag, stdin closed, and a timeout --
+# `kitchen doctor` must never be the command that hangs.
+tool_version() {
+    _t=$1
+    case "$_t" in
+        mksquashfs|unsquashfs) _o=$(timeout 5 "$_t" -version </dev/null 2>&1) ;;
+        xorriso)               _o=$(timeout 5 xorriso -version </dev/null 2>&1 \
+                                    | grep -i 'xorriso version' | head -1) ;;
+        7z)                    _o=$(timeout 5 7z </dev/null 2>&1 | grep -i '^7-Zip' | head -1) ;;
+        isohybrid|extlinux|syslinux)
+                               _o=$(timeout 5 "$_t" --version </dev/null 2>&1) ;;
+        # dosfstools prints its usage on --help and the version only at the end.
+        mkfs.vfat)             _o=$(timeout 5 mkfs.vfat --help </dev/null 2>&1 \
+                                    | grep -iE '^mkfs\.fat [0-9]' | head -1) ;;
+        mcopy)                 _o=$(timeout 5 mcopy -V </dev/null 2>&1 | head -1) ;;
+        # ShellCheck prints a banner first; the version is on the second line.
+        shellcheck)            _o="shellcheck $(timeout 5 shellcheck --version </dev/null 2>&1 \
+                                    | sed -n 's/^version: //p' | head -1)" ;;
+        *)                     _o=$(timeout 5 "$_t" --version </dev/null 2>&1) ;;
+    esac
+    printf '%s' "$(printf '%s' "$_o" | head -1 | cut -c1-58)"
+}
+
+# Two toolchain facts decide correctness rather than convenience, and doctor asserted
+# both in prose while testing neither. The xz row's own description says "must support
+# --check=crc32" -- the kernel's decoder cannot do CRC64, which is xz's default, so an
+# initramfs built with the wrong check is a kernel that will not boot.
+doctor_toolchain() {
+    if printf x | timeout 5 xz --check=crc32 -c >/dev/null 2>&1; then
+        echo "xz --check=crc32: yes"
+    else
+        echo "xz --check=crc32: NO -- initramfs recipes will build an unbootable image"
+    fi
+    _sq=$(timeout 5 mksquashfs -version </dev/null 2>&1 | head -1 | sed -n 's/.*version \([0-9][0-9.]*\).*/\1/p')
+    if [ -n "${_sq:-}" ]; then
+        _maj=${_sq%%.*}; _rest=${_sq#*.}; _min=${_rest%%.*}
+        if [ "${_maj:-0}" -gt 4 ] || { [ "${_maj:-0}" -eq 4 ] && [ "${_min:-0}" -ge 2 ]; }; then
+            echo "squashfs-tools >= 4.2: yes ($_sq)"
+        else
+            echo "squashfs-tools >= 4.2: NO ($_sq) -- xz compression support is not reliable"
+        fi
+    else
+        echo "squashfs-tools >= 4.2: unknown (mksquashfs not found)"
+    fi
+}
+
+# One pasteable block, no colour, with VERSIONS. This is what a bug report should
+# carry: "it works here and not there" is almost always a tool version or a missing
+# kernel capability, and neither is visible from the outside.
+doctor_report() {
+    echo "--- kitchen doctor --report ---"
+    echo "kitchen:  $(kitchen_version)"
+    echo "repo:     $REPO_ROOT"
+    echo "uname:    $(uname -srmo 2>/dev/null || uname -a)"
+    if [ -r /etc/os-release ]; then
+        echo "os:       $(. /etc/os-release 2>/dev/null; printf '%s' "${PRETTY_NAME:-unknown}")"
+    fi
+    echo "uid:      $(id -u) ($(id -un 2>/dev/null || echo '?'))"
+    echo "python:   $(python3 -V 2>&1)"
+    echo
+    echo "tools:"
+    echo "$TOOLS" | while IFS='|' read -r bin pkg _why; do
+        if have "$bin"; then
+            printf '  %-20s %s\n' "$bin" "$(tool_version "$bin")"
+        else
+            printf '  %-20s MISSING (apt-get install %s)\n' "$bin" "$pkg"
+        fi
+    done
+    echo
+    echo "toolchain:"
+    doctor_toolchain | sed 's/^/  /'
+    echo
+    echo "capabilities:"
+    doctor_caps | sed 's/^/  /'
+    echo
+    echo "privilege tiers runnable here:"
+    _c=$(doctor_caps)
+    case "$_c" in *mknod=yes*) _mk=yes ;; *) _mk=no ;; esac
+    case "$_c" in *chroot=yes*) _ch=yes ;; *) _ch=no ;; esac
+    case "$_c" in *kvm=yes*) _kv=yes ;; *) _kv=no ;; esac
+    echo "  privilege: none     yes"
+    echo "  privilege: mknod    $_mk"
+    if [ "$_ch" = yes ] && [ "$_mk" = yes ]; then echo "  privilege: chroot   yes"
+    else echo "  privilege: chroot   no (needs chroot and mknod)"; fi
+    if [ "$_kv" = yes ]; then echo "  privilege: kvm      yes"
+    elif have qemu-system-x86_64; then echo "  privilege: kvm      TCG only (no /dev/kvm; 10-20x slower)"
+    else echo "  privilege: kvm      no (qemu not installed)"; fi
+    echo "--- end ---"
+}
+
 cmd_doctor() {
+    case "${1:-}" in
+        -h|--help) usage_cmd doctor; return 0 ;;
+        --report)  doctor_report; return 0 ;;
+    esac
     if [ "${1:-}" = "--install-hooks" ]; then
         [ -d "$REPO_ROOT/.git" ] || die "not a git repo: $REPO_ROOT"
         for h in pre-commit pre-push; do
@@ -174,12 +282,119 @@ cmd_doctor() {
         printf '%sHooks are symlinks into ci/hooks/, so they follow the repo.%s\n' "$D" "$O"
         return 0
     fi
-    printf '%sslax-kitchen doctor%s  (%s)\n\n' "$B" "$O" "$KITCHEN_VERSION"
+    printf '%sslax-kitchen doctor%s  (%s)\n\n' "$B" "$O" "$(kitchen_version)"
     doctor_tools
+    printf '\n%sToolchain%s\n' "$B" "$O"
+    doctor_toolchain | sed 's/^/  /'
     doctor_tier "$(doctor_caps)"
     printf '\n%shooks%s  ' "$B" "$O"
     if [ -L "$REPO_ROOT/.git/hooks/pre-commit" ]; then printf '%sinstalled%s\n' "$G" "$O"
     else printf '%snot installed%s  (kitchen doctor --install-hooks)\n' "$Y" "$O"; fi
+}
+
+# Detail for one command. The four shell subcommands hand-roll their flag loops and
+# used to die on --help ("error: test: unknown option --help"), which is a poor first
+# impression and made the issue templates hard to write. The Python commands already
+# have argparse, so help_for just forwards to them rather than duplicating their text.
+usage_cmd() {
+    case "$1" in
+      unpack) cat <<'H'
+kitchen unpack <iso> [-o DIR]     explode an ISO into a work tree
+
+  -o, --output DIR     where to put it (default: ./work)
+  -f, --force          overwrite an existing work tree
+
+Records provenance in <work>/.kitchen/origin.yaml, which `kitchen status` reads back.
+H
+        ;;
+      pack) cat <<'H'
+kitchen pack [-s DIR] [-o FILE]   rebuild an ISO from a work tree
+
+  -s, --source DIR     the iso/ directory to pack (default: work/iso)
+  -o, --output FILE    output path (default: ./out/<name>-custom.iso)
+  -f, --force          overwrite an existing ISO
+      --backend NAME   genisoimage or xorriso (default: genisoimage, or
+                       xorriso when --uefi/--hybrid is in play)
+      --uefi           add the EFI El Torito alt-boot entry
+      --hybrid         add an isohybrid MBR (and a GPT alongside UEFI)
+      --volid ID       volume id            --appid ID     application id
+      --sysid ID       system id            --publisher S  --preparer S
+
+Recipes record these as hints in <work>/.kitchen/pack.yaml; a flag given here wins.
+Debian status fragments are merged into 98-dpkg-db.sb at this point.
+H
+        ;;
+      build) cat <<'H'
+kitchen build <profile> [options]  unpack -> apply -> pack -> test
+
+  --keep               keep the work tree afterwards
+  --force              rebuild from scratch, overwriting the work tree and ISO
+  --no-test            skip the profile's test list
+
+<profile> is a name under profiles/ or a path to a Profile YAML.
+H
+        ;;
+      test) cat <<'H'
+kitchen test <iso> [options]      assert things about a built ISO
+
+  --structure          structural assertions -- fast, no boot, no mounting
+  --kernel             direct kernel boot in QEMU; asserts the livekit markers
+  --bios               boot the BIOS bootloader (screenshot evidence)
+  --uefi               boot under OVMF (screenshot evidence)
+  --expect STRING      also require STRING in the serial log (repeatable)
+  --seconds N          how long to let the guest run (default: 32)
+  --expect-uefi        --structure: require an EFI El Torito entry
+  --expect-hybrid      --structure: require an isohybrid MBR
+
+--kernel is the one that can fail on its own: it puts the kernel on ttyS0 by
+construction. The menu modes have no console=ttyS0 on their default entry, so their
+serial log stays empty and they prove nothing without --expect.
+
+Logs and screenshots land in <dir of iso>/boot-tests/.
+H
+        ;;
+      doctor) cat <<'H'
+kitchen doctor [options]          what this machine can and cannot build
+
+  --report             one pasteable plain-text block, with tool VERSIONS --
+                       this is what a bug report should carry
+  --install-hooks      symlink .git/hooks/{pre-commit,pre-push} into ci/hooks/
+
+With no options: tools, kernel capabilities, and a summary of which recipe
+privilege tiers are runnable here.
+H
+        ;;
+      selftest) cat <<'H'
+kitchen selftest [stage] [scope]  run the commit gates
+
+  stage    pre-commit | pre-push | ci        (default: ci)
+  scope    staged | tree                     (default: staged for pre-commit,
+                                              tree for pre-push and ci)
+
+Every gate runs at every stage; the stage only decides which files they look at.
+`kitchen selftest ci` reproduces the CI gates job exactly.
+H
+        ;;
+      version) cat <<'H'
+kitchen version                   print the version and git commit
+
+There are no release tags, so the commit comes from `git describe --always --dirty`.
+Quote it in bug reports: the version string alone cannot pin a build.
+H
+        ;;
+      *) return 1 ;;
+    esac
+}
+
+help_for() {
+    case "$1" in
+      unpack|pack|build|test|doctor|selftest|version) usage_cmd "$1" ;;
+      probe|apply|validate|fetch|fingerprint) exec "$REPO_ROOT/lib/$1.py" --help ;;
+      status|diff|shell)   exec python3 "$REPO_ROOT/lib/$1.py" --help ;;
+      upstream-diff)       exec python3 "$REPO_ROOT/lib/upstream_diff.py" --help ;;
+      help|--help|-h)      usage ;;
+      *) usage; die "unknown command: $1" ;;
+    esac
 }
 
 # --------------------------------------------------------------- dispatch ----
@@ -187,9 +402,14 @@ cmd=${1:-}
 [ $# -gt 0 ] && shift
 case "$cmd" in
     doctor)        cmd_doctor "$@" ;;
-    selftest)      exec "$REPO_ROOT/ci/run-checks.sh" "${1:-ci}" ;;
-    version|--version|-V) echo "kitchen $KITCHEN_VERSION" ;;
-    help|--help|-h|'')    usage ;;
+    # "$@", not "${1:-ci}" -- run-checks.sh takes a second positional (scope) that was
+    # being silently dropped, so `kitchen selftest ci staged` ignored the scope.
+    selftest)      case "${1:-}" in -h|--help) usage_cmd selftest; exit 0 ;; esac
+                   [ $# -gt 0 ] || set -- ci
+                   exec "$REPO_ROOT/ci/run-checks.sh" "$@" ;;
+    version|--version|-V) printf 'kitchen %s\n' "$(kitchen_version)" ;;
+    help|--help|-h)       if [ $# -gt 0 ]; then help_for "$1"; else usage; fi ;;
+    '')                   usage ;;
     probe)         exec "$REPO_ROOT/lib/probe.py" "$@" ;;
     apply)         exec "$REPO_ROOT/lib/apply.py" "$@" ;;
     validate)      exec "$REPO_ROOT/lib/validate.py" "$@" ;;

@@ -53,6 +53,7 @@ kitchen_pack() {
             --volid)      volid=$2; volid_set=1; shift 2 ;;
             --appid)      appid=$2; appid_set=1; shift 2 ;;
             --date)       mdate=$2; shift 2 ;;
+            -h|--help)      usage_cmd pack; return 0 ;;
             -*) die "pack: unknown option $1" ;;
             *)  out=$1; shift ;;
         esac

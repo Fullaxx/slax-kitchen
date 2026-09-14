@@ -293,7 +293,7 @@ def fingerprint(iso: str, name: str | None = None) -> dict:
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description="build a compat fingerprint for a Slax ISO")
+    ap = argparse.ArgumentParser(prog="kitchen fingerprint", description="build a compat fingerprint for a Slax ISO")
     ap.add_argument("iso")
     ap.add_argument("-o", "--output", help="write YAML here (default: stdout)")
     ap.add_argument("-n", "--name", help="override the fingerprint name")

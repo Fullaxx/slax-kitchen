@@ -28,6 +28,7 @@ kitchen_test() {
             # Repeatable. Stored one per line because an expectation contains spaces.
             --expect)       expects="$expects$2
 "; shift 2 ;;
+            -h|--help)      usage_cmd test; return 0 ;;
             -*) die "test: unknown option $1" ;;
             *)  iso=$1; shift ;;
         esac
@@ -104,6 +105,7 @@ kitchen_build() {
             --keep)      keep=1; shift ;;
             --no-test)   skip_test=1; shift ;;
             -f|--force)  force=1; shift ;;
+            -h|--help)      usage_cmd build; return 0 ;;
             -*) die "build: unknown option $1" ;;
             *)  profile=$1; shift ;;
         esac

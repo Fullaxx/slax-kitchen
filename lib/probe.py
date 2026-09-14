@@ -131,7 +131,7 @@ def score(diffs: list) -> int:
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description="match an ISO against compat/ fingerprints")
+    ap = argparse.ArgumentParser(prog="kitchen probe", description="match an ISO against compat/ fingerprints")
     ap.add_argument("iso")
     ap.add_argument("--compat-dir", default=None)
     ap.add_argument("-v", "--verbose", action="store_true", help="list every difference")

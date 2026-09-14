@@ -85,7 +85,7 @@ def download(url: str, dest: str) -> None:
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description="download + verify a base Slax ISO")
+    ap = argparse.ArgumentParser(prog="kitchen fetch", description="download + verify a base Slax ISO")
     ap.add_argument("target", nargs="?",
                     help="flavour-arch-version, e.g. debian-64bit-12.2.0; or --all")
     ap.add_argument("--all", action="store_true", help="fetch every known target")

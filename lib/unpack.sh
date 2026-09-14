@@ -12,6 +12,7 @@ kitchen_unpack() {
         case "$1" in
             -o|--output) dest=$2; shift 2 ;;
             -f|--force)  force=1; shift ;;
+            -h|--help)      usage_cmd unpack; return 0 ;;
             -*) die "unpack: unknown option $1" ;;
             *)  iso=$1; shift ;;
         esac

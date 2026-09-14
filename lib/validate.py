@@ -100,11 +100,17 @@ def validate_file(path: str) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 2:
-        print(f"usage: {argv[0]} <file.yaml>...", file=sys.stderr)
-        return 2
+    # argparse, not a length check: `kitchen validate --help` used to reach the loop
+    # below and die with a FileNotFoundError traceback for a file called "--help".
+    import argparse
+    ap = argparse.ArgumentParser(
+        prog="kitchen validate",
+        description="check a recipe, profile, sources or fingerprint file "
+                    "against its JSON Schema")
+    ap.add_argument("files", nargs="+", metavar="FILE.yaml")
+    args = ap.parse_args(argv[1:])
     rc = 0
-    for path in argv[1:]:
+    for path in args.files:
         problems = validate_file(path)
         if problems:
             rc = 1
