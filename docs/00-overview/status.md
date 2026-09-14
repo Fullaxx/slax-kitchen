@@ -108,8 +108,8 @@ clear message naming what *is* available, rather than silently skipping.
 
 ### Recipes
 
-15 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
-`initramfs-busybox`, `kernel-replace`.
+15 of the ~32 planned. Missing notably: `ssh-server`, `boot-tools`, `initramfs-busybox`,
+`kernel-replace`.
 
 ### Documentation
 
@@ -120,9 +120,9 @@ it boots on every medium, what software is in it, and the upstream source of tru
 `40-workflow/` is also complete — 10 pages, every procedure written to work by hand with the
 `kitchen` verb noted alongside.
 
-Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 12 pages, one per
-shipped recipe — the other ~20 recipes do not exist yet), `60-testing/`, `70-compat/`,
-`90-reference/` (CLI + all 18 verbs; the profile format is still thin). See [the index](../README.md).
+Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 15 pages, one per
+shipped recipe — the other ~17 recipes do not exist yet), `60-testing/`, `70-compat/`,
+`90-reference/` (CLI + all 22 verbs; the profile format is still thin). See [the index](../README.md).
 
 ---
 

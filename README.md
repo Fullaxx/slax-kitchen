@@ -191,8 +191,8 @@ slackware-64bit-15.0.4  slackware-32bit-15.0.4
 ```
 
 These are the newest upstream releases — Slax has shipped nothing since **2023-10-10**.
-`kitchen probe <iso>` identifies any ISO and reports what differs from stock, attributing changes to
-the recipes that caused them. A weekly CI job watches for a new release.
+`kitchen probe <iso>` identifies any ISO and reports what differs from stock, attributing the
+differences it recognises to the recipes that cause them. A weekly CI job watches for a new release.
 
 ---
 

@@ -144,7 +144,7 @@ doctor_tier() {
     if cap chroot && cap mknod; then
         printf '  %sd%s  bundle.packages (real chroot) .... %syes%s\n' "$B" "$O" "$G" "$O"
     else
-        printf '  %sd%s  bundle.packages .................. %sno%s  needs chroot + mknod -> HOST_TASKS.DNC.md\n' "$B" "$O" "$R" "$O"
+        printf '  %sd%s  bundle.packages .................. %sno%s  needs chroot + mknod\n' "$B" "$O" "$R" "$O"
     fi
 
     if cap kvm; then
@@ -159,7 +159,7 @@ doctor_tier() {
         printf '\n  %sNote:%s only the full boot matrix is blocked here. Adding%s\n' "$D" "$O" "$O"
         printf '  %s  --device /dev/kvm%s\n' "$D" "$O"
         printf '  %sturns a 5-15 min boot-to-desktop run into ~30 s. Everything else,%s\n' "$D" "$O"
-        printf '  %sbundle.packages included, already runs here. See HOST_TASKS.DNC.md.%s\n' "$D" "$O"
+        printf '  %sbundle.packages included, already runs here.%s\n' "$D" "$O"
     fi
 }
 
@@ -199,6 +199,6 @@ case "$cmd" in
     build)         kitchen_build "$@" ;;
     test)          kitchen_test "$@" ;;
     shell|diff|upstream-diff)
-        die "'$cmd' is not implemented yet -- see INITIAL_TASKS.DNC.md (T-2xx)" ;;
+        die "'$cmd' is not implemented yet -- see docs/00-overview/status.md" ;;
     *)             usage; die "unknown command: $cmd" ;;
 esac

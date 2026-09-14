@@ -23,6 +23,8 @@ iso:
   volume_id: slax
   system_id: LINUX
   application_id: slax
+  publisher_id: ''
+  preparer_id: ''
   volume_space: 212920
   rock_ridge: true
   joliet: true

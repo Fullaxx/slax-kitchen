@@ -189,7 +189,7 @@ pretending to work:
 
 ```
 $ kitchen diff a.iso b.iso
-error: 'diff' is not implemented yet -- see INITIAL_TASKS.DNC.md (T-2xx)
+error: 'diff' is not implemented yet -- see docs/00-overview/status.md
 ```
 
 See [project status](../00-overview/status.md).

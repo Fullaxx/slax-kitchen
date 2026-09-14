@@ -122,6 +122,6 @@ and accept the uppercased application id, or post-normalise the PVD timestamps.
 
 ## UEFI and hybrid builds
 
-See the `uefi-bootable` and `isohybrid` recipes — the stock ISO is BIOS-only and cannot be `dd`'d to
-a USB stick, and those two recipes are what fix it. (Cookbook pages land with the recipes; until
-then the mechanism is documented in `INITIAL_PLAN.DNC.md`.)
+See [`uefi-bootable`](../50-cookbook/uefi-bootable.md) and
+[`isohybrid`](../50-cookbook/isohybrid.md) — the stock ISO is BIOS-only and cannot be `dd`'d to a USB
+stick, and those two recipes are what fix it. Both cookbook pages carry the mechanism in full.

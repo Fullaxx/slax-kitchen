@@ -122,6 +122,10 @@ def fingerprint(iso: str, name: str | None = None) -> dict:
             "volume_id": info.volume_id,
             "system_id": info.system_id,
             "application_id": info.application_id,
+            # Blank on every stock image. Recorded so that `iso.metadata` setting them
+            # shows up as a difference rather than as nothing at all.
+            "publisher_id": info.publisher_id,
+            "preparer_id": info.preparer_id,
             "volume_space": info.volume_space,
             "rock_ridge": info.rock_ridge,
             "joliet": info.joliet,

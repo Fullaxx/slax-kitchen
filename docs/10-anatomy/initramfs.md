@@ -121,7 +121,7 @@ The accounting closes exactly, which is what makes it a useful invariant to asse
 ```
 busybox --list                      248 applets
 symlinks in /bin pointing to it     245
-applets with no symlink             3   blkid, eject  (real files shadow them)
+applets not symlinked to busybox    3   blkid, eject  (real files shadow them)
                                         init          (bin/init -> ../init)
 /bin total                          254 = 8 real files + 246 symlinks
 ```

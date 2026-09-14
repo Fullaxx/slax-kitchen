@@ -79,7 +79,13 @@ Not every difference is a problem, so `probe` classifies rather than just counti
   byte position inside the ISO is placement, not identity). `iso.application_id` is benign too,
   because the xorriso backend uppercases it — see [repack-iso.md](../40-workflow/repack-iso.md).
 - **explained** — a change a known recipe is *meant* to cause, e.g. `eltorito.uefi_bootable`
-  `false → true` is attributed to `uefi-bootable`.
+  `false → true` is attributed to `uefi-bootable`. Some recipes exist precisely to set an
+  *arbitrary* value — `iso-identity` puts whatever you like in `iso.volume_id`, `iso.publisher_id`
+  and `iso.preparer_id` — so those entries match on the field changing at all rather than on a
+  particular value. Only recipes whose effect is visible in the fingerprint appear here; a recipe
+  that adds a bundle shows up as an unexplained bundle, which is the honest answer.
+  `iso.publisher_id` and `iso.preparer_id` are blank on all four stock images, so any value at all
+  means someone rebuilt it.
 - **unexplained** — everything else. Listed individually. A whole added or removed bundle collapses
   to one line rather than nine superblock fields.
 - **critical** — `kernel.release`, `initramfs.scripts.*`, flavour or arch. If these move, it is not

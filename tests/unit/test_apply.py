@@ -149,9 +149,69 @@ def test_preflight():
         apply.shutil.which = saved
 
 
+def test_under_containment():
+    """A dest: must never resolve outside the tree the verb owns.
+
+    This shipped: `dest: ../../../../x` in a rootcopy.files step wrote x outside the
+    work tree entirely, from a recipe declaring `privilege: none`. Recipes are meant to
+    be shared, so a verb marked "runs anywhere" has to actually be contained.
+    """
+    import tempfile
+    root = tempfile.mkdtemp()
+    inner = os.path.join(root, "tree")
+    os.makedirs(os.path.join(inner, "etc"))
+
+    # Ordinary paths resolve, with or without a leading slash.
+    check("plain dest", apply._under(inner, "etc/hostname", "v"),
+          os.path.join(os.path.realpath(inner), "etc", "hostname"))
+    check("absolute dest is treated as tree-relative",
+          apply._under(inner, "/etc/hostname", "v"),
+          os.path.join(os.path.realpath(inner), "etc", "hostname"))
+
+    for bad in ("../escape", "../../escape", "etc/../../escape", "/../escape"):
+        try:
+            apply._under(inner, bad, "v")
+            FAILURES.append(f"escape not refused: {bad!r}")
+        except RuntimeError:
+            pass
+
+    # A symlink out of the tree must not become a back door.
+    os.symlink("/etc", os.path.join(inner, "host"))
+    try:
+        apply._under(inner, "host/passwd", "v")
+        FAILURES.append("symlink escape not refused")
+    except RuntimeError:
+        pass
+
+    # A prefix that merely shares characters is not "inside".
+    sibling = os.path.join(root, "tree-evil")
+    os.makedirs(sibling)
+    try:
+        apply._under(inner, "../tree-evil/x", "v")
+        FAILURES.append("sibling with shared prefix not refused")
+    except RuntimeError:
+        pass
+
+    apply.shutil.rmtree(root, ignore_errors=True)
+
+
+def test_wont_do_verbs():
+    """Verbs we decided against must explain themselves, not look unfinished.
+
+    They stay in the schema on purpose; the dispatch error is the only place a user
+    asking "why can't I do this?" is actually looking.
+    """
+    for v in ("initramfs.config", "boot.secureboot"):
+        check(f"{v} not registered", v in apply.VERBS, False)
+        check(f"{v} has a reason", bool(apply.WONT_DO.get(v)), True)
+    check("wont-do verbs carry no requirements",
+          any(v in apply.VERB_REQUIRES for v in apply.WONT_DO), False)
+
+
 def main():
     for fn in [test_bundle_exclude, test_slackware_pkgname, test_when_guard, test_subst,
-               test_extract_member, test_preflight]:
+               test_extract_member, test_preflight, test_under_containment,
+               test_wont_do_verbs]:
         fn()
     if FAILURES:
         for f in FAILURES:

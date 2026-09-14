@@ -24,6 +24,24 @@ done
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/kitchen-mf.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
+# Hash a directory tree into a manifest, refusing to write an empty one.
+#
+# `find | xargs sha256sum` on an empty tree does not fail: GNU xargs still runs the
+# command once, sha256sum falls back to stdin, and the manifest ends up holding one
+# line -- the sha256 of zero bytes. A failed xorriso extract or a corrupt initrfs.img
+# would therefore be committed as the project's own ground truth, and every later
+# `kitchen probe` would compare against nothing. Demand a plausible file count instead.
+manifest() {
+    _dir=$1 _out=$2 _min=$3 _what=$4
+    _n=$(find "$_dir" -type f | wc -l)
+    [ "$_n" -ge "$_min" ] || {
+        echo "$_what: found $_n files, expected at least $_min -- extraction failed;" >&2
+        echo "  refusing to write $_out" >&2
+        exit 1
+    }
+    ( cd "$_dir" && find . -type f | LC_ALL=C sort | xargs sha256sum ) > "$_out"
+}
+
 for ISO in "$@"; do
     [ -f "$ISO" ] || { echo "no such ISO: $ISO" >&2; exit 1; }
     base=$(basename "$ISO" .iso)                        # slax-64bit-debian-12.2.0
@@ -35,14 +53,12 @@ for ISO in "$@"; do
     # --- /slax/boot/ ------------------------------------------------------------
     rm -rf "${WORK:?}/boot"
     xorriso -osirrox on -indev "$ISO" -extract /slax/boot "$WORK/boot" -- 2>/dev/null
-    ( cd "$WORK/boot" && find . -type f | LC_ALL=C sort | xargs sha256sum ) \
-        > "$OUT/bootfiles-$target.sha256"
+    manifest "$WORK/boot" "$OUT/bootfiles-$target.sha256" 10 "$target /slax/boot"
 
     # --- initrfs.img ------------------------------------------------------------
     rm -rf "${WORK:?}/irfs" && mkdir -p "$WORK/irfs"
     ( cd "$WORK/irfs" && xz -dc "$WORK/boot/initrfs.img" | cpio -id --quiet 2>/dev/null )
-    ( cd "$WORK/irfs" && find . -type f | LC_ALL=C sort | xargs sha256sum ) \
-        > "$OUT/initramfs-$target.sha256"
+    manifest "$WORK/irfs" "$OUT/initramfs-$target.sha256" 20 "$target initramfs"
 
     # --- packages ---------------------------------------------------------------
     # Bundle extents are read straight out of the ISO; nothing is extracted.

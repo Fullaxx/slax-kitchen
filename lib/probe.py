@@ -44,10 +44,19 @@ def benign_reason(field: str) -> str | None:
             return why
     return None
 # Differences these recipes are meant to cause. Used to explain, not to excuse.
+#
+# ANY as the expected-or-actual value means "whatever it changed to is the point of the
+# recipe": iso-identity exists precisely to put an arbitrary string in these fields, so
+# pinning a value would only explain the one example from the cookbook page.
+ANY = object()
 EXPLAINS = [
     ("eltorito.uefi_bootable",  False, True,  "uefi-bootable"),
     ("iso.isohybrid_mbr",       False, True,  "isohybrid"),
     ("iso.gpt",                 False, True,  "isohybrid"),
+    ("iso.volume_id",           ANY,   ANY,   "iso-identity"),
+    ("iso.publisher_id",        "",    ANY,   "iso-identity"),
+    ("iso.preparer_id",         "",    ANY,   "iso-identity"),
+    ("iso.system_id",           ANY,   ANY,   "iso-identity"),
 ]
 # Changing any of these means the ISO is not the release it claims to be.
 CRITICAL_PREFIXES = ("kernel.release", "initramfs.scripts", "metadata.flavour",
@@ -154,7 +163,7 @@ def main(argv: list[str]) -> int:
     explained = []
     for k, e, act in list(real):
         for f, frm, to, recipe in EXPLAINS:
-            if k == f and e == frm and act == to:
+            if k == f and (frm is ANY or e == frm) and (to is ANY or act == to):
                 explained.append((k, recipe)); real.remove((k, e, act))
     # Knock-on effects: adding an EFI El Torito section necessarily grows the entry
     # list, so do not report that as a separate unexplained difference.

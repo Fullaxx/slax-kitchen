@@ -13,6 +13,23 @@ files and capabilities — before executing the first step.
 | ◐ `mknod` | needs `CAP_MKNOD` — the initramfs holds seven device nodes |
 | ◐ `chroot` | needs `CAP_SYS_CHROOT` + `CAP_MKNOD` |
 
+## Paths stay inside the tree
+
+Every `dest:` (and `initramfs.patch`'s `file:`) is resolved relative to the root of the tree that
+verb owns — the ISO tree, the rootcopy directory, the initramfs, or the staging root of a bundle —
+and a path that resolves outside it is **refused**, not clamped:
+
+```
+rootcopy.files: dest '../../../../ESCAPED.txt' resolves outside the tree it belongs to
+(/home/you/ESCAPED.txt). Paths are relative to the root of that tree; '..' is refused.
+```
+
+Symlinks are resolved before the check, so a bundle shipping `etc -> /etc` cannot turn a later
+`dest: etc/passwd` into a write to the host. This matters because recipes are meant to be *shared*:
+a ○ verb should not be able to touch anything outside the work tree, and that is now enforced rather
+than assumed. It is not a sandbox — `bundle.script` and `bundle.packages` run arbitrary code by
+design, which is why they are marked ◐ `chroot`.
+
 ---
 
 ## Bundle

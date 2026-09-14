@@ -32,6 +32,22 @@ from validate import validate_file  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERBS: dict = {}
 
+# Verbs the schema accepts but that will never be implemented, and why. They stay in
+# the schema so that a recipe using one gets this explanation instead of a bare "not a
+# valid verb" -- the question "why can't I do this?" deserves an answer at the point it
+# is asked, not only in a doc the reader has not found yet.
+WONT_DO = {
+    "initramfs.config": (
+        "only LIVEKITNAME and BEXT of the eight variables in /lib/config are read at "
+        "runtime, and LIVEKITNAME is merely the default for from= (livekitlib:640), so "
+        "renaming buys nothing and costs the from=...iso and PXE paths -- on CD it also "
+        "needs isolinux.bin re-patched. Use the from= boot parameter instead."),
+    "boot.secureboot": (
+        "signing needs a key enrolled in the firmware's db, which this toolkit cannot "
+        "do for you, and Slax's kernel is unsigned besides. Enroll your own key via MOK "
+        "and sign the built ISO out of band."),
+}
+
 # Which Debian/Ubuntu package provides each tool, so a failure can say what to install
 # rather than just what is absent.
 TOOL_PKG = {
@@ -66,7 +82,6 @@ VERB_REQUIRES: dict[str, dict] = {
     "initramfs.files": {"tools": ["cpio", "xz"], "caps": ["mknod"]},
     "initramfs.modules": {"tools": ["cpio", "xz", "unsquashfs"], "caps": ["mknod"]},
     "initramfs.patch": {"tools": ["cpio", "xz"], "caps": ["mknod"]},
-    "initramfs.config": {"tools": ["cpio", "xz"], "caps": ["mknod"]},
 }
 
 
@@ -262,7 +277,7 @@ def v_boot_payload(ctx: Ctx, step: dict) -> None:
     often publish only archives. The sha256 is checked against the ARCHIVE, which is what
     the publisher actually signs off on, before anything is taken out of it.
     """
-    dest = ctx.p(step["dest"])
+    dest = _under(ctx.tree, step["dest"], "boot.payload")
     src = step.get("src")
     want = step.get("sha256")
     member = step.get("extract")
@@ -304,7 +319,7 @@ def v_boot_payload(ctx: Ctx, step: dict) -> None:
 @verb("iso.files")
 def v_iso_files(ctx: Ctx, step: dict) -> None:
     for spec in step["files"]:
-        dest = ctx.p(spec["dest"])
+        dest = _under(ctx.tree, spec["dest"], "iso.files")
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         if ctx.dry:
             ctx.say(f"would write {spec['dest']}")
@@ -442,7 +457,7 @@ def v_initramfs_files(ctx: Ctx, step: dict) -> None:
         tree = _initramfs_unpack(ctx, work)
         for spec in files:
             rel = spec["dest"].lstrip("/")
-            dest = os.path.join(tree, rel)
+            dest = _under(tree, rel, "initramfs.files")
             os.makedirs(os.path.dirname(dest), exist_ok=True)
 
             # Never let an added file clobber blkid or eject. They are real binaries
@@ -619,7 +634,7 @@ def v_initramfs_patch(ctx: Ctx, step: dict) -> None:
         touched: set = set()
         for e in edits:
             rel = e["file"].lstrip("/")
-            path = os.path.join(tree, rel)
+            path = _under(tree, rel, "initramfs.patch", "file")
             if not os.path.isfile(path):
                 raise RuntimeError(f"initramfs.patch: {rel} not in the initramfs")
 
@@ -682,7 +697,7 @@ def v_rootcopy_files(ctx: Ctx, step: dict) -> None:
     Upstream ships no rootcopy directory at all, so this creates it.
     """
     for spec in step["files"]:
-        dest = ctx.p("slax", "rootcopy", spec["dest"].lstrip("/"))
+        dest = _under(ctx.p("slax", "rootcopy"), spec["dest"], "rootcopy.files")
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         if ctx.dry:
             ctx.say(f"would place rootcopy/{spec['dest']}")
@@ -745,6 +760,27 @@ MKSQUASHFS_ARGS = ["-comp", "xz", "-b", "1024K", "-Xbcj", "x86",
                    "-always-use-fragments", "-noappend"]
 
 
+def _under(root: str, rel: str, verb: str, what: str = "dest") -> str:
+    """Resolve `rel` inside `root`, refusing anything that escapes it.
+
+    Every verb that writes a caller-named path goes through here. Without it a
+    `dest: ../../../etc/cron.d/x` walks straight out of the work tree and writes to the
+    host -- and it would do so from a recipe declaring `privilege: none`, which is
+    exactly the set of verbs a reader trusts to be harmless. Recipes are meant to be
+    shared, so "the author could have written anything" is not an answer here.
+
+    Symlinks are resolved too: a bundle that ships `etc -> /etc` would otherwise turn a
+    later innocuous-looking `dest: etc/passwd` into a host write.
+    """
+    base = os.path.realpath(root)
+    full = os.path.realpath(os.path.join(base, rel.lstrip("/")))
+    if full != base and not full.startswith(base + os.sep):
+        raise RuntimeError(
+            f"{verb}: {what} {rel!r} resolves outside the tree it belongs to "
+            f"({full}). Paths are relative to the root of that tree; '..' is refused.")
+    return full
+
+
 def _bundle_name(raw: str, verb: str) -> str:
     """Validate and normalise a bundle filename.
 
@@ -783,7 +819,7 @@ def _make_bundle(ctx: "Ctx", src_dir: str, name: str, verb: str) -> str:
 def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
     """Write a list of {dest, src|content, mode} specs under root."""
     for spec in files:
-        dest = os.path.join(root, spec["dest"].lstrip("/"))
+        dest = _under(root, spec["dest"], verb)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         if "content" in spec:
             with open(dest, "w") as f:
@@ -1410,7 +1446,7 @@ def v_boot_grub(ctx: Ctx, step: dict) -> None:
         ctx.say(f"would write {dest_rel} ({len(entries)} entries)")
         return
 
-    dest = ctx.p(dest_rel)
+    dest = _under(ctx.tree, dest_rel, "boot.grub")
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     with open(dest, "w") as f:
         f.write(text)
@@ -1972,6 +2008,9 @@ def apply_recipe(path: str, work: str, dry: bool = False) -> int:
         v = step["verb"]
         fn = VERBS.get(v)
         if fn is None:
+            if v in WONT_DO:
+                raise RuntimeError(f"step {i}: verb '{v}' will not be implemented -- "
+                                   f"{WONT_DO[v]}")
             raise RuntimeError(f"step {i}: verb '{v}' is valid in the schema but not "
                                f"implemented yet (have: {', '.join(sorted(VERBS))})")
         fn(ctx, step)

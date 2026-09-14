@@ -127,4 +127,5 @@ history.
 ## Not in CI yet
 
 The full Tier C matrix — USB image boot and persistence across two boots — needs KVM to be practical.
-Tracked in `HOST_TASKS.DNC.md`.
+See [what is blocked on this machine](../00-overview/status.md#blocked-on-this-machine) and
+[container vs host](../40-workflow/container-vs-host.md).
