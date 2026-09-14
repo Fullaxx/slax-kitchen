@@ -132,6 +132,7 @@ def merge_tree(iso: str, quiet: bool = False) -> int:
     tmp = tempfile.mkdtemp(prefix="kitchen-dpkgdb.")
     try:
         base, base_from, fragments, frag_from = "", "", [], []
+        carriers = []
         for n in names:
             sb = os.path.join(mods, n)
             d = os.path.join(tmp, n)
@@ -139,10 +140,11 @@ def merge_tree(iso: str, quiet: bool = False) -> int:
             if p:
                 base, base_from = _read(p), n
                 # A real status outranks everything below it, fragments included.
-                fragments, frag_from = [], []
+                fragments, frag_from, carriers = [], [], []
                 continue
             fd = os.path.join(tmp, n + ".frag")
             if _extract(sb, FRAGMENT_DIR, fd):
+                carriers.append(n)
                 for f in sorted(os.listdir(os.path.join(fd, FRAGMENT_DIR))):
                     fragments.append(_read(os.path.join(fd, FRAGMENT_DIR, f)))
                     frag_from.append(f"{n}:{f}")
@@ -154,11 +156,16 @@ def merge_tree(iso: str, quiet: bool = False) -> int:
                 "dpkgdb: bundles carry status fragments but no bundle ships a "
                 "var/lib/dpkg/status to merge them into")
 
-        top = sortmod([n for n in names if n.endswith(".sb")])[-1]
-        if sortmod([top, GENERATED])[-1] != GENERATED:
-            raise RuntimeError(
-                f"dpkgdb: {top} sorts at or above {GENERATED}, so the merged database "
-                f"would be shadowed by it; renumber it below 98")
+        # Only the FRAGMENT-BEARING bundles have to sort below the generated one. A
+        # saved session at 99-changes-N legitimately outranks it -- that is the whole
+        # point of 99 -- so checking "the highest bundle of any kind" would reject a
+        # work tree unpacked from an ISO somebody had saved changes onto.
+        for n in carriers:
+            if sortmod([n, GENERATED])[-1] != GENERATED:
+                raise RuntimeError(
+                    f"dpkgdb: {n} carries a status fragment but sorts at or above "
+                    f"{GENERATED}, so the merged database would be shadowed by it; "
+                    f"renumber it below 98")
 
         merged = merge(base, fragments)
         stage = os.path.join(tmp, "stage")
