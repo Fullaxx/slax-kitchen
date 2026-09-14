@@ -78,6 +78,15 @@ PY
         fail=$((fail+1)); rm -rf "$tree"; continue
     fi
 
+    # A bundle that ships var/lib/dpkg/status and outranks a more complete copy makes
+    # dpkg forget the difference, with no error anywhere. Check the assembled stack
+    # before packing, so the failure names the recipe that built the bundle.
+    if ! python3 "$REPO_ROOT/tests/structure/bundle_assert.py" "$tree" >>"$log" 2>&1; then
+        printf '  %sFAIL%s %-18s bundle stack does not compose\n' "$R" "$O" "$name"
+        grep FAIL "$log" | sed 's/^/        /'
+        fail=$((fail+1)); rm -rf "$tree"; continue
+    fi
+
     out="$WORK/$name.iso"
     if ! "$REPO_ROOT/kitchen" pack -s "$tree/iso" -o "$out" >>"$log" 2>&1; then
         printf '  %sFAIL%s %-18s pack failed\n' "$R" "$O" "$name"; tail -12 "$log" | sed 's/^/        /'
