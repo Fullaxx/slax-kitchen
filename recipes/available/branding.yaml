@@ -1,0 +1,40 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: branding
+  summary: Set the hostname, version string and login banner from a high-numbered bundle
+  tags: [bundle, branding, template]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  hostname: slax-custom
+  version: "Slax 12.2.0 (customized)"
+steps:
+  # Override rather than edit. All three files live in 01-core.sb, and a bundle numbered
+  # above it wins in the union -- so the shipped bundle stays byte-identical, `kitchen
+  # probe` still reports it as stock, and the whole change is reversible by deleting one
+  # 4 KiB file. Unpacking and repacking a 122 MiB bundle to change three text files would
+  # be the wrong trade.
+  #
+  # 07 because the stock bundles run 01-06 and savechanges writes 99-changes-N.sb.
+  - verb: bundle.files
+    bundle: 07-branding
+    files:
+      - dest: /etc/hostname
+        content: "{{hostname}}\n"
+
+      - dest: /etc/slax-version
+        content: "{{version}}\n"
+
+      # /etc/issue is what prints the root/toor banner on tty1. Keeping the credentials
+      # visible is deliberate: this is a live system whose password is public anyway, and
+      # silently hiding it makes the image harder to use, not safer. Change the password
+      # with a users-and-auth recipe if that matters.
+      - dest: /etc/issue
+        content: |
+          {{version}} \l
+
+          login: root   password: toor

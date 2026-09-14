@@ -58,6 +58,9 @@ VERB_REQUIRES: dict[str, dict] = {
     "bundle.packages": {"tools": ["unsquashfs", "mksquashfs", "chroot"],
                         "caps": ["chroot", "mknod"], "network": True},
     "bundle.fromDir": {"tools": ["mksquashfs"]},
+    "bundle.files": {"tools": ["mksquashfs"]},
+    "bundle.script": {"tools": ["unsquashfs", "mksquashfs", "chroot"],
+                      "caps": ["chroot", "mknod"]},
     "bundle.fromTarball": {"tools": ["mksquashfs"]},
     "initramfs.files": {"tools": ["cpio", "xz"], "caps": ["mknod"]},
     "initramfs.modules": {"tools": ["cpio", "xz", "unsquashfs"], "caps": ["mknod"]},
@@ -728,6 +731,307 @@ def v_rootcopy_preinit(ctx: Ctx, step: dict) -> None:
     os.chmod(dest, 0o755)
     ctx.say(f"slax/rootcopy/run/preinit.sh ({os.path.getsize(dest)} bytes) "
             "-- sourced by livekit just before change_root")
+
+
+# ----------------------------------------------------------- bundles --------
+#
+# Every bundle on every shipped image has superblock flags 0x04e0, because upstream uses
+# one mksquashfs line in four places: livekitlib's create_bundle, dir2sb, savechanges and
+# both flavours' module builders. Matching it exactly is what keeps a built bundle
+# indistinguishable from a shipped one, so `kitchen probe` can still reason about an ISO.
+
+MKSQUASHFS_ARGS = ["-comp", "xz", "-b", "1024K", "-Xbcj", "x86",
+                   "-always-use-fragments", "-noappend"]
+
+
+def _bundle_name(raw: str, verb: str) -> str:
+    """Validate and normalise a bundle filename.
+
+    Load order is the numeric prefix and higher wins, so a bundle without one has no
+    defined position in the stack. Refusing here beats shipping something that silently
+    never overrides anything.
+    """
+    name = raw if raw.endswith(".sb") else raw + ".sb"
+    if not re.match(r"^\d\d-", name):
+        raise RuntimeError(
+            f"{verb}: bundle name must start with NN- (load order is the numeric "
+            f"prefix, and higher wins); got {name!r}")
+    return name
+
+
+def _make_bundle(ctx: "Ctx", src_dir: str, name: str, verb: str) -> str:
+    """mksquashfs src_dir into slax/modules/<name> with upstream's exact parameters."""
+    if not os.listdir(src_dir):
+        raise RuntimeError(f"{verb}: {src_dir} is empty; refusing to build an empty bundle")
+    mods = ctx.p("slax", "modules")
+    os.makedirs(mods, exist_ok=True)
+    target = os.path.join(mods, name)
+    if os.path.exists(target):
+        raise RuntimeError(f"{verb}: slax/modules/{name} already exists. Pick another "
+                           f"number, or remove it first with bundle.remove.")
+    r = subprocess.run(["mksquashfs", src_dir, target] + MKSQUASHFS_ARGS,
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"{verb}: mksquashfs failed: {r.stderr.strip()[:300]}")
+    n = sum(len(f) for _, _, f in os.walk(src_dir))
+    ctx.say(f"built slax/modules/{name} ({os.path.getsize(target) // 1024} KiB, {n} files)")
+    ctx.changes.append(f"slax/modules/{name}")
+    return target
+
+
+def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
+    """Write a list of {dest, src|content, mode} specs under root."""
+    for spec in files:
+        dest = os.path.join(root, spec["dest"].lstrip("/"))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        if "content" in spec:
+            with open(dest, "w") as f:
+                f.write(spec["content"])
+        else:
+            src = spec["src"]
+            local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+            if os.path.isdir(local):
+                shutil.copytree(local, dest, dirs_exist_ok=True, symlinks=True)
+            elif os.path.isfile(local):
+                shutil.copy2(local, dest)
+            else:
+                raise RuntimeError(f"{verb}: source not found: {local}")
+        if "mode" in spec:
+            os.chmod(dest, int(str(spec["mode"]), 8))
+        ctx.say(f"  {spec['dest']}")
+
+
+@verb("bundle.fromDir")
+def v_bundle_fromdir(ctx: Ctx, step: dict) -> None:
+    """Pack a directory into a bundle, as if it were a filesystem root.
+
+    The directory's contents become the root of the bundle, so ./usr/bin/foo lands at
+    /usr/bin/foo in the union. This is the offline equivalent of upstream's dir2sb.
+    """
+    name = _bundle_name(step["bundle"], "bundle.fromDir")
+    src = step["src"]
+    local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+    if ctx.dry:
+        ctx.say(f"would pack {src} -> slax/modules/{name}")
+        return
+    if not os.path.isdir(local):
+        raise RuntimeError(f"bundle.fromDir: not a directory: {local}")
+    _make_bundle(ctx, local, name, "bundle.fromDir")
+
+
+@verb("bundle.files")
+def v_bundle_files(ctx: Ctx, step: dict) -> None:
+    """Build a bundle from a list of files given inline or by path.
+
+    The same shape as rootcopy.files, but the result is a real bundle rather than a
+    rootcopy drop. Worth the difference when you want the files to be one movable file,
+    to be skippable with noload=, or to sit at a defined point in the stack -- rootcopy
+    always lands in the writable layer and cannot be turned off at the boot prompt.
+    """
+    files = step.get("files") or []
+    if not files:
+        raise RuntimeError("bundle.files: no files listed")
+    name = _bundle_name(step["bundle"], "bundle.files")
+    if ctx.dry:
+        for spec in files:
+            ctx.say(f"would add {spec['dest']} to {name}")
+        return
+    import tempfile
+    work = tempfile.mkdtemp(prefix="kitchen-bf-", dir=os.path.dirname(os.path.abspath(ctx.work)))
+    try:
+        root = os.path.join(work, "root")
+        os.makedirs(root)
+        _place_files(ctx, root, files, "bundle.files")
+        _make_bundle(ctx, root, name, "bundle.files")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+@verb("bundle.fromTarball")
+def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
+    """Unpack a tarball and pack it as a bundle.
+
+    `strip: 1` drops a leading directory, the way tar --strip-components does, because
+    most published tarballs are wrapped in a versioned top-level folder that you almost
+    never want at the root of the union. `prefix:` puts the contents somewhere other than
+    the root, e.g. prefix: /opt for a self-contained application tree.
+    """
+    name = _bundle_name(step["bundle"], "bundle.fromTarball")
+    src = step["src"]
+    want = step.get("sha256")
+    strip = int(step.get("strip", 0))
+    prefix = (step.get("prefix") or "").strip("/")
+    if ctx.dry:
+        ctx.say(f"would unpack {src} -> slax/modules/{name}"
+                + (f" under /{prefix}" if prefix else ""))
+        return
+
+    import tarfile
+    import tempfile
+    work = tempfile.mkdtemp(prefix="kitchen-bt-", dir=os.path.dirname(os.path.abspath(ctx.work)))
+    try:
+        if re.match(r"^https?://", src):
+            archive = os.path.join(work, "src.tar")
+            with urllib.request.urlopen(src, timeout=120) as r, open(archive, "wb") as f:
+                shutil.copyfileobj(r, f)
+        else:
+            archive = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+            if not os.path.isfile(archive):
+                raise RuntimeError(f"bundle.fromTarball: no such file: {archive}")
+        got = sha256(archive)
+        if want and got != want:
+            raise RuntimeError(f"bundle.fromTarball: sha256 mismatch\n  want {want}\n  got  {got}")
+        if not want:
+            ctx.say(f"warning: no sha256 pinned for {os.path.basename(src)} (got {got[:16]}...)")
+
+        root = os.path.join(work, "root")
+        dest = os.path.join(root, prefix) if prefix else root
+        os.makedirs(dest, exist_ok=True)
+        with tarfile.open(archive) as t:
+            members = []
+            for m in t.getmembers():
+                # Refuse absolute paths and .. escapes rather than trusting the archive.
+                if m.name.startswith("/") or ".." in m.name.split("/"):
+                    raise RuntimeError(f"bundle.fromTarball: unsafe path in archive: {m.name}")
+                if strip:
+                    parts = m.name.split("/")
+                    if len(parts) <= strip:
+                        continue
+                    m.name = "/".join(parts[strip:])
+                members.append(m)
+            if not members:
+                raise RuntimeError(f"bundle.fromTarball: nothing left after strip: {strip}")
+            t.extractall(dest, members=members)
+        ctx.say(f"unpacked {len(members)} entries from {os.path.basename(src)}"
+                + (f" under /{prefix}" if prefix else ""))
+        _make_bundle(ctx, root, name, "bundle.fromTarball")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+@verb("bundle.renumber")
+def v_bundle_renumber(ctx: Ctx, step: dict) -> None:
+    """Change a bundle's numeric prefix, which is its position in the stack.
+
+    Load order is the prefix and higher wins, so this is how you make one bundle override
+    another without rebuilding either. Renaming 05-chromium.sb to 95-chromium.sb moves it
+    above everything; renaming it to 00- puts it below the core.
+    """
+    mods = ctx.p("slax", "modules")
+    if not os.path.isdir(mods):
+        raise RuntimeError("bundle.renumber: no slax/modules in the work tree")
+    pat = re.compile(step["match"])
+    to = str(step["to"]).zfill(2)
+    if not re.match(r"^\d\d$", to):
+        raise RuntimeError(f"bundle.renumber: 'to' must be two digits; got {step['to']!r}")
+    hits = sorted(n for n in os.listdir(mods) if pat.search(n) and n.endswith(".sb"))
+    if not hits:
+        ctx.say(f"no bundle matched /{step['match']}/ (nothing renumbered)")
+        return
+    for n in hits:
+        new = re.sub(r"^\d\d-", to + "-", n)
+        if new == n:
+            ctx.say(f"{n} already at {to}-")
+            continue
+        if os.path.exists(os.path.join(mods, new)):
+            raise RuntimeError(f"bundle.renumber: {new} already exists")
+        if not ctx.dry:
+            os.rename(os.path.join(mods, n), os.path.join(mods, new))
+        ctx.say(f"renumbered {n} -> {new}")
+        ctx.changes.append(f"slax/modules/{new}")
+
+
+@verb("bundle.script")
+def v_bundle_script(ctx: Ctx, step: dict) -> None:
+    """Run an arbitrary script inside a chroot of stacked bundles, and package the delta.
+
+    bundle.packages generalised: instead of calling apt or installpkg, it runs whatever
+    you give it, snapshots the tree before and after, and packs what changed into a new
+    bundle. Use it for the things a package manager cannot do -- compile something,
+    generate host keys, run a vendor installer, seed a configuration.
+
+    The same two caveats apply as for bundle.packages, and both are load-bearing:
+
+      * the delta is added OR MODIFIED files, never names alone. A filename-only diff
+        misses var/lib/dpkg/status, and a bundle without it leaves new binaries invisible
+        to the package database.
+      * BUNDLE_EXCLUDE strips the runtime directories the chroot needed but a bundle must
+        not ship, plus caches and lockfiles.
+
+    There is no network by default: pass network: true to say you meant it, so a recipe
+    that quietly depends on the internet is visible in the YAML rather than at run time.
+    """
+    script = step.get("script")
+    if not script:
+        raise RuntimeError("bundle.script: no script given")
+    name = _bundle_name(step["bundle"], "bundle.script")
+    stack = step.get("from") or ["01-core"]
+    if ctx.dry:
+        ctx.say(f"would run a script in {'+'.join(stack)} -> slax/modules/{name}")
+        return
+    for tool in ("unsquashfs", "mksquashfs", "chroot"):
+        if not shutil.which(tool):
+            raise RuntimeError(f"bundle.script: {tool} not installed")
+
+    import tempfile
+    build = tempfile.mkdtemp(prefix="kitchen-bs-", dir=os.path.dirname(os.path.abspath(ctx.work)))
+    root = os.path.join(build, "root")
+    try:
+        os.makedirs(root, exist_ok=True)
+        picked = []
+        for want in stack:
+            hit = _find_bundle(ctx, want)
+            picked.append(os.path.basename(hit))
+            r = subprocess.run(["unsquashfs", "-f", "-n", "-q", "-d", root, hit],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"unsquashfs {os.path.basename(hit)}: "
+                                   f"{r.stderr.strip()[:300]}")
+        ctx.say(f"unpacked {' + '.join(picked)} as the build root")
+        _prepare_chroot(root)
+
+        before = _manifest(root)
+        sp = os.path.join(root, "tmp", "kitchen-script")
+        with open(sp, "w") as f:
+            f.write(script)
+        os.chmod(sp, 0o755)
+        shell = step.get("shell") or "/bin/sh"
+        r = _in_chroot(root, [shell, "/tmp/kitchen-script"])
+        if r.returncode != 0:
+            raise RuntimeError(f"bundle.script: script failed (exit {r.returncode}):\n"
+                               + (r.stderr.strip() or r.stdout.strip())[-1500:])
+        if r.stdout.strip():
+            for ln in r.stdout.strip().splitlines()[-8:]:
+                ctx.say(f"  | {ln[:110]}")
+        os.unlink(sp)
+        after = _manifest(root)
+
+        added = [k for k in after if k not in before]
+        modified = [k for k in after if k in before and after[k] != before[k]]
+        keep = sorted(k for k in added + modified if not BUNDLE_EXCLUDE.search(k))
+        ctx.say(f"delta: {len(added)} added, {len(modified)} modified, "
+                f"{len(keep)} kept after exclusions")
+        if not keep:
+            raise RuntimeError("bundle.script: the script changed nothing that survives "
+                               "the exclusion list; nothing to package")
+
+        stage = os.path.join(build, "stage")
+        for rel in keep:
+            src, dst = os.path.join(root, rel), os.path.join(stage, rel)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            if os.path.islink(src):
+                if not os.path.lexists(dst):
+                    os.symlink(os.readlink(src), dst)
+            elif os.path.isdir(src):
+                os.makedirs(dst, exist_ok=True)
+                shutil.copystat(src, dst)
+            else:
+                shutil.copy2(src, dst)
+                st = os.lstat(src)
+                os.chown(dst, st.st_uid, st.st_gid)
+        _make_bundle(ctx, stage, name, "bundle.script")
+    finally:
+        shutil.rmtree(build, ignore_errors=True)
 
 
 @verb("bundle.remove")

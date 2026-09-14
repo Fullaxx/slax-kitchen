@@ -44,6 +44,7 @@ the resulting ISO in QEMU and reading the console.
 | `initramfs-add-binary` | ✅ **booted** — file survives the repack, image still reaches `slax login:` |
 | `initramfs-add-modules` | ✅ **booted** — promotes from a bundle; verified on both flavours and both arches |
 | `initramfs-boot-timeout` | ✅ **booted** — `sh -n` gate proven against a deliberately boot-bricking patch |
+| `branding` | ✅ **booted** — 4 KiB override bundle beats 01-core; shipped bundles untouched |
 
 The same ISO boots on **both** BIOS and UEFI after `uefi-bootable` + `isohybrid`, which stock Slax
 cannot do at all.
@@ -91,20 +92,21 @@ pretending to work. (`fetch` is implemented and verified — it was listed here 
 
 ### Verbs
 
-13 of 25 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
+18 of 25 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
 clear message naming what *is* available, rather than silently skipping.
 
 **Implemented:** `boot.cmdline` `boot.isohybrid` `boot.menu` `boot.payload` `boot.uefi`
-`bundle.packages` `bundle.remove` `initramfs.files` `initramfs.modules` `initramfs.patch`
-`iso.files` `rootcopy.files` `rootcopy.preinit`
+`bundle.files` `bundle.fromDir` `bundle.fromTarball` `bundle.packages` `bundle.remove`
+`bundle.renumber` `bundle.script` `initramfs.files` `initramfs.modules` `initramfs.patch`
+`iso.files` `rootcopy.files` `rootcopy.preinit` — full reference:
+[docs/90-reference/verbs.md](../90-reference/verbs.md)
 
-**Not yet:** `boot.branding` `boot.grub` `boot.secureboot` `bundle.files` `bundle.fromDir`
-`bundle.fromTarball` `bundle.renumber` `bundle.script` `iso.checksums` `iso.metadata`
+**Not yet:** `boot.branding` `boot.grub` `boot.secureboot` `iso.checksums` `iso.metadata`
 `kernel.replace`  ·  `initramfs.config` is **won't-do**, see below
 
 ### Recipes
 
-11 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
+12 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
 `initramfs-busybox`, `kernel-replace`.
 
 ### Documentation
@@ -116,9 +118,9 @@ it boots on every medium, what software is in it, and the upstream source of tru
 `40-workflow/` is also complete — 10 pages, every procedure written to work by hand with the
 `kitchen` verb noted alongside.
 
-Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 8 pages, one per
-shipped recipe — the other ~24 recipes do not exist yet), `60-testing/`, `70-compat/`,
-`90-reference/`. See [the index](../README.md).
+Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 12 pages, one per
+shipped recipe — the other ~20 recipes do not exist yet), `60-testing/`, `70-compat/`,
+`90-reference/` (CLI + all 18 verbs; the profile format is still thin). See [the index](../README.md).
 
 ---
 

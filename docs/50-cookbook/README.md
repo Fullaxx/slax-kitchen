@@ -2,7 +2,7 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Eleven recipes ship today**, all verified by booting the result. The plan lists roughly 32; the
+**Twelve recipes ship today**, all verified by booting the result. The plan lists roughly 32; the
 other two thirds do not exist yet, and this index says so rather than implying a fuller shelf than
 there is. [Project status](../00-overview/status.md) has the honest ledger.
 
@@ -44,6 +44,7 @@ to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
 | [`rootcopy-overlay`](rootcopy-overlay.md) | drop files straight onto the live filesystem — **no squashfs rebuild at all** | ○ |
 | [`remove-bundle`](remove-bundle.md) | drop bundles by regex to slim the image | ○ |
 | [`remove-chromium`](remove-chromium.md) | the named preset for the above: −79 MiB Debian, −115 MiB Slackware | ○ |
+| [`branding`](branding.md) | hostname, version string and login banner, from a 4 KiB override bundle | ○ |
 
 ○ runs anywhere · ◐ needs a real `chroot` (`CAP_SYS_CHROOT` + `CAP_MKNOD`) —
 see [container vs host](../40-workflow/container-vs-host.md)
@@ -101,8 +102,8 @@ steps:
 - `compat.privilege` is what lets `kitchen doctor` tell you whether this machine can run it.
 - `vars:` are substituted as `{{name}}` and can be overridden per profile.
 - `when:` guards a step on a fact about the tree, e.g. `flavour==debian`.
-- **10 of 25 declared verbs are implemented.** A recipe using an unimplemented one fails with a
-  message naming what *is* available. The list is in [the CLI reference](../90-reference/cli.md).
+- **18 of 25 declared verbs are implemented.** A recipe using an unimplemented one fails with a
+  message naming what *is* available. Full list and fields: [verb reference](../90-reference/verbs.md).
 
 Every recipe needs a page here — `ci/checks/90-doc-coverage.sh` fails the commit otherwise, in both
 directions.
@@ -110,6 +111,6 @@ directions.
 ## Not written yet
 
 The larger gaps, roughly in the order they would be useful: `branding`, `ssh-server`, `boot-tools`
-(`hdt.c32`, `memdisk`, `chain.c32`), `bundle-from-dir`, `firmware-refresh`
+(`hdt.c32`, `memdisk`, `chain.c32`), `firmware-refresh`
 (the stock `01-firmware` contains **no GPU firmware** on either flavour), `initramfs-busybox` (the
 shipped busybox is from 2017), and `kernel-replace`.

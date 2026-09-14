@@ -156,7 +156,7 @@ steps:
 ./kitchen pack                     # -> out/slax-...-custom.iso
 ```
 
-Eleven recipes ship today, all verified by booting the result:
+Twelve recipes ship today, all verified by booting the result:
 
 | | |
 |---|---|
@@ -171,8 +171,10 @@ Eleven recipes ship today, all verified by booting the result:
 | `initramfs-add-binary` | put a static tool into early boot |
 | `initramfs-add-modules` | promote drivers into the initramfs so `find_data` sees your disk |
 | `initramfs-boot-timeout` | change how long early boot waits for the Slax data |
+| `branding` | hostname, version and login banner via an override bundle |
 
-See [the cookbook](docs/50-cookbook/) and [the CLI reference](docs/90-reference/cli.md).
+See [the cookbook](docs/50-cookbook/), [all 18 verbs](docs/90-reference/verbs.md), and
+[the CLI reference](docs/90-reference/cli.md).
 
 ---
 
@@ -195,7 +197,7 @@ the recipes that caused them. A weekly CI job watches for a new release.
 
 See **[docs/00-overview/status.md](docs/00-overview/status.md)** for what is verified, what is
 written but unsupported, and what does not exist yet. Short version: the core loop
-(unpack → apply → pack → test) and eleven recipes are boot-verified, and the documentation of Slax
+(unpack → apply → pack → test) and twelve recipes are boot-verified, and the documentation of Slax
 itself is complete; roughly two thirds of the planned recipes are not written yet.
 
 ## Licensing
