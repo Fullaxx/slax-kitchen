@@ -1,6 +1,6 @@
 # `branding` — hostname, version string and login banner
 
-**Status: verified** — applied and boot-verified; the bundle mounts above `01-core` and its files win.
+**Status: boot-verified** — applied and booted; the bundle mounts above `01-core` and its files win.
 
 ```sh
 kitchen apply branding

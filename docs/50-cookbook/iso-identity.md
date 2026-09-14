@@ -1,6 +1,6 @@
 # `iso-identity` — label the image, and checksum it
 
-**Status: verified** — applied, packed, checksum verified with `sha256sum -c`, and boot-verified.
+**Status: boot-verified** — applied, packed, checksum verified with `sha256sum -c`, and booted.
 
 ```sh
 kitchen apply iso-identity

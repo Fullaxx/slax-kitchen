@@ -1,6 +1,6 @@
 # `users-and-auth` — replace the public root password
 
-**Status: verified** — applied on Debian and Slackware; `/etc/shadow` checked after unpacking, all
+**Status: matrix-verified** — applied on Debian and Slackware; `/etc/shadow` checked after unpacking, all
 24 accounts intact with only `root` changed and `slaxuser` added. **Not boot-tested.**
 
 ```sh

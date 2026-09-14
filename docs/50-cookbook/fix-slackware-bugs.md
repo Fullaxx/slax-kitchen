@@ -1,6 +1,6 @@
 # `fix-slackware-bugs` — five confirmed upstream defects
 
-**Status: verified** — applied on Slackware 64-bit and 32-bit; every fix checked in the built
+**Status: matrix-verified** — applied on Slackware 64-bit and 32-bit; every fix checked in the built
 bundle. **Not boot-tested.**
 
 ```sh

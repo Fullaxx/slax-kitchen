@@ -1,6 +1,6 @@
 # `bundle-from-txz` — install Slackware packages, properly
 
-**Status: verified** — `nano` and `rsync` fetched from a pinned 15.0 mirror and installed with
+**Status: matrix-verified** — `nano` and `rsync` fetched from a pinned 15.0 mirror and installed with
 `installpkg` on Slackware 64-bit; resulting bundle 1.1 MiB, 143 files, package database updated.
 
 ```sh

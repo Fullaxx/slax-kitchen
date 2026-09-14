@@ -1,6 +1,6 @@
 # `renumber-bundles` — change load order without rebuilding
 
-**Status: verified** — applied on all four targets; `05-chromium.sb` renamed to `95-chromium.sb`
+**Status: matrix-verified** — applied on all four targets; `05-chromium.sb` renamed to `95-chromium.sb`
 and the resulting ISO passes structure assertions.
 
 ```sh

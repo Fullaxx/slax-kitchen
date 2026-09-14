@@ -1,6 +1,6 @@
 # `serial-console` — capture the whole boot on a serial port
 
-**Status: verified** — entry present in both menus on all four targets.
+**Status: matrix-verified** — entry present in both menus on all four targets.
 
 ```sh
 kitchen apply serial-console

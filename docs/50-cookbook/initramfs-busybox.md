@@ -5,7 +5,7 @@ tools/build-busybox.sh --check-parity     # ~30 s, needs docker
 kitchen apply initramfs-busybox
 ```
 
-**Status: boot-verified once, by hand.** Built, applied, packed and booted to `slax login:` under
+**Status: boot-verified** — once, by hand. Built, applied, packed and booted to `slax login:` under
 QEMU with all three livekit markers — so early boot's `find_data`, `mount_bundles`, `init_union`,
 `union_append_bundles` and `change_root` all ran on the new binary.
 

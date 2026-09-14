@@ -1,6 +1,6 @@
 # `isohybrid` — make the ISO `dd`-able to a USB stick
 
-**Status: verified** — MBR, GPT and an EFI System Partition entry confirmed in the built image.
+**Status: matrix-verified** — MBR, GPT and an EFI System Partition entry confirmed in the built image.
 
 ```sh
 kitchen apply isohybrid

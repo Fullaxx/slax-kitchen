@@ -1,6 +1,6 @@
 # `preinit-hook` — run your own code just before the system boots
 
-**Status: verified** — applied on all four targets; the hook is installed at
+**Status: matrix-verified** — applied on all four targets; the hook is installed at
 `slax/rootcopy/run/preinit.sh` and the resulting ISO passes structure assertions. The script's
 *runtime* behaviour has not been boot-tested.
 

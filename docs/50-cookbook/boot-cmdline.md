@@ -1,6 +1,6 @@
 # `boot-cmdline` — bake in boot parameters
 
-**Status: verified** — applied on all four targets; `APPEND` lines checked before and after against
+**Status: matrix-verified** — applied on all four targets; `APPEND` lines checked before and after against
 the stock ISO.
 
 ```sh

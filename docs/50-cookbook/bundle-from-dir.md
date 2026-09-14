@@ -1,6 +1,6 @@
 # `bundle-from-dir` — pack a directory of your own files
 
-**Status: verified** — applied on all four targets; the built bundle was unpacked and its contents
+**Status: matrix-verified** — applied on all four targets; the built bundle was unpacked and its contents
 and modes checked against the source tree.
 
 ```sh

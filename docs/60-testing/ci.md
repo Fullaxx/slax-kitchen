@@ -5,7 +5,7 @@ the YAML — that is deliberate, so a CI failure is reproducible on a laptop wit
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` → `gates` | every push and PR | the nine commit gates, ~1 min, no ISOs |
+| `ci.yml` → `gates` | every push and PR | the eleven commit gates, ~1 min, no ISOs |
 | `ci.yml` → `build` | every push and PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
 | `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | QEMU BIOS + UEFI boot under TCG |
 | `upstream-watch.yml` | weekly, Mondays | new Slax release, linux-live commits, mirror health |

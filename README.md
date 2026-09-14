@@ -156,7 +156,7 @@ steps:
 ./kitchen pack                     # -> out/slax-...-custom.iso
 ```
 
-**Twenty-nine recipes ship today.** The ones most people want first:
+**Thirty-two recipes ship today.** The ones most people want first:
 
 | | |
 |---|---|
@@ -164,19 +164,23 @@ steps:
 | `isohybrid` | make it `dd`-able to a USB stick |
 | `firmware-refresh` | the GPU firmware stock Slax ships **none** of — no amdgpu, i915 or radeon at all |
 | `add-packages` | install distro packages into a new bundle |
-| `remove-chromium` | drop the browser bundle (−79 to −115 MiB) |
+| `chromium-current` | replace the 2023 browser — stock is chromium **117**, from September 2023 |
+| `remove-chromium` | or drop it entirely (−79 to −115 MiB) |
 | `enable-ssh` | switch on the sshd both flavours already ship but never enable |
 | `users-and-auth` | replace the published `root`/`toor` password |
 | `rootcopy-overlay` | drop files onto the live system with no rebuild |
 | `kiosk-mode` | boot straight into one fullscreen app |
 | `fix-slackware-bugs` | five confirmed upstream defects, including completely broken TLS |
 
-The other nineteen cover bundles, boot parameters, the initramfs, branding and ISO identity.
+The other twenty-one cover bundles, browsers, boot parameters, the initramfs, branding and
+ISO identity.
 
-**Verification is not uniform, and the cookbook says so per recipe.** All twenty-nine are built
-and structurally asserted on all four targets by CI. The original fifteen were additionally
-*boot-verified*; most of the newer ones are marked "not boot-tested" on their page, which means
-exactly that.
+**Verification is not uniform, and every cookbook page says which rung it reached.** The ladder
+runs schema-valid → gate-clean → matrix-verified → artifact boot-verified → boot-verified →
+runtime-verified, it is defined in [CONTRIBUTING.md](CONTRIBUTING.md), and a commit gate enforces
+the vocabulary. Today: **15 matrix-verified, 4 artifact boot-verified, 10 boot-verified, 3
+runtime-verified**. Claiming a rung you did not reach is the one thing this project treats as a
+real error.
 
 See [the cookbook](docs/50-cookbook/), [all 23 verbs](docs/90-reference/verbs.md), and
 [the CLI reference](docs/90-reference/cli.md).
@@ -202,8 +206,9 @@ differences it recognises to the recipes that cause them. A weekly CI job watche
 
 See **[docs/00-overview/status.md](docs/00-overview/status.md)** for what is verified, what is
 written but unsupported, and what does not exist yet. Short version: the core loop
-(unpack → apply → pack → test) and fifteen recipes are boot-verified, and the documentation of Slax
-itself is complete; roughly two thirds of the planned recipes are not written yet.
+(unpack → apply → pack → test) works and is boot-tested in CI, thirty-two recipes ship across
+23 verbs, and the documentation of Slax itself is complete. `kernel.replace` is the one verb still
+unwritten.
 
 ## Contributing
 

@@ -1,6 +1,6 @@
 # `uefi-bootable` — make the ISO boot on UEFI firmware
 
-**Status: verified** — booted under OVMF, all the way to livekit mounting bundles.
+**Status: boot-verified** — booted under OVMF, all the way to livekit mounting bundles.
 
 ```sh
 kitchen apply memtest86plus serial-console uefi-bootable   # LAST in the list

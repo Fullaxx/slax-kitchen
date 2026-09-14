@@ -1,6 +1,6 @@
 # `initramfs-boot-timeout` — change how long early boot waits
 
-**Status: verified** — applied, `sh -n` clean, boot-verified to `slax login:`.
+**Status: boot-verified** — applied, `sh -n` clean, booted to `slax login:`.
 
 ```sh
 kitchen apply initramfs-boot-timeout

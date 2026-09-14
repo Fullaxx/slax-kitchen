@@ -1,7 +1,7 @@
 # `boot-branding` — an accurate help screen, and a menu you can read
 
-**Status: verified** — applied and boot-verified; the BIOS screenshot confirms the changed default
-actually takes effect.
+**Status: runtime-verified** — applied and booted; the BIOS screenshot confirms the changed
+default actually takes effect.
 
 ```sh
 kitchen apply boot-branding

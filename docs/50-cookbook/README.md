@@ -2,10 +2,11 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Thirty recipes ship today.** Every one is built and structurally asserted on all four
-targets by CI — but **verification is not uniform**, and each page states its own: the original
-fifteen were additionally boot-verified, while most of the fifteen added since are marked
-"not boot-tested", which means exactly that.
+**Thirty-two recipes ship today.** Every one is built and structurally asserted on all four
+targets by CI (or on the subset its `compat:` block declares). Each page opens with the rung of
+the [verification ladder](../../CONTRIBUTING.md) it actually reached — `matrix-verified`,
+`artifact boot-verified`, `boot-verified` or `runtime-verified` — and the `95-status-vocab` gate
+rejects any other word.
 
 What is left is the work that needs more than YAML — a static busybox build, the `kernel.replace`
 verb, and `boot-tools`, whose module source turned out not to be the obvious one.

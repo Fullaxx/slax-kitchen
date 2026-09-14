@@ -108,7 +108,7 @@ clear message naming what *is* available, rather than silently skipping.
 
 ### Recipes
 
-**29.** The remaining gaps are the ones that need real engineering rather than YAML:
+**32.** The remaining gaps are the ones that need real engineering rather than YAML:
 
 | | |
 |---|---|
@@ -118,9 +118,17 @@ clear message naming what *is* available, rather than silently skipping.
 | `netboot-export` | emits a PXE tree, not an ISO — a CLI command rather than a recipe |
 | persistence | `persistence-preseed` as specified cannot work on read-only media; deferred pending a design conversation |
 
-**Verification is not uniform.** All 29 are built and structurally asserted on all four targets.
-The original 15 were boot-verified; most of the 14 added since are marked "not boot-tested" on
-their cookbook page.
+**Verification is not uniform, and every cookbook page names the rung it reached.** The ladder is
+defined in [CONTRIBUTING.md](../../CONTRIBUTING.md); `ci/checks/95-status-vocab.sh` enforces the
+vocabulary, which previously did not exist — 23 pages said a bare "verified" that meant six
+different things.
+
+| rung | pages |
+|---|---|
+| `matrix-verified` — builds and passes structure assertions on its declared targets | 15 |
+| `artifact boot-verified` — booted, and `testkit` confirms the artifact reached the union | 4 |
+| `boot-verified` — booted to `slax login:` with all three livekit markers | 10 |
+| `runtime-verified` — the feature was watched working | 3 |
 
 ### Documentation
 
@@ -131,7 +139,7 @@ it boots on every medium, what software is in it, and the upstream source of tru
 `40-workflow/` is also complete — 10 pages, every procedure written to work by hand with the
 `kitchen` verb noted alongside.
 
-Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 29 pages, one per
+Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 32 pages, one per
 shipped recipe), `60-testing/`, `70-compat/`,
 `90-reference/` (CLI + all 23 verbs; the profile format is still thin). See [the index](../README.md).
 

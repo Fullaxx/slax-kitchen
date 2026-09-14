@@ -1,6 +1,6 @@
 # `testkit` — make a boot assertable
 
-**Status: verified** — applied on all four targets and boot-tested; the fact block below is real
+**Status: boot-verified** — applied on all four targets and boot-tested; the fact block below is real
 output from a QEMU run.
 
 ```sh

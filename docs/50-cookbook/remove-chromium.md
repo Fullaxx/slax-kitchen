@@ -1,6 +1,6 @@
 # `remove-chromium` — drop the browser bundle
 
-**Status: verified** — built, probed and booted.
+**Status: boot-verified** — built, probed and booted.
 
 ```sh
 kitchen apply remove-chromium

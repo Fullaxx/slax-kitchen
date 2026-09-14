@@ -1,6 +1,6 @@
 # `host-grub-entry` — boot Slax from a bootloader you already have
 
-**Status: verified** — generated from the real menu entries and validated with `grub-script-check`.
+**Status: matrix-verified** — generated from the real menu entries and validated with `grub-script-check`.
 
 ```sh
 kitchen apply host-grub-entry

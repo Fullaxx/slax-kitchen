@@ -77,7 +77,7 @@ Run these four, in this order. They are fast and they answer most questions outr
 ./kitchen probe out/my.iso             # is the output what I think it is?
 ```
 
-**`selftest ci`** runs the same ten gates CI runs. If it fails, fix that first — you are not
+**`selftest ci`** runs the same eleven gates CI runs. If it fails, fix that first — you are not
 looking at the bug you think you are.
 
 **`doctor`** is the single most useful thing to paste into a report. It reports every tool it needs,
@@ -261,7 +261,7 @@ worth telling us about.
 ### The bar
 
 ```sh
-./kitchen selftest ci        # all ten gates, or it will not merge
+./kitchen selftest ci        # all eleven gates, or it will not merge
 ```
 
 The gates enforce, among other things: no binaries in the repository, no gitignored working files,
@@ -278,12 +278,17 @@ something specific:
 
 | Rung | Means | How |
 |---|---|---|
-| **schema-valid** | the YAML is well-formed | `kitchen validate` |
-| **gate-clean** | the tree passes the ten gates | `kitchen selftest ci` |
+| **schema-valid** | the YAML is well-formed, and every key is one a verb reads | `kitchen validate` |
+| **gate-clean** | the tree passes the eleven gates | `kitchen selftest ci` |
 | **matrix-verified** | it builds and passes structure assertions on all four targets | `ci/recipe-matrix.sh` |
 | **artifact boot-verified** | it booted, and `testkit` confirmed the artifact reached the union | `testkit` + `kitchen test --kernel` |
 | **boot-verified** | it booted to `slax login:` with all three livekit markers | `kitchen test --kernel` |
 | **runtime-verified** | the feature actually works | a full desktop boot |
+
+Every cookbook page opens with the rung it reached, and `ci/checks/95-status-vocab.sh` rejects
+any word that is not on this list. It cannot tell whether the claim is *true* — only you can —
+but it stops the vocabulary drifting back to a bare "verified", which is where it started and
+which meant six different things across 23 pages.
 
 **Matrix-verified is not boot-verified, and boot-verified is not runtime-verified.** A correct file
 in the right place is not a working feature — `ssh.service` being symlinked is not sshd accepting a
@@ -336,7 +341,7 @@ A new verb needs: the implementation, the `schema/recipe.schema.json` enum entry
 [the verb reference](docs/90-reference/verbs.md), and a recipe that exercises it.
 
 Pure logic — anything that does not need an ISO — belongs in `tests/unit/test_apply.py`, which runs
-in milliseconds as one of the ten gates. Every case in that file is a bug that actually shipped.
+in milliseconds as one of the eleven gates. Every case in that file is a bug that actually shipped.
 
 **A check that cannot fail is worse than no check.** This has bitten this project at least four
 times — a workflow that never opened an issue because `$?` after a pipeline is `tee`'s status; a

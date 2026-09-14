@@ -1,6 +1,7 @@
 # `add-packages` — install distro packages into a new bundle
 
-**Status: supported on Debian. Implemented but unsupported on Slackware** — see below.
+**Status: matrix-verified** on Debian — built and structurally asserted on both
+Debian targets. Implemented but unsupported on Slackware; see below.
 
 ```sh
 kitchen unpack isos/slax-64bit-debian-12.2.0.iso

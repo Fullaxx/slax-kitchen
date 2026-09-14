@@ -1,6 +1,6 @@
 # `remove-bundle` — slim the ISO by dropping bundles
 
-**Status: verified** — built, probed and booted.
+**Status: boot-verified** — built, probed and booted.
 
 ```sh
 kitchen apply remove-bundle          # drops 05-chromium by default

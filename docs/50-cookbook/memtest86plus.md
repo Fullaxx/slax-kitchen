@@ -1,6 +1,7 @@
 # `memtest86plus` — add a memory tester to the boot menu
 
-**Status: verified on BIOS and UEFI**, both by booting the built ISO and watching Memtest86+ run.
+**Status: runtime-verified** — on BIOS and UEFI, both by booting the built ISO and watching
+Memtest86+ actually run.
 
 ```sh
 kitchen unpack isos/slax-64bit-debian-12.2.0.iso

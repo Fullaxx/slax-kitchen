@@ -1,6 +1,6 @@
 # `initramfs-add-binary` — put a tool in early boot
 
-**Status: verified** — applied and booted on 64-bit Debian; the addition survives into the rebuilt
+**Status: boot-verified** — applied and booted on 64-bit Debian; the addition survives into the rebuilt
 ISO and the image still reaches `slax login:`.
 
 ```sh

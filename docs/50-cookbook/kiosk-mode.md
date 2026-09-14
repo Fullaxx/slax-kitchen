@@ -1,6 +1,6 @@
 # `kiosk-mode` — boot into one fullscreen application
 
-**Status: artifact boot-verified.** Built and structurally asserted on all four
+**Status: artifact boot-verified** — built and structurally asserted on all four
 targets; then booted under QEMU with [`testkit`](testkit.md), which confirmed the 1020-byte `.xinitrc` reached the union, beating 03-desktop's 13-byte copy.
 **Runtime behaviour is still untested** — that the file is correct is not the same as
 the feature working, and the difference needs a full desktop boot.

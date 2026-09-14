@@ -1,6 +1,6 @@
 # `initramfs-add-modules` — reach hardware early boot cannot see
 
-**Status: verified** — applied and booted on 64-bit Debian; also applied on 64-bit Slackware and
+**Status: boot-verified** — applied and booted on 64-bit Debian; also applied on 64-bit Slackware and
 32-bit Debian, confirming both the merged-usr and per-arch cases.
 
 ```sh

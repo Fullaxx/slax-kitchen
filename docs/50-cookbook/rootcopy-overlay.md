@@ -1,6 +1,6 @@
 # `rootcopy-overlay` — drop files onto the live system, no rebuild
 
-**Status: verified** — both the file copy and the preinit hook confirmed firing at boot.
+**Status: runtime-verified** — both the file copy and the preinit hook confirmed firing at boot.
 
 ```sh
 kitchen apply rootcopy-overlay

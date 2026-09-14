@@ -1,6 +1,6 @@
 # `firmware-refresh` — the GPU firmware Slax ships none of
 
-**Status: verified** — applied on Debian 64-bit; all six packages confirmed installed, and the
+**Status: matrix-verified** — applied on Debian 64-bit; all six packages confirmed installed, and the
 resulting bundle inspected for the firmware directories that were missing. **Not boot-tested** on
 hardware that needs the firmware.
 

@@ -1,6 +1,7 @@
 # `bundle-from-tarball` — turn a release tarball into a bundle
 
-**Status: verified** — downloaded, checksum-verified and packed on a 64-bit target; the built
+**Status: matrix-verified** — downloaded, checksum-verified and packed on a 64-bit target
+(which is its whole `compat:` range); the built
 bundle was unpacked and the binary confirmed at `/usr/local/bin/fzf`.
 
 ```sh
