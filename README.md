@@ -205,6 +205,12 @@ written but unsupported, and what does not exist yet. Short version: the core lo
 (unpack → apply → pack → test) and fifteen recipes are boot-verified, and the documentation of Slax
 itself is complete; roughly two thirds of the planned recipes are not written yet.
 
+## Contributing
+
+This project is meant to be forked. [CONTRIBUTING.md](CONTRIBUTING.md) covers how to diagnose a
+problem well enough to report it — the failure taxonomy, what to gather, and where to file — plus
+the bar for a pull request. Security reports go via [SECURITY.md](SECURITY.md).
+
 ## Licensing
 
 MIT for this repository's own code, docs and recipes — see [LICENSE](LICENSE). Slax, Linux Live Kit
