@@ -109,8 +109,14 @@ jobs:
         run: |
           mkdir -p build/irfs
           xorriso -osirrox on -indev "isos/${{ matrix.iso }}" \
-                  -extract /slax/boot/initrfs.img build/initrfs.img -- 2>/dev/null
-          ( cd build/irfs && xz -dc ../initrfs.img | cpio -id --quiet 2>/dev/null )
+                  -extract /slax/boot/initrfs.img build/initrfs.img --
+          # ONLY the four files the gates read. A full cpio extraction tries to create
+          # the initramfs's seven device nodes, which a non-root runner (uid 1001)
+          # cannot do -- cpio then exits non-zero and `bash -e` kills the step. The
+          # first version also sent cpio's stderr to /dev/null, so the reason was
+          # invisible and the step just said "exit code 2".
+          ( cd build/irfs && xz -dc ../initrfs.img \
+              | cpio -id --quiet bin/busybox bin/blkid bin/eject lib/livekitlib )
           ./tests/busybox/gates.sh build/busybox-1.37.0-i386-static build/irfs
 
       # Apply every compatible recipe individually, so one failure names one recipe.
