@@ -2,7 +2,7 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Fourteen recipes ship today**, all verified by booting the result. The plan lists roughly 32; the
+**Fifteen recipes ship today**, all verified by booting the result. The plan lists roughly 32; the
 other two thirds do not exist yet, and this index says so rather than implying a fuller shelf than
 there is. [Project status](../00-overview/status.md) has the honest ledger.
 
@@ -23,6 +23,7 @@ kitchen build <profile>             # fetch -> unpack -> apply* -> pack -> test
 | [`serial-console`](serial-console.md) | log the whole boot to a serial port — the prerequisite for automated boot tests | ○ |
 | [`boot-branding`](boot-branding.md) | replace the inaccurate help screen; give the menu time to be read | ○ |
 | [`host-grub-entry`](host-grub-entry.md) | a GRUB entry for booting Slax from a bootloader you already have | ○ |
+| [`iso-identity`](iso-identity.md) | label the image as yours, and write a verifiable checksum | ○ |
 
 The first two fix real gaps in every stock image, and together produce one file that boots four
 ways: BIOS optical, UEFI optical, BIOS `dd`'d stick, UEFI `dd`'d stick.
@@ -104,7 +105,7 @@ steps:
 - `compat.privilege` is what lets `kitchen doctor` tell you whether this machine can run it.
 - `vars:` are substituted as `{{name}}` and can be overridden per profile.
 - `when:` guards a step on a fact about the tree, e.g. `flavour==debian`.
-- **20 of 25 declared verbs are implemented.** A recipe using an unimplemented one fails with a
+- **22 of 25 declared verbs are implemented.** A recipe using an unimplemented one fails with a
   message naming what *is* available. Full list and fields: [verb reference](../90-reference/verbs.md).
 
 Every recipe needs a page here — `ci/checks/90-doc-coverage.sh` fails the commit otherwise, in both

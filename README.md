@@ -156,7 +156,7 @@ steps:
 ./kitchen pack                     # -> out/slax-...-custom.iso
 ```
 
-Fourteen recipes ship today, all verified by booting the result:
+Fifteen recipes ship today, all verified by booting the result:
 
 | | |
 |---|---|
@@ -174,8 +174,9 @@ Fourteen recipes ship today, all verified by booting the result:
 | `branding` | hostname, version and login banner via an override bundle |
 | `boot-branding` | an accurate boot help screen, and a readable menu timeout |
 | `host-grub-entry` | boot Slax from a GRUB you already have, nothing overwritten |
+| `iso-identity` | label the image as yours, plus a verifiable checksum |
 
-See [the cookbook](docs/50-cookbook/), [all 20 verbs](docs/90-reference/verbs.md), and
+See [the cookbook](docs/50-cookbook/), [all 22 verbs](docs/90-reference/verbs.md), and
 [the CLI reference](docs/90-reference/cli.md).
 
 ---
@@ -199,7 +200,7 @@ the recipes that caused them. A weekly CI job watches for a new release.
 
 See **[docs/00-overview/status.md](docs/00-overview/status.md)** for what is verified, what is
 written but unsupported, and what does not exist yet. Short version: the core loop
-(unpack → apply → pack → test) and fourteen recipes are boot-verified, and the documentation of Slax
+(unpack → apply → pack → test) and fifteen recipes are boot-verified, and the documentation of Slax
 itself is complete; roughly two thirds of the planned recipes are not written yet.
 
 ## Licensing

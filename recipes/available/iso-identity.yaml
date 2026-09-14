@@ -1,0 +1,34 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: iso-identity
+  summary: Label the ISO as yours and write a checksum beside it
+  tags: [iso, release]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  volid: SLAX-CUSTOM
+  publisher: "built with slax-kitchen"
+steps:
+  # A customized image that still identifies itself as stock is a trap for whoever finds
+  # it later -- including you, six months on. Upstream leaves most of these fields empty:
+  # publisher, data preparer, volume set, copyright, abstract and bibliography are all
+  # blank on every shipped image, and only volume id, system id and application id carry
+  # anything at all.
+  #
+  # volid is the one people actually see: it becomes the filesystem label when the image
+  # is mounted or written to a stick. 32 characters, and the verb refuses a longer one
+  # rather than letting the mastering tool truncate it silently.
+  - verb: iso.metadata
+    volid: "{{volid}}"
+    publisher: "{{publisher}}"
+    preparer: "slax-kitchen"
+
+  # Necessarily written AFTER mastering -- the checksum of an image cannot live inside
+  # that image. `kitchen pack` writes <output>.sha256 next to the ISO, with a relative
+  # filename inside so `sha256sum -c` works from the output directory.
+  - verb: iso.checksums
+    algorithm: sha256

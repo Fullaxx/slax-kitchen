@@ -46,6 +46,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--expect-uefi", action="store_true", help="require an EFI El Torito entry")
     ap.add_argument("--expect-hybrid", action="store_true", help="require an isohybrid MBR")
     ap.add_argument("--expect-gpt", action="store_true")
+    ap.add_argument("--volid", default="slax",
+                    help="expected volume id (iso.metadata can legitimately change it)")
     ap.add_argument("--max-size-mib", type=int)
     ap.add_argument("--require", action="append", default=[],
                     help="extra path that must exist in the ISO")
@@ -62,7 +64,8 @@ def main(argv: list[str]) -> int:
         squashes = r.squashfs_images()
 
         # --- container -----------------------------------------------------
-        t.check(info.volume_id == "slax", "volume id is 'slax'", f"got {info.volume_id!r}")
+        t.check(info.volume_id == a.volid, f"volume id is {a.volid!r}",
+                f"got {info.volume_id!r}")
         t.check(info.rock_ridge, "Rock Ridge present",
                 "without it, lowercase names and the exec bit on bootinst.sh are lost")
         t.check(info.joliet, "Joliet present")

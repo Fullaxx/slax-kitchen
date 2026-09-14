@@ -1,6 +1,6 @@
 # Verb reference
 
-A recipe step names a **verb** and its fields. **20 of 25** declared verbs are implemented; a recipe
+A recipe step names a **verb** and its fields. **22 of 25** declared verbs are implemented; a recipe
 using an unimplemented one fails with a message naming what *is* available.
 
 Every verb is validated against `schema/recipe.schema.json` before anything runs, and
@@ -277,11 +277,42 @@ Place a file anywhere in the ISO tree, outside `/slax/`.
     - {dest: /README.txt, content: "…"}
 ```
 
+### `iso.metadata` ○
+
+Set the ISO9660 volume descriptor fields. Upstream leaves publisher, preparer, volume set,
+copyright, abstract and bibliography **all blank**.
+
+```yaml
+- verb: iso.metadata
+  volid: SLAX-CUSTOM        # 32 chars; the label you see when it is mounted
+  appid: "…"                # 128
+  sysid: "…"                # 32
+  publisher: "…"            # 128
+  preparer: "…"             # 128
+```
+
+Recorded as **pack hints** — these are set by the mastering tool, so there is nowhere in the tree
+they could live. An over-long value is refused rather than silently truncated, and a flag on the
+`kitchen pack` command line wins over the recipe.
+
+### `iso.checksums` ○
+
+```yaml
+- verb: iso.checksums
+  algorithm: sha256         # or sha512
+  sign: "your-key-id"       # optional; gpg --detach-sign on the checksum file
+```
+
+Also a pack hint, and necessarily so: the checksum of an image cannot live inside that image.
+`kitchen pack` writes `<output>.sha256` beside the ISO with a **relative** filename inside, so
+`sha256sum -c` works from the output directory.
+
 ---
 
 ## Not implemented
 
-`iso.checksums` · `iso.metadata` · `kernel.replace`
+`kernel.replace` — the last one, and the heaviest: both of its failure modes (no aufs, no
+`CONFIG_IA32_EMULATION`) are silent.
 
 ## Won't do
 

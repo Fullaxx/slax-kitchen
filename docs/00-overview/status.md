@@ -93,22 +93,22 @@ pretending to work. (`fetch` is implemented and verified — it was listed here 
 
 ### Verbs
 
-20 of 25 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
+22 of 25 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
 clear message naming what *is* available, rather than silently skipping.
 
 **Implemented:** `boot.cmdline` `boot.isohybrid` `boot.menu` `boot.payload` `boot.uefi`
 `bundle.files` `bundle.fromDir` `bundle.fromTarball` `bundle.packages` `bundle.remove`
 `bundle.renumber` `bundle.script` `boot.branding` `boot.grub` `initramfs.files`
-`initramfs.modules` `initramfs.patch`
+`initramfs.modules` `initramfs.patch` `iso.metadata` `iso.checksums`
 `iso.files` `rootcopy.files` `rootcopy.preinit` — full reference:
 [docs/90-reference/verbs.md](../90-reference/verbs.md)
 
-**Not yet:** `iso.checksums` `iso.metadata` `kernel.replace`
+**Not yet:** `kernel.replace` — the last, and the heaviest
 **Won't-do:** `initramfs.config`, `boot.secureboot` — both below
 
 ### Recipes
 
-14 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
+15 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
 `initramfs-busybox`, `kernel-replace`.
 
 ### Documentation

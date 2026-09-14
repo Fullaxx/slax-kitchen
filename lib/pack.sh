@@ -41,6 +41,7 @@ _pack_derive_name() {
 
 kitchen_pack() {
     src="work/iso" out="" backend="" uefi=0 hybrid=0 volid="slax" appid="slax" sysid="LINUX" mdate="" force=0
+    publisher="" preparer="" _sums="" volid_set=0 appid_set=0 sysid_set=0
     while [ $# -gt 0 ]; do
         case "$1" in
             -o|--output)  out=$2; shift 2 ;;
@@ -49,8 +50,8 @@ kitchen_pack() {
             --backend)    backend=$2; shift 2 ;;
             --uefi)       uefi=1; shift ;;
             --hybrid)     hybrid=1; shift ;;
-            --volid)      volid=$2; shift 2 ;;
-            --appid)      appid=$2; shift 2 ;;
+            --volid)      volid=$2; volid_set=1; shift 2 ;;
+            --appid)      appid=$2; appid_set=1; shift 2 ;;
             --date)       mdate=$2; shift 2 ;;
             -*) die "pack: unknown option $1" ;;
             *)  out=$1; shift ;;
@@ -80,6 +81,28 @@ kitchen_pack() {
             hybrid=1; printf '  %shint%s hybrid MBR/GPT requested by a recipe\n' "$D" "$O"; }
         grep -q '^uefi: *true' "$_hints" && [ "$uefi" = 0 ] && {
             uefi=1; printf '  %shint%s UEFI El Torito entry requested by a recipe\n' "$D" "$O"; }
+
+        # iso.metadata records volume descriptor fields here, because there is nowhere
+        # in the tree they could live -- they are set by the mastering tool. An explicit
+        # CLI flag still wins, which is why each is only taken when unset.
+        for _k in volid appid sysid publisher preparer; do
+            _v=$(sed -n "s/^$_k: *//p" "$_hints" | head -1 | sed "s/^[\"']//;s/[\"']$//")
+            [ -z "$_v" ] && continue
+            _taken=1
+            case "$_k" in
+                volid)     if [ "$volid_set" = 0 ]; then volid=$_v; else _taken=0; fi ;;
+                appid)     if [ "$appid_set" = 0 ]; then appid=$_v; else _taken=0; fi ;;
+                sysid)     if [ "$sysid_set" = 0 ]; then sysid=$_v; else _taken=0; fi ;;
+                publisher) publisher=$_v ;;
+                preparer)  preparer=$_v ;;
+            esac
+            if [ "$_taken" = 1 ]; then
+                printf '  %shint%s %s=%s\n' "$D" "$O" "$_k" "$_v"
+            else
+                printf '  %shint%s %s=%s overridden on the command line\n' "$D" "$O" "$_k" "$_v"
+            fi
+        done
+        _sums=$(sed -n 's/^checksums: *//p' "$_hints" | head -1)
     fi
 
     if [ -z "$backend" ]; then
@@ -97,6 +120,7 @@ kitchen_pack() {
       genisoimage)
         genisoimage -o "$out" -quiet -J -R -D \
             -A "$appid" -V "$volid" -sysid "$sysid" -input-charset utf-8 \
+            ${publisher:+-publisher "$publisher"} ${preparer:+-p "$preparer"} \
             -b slax/boot/isolinux.bin -c slax/boot/isolinux.boot \
             -no-emul-boot -boot-info-table -boot-load-size 4 \
             "$src" || die "pack: genisoimage failed"
@@ -106,6 +130,8 @@ kitchen_pack() {
                -A "$appid" -V "$volid" -sysid "$sysid" -input-charset utf-8 \
                -b slax/boot/isolinux.bin -c slax/boot/isolinux.boot \
                -no-emul-boot -boot-load-size 4 -boot-info-table
+        [ -n "$publisher" ] && set -- "$@" -publisher "$publisher"
+        [ -n "$preparer" ] && set -- "$@" -p "$preparer"
         [ -n "$mdate" ] && set -- "$@" --modification-date="$mdate"
         if [ "$hybrid" = 1 ]; then
             hdr=/usr/lib/ISOLINUX/isohdpfx.bin
@@ -129,5 +155,28 @@ kitchen_pack() {
     [ "$backend" = xorriso ] && [ "$appid" != "$(printf '%s' "$appid" | tr a-z A-Z)" ] && \
         printf '  %snote: xorriso uppercased the application id to %s%s\n' "$Y" \
                "$(printf '%s' "$appid" | tr a-z A-Z)" "$O"
+
+    if [ -n "$_sums" ]; then
+        _sumfile="$out.$_sums"
+        # Relative name inside the file so `sha256sum -c` works from the output dir
+        # regardless of where the ISO was built.
+        ( cd "$(dirname "$out")" && "${_sums}sum" "$(basename "$out")" ) > "$_sumfile" \
+            || die "pack: ${_sums}sum failed"
+        printf '  %sok%s   wrote %s\n' "$G" "$O" "$_sumfile"
+        _key=$(sed -n 's/^checksums_sign: *//p' "$_hints" 2>/dev/null | head -1)
+        if [ -n "$_key" ] && [ "$_key" != "false" ]; then
+            if have gpg; then
+                if gpg --batch --yes --local-user "$_key" \
+                       --detach-sign --armor "$_sumfile" 2>/dev/null; then
+                    printf '  %sok%s   signed %s.asc\n' "$G" "$O" "$_sumfile"
+                else
+                    printf '  %swarn%s gpg could not sign with key %s -- checksum written unsigned\n' \
+                           "$Y" "$O" "$_key"
+                fi
+            else
+                printf '  %swarn%s gpg not installed -- checksum written unsigned\n' "$Y" "$O"
+            fi
+        fi
+    fi
     return 0
 }

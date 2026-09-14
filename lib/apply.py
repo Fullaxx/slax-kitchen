@@ -1216,6 +1216,66 @@ def _grub_cfg(entries: list[dict]) -> str:
     return "\n".join(out)
 
 
+@verb("iso.metadata")
+def v_iso_metadata(ctx: Ctx, step: dict) -> None:
+    """Set the ISO9660 volume descriptor fields.
+
+    Upstream leaves most of them empty: publisher, data preparer, volume set, copyright,
+    abstract and bibliography are all blank on every shipped image, and only volume id,
+    system id and application id carry anything. Filling them is the difference between
+    a rebuilt image that identifies itself and one that silently claims to be stock.
+
+    Mastering-time settings, so they are recorded as pack hints rather than written into
+    the tree -- there is nowhere in the tree they could live.
+    """
+    # (field width in the PVD, what the field is called in ISO9660)
+    fields = {
+        "volid": (32, "Volume Identifier"),
+        "appid": (128, "Application Identifier"),
+        "sysid": (32, "System Identifier"),
+        "publisher": (128, "Publisher Identifier"),
+        "preparer": (128, "Data Preparer Identifier"),
+    }
+    given = {k: v for k, v in step.items() if k in fields}
+    if not given:
+        raise RuntimeError("iso.metadata: nothing to set -- give volid, appid, sysid, "
+                           "publisher or preparer")
+    for k, v in given.items():
+        limit, what = fields[k]
+        v = str(v)
+        # ISO9660 pads these to a fixed width; anything longer is truncated by the
+        # mastering tool without a word, so say so here instead.
+        if len(v) > limit:
+            raise RuntimeError(
+                f"iso.metadata: {k} is {len(v)} characters; the ISO9660 {what} field "
+                f"holds {limit}. Shorten it -- the mastering tool would truncate it "
+                f"silently.")
+        if k == "volid" and re.search(r"[^A-Za-z0-9_.-]", v):
+            ctx.say(f"warning: volid {v!r} contains characters outside A-Z 0-9 _ . - ; "
+                    f"some systems show it differently")
+        ctx.hint(k, v)
+
+
+@verb("iso.checksums")
+def v_iso_checksums(ctx: Ctx, step: dict) -> None:
+    """Write a checksum file beside the finished ISO.
+
+    Necessarily a pack hint: the checksum of an image cannot live inside that image.
+    `kitchen pack` writes it after mastering, next to the output.
+    """
+    algo = (step.get("algorithm") or "sha256").lower()
+    if algo not in ("sha256", "sha512"):
+        raise RuntimeError(f"iso.checksums: unsupported algorithm {algo!r} "
+                           f"(want sha256 or sha512)")
+    ctx.hint("checksums", algo)
+    if step.get("sign"):
+        # Only record the request. Signing needs a key and a passphrase, neither of
+        # which belongs in a recipe or in this process.
+        ctx.hint("checksums_sign", str(step["sign"]))
+        ctx.say("note: signing is requested but not performed by apply; "
+                "`kitchen pack` will sign if gpg has the key")
+
+
 @verb("boot.branding")
 def v_boot_branding(ctx: Ctx, step: dict) -> None:
     """Change what the boot menu looks like: splash, help text, timeout, default entry.

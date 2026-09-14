@@ -78,5 +78,5 @@ and what redistributing an image obliges you to do.
 
 ## Honest status
 
-See [`status.md`](status.md). Short version: the core loop and fourteen recipes are boot-verified, the
+See [`status.md`](status.md). Short version: the core loop and fifteen recipes are boot-verified, the
 Phase 1 documentation is complete, and roughly two thirds of the planned recipes are not written yet.
