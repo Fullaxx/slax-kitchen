@@ -36,10 +36,16 @@ def test_bundle_exclude():
                  "etc/resolv.conf", "etc/fstab", "etc/mtab", "etc/ld.so.cache",
                  "usr/sbin/policy-rc.d", "etc/apt/apt.conf.d/00kitchen",
                  "etc/slackpkg/mirrors", "etc/slackpkg/slackpkgplus.conf",
-                 "var/lib/dpkg/lock", ".wh.something"]:
+                 "var/lib/dpkg/lock", ".wh.something",
+                 # Debian's package database is ONE FILE, and a union composes trees,
+                 # not files. Shipping it replaced 05-chromium's 600 packages with 299.
+                 "var/lib/dpkg/status", "var/lib/dpkg/available"]:
         check(f"exclude {path}", bool(X.search(path)), True)
     for path in ["usr/bin/tmux", "usr/bin/ncdu", "etc/tmux.conf", "root/.bashrc",
-                 "var/lib/dpkg/status", "var/lib/dpkg/info/tmux.list",
+                 # info/ IS a directory of per-package files, so it unions correctly
+                 # and must survive -- it is what makes the package look installed.
+                 "var/lib/dpkg/info/tmux.list",
+                 "var/lib/slax-kitchen/dpkg-status.d/07-extras",
                  "var/lib/pkgtools/packages/tmux-3.7c-x86_64-2",
                  "etc/slackpkg/blacklist", "usr/doc/tmux-3.7c/CHANGES",
                  "rootfsX/.gnupg"]:

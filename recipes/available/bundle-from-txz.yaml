@@ -39,7 +39,6 @@ steps:
   # bundle -- there is nothing to bootstrap before this script can run.
   - verb: bundle.script
     bundle: "{{bundle}}"
-    from: [01-core]
     script: |
       #!/bin/sh
       set -e

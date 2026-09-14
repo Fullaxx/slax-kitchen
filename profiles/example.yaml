@@ -8,8 +8,14 @@ base:
   arch: 64bit
   version: "12.2.0"
 recipes:
+  # testkit prints facts about the ASSEMBLED filesystem to the serial console just
+  # before change_root, which is what lets the boot test assert on more than "it
+  # booted" -- including the dpkg package count, where a badly built bundle would
+  # otherwise silently replace 600 packages with 299.
+  #
   # Order matters: uefi-bootable builds the GRUB menu by parsing isolinux.cfg, so it has
   # to run after anything that adds a menu entry. Keep it last.
+  - testkit
   - memtest86plus
   - serial-console
   - isohybrid

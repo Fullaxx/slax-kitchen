@@ -32,10 +32,13 @@ steps:
   # The package lists differ per flavour because the names do: ncdu is in Debian proper
   # but only in third-party Slackware repos, and slackpkg does no dependency resolution
   # at all (neither does Slackware itself), so every dependency must be named explicitly.
+  #
+  # NO `from:` HERE ON PURPOSE. It now defaults to every bundle that will sit below this
+  # one at boot. Naming a shorter stack makes apt reinstall libraries the image already
+  # has, and those copies then shadow the originals -- see docs/40-workflow/composing-bundles.md.
   - verb: bundle.packages
     when: flavour==debian
     bundle: "{{bundle}}"
-    from: [01-core]
     packages: [tmux, ncdu]
     apt:
       update: true
@@ -48,6 +51,5 @@ steps:
   #   - verb: bundle.packages
   #     when: flavour==slackware
   #     bundle: "{{bundle}}"
-  #     from: [01-core]
   #     packages: [tmux, libevent]
   #     mirror: https://mirrors.slackware.com/slackware/slackware64-15.0/

@@ -42,7 +42,6 @@ steps:
   # This recipe leaves it exactly as shipped (locked on Slackware, passworded on Debian).
   - verb: bundle.script
     bundle: "{{bundle}}"
-    from: [01-core]
     script: |
       #!/bin/sh
       set -e

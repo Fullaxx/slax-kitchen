@@ -170,8 +170,17 @@ jobs:
       # livekit markers, so it can actually fail. The menu modes cannot assert on
       # serial -- their default entry has no console=ttyS0, so the log stays empty --
       # and for four CI runs they reported success while proving nothing.
+      #
+      # The testkit expectations are the payload: "union: aufs" catches the silent
+      # overlayfs downgrade that breaks `slax activate`, and the package count catches
+      # a bundle whose var/lib/dpkg/status shadowed a more complete one -- a failure
+      # that is invisible everywhere else until a user runs apt.
       - name: boot (direct kernel, asserts livekit markers)
-        run: ./kitchen test out/slax-example-12.2.0.iso --kernel --seconds 240
+        run: |
+          ./kitchen test out/slax-example-12.2.0.iso --kernel --seconds 240 \
+            --expect '### TESTKIT BEGIN' \
+            --expect 'union: aufs' \
+            --expect 'dpkg-status: 600 packages'
 
       - name: boot (bootloader screenshots, BIOS and UEFI)
         run: |

@@ -15,7 +15,7 @@ _test_structure() {
 
 kitchen_test() {
     iso="" want_structure=0 want_bios=0 want_uefi=0 want_kernel=0
-    expect_uefi="" expect_hybrid="" secs=32
+    expect_uefi="" expect_hybrid="" secs=32 expects=""
     while [ $# -gt 0 ]; do
         case "$1" in
             --structure)    want_structure=1; shift ;;
@@ -25,6 +25,9 @@ kitchen_test() {
             --expect-uefi)  expect_uefi=1; shift ;;
             --expect-hybrid) expect_hybrid=1; shift ;;
             --seconds)      secs=$2; shift 2 ;;
+            # Repeatable. Stored one per line because an expectation contains spaces.
+            --expect)       expects="$expects$2
+"; shift 2 ;;
             -*) die "test: unknown option $1" ;;
             *)  iso=$1; shift ;;
         esac
@@ -55,12 +58,19 @@ kitchen_test() {
               -extract /slax/boot/vmlinuz "$kb/vmlinuz" \
               -extract /slax/boot/initrfs.img "$kb/initrfs.img" -- >/dev/null 2>&1 \
            && [ -s "$kb/vmlinuz" ] && [ -s "$kb/initrfs.img" ]; then
-            python3 "$REPO_ROOT/tests/boot/qemu_boot.py" "$iso" --mode kernel \
+            set -- "$REPO_ROOT/tests/boot/qemu_boot.py" "$iso" --mode kernel \
                 --kernel "$kb/vmlinuz" --initrd "$kb/initrfs.img" \
                 --seconds "$secs" --out "$(dirname "$iso")/boot-tests" \
                 --expect 'Looking for slax data' \
                 --expect 'Mounting bundles' \
-                --expect 'Live Kit done, starting slax' || rc=1
+                --expect 'Live Kit done, starting slax'
+            if [ -n "$expects" ]; then
+                _oifs=$IFS; IFS='
+'
+                for _e in $expects; do [ -n "$_e" ] && set -- "$@" --expect "$_e"; done
+                IFS=$_oifs
+            fi
+            python3 "$@" || rc=1
         else
             printf '  %sFAIL%s could not extract vmlinuz/initrfs.img from %s\n' "$R" "$O" "$iso"
             rc=1

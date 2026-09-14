@@ -43,7 +43,6 @@ steps:
   # firmware-linux alone fixes the GPU case.
   - verb: bundle.packages
     bundle: "{{bundle}}"
-    from: [01-core]
     apt:
       update: true
       # Firmware packages Recommend other firmware packages; without this the closure is

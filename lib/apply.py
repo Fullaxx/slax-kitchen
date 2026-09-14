@@ -27,6 +27,7 @@ import sys
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import dpkgdb  # noqa: E402
 from validate import validate_file  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -528,6 +529,72 @@ def _find_bundle(ctx: "Ctx", want: str) -> str:
     if hit is None:
         raise RuntimeError(f"no bundle matching {want!r} in slax/modules")
     return os.path.join(mods, hit)
+
+
+def _bundle_stack(ctx: "Ctx", want: list | None, below: str, verb: str) -> list[str]:
+    """Resolve a `from:` list to bundle filenames, in the order the union will load them.
+
+    THE DEFAULT IS THE WHOLE STACK, not 01-core. Building against a shorter stack makes
+    apt reinstall libraries the image already has, and those fresh copies then shadow
+    the originals from a higher bundle -- a version skew nobody asked for. `from:` is a
+    size-versus-independence dial, not a correctness knob: name a shorter stack and you
+    get a larger, self-contained bundle that survives its neighbours being removed.
+
+    Two sharp edges fixed here. A prefix resolves to EVERY match, so `from: [01]` means
+    01-core AND 01-firmware rather than silently just the first one; and the result is
+    sorted the way sortmod sorts it, so `from: [03-desktop, 01-core]` no longer lets
+    core win by being unpacked last.
+    """
+    mods = ctx.p("slax", "modules")
+    have = [n for n in os.listdir(mods) if n.endswith(".sb")]
+    if want:
+        picked = []
+        for w in want:
+            hits = [n for n in have if n.startswith(w)]
+            if not hits:
+                raise RuntimeError(f"{verb}: no bundle matching {w!r} in slax/modules")
+            picked += hits
+    else:
+        # 99-changes-N is a saved session, and 98-dpkg-db is generated at pack time from
+        # the very fragments this build is about to produce. Neither belongs in a chroot.
+        picked = [n for n in have
+                  if not n.startswith("99-") and n != dpkgdb.GENERATED]
+    # Deduplicate, order as the union will, and never stack something that loads at or
+    # above the bundle being built -- it would not be present underneath it at boot.
+    picked = dpkgdb.sortmod(list(dict.fromkeys(picked)))
+    picked = [n for n in picked if n != below and dpkgdb.sortmod([n, below])[0] == n]
+    if not picked:
+        raise RuntimeError(f"{verb}: no bundles to stack below {below}")
+    return picked
+
+
+def _read_status(root: str) -> str:
+    """The chroot's dpkg database, or "" on a Slackware root that has none."""
+    try:
+        with open(os.path.join(root, dpkgdb.STATUS), encoding="utf-8",
+                  errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def _write_fragment(ctx: "Ctx", stage: str, name: str, before: str, after: str) -> None:
+    """Record what this bundle added to the package database, as a mergeable fragment.
+
+    Nothing is written when the database did not change -- a bundle.script that only
+    runs useradd has no packages to declare.
+    """
+    if not after or after == before:
+        return
+    body = dpkgdb.delta(before, after)
+    if not body.strip():
+        return
+    d = os.path.join(stage, dpkgdb.FRAGMENT_DIR)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, name[:-3] if name.endswith(".sb") else name), "w") as f:
+        f.write(body)
+    ctx.say(f"dpkg fragment: {len(dpkgdb.parse(body))} package(s) declared "
+            f"(merged into {dpkgdb.GENERATED} at pack time)")
 
 
 @verb("initramfs.modules")
@@ -1152,7 +1219,7 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
     if not script:
         raise RuntimeError("bundle.script: no script given")
     name = _bundle_name(step["bundle"], "bundle.script")
-    stack = step.get("from") or ["01-core"]
+    stack = _bundle_stack(ctx, step.get("from"), name, "bundle.script")
     if ctx.dry:
         ctx.say(f"would run a script in {'+'.join(stack)} -> slax/modules/{name}")
         return
@@ -1165,19 +1232,16 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
     root = os.path.join(build, "root")
     try:
         os.makedirs(root, exist_ok=True)
-        picked = []
-        for want in stack:
-            hit = _find_bundle(ctx, want)
-            picked.append(os.path.basename(hit))
-            r = subprocess.run(["unsquashfs", "-f", "-n", "-q", "-d", root, hit],
-                               capture_output=True, text=True)
+        mods = ctx.p("slax", "modules")
+        for n in stack:
+            r = subprocess.run(["unsquashfs", "-f", "-n", "-q", "-d", root,
+                                os.path.join(mods, n)], capture_output=True, text=True)
             if r.returncode != 0:
-                raise RuntimeError(f"unsquashfs {os.path.basename(hit)}: "
-                                   f"{r.stderr.strip()[:300]}")
-        ctx.say(f"unpacked {' + '.join(picked)} as the build root")
+                raise RuntimeError(f"unsquashfs {n}: {r.stderr.strip()[:300]}")
+        ctx.say(f"unpacked {' + '.join(stack)} as the build root")
         _prepare_chroot(root)
 
-        before = _manifest(root)
+        before, before_status = _manifest(root), _read_status(root)
         sp = os.path.join(root, "tmp", "kitchen-script")
         with open(sp, "w") as f:
             f.write(script)
@@ -1191,7 +1255,7 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
             for ln in r.stdout.strip().splitlines()[-8:]:
                 ctx.say(f"  | {ln[:110]}")
         os.unlink(sp)
-        after = _manifest(root)
+        after, after_status = _manifest(root), _read_status(root)
 
         added = [k for k in after if k not in before]
         modified = [k for k in after if k in before and after[k] != before[k]]
@@ -1216,6 +1280,7 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
                 shutil.copy2(src, dst)
                 st = os.lstat(src)
                 os.chown(dst, st.st_uid, st.st_gid)
+        _write_fragment(ctx, stage, name, before_status, after_status)
         _make_bundle(ctx, stage, name, "bundle.script")
     finally:
         shutil.rmtree(build, ignore_errors=True)
@@ -1731,6 +1796,14 @@ BUNDLE_EXCLUDE = re.compile(
     r"|^var/lib/(apt|slackpkg)(/|$)"
     # Lock files.
     r"|^var/lib/dpkg/(lock|lock-frontend|triggers/Lock)$"
+    # Debian's package database is ONE FILE, and a union composes trees, not files. A
+    # bundle shipping its own copy replaces the one below it wholesale -- our own
+    # add-packages did exactly that, putting a 299-package status above 05-chromium's
+    # 600 and making dpkg forget three hundred packages, silently. Ship a fragment in
+    # var/lib/slax-kitchen/dpkg-status.d/ instead; pack merges them. See lib/dpkgdb.py.
+    # (var/lib/dpkg/info/ is a DIRECTORY of per-package files and unions correctly, so
+    # it stays.)
+    r"|^var/lib/dpkg/(status|status-old|available|available-old)$"
     # shadow-utils' lock and its backup copies. useradd/chpasswd write passwd-, shadow-,
     # group-, gshadow-, subuid- and subgid- holding the state BEFORE the change, so a
     # recipe whose whole purpose is changing /etc/shadow would otherwise ship the old one
@@ -1924,7 +1997,7 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
                            f"(load order is the numeric prefix); got {out_name!r}")
 
     mods = ctx.p("slax", "modules")
-    stack = step.get("from") or ["01-core"]
+    stack = _bundle_stack(ctx, step.get("from"), out_name, "bundle.packages")
     flavour = step.get("flavour") or _detect_flavour(ctx.tree)
 
     if ctx.dry:
@@ -1936,28 +2009,22 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
     build = tempfile.mkdtemp(prefix="kitchen-pkg-", dir=os.path.dirname(os.path.abspath(ctx.work)))
     root = os.path.join(build, "root")
     try:
-        # 1. Stack the source bundles in numeric order so later ones win, exactly as
-        #    the union does at boot.
+        # 1. Stack the source bundles in load order so later ones win, exactly as the
+        #    union does at boot. _bundle_stack already sorted them; unsquashfs -f then
+        #    overwrites, which is how "higher wins" is emulated here.
         os.makedirs(root, exist_ok=True)
-        picked = []
-        for want in stack:
-            hit = next((n for n in sorted(os.listdir(mods))
-                        if n.startswith(want) and n.endswith(".sb")), None)
-            if hit is None:
-                raise RuntimeError(f"bundle.packages: no bundle matching {want!r} in slax/modules")
-            picked.append(hit)
-        for n in picked:
+        for n in stack:
             r = subprocess.run(["unsquashfs", "-f", "-n", "-q", "-d", root,
                                 os.path.join(mods, n)], capture_output=True, text=True)
             if r.returncode != 0:
                 raise RuntimeError(f"unsquashfs {n}: {r.stderr.strip()[:300]}")
-        ctx.say(f"unpacked {' + '.join(picked)} as the build root")
+        ctx.say(f"unpacked {' + '.join(stack)} as the build root")
 
         # 2. Make it a usable root filesystem (see RUNTIME_DIRS).
         _prepare_chroot(root)
 
         # 3. Snapshot, install, snapshot.
-        before = _manifest(root)
+        before, before_status = _manifest(root), _read_status(root)
         if flavour == "debian":
             with open(os.path.join(root, "etc/apt/apt.conf.d/00kitchen"), "w") as f:
                 f.write('APT::Sandbox::User "root";\nAcquire::Retries "3";\n')
@@ -2019,7 +2086,7 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
                 f"package manager reported success but these are not installed: "
                 f"{', '.join(missing)}\n--- last output ---\n{tail}")
         ctx.say(f"verified installed: {', '.join(packages)}")
-        after = _manifest(root)
+        after, after_status = _manifest(root), _read_status(root)
 
         # 4. Delta = added OR modified. Names alone are not enough.
         added = [k for k in after if k not in before]
@@ -2048,15 +2115,12 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
                 st = os.lstat(src)
                 os.chown(dst, st.st_uid, st.st_gid)
 
-        # 6. Build with upstream's exact parameters (livekitlib create_bundle / dir2sb).
-        target = os.path.join(mods, out_name)
-        r = subprocess.run(["mksquashfs", stage, target, "-comp", "xz", "-b", "1024K",
-                            "-Xbcj", "x86", "-always-use-fragments", "-noappend"],
-                           capture_output=True, text=True)
-        if r.returncode != 0:
-            raise RuntimeError(f"mksquashfs failed: {r.stderr.strip()[:300]}")
-        ctx.say(f"built slax/modules/{out_name} "
-                f"({os.path.getsize(target) // 1024} KiB, {len(keep)} paths)")
+        # 6. Declare what was added to the package database, without shipping the
+        #    database itself. BUNDLE_EXCLUDE drops var/lib/dpkg/status; this replaces it.
+        _write_fragment(ctx, stage, out_name, before_status, after_status)
+
+        # 7. Build with upstream's exact parameters (livekitlib create_bundle / dir2sb).
+        _make_bundle(ctx, stage, out_name, "bundle.packages")
     finally:
         shutil.rmtree(build, ignore_errors=True)
 

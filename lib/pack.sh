@@ -113,6 +113,13 @@ kitchen_pack() {
     fi
     have "$backend" || die "pack: $backend not installed"
 
+    # Debian's package database is one file, so it cannot be assembled from bundles the
+    # way a directory can. Add-on bundles ship a fragment instead; this is the point
+    # where the whole bundle set is known, so this is where they get merged.
+    if ! python3 "$REPO_ROOT/lib/dpkgdb.py" "$src"; then
+        die "pack: could not merge the dpkg status fragments"
+    fi
+
     mkdir -p "$(dirname "$out")"
     printf '%spack%s %s -> %s  (backend: %s)\n' "$B" "$O" "$src" "$out" "$backend"
 

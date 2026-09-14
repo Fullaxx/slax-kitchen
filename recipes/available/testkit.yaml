@@ -55,6 +55,17 @@ steps:
           # busybox reports its own version on the banner line; a replaced one shows here.
           echo "busybox: $(busybox 2>&1 | head -1 | cut -d' ' -f1-2)"
 
+          # Debian's package database is ONE FILE, so in a union the topmost bundle
+          # that ships one wins outright and every copy below it vanishes. A bundle
+          # built from too short a stack once replaced 600 packages with 299, silently.
+          # Counting here -- in the ASSEMBLED filesystem, which is the only place the
+          # answer is real -- turns that from a boot-time surprise into an assertion.
+          if [ -f "$UNION/var/lib/dpkg/status" ]; then
+              echo "dpkg-status: $(grep -c '^Package: ' "$UNION/var/lib/dpkg/status") packages"
+          else
+              echo "dpkg-status: none (Slackware packs one file per package)"
+          fi
+
           for f in {{report}}; do
               if [ -L "$UNION$f" ]; then
                   echo "file $f: symlink -> $(readlink "$UNION$f")"
