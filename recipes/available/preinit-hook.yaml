@@ -1,0 +1,48 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: preinit-hook
+  summary: Run your own code on the assembled filesystem, just before the system boots
+  tags: [rootcopy, boot, template]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+steps:
+  # THE LAST POINT AT WHICH YOU CAN CHANGE ANYTHING. livekitlib's user_preinit runs this
+  # after every bundle is mounted and the aufs union exists, but before change_root hands
+  # control to systemd or init. The union directory arrives as $1, so the filesystem the
+  # machine is about to boot into is right there and still writable.
+  #
+  # IT IS SOURCED, NOT EXECUTED: livekitlib does `. "$SRC" "$2"`. Three consequences that
+  # are easy to learn the hard way:
+  #
+  #   * the shebang is decorative. This runs in the initramfs's busybox ash no matter
+  #     what the first line says, so stay POSIX -- no bashisms.
+  #   * `exit` ends the BOOT, not the script. A stray `exit 1` in an error path gives a
+  #     dead machine with no message. Use a subshell for anything that might fail.
+  #   * `cd`, exported variables and shell options leak into init itself.
+  #
+  # It also runs before /proc and /sys are what the booted system will see, and with the
+  # initramfs's tiny toolset -- busybox plus seven real binaries. Do not expect awk to
+  # be GNU awk or sed to be GNU sed.
+  #
+  # The example writes a boot stamp, which is deliberately the most boring thing that is
+  # still a real demonstration: it proves the hook ran, proves $1 is the union, and
+  # cannot break a boot if it fails.
+  - verb: rootcopy.preinit
+    script: |
+      # $1 is the assembled union -- the filesystem about to become /.
+      UNION="$1"
+
+      # Subshell + redirect, so a read-only or missing path cannot take the boot down
+      # with it. This is the pattern to copy for anything more ambitious.
+      (
+          mkdir -p "$UNION/var/log"
+          {
+              echo "booted: $(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo unknown)"
+              echo "cmdline: $(cat /proc/cmdline 2>/dev/null)"
+              echo "bundles: $(ls /memory/bundles 2>/dev/null | tr '\n' ' ')"
+          } > "$UNION/var/log/slax-preinit.log"
+      ) 2>/dev/null || true

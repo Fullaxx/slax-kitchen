@@ -1,0 +1,33 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: bundle-from-dir
+  summary: Pack a directory of your own files into a bundle, as a filesystem root
+  tags: [bundle, template]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  bundle: 07-mytools
+steps:
+  # The directory's CONTENTS become the root of the bundle: ./usr/local/bin/foo lands at
+  # /usr/local/bin/foo in the union. That is the same contract as upstream's dir2sb, and
+  # the reason `src` points at a directory rather than at the files inside it.
+  #
+  # The tree shipped here is deliberately small and textual -- two files -- because
+  # ci/checks/00-no-binaries.sh rejects binaries in this repo, and because the point of a
+  # template is the shape, not the payload. Point `src` at your own tree and the recipe
+  # is done; nothing else needs to change.
+  #
+  # Modes are preserved from disk. slax-sysinfo is committed 0755 and arrives executable;
+  # git tracks the executable bit, so there is no `mode:` field to get wrong. If you
+  # build the source tree with a script rather than committing it, chmod there.
+  #
+  # 07 because the stock bundles run 01-06 and savechanges writes 99-changes-N.sb, so
+  # anything in 07..98 overrides the shipped system and is itself overridden by a saved
+  # session. Higher wins.
+  - verb: bundle.fromDir
+    bundle: "{{bundle}}"
+    src: ./bundle-from-dir.files

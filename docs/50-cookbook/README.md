@@ -48,6 +48,11 @@ to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
 | [`remove-bundle`](remove-bundle.md) | drop bundles by regex to slim the image | ○ |
 | [`remove-chromium`](remove-chromium.md) | the named preset for the above: −79 MiB Debian, −115 MiB Slackware | ○ |
 | [`branding`](branding.md) | hostname, version string and login banner, from a 4 KiB override bundle | ○ |
+| [`bundle-from-dir`](bundle-from-dir.md) | pack a directory of your own files as a filesystem root | ○ |
+| [`bundle-from-tarball`](bundle-from-tarball.md) | fetch a published release tarball, verify it, pack it | ○ |
+| [`bundle-from-txz`](bundle-from-txz.md) | pinned Slackware `.txz` via `installpkg` — the supported Slackware route | ◐ |
+| [`renumber-bundles`](renumber-bundles.md) | change a bundle's place in the stack without rebuilding it | ○ |
+| [`preinit-hook`](preinit-hook.md) | run your own code on the assembled filesystem, just before boot | ○ |
 
 ○ runs anywhere · ◐ needs a real `chroot` (`CAP_SYS_CHROOT` + `CAP_MKNOD`) —
 see [container vs host](../40-workflow/container-vs-host.md)
@@ -113,7 +118,7 @@ directions.
 
 ## Not written yet
 
-The larger gaps, roughly in the order they would be useful: `branding`, `ssh-server`, `boot-tools`
+The larger gaps, roughly in the order they would be useful: `boot-tools`
 (`hdt.c32`, `memdisk`, `chain.c32`), `firmware-refresh`
 (the stock `01-firmware` contains **no GPU firmware** on either flavour), `initramfs-busybox` (the
 shipped busybox is from 2017), and `kernel-replace`.

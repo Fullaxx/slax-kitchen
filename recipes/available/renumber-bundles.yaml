@@ -1,0 +1,37 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: renumber-bundles
+  summary: Change a bundle's place in the stack without rebuilding it
+  tags: [bundle, load-order]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  match: "^05-chromium"
+  to: "95"
+steps:
+  # Load order is the numeric prefix and HIGHER WINS, because union_append_bundles
+  # inserts each branch at aufs index 1 -- so the last one mounted ends up on top. A
+  # bundle's number is therefore its priority, and renaming the file is the entire
+  # mechanism for changing it. Nothing is unpacked, nothing is recompressed: this is a
+  # rename, and it costs nothing on an 80 MiB bundle.
+  #
+  # The worked example moves Chromium from 05 to 95, above 06-devel and above anything
+  # you add in 07..94. Concretely that means a file you ship in 07-mytools no longer
+  # wins over Chromium's copy of the same path. That is usually NOT what you want --
+  # the useful direction is normally moving something DOWN so your own bundle overrides
+  # it -- but it is the clearest demonstration, because 05 -> 95 crosses every other
+  # bundle in the stack.
+  #
+  # Two bundles may legitimately share a prefix; upstream ships 01-core and 01-firmware.
+  # When they do, `sort -n` falls back to comparing the rest of the name, so 01-core
+  # loads before 01-firmware. An exact filename collision is refused rather than
+  # silently clobbering one of them.
+  #
+  # A single digit is zero-padded, so `to: 5` and `to: "05"` mean the same thing.
+  - verb: bundle.renumber
+    match: "{{match}}"
+    to: "{{to}}"

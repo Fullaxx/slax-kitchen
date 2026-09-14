@@ -1,0 +1,11 @@
+#!/bin/sh
+# A worked example of a file shipped by the bundle-from-dir recipe.
+# Prints what this live system actually is, which is more useful than it sounds when
+# you are looking at an unlabelled machine that booted from a stick.
+printf 'slax    : %s\n' "$(cat /etc/slax-version 2>/dev/null || echo unknown)"
+printf 'kernel  : %s\n' "$(uname -sr)"
+printf 'bundles :\n'
+for sb in /run/initramfs/memory/bundles/*; do
+    [ -d "$sb" ] && printf '  %s\n' "$(basename "$sb")"
+done
+printf 'union   : %s\n' "$(awk '$2=="/" {print $3; exit}' /proc/mounts)"

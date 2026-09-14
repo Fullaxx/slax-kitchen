@@ -1,0 +1,96 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: bundle-from-txz
+  summary: Install pinned Slackware .txz packages into a bundle, the supported way
+  tags: [bundle, slackware, template]
+compat:
+  # Slackware only by definition -- .txz is its package format. The Debian equivalent is
+  # add-packages.
+  flavours: [slackware]
+  arch: [32bit, 64bit]
+  slax: ">=15.0.0"
+  # installpkg has to run against a real root filesystem, so this needs a chroot, and
+  # the chroot needs device nodes.
+  privilege: chroot
+vars:
+  bundle: 07-slackpkgs
+  mirror: "https://mirrors.slackware.com/slackware"
+  # Pinned to 15.0, NOT -current. The stock /etc/slackpkg/mirrors points at
+  # slackware64-current, which has drifted years past this frozen 2023 base -- see
+  # known-upstream-bugs.md issues 8 and 9. A -current package linked against a newer
+  # glibc will install cleanly and then fail to run.
+  release: "15.0"
+steps:
+  # WHY NOT bundle.fromTarball. A .txz IS a tar.xz, and that verb would unpack it
+  # happily. It would also be wrong twice over:
+  #
+  #   * `install/doinst.sh` and `install/slack-desc` would land in the union root. Every
+  #     Slackware package carries them; none of them belongs on a running system.
+  #   * doinst.sh would never RUN. It is what creates a package's symlinks and installs
+  #     its .new config files. Skipping it gives you a bundle whose binaries are present
+  #     and whose symlinks are missing -- which fails later, somewhere else, for reasons
+  #     that do not point back here.
+  #
+  # installpkg does both correctly, and docs/50-cookbook/add-packages.md already names
+  # pinned .txz + installpkg as the supported Slackware route. So: bundle.script.
+  #
+  # wget and /sbin/installpkg are both in the stock 01-core, verified by listing the
+  # bundle -- there is nothing to bootstrap before this script can run.
+  - verb: bundle.script
+    bundle: "{{bundle}}"
+    from: [01-core]
+    script: |
+      #!/bin/sh
+      set -e
+
+      # TLS IS BROKEN IN A STOCK SLACKWARE SLAX, so fix it before fetching anything.
+      # Measured: 01-core ships 144 CA certificates as .pem files in /etc/ssl/certs, and
+      # OPENSSLDIR is /etc/ssl -- but NEITHER of the two places OpenSSL actually looks
+      # exists. There is no /etc/ssl/cert.pem (the single-file default) and there are
+      # zero hash symlinks in /etc/ssl/certs (the directory default). c_rehash cannot
+      # create them either, because Perl is not installed. So every OpenSSL client on
+      # the system fails to verify any certificate, and wget exits 5.
+      #
+      # Note this is NOT only a chroot problem: it is equally true of the booted system.
+      # Debian's 01-core ships a working ca-certificates.crt; Slackware's ships none.
+      # See known-upstream-bugs.md issue 13, and the fix-slackware-bugs recipe.
+      #
+      # update-ca-certificates does not help -- it writes Debian's
+      # certs/ca-certificates.crt path, which this OpenSSL build never consults.
+      # Concatenating the shipped PEMs into OpenSSL's own default path does, and it
+      # trusts nothing that was not already on the image.
+      #
+      # Do NOT reach for --no-check-certificate instead. This script installs code that
+      # will run as root on every boot of every image built from it.
+      # Side effect, and a deliberate one: /etc/ssl/cert.pem lands in the delta, so the
+      # built bundle carries a working CA store and the resulting image has working TLS.
+      # 218 KiB for a fix to something genuinely broken is a good trade.
+      [ -s /etc/ssl/cert.pem ] || cat /etc/ssl/certs/*.pem > /etc/ssl/cert.pem
+
+      # Add packages here. Each is <series>/<package-file>, exactly as it appears on the
+      # mirror. Pin the full versioned filename: a bare package name is not a thing
+      # Slackware mirrors can resolve, and that is the honest difference from apt.
+      PKGS="ap/nano-6.0-ARCH-1.txz
+      n/rsync-3.2.3-ARCH-4.txz"
+
+      # slackware64 vs slackware for the 32-bit tree, and x86_64 vs i586 in the
+      # filenames. uname -m inside the chroot reports the build host's kernel, so derive
+      # it from the package database instead, which is the target's own record.
+      if [ -d /var/log/packages ] && ls /var/log/packages | grep -q 'x86_64-[0-9]'; then
+          TREE=slackware64; ARCH=x86_64
+      else
+          TREE=slackware; ARCH=i586
+      fi
+
+      cd /tmp
+      for p in $PKGS; do
+          f=$(echo "$p" | sed "s/ARCH/$ARCH/")
+          echo "fetching $f"
+          wget -nv "{{mirror}}/${TREE}-{{release}}/${TREE}/$f" -O "/tmp/$(basename "$f")"
+          # installpkg runs doinst.sh and registers the package in /var/log/packages,
+          # which is what makes the result a real installation rather than an unpacked
+          # tarball. bundle.script's delta then picks up both.
+          /sbin/installpkg "/tmp/$(basename "$f")"
+          rm -f "/tmp/$(basename "$f")"
+      done

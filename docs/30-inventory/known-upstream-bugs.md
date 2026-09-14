@@ -145,3 +145,46 @@ has to be removed from the `APPEND` line — `boot.cmdline` can do that.
 The same substring-matching pattern applies to `debug`, `perch` and `toram`; only `text` is
 word-anchored (`grep -q -w`). `perch` is the one case where the loose match is intentional, since
 `perchdir=` and `perchsize=` are meant to imply it.
+
+---
+
+## 13. Slackware cannot verify any TLS certificate  · *slackware only, both arches*
+
+`01-core` ships 144 CA certificates as `.pem` files in `/etc/ssl/certs`, and OpenSSL's
+`OPENSSLDIR` is `/etc/ssl` — but **neither of the two places OpenSSL actually looks exists**:
+
+| OpenSSL looks at | present? |
+|---|---|
+| `/etc/ssl/cert.pem` — the single-file default | **no** |
+| hash symlinks (`<8hex>.0`) in `/etc/ssl/certs` — the directory default | **no**, zero of them |
+
+The certificates are all there, including `ISRG_Root_X1.pem`; nothing can find them. Measured on
+`slax-64bit-slackware-15.0.4`:
+
+```
+$ ls /etc/ssl/certs/*.pem | wc -l            144
+$ ls /etc/ssl/certs/ | grep -cE '^[0-9a-f]{8}\.[0-9]+$'   0
+$ wget https://mirrors.slackware.com/...
+ERROR: cannot verify mirrors.slackware.com's certificate, issued by 'CN=YR2,O=Let's Encrypt,C=US':
+  Unable to locally verify the issuer's authority.
+$ echo $?
+5
+```
+
+Three things that look like fixes and are not:
+
+- **`c_rehash`** would create the hash symlinks, but it is a Perl script and **Perl is not
+  installed**. It exits having created nothing.
+- **`update-ca-certificates`** runs and writes `/etc/ssl/certs/ca-certificates.crt` — Debian's
+  path, which this OpenSSL build never consults.
+- **`--no-check-certificate`** is not a fix, it is turning the check off.
+
+**Fix:** write OpenSSL's own default path from the certificates already on the image.
+
+```sh
+cat /etc/ssl/certs/*.pem > /etc/ssl/cert.pem
+```
+
+This trusts nothing that was not already shipped. Debian's `01-core` ships a working
+`ca-certificates.crt` and is unaffected. Applied by
+[`bundle-from-txz`](../50-cookbook/bundle-from-txz.md) before it fetches anything.

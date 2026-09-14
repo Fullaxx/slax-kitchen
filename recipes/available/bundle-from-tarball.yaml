@@ -1,0 +1,43 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: bundle-from-tarball
+  summary: Turn a published release tarball into a bundle, verified by checksum
+  tags: [bundle, template, download]
+compat:
+  flavours: [debian, slackware]
+  # 64-bit only, and this is the lesson rather than a limitation of the verb: fzf
+  # publishes amd64, arm64, armv5/6/7, loong64, ppc64le, riscv64 and s390x -- and no
+  # i386 at all. Upstreams drop 32-bit x86 routinely now, so when you adapt this recipe,
+  # check your source's arch coverage before assuming `arch: [32bit, 64bit]`. On a
+  # 32-bit target the matrix reports this as a skip, not a failure.
+  arch: [64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  bundle: 07-fzf
+  version: "0.74.4"
+  sha256: "05e6813a337cc722c3ed07e54a764b75cc5d671e2e60459db0ba696ee5fa7504"
+steps:
+  # fzf is a fuzzy finder -- genuinely useful on a live system, where you are usually
+  # hunting for a file on someone else's disk. It is also a single static Go binary in a
+  # 2.2 MiB tarball, which makes it an honest example: one download, one file, no
+  # dependencies to reason about.
+  #
+  # THE CHECKSUM IS NOT OPTIONAL IN SPIRIT. The verb only warns if you omit it, but a
+  # bundle is code that will run as root on every boot of every image you hand out. The
+  # hash is over the ARCHIVE as published, which is the artifact upstream actually signs
+  # their releases against.
+  #
+  # This archive has no leading directory -- `tar tzf` shows exactly one member, `fzf` --
+  # so there is nothing to strip. `prefix` is what puts it somewhere sensible: without it
+  # the binary would land at / and the bundle would shadow the union's root directory
+  # entry. /usr/local/bin is the right home for something the distro did not ship, and
+  # both flavours already have it on PATH.
+  #
+  # If your tarball IS wrapped in a versioned folder (most are), add `strip: 1`.
+  - verb: bundle.fromTarball
+    bundle: "{{bundle}}"
+    src: "https://github.com/junegunn/fzf/releases/download/v{{version}}/fzf-{{version}}-linux_amd64.tar.gz"
+    sha256: "{{sha256}}"
+    prefix: /usr/local/bin
