@@ -45,6 +45,45 @@ firmware-specific, which is why the EFI copies are separate files of different s
 | `vesamenu.c32` (26,684) | `EFI/Boot/vesamenu.c32` (32,776) | graphical menu — what `UI` names |
 | — | `EFI/Boot/menu.c32` (32,064) | text menu; shipped only on the EFI side |
 
+## Where these binaries actually came from
+
+Not from upstream SYSLINUX. `ldlinux.c32` carries `GCC: (Debian 6.3.0-18) 6.3.0 20170516` and
+`isolinux.bin` a `-6.03+dfsg/core/` build path: these are **Debian stretch** binaries, package
+`syslinux-common_6.03+dfsg-14.1+deb9u1`, built in **2017** and carried forward unchanged ever since
+— the same vintage as the 2017 busybox in
+[issue 11](../30-inventory/known-upstream-bugs.md).
+
+Fetching that package from `archive.debian.org` and comparing against the ISO:
+
+| module | vs the ISO |
+|---|---|
+| `ldlinux.c32` | byte-identical |
+| `libcom32.c32` | byte-identical |
+| `libutil.c32` | byte-identical |
+| `vesamenu.c32` | byte-identical |
+
+**This matters because "6.03" is not enough to identify a compatible module.** Upstream's own
+prebuilt 6.03 binaries, from `syslinux-6.03.tar.xz` on kernel.org, are a *different build* of the
+same version — and they do not work here. Measured in QEMU, twice:
+
+```
+# upstream 6.03 hdt.c32 alongside the ISO's Debian-built libraries
+Undef symbol FAIL: __syslinux_debug_enabled
+Failed to load COM32 file /slax/boot/hdt.c32
+
+# and replacing the whole c32 core with upstream's, keeping the ISO's isolinux.bin
+Failed to load ldlinux.c32
+Boot failed: press a key to retry...
+```
+
+The second failure is the tighter constraint: `isolinux.bin` will not load a `ldlinux.c32` it did
+not ship with, so the core set cannot be swapped without also replacing `isolinux.bin` — which
+embeds `slax` at offset `0x746e` and would need re-patching.
+
+**So: if you add a COM32 module, take it from
+`syslinux-common_6.03+dfsg-14.1+deb9u1_all.deb`**, not from upstream, and not from your host's
+`syslinux-common` (this container's is 6.04-git, and every shared module differs).
+
 **Mixing generations breaks the boot silently.** A `.c32` from SYSLINUX 4.x will not load under a
 6.03 core; the symptom is `Failed to load COM32 file` or a bare boot prompt. This is a live hazard on
 Slackware, whose package database records `syslinux-4.07-x86_64-4` in `01-core.sb` while the boot

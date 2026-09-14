@@ -1,0 +1,19 @@
+#!/bin/bash
+#
+# /etc/rc.d/rc.local:  Local system initialization script.
+#
+# Replaced by the slax-kitchen `enable-ssh` recipe. Stock Slax ships this file as a
+# 274-byte comment-only stub, so nothing is being overwritten -- but if you have your
+# own rc.local, merge rather than apply both.
+#
+# Slackware's own switch for sshd is the executable bit on /etc/rc.d/rc.sshd, which
+# ships 0644 (off). We do not flip it, because doing so would mean shipping a copy of
+# upstream's 1814-byte script and inheriting the job of keeping it current. rc.local is
+# the documented place for exactly this.
+
+if [ -x /usr/sbin/sshd ]; then
+    # -A generates any host key type that is missing and leaves existing ones alone.
+    # A live system has none on first boot, so without this sshd exits immediately.
+    /usr/bin/ssh-keygen -A >/dev/null 2>&1
+    /usr/sbin/sshd
+fi

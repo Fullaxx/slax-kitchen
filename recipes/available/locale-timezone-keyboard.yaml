@@ -1,0 +1,124 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: locale-timezone-keyboard
+  summary: Set the timezone, keyboard layout and LANG for a machine that is not in Etc/UTC
+  tags: [system, locale, template]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  bundle: 08-locale
+  timezone: Europe/Prague
+  # X keyboard layout: a real XKB code. The stock value is `en`, which is NOT an XKB
+  # layout, so X silently falls back to `us`.
+  xkblayout: us
+  # LANG. READ THE COOKBOOK PAGE BEFORE CHANGING THIS. Only en_US.UTF-8, C, C.UTF-8 and
+  # POSIX actually exist on the image -- the locale SOURCE data is stripped, so a value
+  # like de_DE.UTF-8 produces a broken locale rather than a German one.
+  locale: en_US.UTF-8
+steps:
+  # ONE STEP PER FLAVOUR, each carrying that flavour's COMPLETE set. bundle.files builds
+  # a bundle in one shot and refuses to write one that already exists, so several steps
+  # cannot accumulate into the same bundle. Splitting by flavour instead of by concern
+  # costs a little duplication of the three shared files and buys a recipe where exactly
+  # one step runs and the whole set for that flavour is visible in one place.
+  #
+  # THE SHARED FILES, in both blocks:
+  #
+  #   /etc/localtime      a SYMLINK on Debian, a REAL FILE on Slackware (which is what
+  #                       Slackware's own timeconfig produces). bundle.files writes
+  #                       regular files only, so the tzfile is copied -- correct on
+  #                       Slackware by convention, and accepted on Debian, where a real
+  #                       /etc/localtime is the older but still supported form.
+  #                       The source is the BUILD HOST's tzdata: the image carries
+  #                       /usr/share/zoneinfo, but a recipe cannot reference a path
+  #                       inside the tree it is building. 2.3 KiB, and the tzfile format
+  #                       has been stable for decades.
+  #
+  #   .fluxbox/kblayout   .fluxbox/startup runs `fbsetkb $(cat ~/.fluxbox/kblayout)`,
+  #                       which is really `setxkbmap $1`. This drives the live session.
+  #
+  #   00-keyboard.conf    covers X started any other way. 00- and NOT 01-: Xdetect
+  #                       deletes and regenerates
+  #                       /etc/X11/xorg.conf.d/01-xautodetected.conf on EVERY boot, so a
+  #                       file at that exact name would vanish. 00- sorts earlier and is
+  #                       never touched.
+
+  # --- Debian --------------------------------------------------------------------------
+  - verb: bundle.files
+    when: flavour==debian
+    bundle: "{{bundle}}"
+    files:
+      - dest: /etc/localtime
+        src: /usr/share/zoneinfo/{{timezone}}
+      - dest: /etc/timezone
+        content: "{{timezone}}\n"
+      - dest: /root/.fluxbox/kblayout
+        content: "{{xkblayout}}\n"
+      - dest: /etc/X11/xorg.conf.d/00-keyboard.conf
+        content: |
+          Section "InputClass"
+              Identifier "system-keyboard"
+              MatchIsKeyboard "on"
+              Option "XkbLayout" "{{xkblayout}}"
+          EndSection
+
+      # Console keymap, Debian only. console-setup recomputes from this file on every
+      # boot -- the image ships no cached keymaps -- so dropping it is enough.
+      - dest: /etc/default/keyboard
+        content: |
+          XKBMODEL="pc105"
+          XKBLAYOUT="{{xkblayout}}"
+          XKBVARIANT=""
+          XKBOPTIONS=""
+          BACKSPACE="guess"
+
+      - dest: /etc/default/locale
+        content: "LANG=\"{{locale}}\"\n"
+
+  # --- Slackware -----------------------------------------------------------------------
+  - verb: bundle.files
+    when: flavour==slackware
+    bundle: "{{bundle}}"
+    files:
+      - dest: /etc/localtime
+        src: /usr/share/zoneinfo/{{timezone}}
+      - dest: /root/.fluxbox/kblayout
+        content: "{{xkblayout}}\n"
+      - dest: /etc/X11/xorg.conf.d/00-keyboard.conf
+        content: |
+          Section "InputClass"
+              Identifier "system-keyboard"
+              MatchIsKeyboard "on"
+              Option "XkbLayout" "{{xkblayout}}"
+          EndSection
+
+      # Slackware's tz companion, read by rc.S. Stock says `localtime`, meaning the RTC
+      # is assumed to hold local time rather than UTC -- which is what Windows does, and
+      # what you want on a dual-boot machine. Left as it is on purpose.
+      - dest: /etc/hardwareclock
+        content: |
+          # /etc/hardwareclock
+          #
+          # Tells how the hardware clock time is stored.
+          localtime
+
+      # NO CONSOLE KEYMAP STEP HERE, and it is not an oversight. The `kbd` package is
+      # not installed on any Slackware bundle: no loadkeys, no setfont, no dumpkeys, no
+      # /usr/share/kbd/keymaps. Dropping an executable /etc/rc.d/rc.keymap that calls
+      # loadkeys would run and fail silently. Fixing it means shipping the binaries and
+      # keymap data, which is a bigger recipe than this one.
+
+      # LANG. /etc/profile sources /etc/profile.d/*.sh. The stock lang.sh also pins
+      # LC_COLLATE=C deliberately (ASCII sort order); that is kept, because changing
+      # collation changes the result of every sort and every shell glob range.
+      - dest: /etc/profile.d/lang.sh
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          # Replaced by the slax-kitchen locale-timezone-keyboard recipe.
+          export LANG={{locale}}
+          export LC_COLLATE=C

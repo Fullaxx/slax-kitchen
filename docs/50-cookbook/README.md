@@ -55,6 +55,19 @@ to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
 | [`renumber-bundles`](renumber-bundles.md) | change a bundle's place in the stack without rebuilding it | ○ |
 | [`preinit-hook`](preinit-hook.md) | run your own code on the assembled filesystem, just before boot | ○ |
 
+### System configuration
+
+Everything here except `users-and-auth` is a plain file drop into a high-numbered bundle — sshd,
+ConnMan and the desktop are all already installed, and only need switching or pointing somewhere.
+
+| | | priv |
+|---|---|---|
+| [`enable-ssh`](enable-ssh.md) | switch on the sshd that both flavours already ship | ○ |
+| [`users-and-auth`](users-and-auth.md) | replace the public `root`/`toor` password; add a user | ◐ |
+| [`locale-timezone-keyboard`](locale-timezone-keyboard.md) | timezone and keyboard; and why `LANG` is more limited than it looks | ○ |
+| [`network-preseed`](network-preseed.md) | ship a Wi-Fi network via ConnMan | ○ |
+| [`kiosk-mode`](kiosk-mode.md) | boot straight into one fullscreen app, no desktop | ○ |
+
 ○ runs anywhere · ◐ needs a real `chroot` (`CAP_SYS_CHROOT` + `CAP_MKNOD`) —
 see [container vs host](../40-workflow/container-vs-host.md)
 

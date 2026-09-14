@@ -46,6 +46,21 @@ def test_bundle_exclude():
         check(f"keep {path}", bool(X.search(path)), False)
 
 
+def test_bundle_exclude_account_backups():
+    """useradd and chpasswd leave the PRE-change files behind.
+
+    /etc/shadow- holds the old hashes, so a recipe whose whole purpose is changing
+    /etc/shadow shipped the old one beside the new one. .pwd.lock is a lock, never
+    content.
+    """
+    for bad in ("etc/.pwd.lock", "etc/passwd-", "etc/shadow-", "etc/group-",
+                "etc/gshadow-", "etc/subuid-", "etc/subgid-"):
+        check(f"{bad} excluded", bool(apply.BUNDLE_EXCLUDE.search(bad)), True)
+    # The real files must still ship -- that is the point of the recipe.
+    for good in ("etc/passwd", "etc/shadow", "etc/group", "etc/gshadow"):
+        check(f"{good} kept", bool(apply.BUNDLE_EXCLUDE.search(good)), False)
+
+
 def test_slackware_pkgname():
     """Slackware entries are <name>-<version>-<arch>-<build>, and <name> may contain
     hyphens. A prefix match let "gcc" match "gcc-g++-13.2.0-x86_64-1"."""
@@ -244,7 +259,8 @@ def test_parse_lsdl():
 
 
 def main():
-    for fn in [test_bundle_exclude, test_slackware_pkgname, test_when_guard, test_subst,
+    for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
+               test_slackware_pkgname, test_when_guard, test_subst,
                test_extract_member, test_preflight, test_under_containment,
                test_wont_do_verbs, test_parse_lsdl]:
         fn()

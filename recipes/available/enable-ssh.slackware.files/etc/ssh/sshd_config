@@ -1,0 +1,15 @@
+# Replaced wholesale by the slax-kitchen `enable-ssh` recipe.
+#
+# Slackware has no /etc/ssh/sshd_config.d/ and the stock sshd_config carries no
+# Include directive, so a drop-in fragment is not possible -- unlike Debian, which
+# ships sshd_config.d/root_login_enable.conf and needs no change here.
+#
+# The three non-comment lines below are upstream Slax's, unchanged. The fourth is the
+# point of the file: without an explicit PermitRootLogin, OpenSSH 9.5 defaults to
+# prohibit-password, so enabling sshd on stock Slax gives you a daemon that root -- the
+# only account with a password -- cannot log into.
+AuthorizedKeysFile	.ssh/authorized_keys
+UsePAM yes
+Subsystem	sftp	/usr/libexec/sftp-server
+
+PermitRootLogin yes

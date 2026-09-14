@@ -1580,6 +1580,12 @@ BUNDLE_EXCLUDE = re.compile(
     r"|^var/lib/(apt|slackpkg)(/|$)"
     # Lock files.
     r"|^var/lib/dpkg/(lock|lock-frontend|triggers/Lock)$"
+    # shadow-utils' lock and its backup copies. useradd/chpasswd write passwd-, shadow-,
+    # group-, gshadow-, subuid- and subgid- holding the state BEFORE the change, so a
+    # recipe whose whole purpose is changing /etc/shadow would otherwise ship the old one
+    # beside the new one -- and .pwd.lock is a lock, never content.
+    r"|^etc/\.pwd\.lock$"
+    r"|^etc/(passwd|shadow|group|gshadow|subuid|subgid)-$"
     # Generated at boot by livekit -- a bundle copy would clobber the live system's.
     r"|^etc/(resolv\.conf|mtab|fstab)$|^etc/ld\.so\.cache$"
     # Scaffolding WE add for the build. Shipping these would push our build-time config

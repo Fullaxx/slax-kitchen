@@ -1,0 +1,63 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: network-preseed
+  summary: Ship a Wi-Fi network so the machine is online before anyone logs in
+  tags: [system, network, wifi]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  bundle: 08-network
+  ssid: "MyNetwork"
+  # Replace with your own. This is an example value in a public repository, so treat it
+  # as published -- which is also true of any PSK you bake into an image you hand out.
+  psk: "example-passphrase"     # kitchen:allow-secret
+steps:
+  # ConnMan is the network stack on BOTH flavours -- NetworkManager is not installed on
+  # either, despite a couple of orphan /etc/NetworkManager directories left behind by
+  # unrelated packages. So one provisioning file covers both.
+  #
+  # /var/lib/connman is ConnMan's STORAGEDIR and ships empty. Any *.config file there is
+  # read as a provisioning file; the [service_*] section name is arbitrary but the prefix
+  # is not.
+  #
+  # Note connman.service sets ProtectHome=true and ProtectSystem=full, neither of which
+  # covers /var/lib/connman, so provisioning files work normally.
+  - verb: bundle.files
+    bundle: "{{bundle}}"
+    files:
+      - dest: /var/lib/connman/kitchen.config
+        # 0600: it holds a passphrase. The stock image has nothing in this directory to
+        # take a convention from, so this is ours.
+        mode: "0600"
+        content: |
+          [global]
+          Name = slax-kitchen preseed
+          Description = Shipped by the network-preseed recipe
+
+          [service_kitchen_wifi]
+          Type = wifi
+          Name = {{ssid}}
+          Passphrase = {{psk}}
+          Security = psk
+          IPv4 = dhcp
+
+  # WHEN THIS ACTUALLY TAKES EFFECT DIFFERS BY FLAVOUR, and it is worth knowing before
+  # you rely on it:
+  #
+  #   Debian      connman.service is enabled in multi-user.target, so ConnMan runs at
+  #               boot whether or not X starts. A `text` boot still gets the network.
+  #
+  #   Slackware   there is NO rc.connman. connmand is started as a background job from
+  #               /root/.fluxbox/startup, i.e. only inside the X session and only as
+  #               root. A `text` boot has no ConnMan at all, and this file is not read.
+  #               rc.inet1 separately runs `dhcpcd` on every interface, so WIRED
+  #               networking works regardless -- it is Wi-Fi that depends on the desktop
+  #               having started.
+  #
+  # There is no step here to fix the Slackware case: starting connmand at boot means
+  # shipping an rc script, which is the enable-ssh recipe's shape, and doing it silently
+  # inside a Wi-Fi recipe would be surprising.

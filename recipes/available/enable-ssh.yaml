@@ -1,0 +1,63 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: enable-ssh
+  summary: Turn on the sshd that is already installed, and make root able to log in
+  tags: [system, network, ssh]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  # No chroot and no network: sshd is already in 01-core on BOTH flavours. Nothing is
+  # installed here, only switched on.
+  privilege: none
+vars:
+  bundle: 08-ssh
+steps:
+  # NOTHING IS INSTALLED. /usr/sbin/sshd, /etc/ssh/ and the pam file are all present in
+  # the stock 01-core on both flavours -- 1.26 MB of it on Debian, 1.25 MB on Slackware.
+  # Slax just never enables it. So this is a switch, not a package, and it needs neither
+  # a chroot nor a network.
+  #
+  # HOST KEYS ARE NOT SHIPPED, deliberately. Both flavours generate them on first start
+  # (Debian via the unit's ExecStartPre, Slackware via `ssh-keygen -A` in the snippet we
+  # drop). Baking a private host key into a public image would mean every machine booted
+  # from it shares one identity, which defeats the point of host keys and would put a
+  # private key in this repository. If you need stable host keys across boots, that is
+  # what persistence is for.
+  #
+  # 08 rather than 07 so it layers cleanly over a 07-* bundle of your own.
+
+  # --- Debian -----------------------------------------------------------------------
+  # ssh.service is DISABLED, not masked -- there is no
+  # /etc/systemd/system/multi-user.target.wants/ssh.service in any bundle, and
+  # ConditionPathExists=!/etc/ssh/sshd_not_to_be_run passes because that file does not
+  # exist either. So enabling is exactly the symlink `systemctl enable` would create,
+  # and that is what this bundle ships.
+  #
+  # bundle.fromDir rather than bundle.files because the artifact IS a symlink, and
+  # bundle.files can only write regular files. mksquashfs preserves symlinks, and so
+  # does git.
+  #
+  # Root login needs no change here: Slax already ships
+  # /etc/ssh/sshd_config.d/root_login_enable.conf containing `PermitRootLogin yes`.
+  - verb: bundle.fromDir
+    when: flavour==debian
+    bundle: "{{bundle}}"
+    src: ./enable-ssh.debian.files
+
+  # --- Slackware ---------------------------------------------------------------------
+  # Slackware's own switch is the executable bit on /etc/rc.d/rc.sshd, which ships 0644
+  # (off). We do not flip it: a recipe cannot chmod a file it is not replacing, and
+  # replacing it would mean shipping a copy of upstream's 1814-byte script and
+  # inheriting the job of keeping it current. /etc/rc.d/rc.local is the documented
+  # extension point, ships as a 274-byte comment-only stub, and rc.M runs it last.
+  #
+  # The sshd_config replacement is not optional. Slackware has no sshd_config.d/ and no
+  # Include directive, so a drop-in fragment is impossible; and with no explicit
+  # PermitRootLogin, OpenSSH 9.5 defaults to prohibit-password -- enabling sshd alone
+  # gives a daemon that root, the only account with a password, cannot log into.
+  - verb: bundle.fromDir
+    when: flavour==slackware
+    bundle: "{{bundle}}"
+    src: ./enable-ssh.slackware.files

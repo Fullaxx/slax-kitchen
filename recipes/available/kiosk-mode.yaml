@@ -1,0 +1,75 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: kiosk-mode
+  summary: Boot straight into one fullscreen application instead of the desktop
+  tags: [desktop, kiosk, template]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  bundle: 08-kiosk
+  # The command X should run instead of the desktop. It must not return: when it exits,
+  # X exits, and Xdetect's retry logic treats a session shorter than ten seconds as a
+  # failed autodetect and starts deleting its config.
+  command: "xterm -maximized -e 'while true; do clear; slax-sysinfo 2>/dev/null || uname -a; sleep 5; done'"
+steps:
+  # /root/.xinitrc IS THE HOOK. The chain is:
+  #
+  #   xorg.service (Debian) / rc3.d/Slax.03.startup (Slackware)
+  #     -> Xdetect            regenerates 01-xautodetected.conf, then calls startx
+  #       -> startx           reads /root/.xinitrc
+  #         -> startfluxbox   which execs /root/.fluxbox/startup
+  #           -> fluxbox, xfce4-panel, compton, volumeicon, xlunch, ...
+  #
+  # Replacing .xinitrc cuts the chain at its narrowest point: 13 bytes on Debian
+  # (`startfluxbox`), 21 on Slackware. Everything below it -- window manager, panel,
+  # compositor, tray, launcher -- simply never starts, which is what a kiosk wants and
+  # is far cleaner than starting the desktop and then hiding it.
+  #
+  # DO NOT replace /root/.fluxbox/startup instead. The two flavours' copies differ by
+  # seven lines (Slackware's starts connmand and sets the volume with pamixer), so a
+  # single replacement would silently regress one of them. .xinitrc is effectively
+  # identical on both, which is why this recipe needs no `when:` guard at all.
+  #
+  # ON SLACKWARE .xinitrc IS SHIPPED TWICE -- 02-xorg has a blackbox version, 03-desktop
+  # overrides it with the fluxbox one. A bundle numbered above both wins over both, so
+  # 08 is correct and 02 would not be.
+  - verb: bundle.files
+    bundle: "{{bundle}}"
+    files:
+      - dest: /root/.xinitrc
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          # Replaced by the slax-kitchen kiosk-mode recipe.
+          #
+          # startx sources this; whatever it execs owns the X session. There is no window
+          # manager here, so the application is responsible for its own geometry -- most
+          # kiosk-capable apps have a flag for it (chromium --kiosk, firefox --kiosk,
+          # mpv --fullscreen). If yours needs a WM to go fullscreen, exec a tiny one
+          # first and background the app instead.
+          xhost +local: >/dev/null 2>&1
+
+          # Screen blanking and DPMS are normally turned off by .fluxbox/startup, which
+          # no longer runs. A kiosk that blanks after ten minutes is a broken kiosk.
+          xset s off
+          xset s noblank
+          xset -dpms
+
+          # exec, so the app becomes the session leader: when it exits, X exits, which is
+          # the behaviour the service expects. If it CRASHES, Xdetect restarts X once and
+          # then gives up -- so make sure your command cannot exit quickly, or you will
+          # get a black screen rather than a retry loop.
+          exec {{command}}
+
+  # Chromium is the obvious kiosk app and it will NOT run as root, which is why the guest
+  # account exists at all. If you point `command` at chromium, run it as guest:
+  #
+  #     command: "su guest -c 'chromium --kiosk --no-first-run https://example.org'"
+  #
+  # and be aware that .fluxbox/startup is what normally bind-mounts /home/guest/Desktop
+  # and friends over /root/ -- with the desktop bypassed, those bind mounts do not
+  # happen, which is usually fine for a kiosk and occasionally surprising.

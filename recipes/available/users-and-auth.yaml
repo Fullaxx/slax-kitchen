@@ -1,0 +1,82 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: users-and-auth
+  summary: Replace the public root password, and add a user, without touching the guest account
+  tags: [system, auth, security]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  # chpasswd has to run against a real root filesystem so that /etc/shadow keeps every
+  # other account intact. See the comment below for why a file drop is the wrong tool.
+  privilege: chroot
+vars:
+  bundle: 08-auth
+  # A SHA-512 crypt hash, computed on the BUILD HOST -- never a plaintext password.
+  #
+  #     openssl passwd -6
+  #
+  # The default below is the hash of the literal string "change-me-now" and is published
+  # here, in a public repository, on purpose: it is an example, not a secret, and an
+  # image built without changing it is no more private than stock Slax. Change it.
+  root_hash: "$6$kitchenXY$opFFZajCQUzrC3p4cIWwwTZEAgm30XUQNYnYfqCLiqWUFp7Vp4/EB0tJL9EiA8soEv6LeoX2LEaqrcZzw7ifm/"
+  username: slaxuser
+  user_hash: "$6$kitchenXY$opFFZajCQUzrC3p4cIWwwTZEAgm30XUQNYnYfqCLiqWUFp7Vp4/EB0tJL9EiA8soEv6LeoX2LEaqrcZzw7ifm/"
+steps:
+  # WHY THIS IS NOT A FILE DROP. The obvious move is to ship /etc/shadow in a bundle, and
+  # it is wrong: the bundle's copy REPLACES the whole file, so every account it does not
+  # list disappears -- guest, sshd, messagebus, and the twenty-odd system accounts. You
+  # would have to reproduce the shipped file exactly and keep it current per flavour.
+  # Running chpasswd in a chroot edits the real file and leaves everything else alone,
+  # and the bundle delta then carries the correct result.
+  #
+  # $6$ (SHA-512 crypt) is used rather than Debian's native $y$ (yescrypt) because $6$ is
+  # accepted by libcrypt on BOTH flavours, so one hash format works everywhere. Slackware
+  # uses $6$ natively.
+  #
+  # THE GUEST ACCOUNT IS LOAD-BEARING -- do not delete it. uid 1000 `guest` is baked into
+  # 01-core on both flavours and exists because Chromium refuses to run as root.
+  # /root/.fluxbox/startup bind-mounts /home/guest/{Desktop,Documents,...} over /root/,
+  # so removing the account breaks the desktop's XDG directories as well as the browser.
+  # This recipe leaves it exactly as shipped (locked on Slackware, passworded on Debian).
+  - verb: bundle.script
+    bundle: "{{bundle}}"
+    from: [01-core]
+    script: |
+      #!/bin/sh
+      set -e
+
+      # -e means "the value is already a hash", so no plaintext is ever written to disk,
+      # passed on a command line, or recorded in this recipe.
+      echo 'root:{{root_hash}}' | chpasswd -e
+
+      # An unprivileged account, because logging into a desktop as root is how the guest
+      # account came to exist in the first place. -m would copy /etc/skel, which on these
+      # images is three bash dotfiles; the home directory is created explicitly so the
+      # mode is not left to useradd's defaults differing between flavours.
+      # -U creates a matching group. `operator` was the first default tried here and it
+      # is a legacy system GROUP on Debian but not a user, so useradd refused with
+      # "group operator exists" -- hence checking the group as well as the user, and a
+      # default name that is free in both flavours' passwd and group files.
+      if ! id {{username}} >/dev/null 2>&1; then
+          if getent group {{username}} >/dev/null 2>&1; then
+              useradd -u 1100 -s /bin/bash -d /home/{{username}} -g {{username}} {{username}}
+          else
+              useradd -u 1100 -s /bin/bash -d /home/{{username}} -U {{username}}
+          fi
+          mkdir -p /home/{{username}}
+          cp -a /etc/skel/. /home/{{username}}/ 2>/dev/null || true
+          chown -R {{username}}:{{username}} /home/{{username}}
+          chmod 0700 /home/{{username}}
+      fi
+      echo '{{username}}:{{user_hash}}' | chpasswd -e
+
+      # /etc/issue advertises root/toor on tty1. Leaving that banner in place after
+      # changing the password is worse than not changing it -- it tells every user a
+      # credential that no longer works. Rewrite it to say nothing about passwords.
+      # The branding recipe owns this file too; apply only one of the two.
+      cat > /etc/issue <<'ISSUE'
+      Slax \l
+
+      ISSUE
