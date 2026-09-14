@@ -1823,8 +1823,12 @@ BUNDLE_EXCLUDE = re.compile(
     # (/|$), not a bare / -- otherwise the empty DIRECTORY entry still ships even
     # though every file inside it is excluded.
     r"|^root/(\.gnupg(/|$)|\.wget-hsts$)"
-    # aufs whiteouts.
-    r"|^\.wh\."
+    # aufs whiteouts, at ANY depth -- this was anchored to the tree root, so it caught
+    # .wh.foo and missed etc/.wh.foo, which is where one would actually appear. A
+    # whiteout packed into a bundle DELETES that file for everyone who loads the
+    # bundle; an offline package install has no legitimate reason to produce one, and
+    # an accidental one would silently remove something the image shipped.
+    r"|(^|/)\.wh\."
 )
 
 # livekit's change_root() creates these at boot; a bundle does not contain them, so a

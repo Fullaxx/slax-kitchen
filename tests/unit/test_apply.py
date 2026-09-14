@@ -37,6 +37,10 @@ def test_bundle_exclude():
                  "usr/sbin/policy-rc.d", "etc/apt/apt.conf.d/00kitchen",
                  "etc/slackpkg/mirrors", "etc/slackpkg/slackpkgplus.conf",
                  "var/lib/dpkg/lock", ".wh.something",
+                 # A whiteout deletes a lower bundle's file wherever it sits, so the
+                 # pattern has to match at any depth -- it used to be root-anchored.
+                 "etc/.wh.passwd", "usr/lib/x86_64-linux-gnu/.wh.libnss3.so",
+                 "var/.wh..wh.orph",
                  # Debian's package database is ONE FILE, and a union composes trees,
                  # not files. Shipping it replaced 05-chromium's 600 packages with 299.
                  "var/lib/dpkg/status", "var/lib/dpkg/available"]:
@@ -48,7 +52,10 @@ def test_bundle_exclude():
                  "var/lib/slax-kitchen/dpkg-status.d/07-extras",
                  "var/lib/pkgtools/packages/tmux-3.7c-x86_64-2",
                  "etc/slackpkg/blacklist", "usr/doc/tmux-3.7c/CHANGES",
-                 "rootfsX/.gnupg"]:
+                 "rootfsX/.gnupg",
+                 # Not whiteouts: the marker is a path SEGMENT starting ".wh.", so a
+                 # file merely containing the string is ordinary content.
+                 "usr/share/doc/foo/not.wh.a-whiteout", "etc/wh.conf"]:
         check(f"keep {path}", bool(X.search(path)), False)
 
 
