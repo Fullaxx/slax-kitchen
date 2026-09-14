@@ -1,0 +1,69 @@
+name: Engine bug
+description: A verb, the CLI, a gate or the schema is wrong — not a specific recipe
+labels: [engine]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Engine or recipe?** The routing rule is in
+        [CONTRIBUTING.md § 1](https://github.com/Fullaxx/slax-kitchen/blob/master/CONTRIBUTING.md#1-engine-or-recipe):
+        if fixing it means editing YAML it is a recipe; if it means editing `lib/`,
+        `schema/`, `kitchen` or `ci/`, it is the engine. If you are unsure, file it
+        here and say so — misrouting is cheap to fix and not worth agonising over.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part
+      options:
+        - A verb (lib/apply.py)
+        - The CLI (kitchen, lib/*.sh)
+        - The schema (schema/*.json)
+        - A commit gate (ci/checks/)
+        - pack / unpack / the ISO itself
+        - Tests or CI
+        - Not sure
+    validations: {required: true}
+  - type: textarea
+    id: command
+    attributes:
+      label: The exact command, and its full output
+      description: Copied, not described. Include the error verbatim, however long.
+      render: shell
+    validations: {required: true}
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      description: |
+        If a doc or a docstring says it should work the way you expected, quote it —
+        a promise the code does not keep is a real bug in its own right, and we have
+        shipped several.
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes:
+      label: Smallest reproduction
+      description: |
+        Ideally from a stock ISO: `./kitchen fetch <target>`, `unpack`, the one step
+        that goes wrong. A reproduction that starts from a pristine ISO is worth
+        several that start from your tree.
+      render: shell
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of ./kitchen doctor --report
+      description: |
+        Tool versions and kernel capabilities live here. Most "works here, fails
+        there" reports are answered by this block alone — uid, `mknod`, `chroot`, and
+        the two toolchain probes especially.
+      render: text
+    validations: {required: true}
+  - type: input
+    id: uid
+    attributes:
+      label: Were you root?
+      description: |
+        This matters more than it should. Running as root hides failures that appear
+        at uid 1001, and that difference has broken our CI twice.
+      placeholder: "root / sudo / unprivileged user"
+    validations: {required: true}

@@ -218,14 +218,14 @@ all without the recipes here.
 ### Always include
 
 ```sh
-./kitchen version ; git rev-parse --short HEAD    # both -- see the note below
-./kitchen doctor
-./kitchen status -v work
-./kitchen probe out/my.iso
+./kitchen doctor --report      # version + commit, tool VERSIONS, capabilities, privilege tier
+./kitchen status -v work       # what was applied, in order
+./kitchen probe out/my.iso     # what the ISO actually is
 ```
 
-> `kitchen version` currently prints a **hardcoded** `0.1.0-dev` with no commit in it, so
-> `git rev-parse --short HEAD` is not optional. Fixing that is queued.
+The **issue forms ask for `doctor --report` and will not let you skip it**, because most
+"works here, fails there" reports are answered by that block alone — a tool version, the uid you
+ran as, or a missing kernel capability.
 
 Plus:
 
@@ -289,6 +289,18 @@ something specific:
 in the right place is not a working feature — `ssh.service` being symlinked is not sshd accepting a
 login. Claim the rung you reached, not the one you hoped for. Several cookbook pages say "not
 boot-tested" for exactly this reason, and that is a feature.
+
+### Two labels have to exist
+
+`.github/workflows/ci.yml` gates the boot job on a **`boot-test`** label, and `upstream-watch.yml`
+files its issues under **`upstream-watch`**. Neither is defined in any configuration, so a fresh
+fork has neither, and a workflow referencing a label that does not exist fails quietly. Create
+them once:
+
+```sh
+gh label create boot-test      --description "Run the QEMU boot job on this PR" --color 0e8a16
+gh label create upstream-watch --description "Filed by the weekly upstream drift check" --color fbca04
+```
 
 ### Boot tests on a PR
 

@@ -1,0 +1,62 @@
+name: Recipe problem
+description: A recipe ran, reported success, and did not do what it says
+labels: [recipe]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The usual shape of this is **class B — it built, and changed nothing**. See
+        [CONTRIBUTING.md § Class B](https://github.com/Fullaxx/slax-kitchen/blob/master/CONTRIBUTING.md#class-b--it-built-and-changed-nothing).
+        `kitchen status` and `kitchen diff` settle most of these before anyone else reads them.
+  - type: input
+    id: recipe
+    attributes:
+      label: Which recipe
+      placeholder: add-packages
+    validations: {required: true}
+  - type: dropdown
+    id: target
+    attributes:
+      label: Which target
+      options:
+        - debian-64bit-12.2.0
+        - debian-32bit-12.2.0
+        - slackware-64bit-15.0.4
+        - slackware-32bit-15.0.4
+    validations: {required: true}
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Does it fail on every target, or just this one?
+      description: One target only is usually a `compat:` or a flavour-conditional step — class D.
+      options:
+        - All four
+        - Both Debian only
+        - Both Slackware only
+        - One target only
+        - Have not checked the others
+    validations: {required: true}
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened
+      description: If the thing you expected is written in a doc, say which doc — that may be the bug.
+    validations: {required: true}
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of ./kitchen status -v <work>
+      description: This reads the journal `apply` writes, so it says what actually ran.
+      render: text
+    validations: {required: true}
+  - type: textarea
+    id: yaml
+    attributes:
+      label: The recipe, if you changed it or wrote your own
+      render: yaml
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of ./kitchen doctor --report
+      render: text
+    validations: {required: true}

@@ -1,0 +1,76 @@
+name: Boot failure
+description: An ISO was built but does not boot, or does not reach a login
+labels: [boot]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **"It doesn't boot" is six different bugs.** Please find the stage first —
+        [CONTRIBUTING.md § Class A](https://github.com/Fullaxx/slax-kitchen/blob/master/CONTRIBUTING.md#class-a--it-doesnt-boot-is-six-different-bugs)
+        has the table. Narrowing it to a stage is most of the work, and without a
+        serial log nobody can do it for you.
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Which stage does it reach?
+      options:
+        - "1 · firmware — nothing at all, or 'no bootable medium'"
+        - "2 · bootloader — 'Failed to load COM32 file', or a bare boot: prompt"
+        - "3 · kernel — stops after 'Booting...', or panics"
+        - "4 · initramfs — 'Could not locate slax data'"
+        - "5 · union — boots, but slax activate misbehaves"
+        - "6 · change_root — livekit finishes, then no login"
+        - "I could not tell — serial log attached"
+    validations: {required: true}
+  - type: dropdown
+    id: target
+    attributes:
+      label: Which target
+      options:
+        - debian-64bit-12.2.0
+        - debian-32bit-12.2.0
+        - slackware-64bit-15.0.4
+        - slackware-32bit-15.0.4
+        - other (say so below)
+    validations: {required: true}
+  - type: textarea
+    id: serial
+    attributes:
+      label: Serial log
+      description: |
+        `./kitchen test out/my.iso --kernel --seconds 300` writes one to `boot-tests/`
+        beside the ISO. Attach the file, or paste the last ~100 lines. Boot with
+        `console=ttyS0,115200n8` (or apply the `serial-console` recipe) if you are
+        booting by hand — without it the interesting output goes to a screen nobody
+        is capturing.
+      render: text
+    validations: {required: true}
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Where it failed
+      description: |
+        Real machine or QEMU? BIOS or UEFI? Secure Boot on? Which medium — ISO, USB
+        written with `dd`, USB written some other way? We have no real hardware and no
+        Secure Boot here, so if you do, this is the part we cannot get any other way.
+    validations: {required: true}
+  - type: textarea
+    id: recipes
+    attributes:
+      label: Recipes applied, and the exact commands
+      description: Copy them, do not describe them. `./kitchen status -v work` prints what was applied.
+      render: shell
+    validations: {required: true}
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of ./kitchen doctor --report
+      render: text
+    validations: {required: true}
+  - type: checkboxes
+    id: narrowed
+    attributes:
+      label: Narrowing
+      options:
+        - label: The stock ISO boots on the same machine (so it is something we did)
+        - label: It fails with no recipes applied too (so it is not a recipe)

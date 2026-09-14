@@ -1,0 +1,19 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Fullaxx/slax-kitchen/security/advisories/new
+    about: >-
+      Please do not open a public issue. Use private reporting — see SECURITY.md.
+      Note that root/toor, recipes running arbitrary code, and secrets baked into an
+      image are documented behaviour, not vulnerabilities.
+  - name: A problem with Slax itself, not with slax-kitchen
+    url: https://github.com/Fullaxx/slax-kitchen/blob/master/docs/30-inventory/known-upstream-bugs.md
+    about: >-
+      Fourteen upstream issues are already recorded here, including the 2017 busybox,
+      the 2023 browser, and Slackware's broken TLS. `kitchen probe <iso>` tells you
+      whether an ISO is stock. Upstream has had no release since 2023-10-10.
+  - name: A question about a fork, not about this repo
+    url: https://github.com/Fullaxx/slax-kitchen/blob/master/CONTRIBUTING.md
+    about: >-
+      If the recipe lives in someone's fork rather than in recipes/available/, their
+      tracker is the right place. The engine/recipe routing rule is in CONTRIBUTING.md.
