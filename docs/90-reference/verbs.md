@@ -159,6 +159,12 @@ armour format is detected from the content, because apt reads it from the *exten
 them, so the booted system trusts that repository and can upgrade from it — say it deliberately.
 `/var/lib/dpkg/arch` always ships, so a foreign architecture survives into the image.
 
+> **Every step is schema-closed.** `$defs/step` uses `unevaluatedProperties: false`, so an
+> unknown key is a validation error rather than something silently ignored — `frm:` for `from:`,
+> `strpi:` for `strip:`, a field that only ever existed in a docstring. Note that
+> `additionalProperties` would *not* work here: it only sees `properties` declared in the same
+> schema object, not the ones an `if`/`then` branch introduces.
+
 ### `bundle.script` ◐ chroot
 
 `bundle.packages` generalised: run any script in a chroot of stacked bundles and package what
@@ -168,7 +174,7 @@ installer.
 ```yaml
 - verb: bundle.script
   bundle: 07-generated
-  from: [01-core]
+  network: true          # declare it if the script fetches anything
   script: |
     #!/bin/sh
     set -e
@@ -177,11 +183,15 @@ installer.
 
 Two behaviours it shares with `bundle.packages`, both load-bearing:
 
-- the delta is **added or modified** files, never names alone. A filename-only diff misses
-  `var/lib/dpkg/status`, and a bundle without it leaves new binaries invisible to the package
-  database.
+- the delta is **added or modified** files, never names alone. A filename-only diff misses the
+  package database, and a bundle without it leaves new binaries invisible to dpkg.
 - `BUNDLE_EXCLUDE` strips the runtime directories the chroot needed but a bundle must not ship,
-  plus caches and lockfiles.
+  plus caches and lockfiles — including `var/lib/dpkg/status`, which is replaced by a fragment.
+
+`network: true` **declares** that the step reaches the internet; preflight then checks for one
+before any of the plan runs, rather than after unsquashing 122 MiB. It does not sandbox anything
+and does not claim to: isolating the chroot's network needs a user namespace, which not every
+environment this runs in has.
 
 ---
 

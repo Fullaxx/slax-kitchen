@@ -155,6 +155,11 @@
         "when": {
           "type": "string",
           "description": "skip unless this matches, e.g. 'flavour==debian'"
+        },
+        "network": {
+          "type": "boolean",
+          "default": false,
+          "description": "this step reaches the internet; checked at preflight"
         }
       },
       "allOf": [
@@ -563,8 +568,411 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "bundle.files"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "required": [
+              "bundle",
+              "files"
+            ],
+            "properties": {
+              "bundle": {
+                "type": "string"
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "bundle.fromDir"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "required": [
+              "bundle",
+              "src"
+            ],
+            "properties": {
+              "bundle": {
+                "type": "string"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "bundle.fromTarball"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "required": [
+              "bundle",
+              "src"
+            ],
+            "properties": {
+              "bundle": {
+                "type": "string"
+              },
+              "src": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "strip": {
+                "type": [
+                  "string",
+                  "integer"
+                ]
+              },
+              "prefix": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "bundle.renumber"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "required": [
+              "match",
+              "to"
+            ],
+            "properties": {
+              "match": {
+                "type": "string"
+              },
+              "to": {
+                "type": [
+                  "string",
+                  "integer"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "bundle.script"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "required": [
+              "bundle",
+              "script"
+            ],
+            "properties": {
+              "bundle": {
+                "type": "string"
+              },
+              "script": {
+                "type": "string"
+              },
+              "shell": {
+                "type": "string"
+              },
+              "from": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "initramfs.files"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "required": [
+              "files"
+            ],
+            "properties": {
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "force": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "initramfs.modules"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "required": [
+              "modules"
+            ],
+            "properties": {
+              "modules": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "from_bundle": {
+                "type": "string"
+              },
+              "subdir": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "initramfs.patch"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "required": [
+              "edits"
+            ],
+            "properties": {
+              "edits": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "initramfs.busybox"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "properties": {
+              "src": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "boot.branding"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "properties": {
+              "targets": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "default": {
+                "type": "string"
+              },
+              "timeout": {
+                "type": [
+                  "string",
+                  "integer"
+                ]
+              },
+              "help": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "boot.grub"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "properties": {
+              "dest": {
+                "type": "string"
+              },
+              "from": {
+                "type": "string"
+              },
+              "probe": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "boot.uefi"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "properties": {}
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "boot.isohybrid"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "properties": {}
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "iso.metadata"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "properties": {
+              "volid": {
+                "type": "string"
+              },
+              "appid": {
+                "type": "string"
+              },
+              "sysid": {
+                "type": "string"
+              },
+              "publisher": {
+                "type": "string"
+              },
+              "preparer": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verb": {
+                "const": "iso.checksums"
+              }
+            },
+            "required": [
+              "verb"
+            ]
+          },
+          "then": {
+            "properties": {
+              "algorithm": {
+                "type": "string"
+              },
+              "sign": {
+                "type": "boolean"
+              }
+            }
+          }
         }
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "menuEntry": {
       "type": "object",

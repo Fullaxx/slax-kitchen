@@ -338,13 +338,42 @@ def test_apt_source_line():
           apply._excluded("etc/apt/sources.list.d/vendor.list", keep), False)
 
 
+def test_network_declaration():
+    """`network: true` was documented in bundle.script's docstring and never read.
+
+    $defs/step had no additionalProperties, so the key validated silently and was
+    ignored -- the worst of both worlds: a recipe that looked like it declared
+    something, and an engine that did not check it.
+    """
+    check("bundle.script without network",
+          bool(apply.step_requires({"verb": "bundle.script", "script": "x"}).get("network")),
+          False)
+    check("bundle.script with network: true",
+          bool(apply.step_requires({"verb": "bundle.script", "script": "x",
+                                    "network": True}).get("network")),
+          True)
+    # boot.payload still decides from its own argument, which is better than a
+    # declaration because it cannot be forgotten.
+    check("boot.payload with a URL",
+          bool(apply.step_requires({"verb": "boot.payload",
+                                    "src": "https://x/y", "dest": "d"}).get("network")),
+          True)
+    check("boot.payload with a local path",
+          bool(apply.step_requires({"verb": "boot.payload",
+                                    "src": "files/y", "dest": "d"}).get("network")),
+          False)
+    check("bundle.packages always needs it",
+          bool(apply.step_requires({"verb": "bundle.packages"}).get("network")), True)
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
                test_extract_member, test_preflight, test_under_containment,
                test_wont_do_verbs, test_parse_lsdl,
                test_initramfs_busybox_registered,
-               test_say_does_not_journal, test_apt_source_line]:
+               test_say_does_not_journal, test_apt_source_line,
+               test_network_declaration]:
         fn()
     if FAILURES:
         for f in FAILURES:

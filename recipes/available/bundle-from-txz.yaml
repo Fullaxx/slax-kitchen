@@ -39,6 +39,9 @@ steps:
   # bundle -- there is nothing to bootstrap before this script can run.
   - verb: bundle.script
     bundle: "{{bundle}}"
+    # This script wgets the .txz inside the chroot. Declaring it means preflight says
+    # "no network" up front instead of unsquashing 122 MiB and failing at the download.
+    network: true
     script: |
       #!/bin/sh
       set -e

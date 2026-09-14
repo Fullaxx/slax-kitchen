@@ -49,6 +49,17 @@ WONT_DO = {
         "and sign the built ISO out of band."),
 }
 
+# Verbs the schema accepts that are planned but not written. Same reasoning as WONT_DO:
+# `kitchen validate` passing and `kitchen apply` then failing is bad enough without the
+# failure also being uninformative about which of the two it is.
+NOT_YET = {
+    "kernel.replace": (
+        "replacing the kernel means rebuilding the initramfs against the new module "
+        "set and proving aufs is still present -- without it the union silently "
+        "downgrades to overlayfs and `slax activate` stops working. See "
+        "docs/00-overview/status.md."),
+}
+
 # Which Debian/Ubuntu package provides each tool, so a failure can say what to install
 # rather than just what is absent.
 TOOL_PKG = {
@@ -115,6 +126,13 @@ def step_requires(step: dict) -> dict:
            for k, v in VERB_REQUIRES.get(step.get("verb", ""), {}).items()}
     # boot.payload only touches the network when its source is a URL.
     if step.get("verb") == "boot.payload" and re.match(r"^https?://", str(step.get("src", ""))):
+        req["network"] = True
+    # `network: true` on any step. bundle.script's docstring has promised this for
+    # months and nothing read it, because $defs/step was open and the key validated
+    # silently. It DECLARES intent, checked at preflight; it does not sandbox anything,
+    # and _in_chroot cannot -- isolating the network needs a user namespace, which the
+    # environments this runs in do not all have.
+    if step.get("network"):
         req["network"] = True
     return req
 
@@ -1291,8 +1309,10 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
       * BUNDLE_EXCLUDE strips the runtime directories the chroot needed but a bundle must
         not ship, plus caches and lockfiles.
 
-    There is no network by default: pass network: true to say you meant it, so a recipe
-    that quietly depends on the internet is visible in the YAML rather than at run time.
+    The chroot inherits whatever network the host has -- there is no isolation here, and
+    there cannot be without a user namespace. Declare `network: true` on the step when
+    the script fetches something, so a recipe that depends on the internet says so in
+    the YAML and preflight fails fast instead of unsquashing 122 MiB first.
     """
     script = step.get("script")
     if not script:
@@ -2370,6 +2390,9 @@ def apply_recipe(path: str, work: str, dry: bool = False) -> int:
             if v in WONT_DO:
                 raise RuntimeError(f"step {i}: verb '{v}' will not be implemented -- "
                                    f"{WONT_DO[v]}")
+            if v in NOT_YET:
+                raise RuntimeError(f"step {i}: verb '{v}' is not implemented yet -- "
+                                   f"{NOT_YET[v]}")
             raise RuntimeError(f"step {i}: verb '{v}' is valid in the schema but not "
                                f"implemented yet (have: {', '.join(sorted(VERBS))})")
         fn(ctx, step)
