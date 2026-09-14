@@ -1,0 +1,40 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: chromium-current
+  summary: Replace Slax's 2023 Chromium with the current one from bookworm-security
+  tags: [browser, security, bundle]
+compat:
+  flavours: [debian]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: chroot
+vars:
+  # 10, not 06: above every stock bundle, below the 07-09 band the other recipes use,
+  # and well below 98-dpkg-db and 99-changes.
+  bundle: "10-chromium"
+steps:
+  # WHY THIS RECIPE EXISTS. Both flavours ship chromium 117.0.5938.149, released in
+  # September 2023. It is the single most exposed thing in the image -- a browser is
+  # what a live system is mostly used for -- and it is years of security fixes behind.
+  #
+  # NO APT SOURCE CHANGES ARE NEEDED. The stock /etc/apt/sources.list already carries
+  # bookworm-security, which is where the current build lives (150.0.7871.100-1~deb12u1
+  # at the time of writing, available for both amd64 and i386).
+  #
+  # DROP FIRST, THEN ADD -- do not override. Overriding leaves both copies on the ISO,
+  # paying 79 MiB for a Chromium nobody can reach, and files the old version had that
+  # the new one does not are still in the union afterwards, because a bundle can add and
+  # replace but cannot delete. See docs/40-workflow/composing-bundles.md.
+  - verb: bundle.remove
+    match: "^05-chromium\\.sb$"
+
+  # With 05-chromium gone, `from:` defaults to 01-core .. 04-apps, which is exactly
+  # right: the 22 media and crypto libraries that came with the old Chromium left with
+  # it, so apt pulls the current versions back in and the bundle is self-contained.
+  #
+  # Naming a shorter stack here would be a mistake: apt would reinstall libraries
+  # 02-xorg already provides, and this bundle outranks 02-xorg, so its copies would win.
+  - verb: bundle.packages
+    bundle: "{{bundle}}"
+    packages: [chromium, chromium-sandbox]

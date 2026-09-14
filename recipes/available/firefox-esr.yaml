@@ -1,0 +1,39 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: firefox-esr
+  summary: Add Firefox ESR alongside whatever browser is already there
+  tags: [browser, bundle]
+compat:
+  flavours: [debian]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: chroot
+vars:
+  bundle: "11-firefox"
+steps:
+  # No Slax image ships a second browser, and firefox-esr is in Debian proper -- no
+  # vendor repository, no signing key, and genuinely available on i386 as well as
+  # amd64 (140.12.0esr-1~deb12u1 at the time of writing), which is rare enough among
+  # browsers to be worth stating.
+  #
+  # SLACKWARE IS NOT SUPPORTED HERE, and not because it fails. Slax's Slackware base is
+  # frozen, and its slackpkg points at a mirror years ahead of it (known upstream issues
+  # 12 and 13), so installing from it produces packages that do not run. The supported
+  # Slackware route is a pinned .txz through bundle-from-txz.
+  #
+  # `from:` IS THE DIAL HERE, and this recipe is the clearest place to see it:
+  #
+  #   with 05-chromium present   apt finds libnss3, libopus0, libvorbis*, libflac12 and
+  #                              the rest installed -> 79,480 KiB, 2 packages declared
+  #   with 05-chromium removed   the same YAML pulls that runtime in itself
+  #                              -> 81,004 KiB, 5 packages declared
+  #
+  # Measured, not estimated -- and note it is only 1.9%. Firefox's own payload dominates,
+  # so `from:` is not a size knob here. What it actually decides is whether this bundle
+  # still works if someone removes 05-chromium later. Both are correct, and the status
+  # fragment merges correctly either way; leaving `from:` unset means "whatever is
+  # actually below me", which is the right default.
+  - verb: bundle.packages
+    bundle: "{{bundle}}"
+    packages: [firefox-esr]

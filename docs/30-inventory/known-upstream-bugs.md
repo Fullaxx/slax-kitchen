@@ -202,3 +202,36 @@ cat /etc/ssl/certs/*.pem > /etc/ssl/cert.pem
 This trusts nothing that was not already shipped. Debian's `01-core` ships a working
 `ca-certificates.crt` and is unaffected. Applied by
 [`bundle-from-txz`](../50-cookbook/bundle-from-txz.md) before it fetches anything.
+
+## 14. The shipped browser is three years old  · *both flavours, all four images*
+
+Both flavours ship **chromium 117.0.5938.149**, released 2023-09-27 — Debian's
+`117.0.5938.149-1~deb12u1`, Slackware's AlienBOB `chromium-117.0.5938.149-x86_64-1alien`. Upstream
+Slax has had no release since 2023-10-10, so every image anyone downloads today carries it.
+
+This one is different in kind from the rest of this list. A live system is mostly used for
+browsing, so the browser is the largest attack surface in the image, and it is the component with
+the shortest security half-life — Chromium ships a stable release roughly every four weeks, and
+several of those carry actively exploited zero-days.
+
+```
+$ # the image, on both flavours
+  chromium 117.0.5938.149          September 2023
+$ # Debian bookworm-security, same suite the image already points at
+  chromium 152.0.7977.82-1~deb12u1
+```
+
+Thirty-five major versions.
+
+**Fix:** [`chromium-current`](../50-cookbook/chromium-current.md) on Debian. Nothing exotic is
+needed — the stock `/etc/apt/sources.list` already carries `bookworm-security`, so this is an
+ordinary package install; the recipe drops `05-chromium.sb` first so the replacement is not
+shadowed by the original.
+
+On Slackware there is no supported route: `slackpkg` points at a mirror years ahead of the frozen
+base (issue 12 in spirit, and issue 13's companion), so a pinned `.txz` through
+[`bundle-from-txz`](../50-cookbook/bundle-from-txz.md) is the only option, and no current AlienBOB
+build targets a 2023 Slackware 15.0 userland.
+
+If you cannot update it, [`remove-chromium`](../50-cookbook/remove-chromium.md) at least stops the
+image shipping a browser that looks current and is not.

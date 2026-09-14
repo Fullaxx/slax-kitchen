@@ -58,13 +58,25 @@ the failure it replaced lost three hundred real packages silently.
 `from:` says *what to assume is already present*. It defaults to every bundle that will load below
 yours, and that default is right almost always.
 
-- **Full stack** (the default) → the smallest possible bundle, because `apt` skips what is already
-  there. It depends on those bundles staying on the ISO.
-- **Shorter stack** → a larger, self-contained bundle that survives its neighbours being removed.
+- **Full stack** (the default) → the smaller bundle, because `apt` skips what is already there. It
+  depends on those bundles staying on the ISO.
+- **Shorter stack** → a self-contained bundle that survives its neighbours being removed.
 
-Name a shorter stack casually and you get the worst of it: `apt` installs a second copy of
-libraries that already exist lower down, and because your bundle is higher, *your* copies win. A
-version skew nobody asked for, invisible until something links against the wrong one.
+**The dial is mostly about correctness and removability, not size.** Measured, building
+`firefox-esr` two ways on debian-64bit:
+
+| `05-chromium` beneath it | bundle | packages declared |
+|---|---|---|
+| present | 79,480 KiB | 2 |
+| absent | 81,004 KiB | 5 |
+
+1.9% — Firefox's own payload dominates, and the shared runtime it can borrow is small beside it.
+Do not choose `from:` for the megabytes.
+
+Choose it for the other two. Name a shorter stack casually and `apt` installs a second copy of
+libraries that already exist lower down; because your bundle is higher, *your* copies win — a
+version skew nobody asked for, invisible until something links against the wrong one. And a bundle
+built against `05-chromium` quietly stops being self-sufficient if someone later removes it.
 
 ## One bundle = one unit of removal
 

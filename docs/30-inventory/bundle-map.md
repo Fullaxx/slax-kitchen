@@ -115,7 +115,13 @@ Chromium refuses to run as root, which is why both flavours ship a `guest` user 
 run it.
 
 **This is the first bundle to drop** if you want a smaller image: −79 MiB on Debian, −115 MiB on
-Slackware, and nothing else depends on it. See
+Slackware, and nothing else *in the stock image* depends on it.
+
+⚠ That last clause matters if you are adding a browser rather than removing one. `05-chromium` is
+not only Chromium: it carries `libnss3`, `libnspr4`, `libopus0`, `libvorbis0a`, `libvorbisenc2`,
+`libflac12`, `libpulse0`, `libsndfile1`, `libwebpmux3`, `libwoff1`, `libmp3lame0`, `libmpg123-0`
+and `libopenh264-7` — effectively the shared browser runtime. Drop it and anything else with a
+rendering engine has to ship its own copies. See
 [`remove-chromium`](../50-cookbook/remove-chromium.md).
 
 ### `06-devel` — Slackware only
@@ -156,12 +162,20 @@ Two consequences:
 
 And the one that matters for customization:
 
-> **A new high-numbered bundle must carry a cumulative `dpkg/status` too**, or it shadows the
-> 600-package database with a smaller one and dpkg forgets most of the system.
+> **A new high-numbered bundle must not carry a `dpkg/status` of its own**, or it shadows the
+> 600-package database with whatever smaller one it built and dpkg forgets most of the system.
 
-`kitchen`'s `bundle.packages` gets this right by construction: it installs into a chroot assembled
-from the existing bundles, so the resulting `status` is cumulative. It is the reason the stacking
-approach is not optional.
+This page used to claim `bundle.packages` "gets this right by construction" by stacking the whole
+image in the chroot. That is half a fix, and we shipped the other half as a bug: it makes *one*
+add-on bundle correct, and still breaks the moment there are two, because whichever lands higher
+replaces the other's database. Our own `add-packages` did not even manage the first half — it
+built from `01-core` alone and put a 299-package `status` above `05-chromium`'s 600.
+
+`kitchen` no longer ships `var/lib/dpkg/status` in a bundle at all. Each add-on carries
+`var/lib/slax-kitchen/dpkg-status.d/<bundle>` — only the stanzas it added or changed — and
+`kitchen pack` merges base plus fragments into a generated `98-dpkg-db.sb`. A *directory* of
+fragments composes the way Slackware's database already does, which is the whole trick. See
+[composing bundles](../40-workflow/composing-bundles.md).
 
 Slackware has no equivalent problem — `var/lib/pkgtools/packages/` holds one file per package, so
 bundles merge in the union rather than shadowing each other. That is why the Slackware manifest is
