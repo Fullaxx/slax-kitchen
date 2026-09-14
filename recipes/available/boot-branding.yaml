@@ -1,0 +1,62 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: boot-branding
+  summary: Replace the boot help text with an accurate one, and give the menu time to be read
+  tags: [boot, branding, docs]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  timeout: "10"
+steps:
+  # The shipped help.txt is wrong in both directions, which is worth fixing if anyone
+  # else will ever boot your image:
+  #
+  #   documents `nosound`, which has NO implementation anywhere -- not in the initramfs,
+  #   not in livekitlib, not in any bundle on either flavour. Setting it does nothing.
+  #
+  #   omits `load=`, `cache=`, `ip=` and `text`, all of which are implemented.
+  #
+  # The list below is the authoritative one, built by grepping every consumer rather
+  # than by trusting the existing text. See docs/20-boot-sequence/boot-parameters.md.
+  #
+  # TIMEOUT is in tenths of a second upstream, so the stock 40 is FOUR seconds -- long
+  # enough to miss. boot.branding takes seconds and converts.
+  - verb: boot.branding
+    timeout: "{{timeout}}"
+    help: |
+
+       Welcome to Slax.
+
+       Press [Esc] for the menu, [Tab] to edit the boot command line, or wait and
+       it will boot the default entry.
+
+       * toram: copy everything to RAM during startup, then release the boot device
+         so it can be removed. Needs enough RAM to hold the bundles you load.
+
+       * text: skip the desktop and boot to a console.
+
+       * perchdir=[resume|new|ask|N|/dev/sdXN/path]: persistent changes. Only works
+         on writable media -- a CD cannot persist. On a Linux filesystem there is no
+         size limit; on FAT32 or NTFS a container file is used instead.
+
+       * perchsize=[MB]: size of that container. Minimum and default 16000 (~16GB).
+         Accepts G/GB/T/TB. Set once, at creation; raising it later grows it.
+
+       * noload=[regex]: skip bundles. Commas become "or": noload=chromium,devel
+
+       * load=[regex]: load ONLY matching bundles. Commas are NOT translated here,
+         so write load=xorg|desktop rather than load=xorg,desktop.
+
+       * from=[path|device|file.iso|http://...|ask]: where to look for the slax
+         directory. from=/dev/sdb1/slax names a device and path; from=ask shows a
+         menu of devices; an .iso path is loop-mounted and searched inside.
+
+       * automount: add other disks to /etc/fstab as /media/<device>.
+
+       * cache=[MB]: local cache size when booting over http.
+
+       * debug: drop to a shell at six points during startup, and again on shutdown.

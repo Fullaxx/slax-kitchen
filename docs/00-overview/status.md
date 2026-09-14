@@ -76,6 +76,7 @@ Full reasoning: [add-packages cookbook page](../50-cookbook/add-packages.md).
 
 | Approach | Why not |
 |---|---|
+| **`boot.secureboot` verb** | Slax's kernel is custom-built and unsigned, so shim + signed GRUB gets you two links of a three-link chain. Closing the third needs a key we cannot ship (a public private key is theatre), enrolled per-machine through MokManager by a physically present human, on a path we cannot boot-test here. Documented instead: [secure-boot](../20-boot-sequence/secure-boot.md). |
 | **`initramfs.config` verb** | Only 2 of the 8 variables in `/lib/config` are read at runtime — `LIVEKITNAME` (14 uses) and `BEXT` (3). The other six are build-time only. And `LIVEKITNAME` is merely the *default* for `from=` (`livekitlib:640`), so a second Live Kit tree on one stick needs no rename at all. Renaming costs the `from=…iso` and PXE paths, and on CD requires re-patching `isolinux.bin`. A verb for one variable nobody should change. |
 | **`proot` for unprivileged chroot** | **Unsafe.** proot 5.1.0 does not translate `statx()`, so `stat` escapes the fake root and reads the **host** filesystem. Silent and selective — paths that exist on the host appear to work. Could emit a corrupt bundle. Real `chroot` works instead. |
 | **`fakechroot`** | LD_PRELOADs host binaries against target libs; Ubuntu 24.04 glibc 2.39 cannot load against Debian 12's 2.36. |
@@ -92,21 +93,22 @@ pretending to work. (`fetch` is implemented and verified — it was listed here 
 
 ### Verbs
 
-18 of 25 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
+20 of 25 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
 clear message naming what *is* available, rather than silently skipping.
 
 **Implemented:** `boot.cmdline` `boot.isohybrid` `boot.menu` `boot.payload` `boot.uefi`
 `bundle.files` `bundle.fromDir` `bundle.fromTarball` `bundle.packages` `bundle.remove`
-`bundle.renumber` `bundle.script` `initramfs.files` `initramfs.modules` `initramfs.patch`
+`bundle.renumber` `bundle.script` `boot.branding` `boot.grub` `initramfs.files`
+`initramfs.modules` `initramfs.patch`
 `iso.files` `rootcopy.files` `rootcopy.preinit` — full reference:
 [docs/90-reference/verbs.md](../90-reference/verbs.md)
 
-**Not yet:** `boot.branding` `boot.grub` `boot.secureboot` `iso.checksums` `iso.metadata`
-`kernel.replace`  ·  `initramfs.config` is **won't-do**, see below
+**Not yet:** `iso.checksums` `iso.metadata` `kernel.replace`
+**Won't-do:** `initramfs.config`, `boot.secureboot` — both below
 
 ### Recipes
 
-12 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
+14 of the ~32 planned. Missing notably: `branding`, `ssh-server`, `boot-tools`,
 `initramfs-busybox`, `kernel-replace`.
 
 ### Documentation

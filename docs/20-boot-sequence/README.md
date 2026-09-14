@@ -11,6 +11,7 @@ kernel starts, all five routes are identical.
 | [`uefi-usb-hdd.md`](uefi-usb-hdd.md) | ESP → `BOOTX64.EFI`. Works only after `bootinst` moves the files |
 | [`uefi-cd-gap.md`](uefi-cd-gap.md) | why no UEFI machine boots a stock Slax ISO, and what fixes it |
 | [`pxe-and-http.md`](pxe-and-http.md) | `pxelinux.0`, `ip=`, and `from=http://…iso` over httpfs2 |
+| [`secure-boot.md`](secure-boot.md) | why Slax cannot boot with Secure Boot on, and what the manual route costs |
 | [`boot-parameters.md`](boot-parameters.md) | every parameter, from grepping the consumers rather than the docs |
 
 ## Which page you want
@@ -19,6 +20,7 @@ kernel starts, all five routes are identical.
 |---|---|
 | "it boots from CD but not from my USB stick" | [`bios-usb-hdd.md`](bios-usb-hdd.md) — you probably `dd`'d it |
 | "my laptop doesn't see the ISO at all" | [`uefi-cd-gap.md`](uefi-cd-gap.md) |
-| "what can I put on the `APPEND` line?" | [`boot-parameters.md`](boot-parameters.md) |
+| "what can I put on the `APPEND` line?" | [`secure-boot.md`](secure-boot.md) | why Slax cannot boot with Secure Boot on, and what the manual route costs |
+| [`boot-parameters.md`](boot-parameters.md) |
 | "where does it stop when it fails?" | [`overview.md`](overview.md), then `debug` |
 | "what happens after `/init`?" | [`10-anatomy/livekit-init.md`](../10-anatomy/livekit-init.md) |

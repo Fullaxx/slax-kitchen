@@ -1,0 +1,23 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: host-grub-entry
+  summary: Generate a GRUB menu entry for booting this Slax from an existing bootloader
+  tags: [boot, grub, install]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+steps:
+  # The least invasive way to keep Slax on a machine that already boots something else:
+  # copy /slax/ onto an existing partition and add a menu entry, rather than letting
+  # bootinst.sh write the MBR and take over the disk.
+  #
+  # Generated from the real menu entries, so it cannot drift from what the ISO actually
+  # boots -- and validated with grub-script-check before it is written.
+  #
+  # `search --file` locates whichever device holds Slax instead of hardcoding (hd0,1),
+  # so the entry survives repartitioning and moving the stick between ports.
+  - verb: boot.grub
+    dest: slax/boot/grub-snippet.cfg

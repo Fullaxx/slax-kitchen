@@ -1,6 +1,6 @@
 # Verb reference
 
-A recipe step names a **verb** and its fields. **18 of 25** declared verbs are implemented; a recipe
+A recipe step names a **verb** and its fields. **20 of 25** declared verbs are implemented; a recipe
 using an unimplemented one fails with a message naming what *is* available.
 
 Every verb is validated against `schema/recipe.schema.json` before anything runs, and
@@ -182,6 +182,37 @@ filesystem the system is about to boot into. An `exit` here ends the boot.
 
 Archive type is detected from **content magic**, not the filename.
 
+### `boot.branding` ○
+
+Splash, help text, menu timeout, default entry.
+
+```yaml
+- verb: boot.branding
+  bootlogo: ./splash.png       # menu background
+  helpbg: ./helpbg.png         # behind the F1 screen
+  help: "…"                    # or {src: ./help.txt}
+  timeout: 10                  # SECONDS; upstream stores tenths, the verb converts
+  default: toram               # must be an existing LABEL
+```
+
+The stock `TIMEOUT 40` is four seconds, not forty. `default:` refuses a label that does not exist
+rather than producing a menu with no working default.
+
+### `boot.grub` ○
+
+Emit a GRUB snippet for chainloading this Slax from an **existing host bootloader** — distinct from
+`boot.uefi`, which builds GRUB into the ISO's own ESP.
+
+```yaml
+- verb: boot.grub
+  from: syslinux.cfg
+  probe: /slax/boot/vmlinuz    # what `search --file` looks for
+  dest: slax/boot/grub-snippet.cfg
+```
+
+Mirrors the real menu entries, moves `initrd=` off the kernel command line to a separate `initrd`
+command as GRUB requires, and validates the result with `grub-script-check` before writing it.
+
 ### `boot.uefi` ○ · `boot.isohybrid` ○
 
 Make the ISO bootable on UEFI, and `dd`-able to a stick. Both fix real gaps in every stock image —
@@ -250,9 +281,15 @@ Place a file anywhere in the ISO tree, outside `/slax/`.
 
 ## Not implemented
 
-`boot.branding` · `boot.grub` · `boot.secureboot` · `iso.checksums` · `iso.metadata` ·
-`kernel.replace`
+`iso.checksums` · `iso.metadata` · `kernel.replace`
 
-`initramfs.config` is **won't-do** — only `LIVEKITNAME` and `BEXT` are read at runtime, and
-`LIVEKITNAME` is merely the default for `from=`. See
-[status](../00-overview/status.md#rejected-with-reasons).
+## Won't do
+
+**`initramfs.config`** — only `LIVEKITNAME` and `BEXT` are read at runtime, and `LIVEKITNAME` is
+merely the default for `from=`, so a second Live Kit tree needs no rename.
+
+**`boot.secureboot`** — the kernel is unsigned and custom-built, so the missing link needs a signing
+key we cannot ship, enrolled per-machine by a physically present human, on a path we cannot
+boot-test. Documented instead: [secure-boot](../20-boot-sequence/secure-boot.md).
+
+Both with full reasoning in [status](../00-overview/status.md#rejected-with-reasons).

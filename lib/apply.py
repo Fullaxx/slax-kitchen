@@ -55,6 +55,7 @@ TOOL_PKG = {
 VERB_REQUIRES: dict[str, dict] = {
     "boot.uefi": {"tools": ["grub-mkstandalone", "mkfs.vfat", "mmd", "mcopy"]},
     "boot.isohybrid": {"files": {"/usr/lib/ISOLINUX/isohdpfx.bin": "isolinux"}},
+    "boot.grub": {"tools": ["grub-script-check"]},
     "bundle.packages": {"tools": ["unsquashfs", "mksquashfs", "chroot"],
                         "caps": ["chroot", "mknod"], "network": True},
     "bundle.fromDir": {"tools": ["mksquashfs"]},
@@ -1213,6 +1214,162 @@ def _grub_cfg(entries: list[dict]) -> str:
         out.append("")
     out += ["menuentry 'Reboot' { reboot }", "menuentry 'Power off' { halt }", ""]
     return "\n".join(out)
+
+
+@verb("boot.branding")
+def v_boot_branding(ctx: Ctx, step: dict) -> None:
+    """Change what the boot menu looks like: splash, help text, timeout, default entry.
+
+    All four targets ship byte-identical isolinux.cfg and syslinux.cfg, so one edit here
+    applies to every image at once.
+    """
+    targets = _cfg_paths(ctx, step.get("targets"))
+    changed: list[str] = []
+
+    for key, dest in (("bootlogo", "bootlogo.png"), ("helpbg", "zblack.png")):
+        spec = step.get(key)
+        if not spec:
+            continue
+        src = spec if isinstance(spec, str) else spec["src"]
+        local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+        if not os.path.isfile(local):
+            raise RuntimeError(f"boot.branding: {key} source not found: {local}")
+        if not ctx.dry:
+            shutil.copy2(local, ctx.p("slax", "boot", dest))
+        ctx.say(f"replaced slax/boot/{dest} ({os.path.getsize(local)} bytes)")
+        changed.append(dest)
+
+    if "help" in step:
+        text = step["help"]
+        if isinstance(text, dict):
+            src = text["src"]
+            local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+            text = open(local).read()
+        if not ctx.dry:
+            with open(ctx.p("slax", "boot", "help.txt"), "w") as f:
+                f.write(text)
+        ctx.say(f"rewrote slax/boot/help.txt ({len(text)} bytes, "
+                f"{len(text.splitlines())} lines)")
+
+    # TIMEOUT is in TENTHS of a second -- the stock 40 is four seconds, not forty. Taking
+    # it in seconds here and converting is the difference between "wait 10s" and a
+    # one-second menu nobody can read.
+    for path in targets:
+        if not os.path.isfile(path):
+            continue
+        text = open(path).read()
+        orig = text
+        if "timeout" in step:
+            secs = float(step["timeout"])
+            tenths = int(round(secs * 10))
+            if tenths < 0:
+                raise RuntimeError("boot.branding: timeout cannot be negative")
+            text = re.sub(r"(?mi)^TIMEOUT\s+\d+", f"TIMEOUT {tenths}", text)
+            if not re.search(r"(?mi)^TIMEOUT\s+\d+", orig):
+                text = "TIMEOUT %d\n" % tenths + text
+        if "default" in step:
+            want = str(step["default"])
+            labels = [e["label"] for e in _parse_syslinux(path)]
+            if want not in labels:
+                raise RuntimeError(
+                    f"boot.branding: no LABEL {want!r} in {os.path.basename(path)}; "
+                    f"have {', '.join(labels) or '(none)'}. Add it with boot.menu first.")
+            if re.search(r"(?mi)^MENU DEFAULT\s*$", text):
+                text = re.sub(r"(?mi)^MENU DEFAULT\s*\n", "", text)
+            text = re.sub(r"(?mi)^(LABEL\s+%s\s*\n)" % re.escape(want),
+                          r"\1  MENU DEFAULT\n", text, count=1)
+        if text != orig:
+            if not ctx.dry:
+                with open(path, "w") as f:
+                    f.write(text)
+            rel = os.path.relpath(path, ctx.tree)
+            ctx.say(f"updated {rel}")
+            changed.append(rel)
+
+    if not changed and not ctx.dry:
+        raise RuntimeError("boot.branding: nothing to do -- give bootlogo, helpbg, help, "
+                           "timeout or default")
+
+
+@verb("boot.grub")
+def v_boot_grub(ctx: Ctx, step: dict) -> None:
+    """Emit a GRUB snippet for chainloading this Slax from an EXISTING host bootloader.
+
+    Distinct from boot.uefi, which builds GRUB *into* the ISO's own EFI System Partition.
+    This one produces a fragment to paste into /etc/grub.d/40_custom on a machine that
+    already boots something else -- the least invasive way to keep Slax on a working
+    system, because nothing is overwritten and no MBR is touched.
+
+    The docs previously told people to hand-write this in three places and the three
+    disagreed with each other (one had --no-floppy, the parameter order differed).
+    Generating it from the real menu entries means it cannot drift from what the ISO
+    actually boots.
+    """
+    dest_rel = step.get("dest") or "slax/boot/grub-snippet.cfg"
+    src_cfg = ctx.p("slax", "boot", step.get("from") or "syslinux.cfg")
+    if not os.path.isfile(src_cfg):
+        src_cfg = ctx.p("slax", "boot", "isolinux.cfg")
+    if not os.path.isfile(src_cfg):
+        raise RuntimeError("boot.grub: no syslinux.cfg or isolinux.cfg to mirror")
+    entries = _parse_syslinux(src_cfg)
+    if not entries:
+        raise RuntimeError(f"boot.grub: no usable LABEL entries in {src_cfg}")
+
+    # search --file --set=root is what makes the snippet portable: it locates whichever
+    # device holds /slax/boot/vmlinuz rather than hardcoding (hd0,1), so the same text
+    # works after the disk is repartitioned or the stick moves.
+    probe = step.get("probe") or "/slax/boot/vmlinuz"
+    out = [
+        "# Generated by slax-kitchen boot.grub -- paste into /etc/grub.d/40_custom on the",
+        "# HOST system (not this ISO), then run update-grub / grub-mkconfig.",
+        "#",
+        "# `search --file` finds whichever device carries Slax, so this keeps working if",
+        "# the disk is repartitioned or the stick is moved to another port.",
+        "",
+    ]
+    for e in entries:
+        title = e.get("menu_label", e["label"]).replace("'", "'\\''")
+        append = e.get("append", "")
+        initrd = ""
+        m = re.search(r"initrd=(\S+)", append)
+        if m:
+            initrd = m.group(1)
+            append = append.replace(m.group(0), "")
+        # Collapse AFTER removing initrd=, or its removal leaves a double space behind.
+        append = re.sub(r"\s+", " ", append).strip()
+        out.append(f"menuentry '{title}' {{")
+        out.append(f"    search --no-floppy --file --set=root {probe}")
+        out.append(f"    linux  {e['kernel']} {append}".rstrip())
+        if initrd:
+            out.append(f"    initrd {initrd}")
+        out.append("}")
+        out.append("")
+    text = "\n".join(out)
+
+    if ctx.dry:
+        ctx.say(f"would write {dest_rel} ({len(entries)} entries)")
+        return
+
+    dest = ctx.p(dest_rel)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest, "w") as f:
+        f.write(text)
+
+    # grub-script-check is to GRUB what `sh -n` is to the initramfs scripts: it parses
+    # the file and fails on a syntax error, so a malformed snippet is caught here rather
+    # than by a user whose boot menu has silently lost an entry.
+    if shutil.which("grub-script-check"):
+        r = subprocess.run(["grub-script-check", dest], capture_output=True, text=True)
+        if r.returncode != 0:
+            os.unlink(dest)
+            raise RuntimeError("boot.grub: generated snippet does not parse as GRUB:\n  "
+                               + r.stderr.strip()[:300])
+        ctx.say("grub-script-check: ok")
+    else:
+        ctx.say("warning: grub-script-check not installed; snippet not validated")
+    ctx.say(f"wrote {dest_rel} ({len(entries)} entries mirrored from "
+            f"{os.path.basename(src_cfg)})")
+    ctx.changes.append(dest_rel)
 
 
 @verb("boot.uefi")
