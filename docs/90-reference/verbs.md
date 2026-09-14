@@ -181,8 +181,14 @@ filesystem the system is about to boot into. An `exit` here ends the boot.
   add: {label: mine, menu_label: "…", kernel: /slax/boot/vmlinuz, append: "…"}
 
 - verb: boot.cmdline
-  add: "noload=05-chromium"                 # edits existing APPEND lines
+  append: ["noload=05-chromium"]            # edits existing APPEND lines
+  remove: ["automount"]                     # by key: drops `automount` and `automount=x`
+  labels: [slax]                            # optional: restrict to these LABELs
 ```
+
+`append` and `remove` are **arrays**, and the step reports how many APPEND lines it actually
+changed — re-applying it says `0 entries`, not the entry count. A step with neither field is
+refused rather than silently doing nothing.
 
 **Use `LINUX`, not `KERNEL`, for a non-bzImage payload** — see
 [edit-bootloader](../40-workflow/edit-bootloader.md).

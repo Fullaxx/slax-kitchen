@@ -22,6 +22,7 @@ kitchen build <profile>             # fetch -> unpack -> apply* -> pack -> test
 | [`memtest86plus`](memtest86plus.md) | Memtest86+ 8.10 in the boot menu, BIOS and UEFI | ○ |
 | [`serial-console`](serial-console.md) | log the whole boot to a serial port — the prerequisite for automated boot tests | ○ |
 | [`boot-branding`](boot-branding.md) | replace the inaccurate help screen; give the menu time to be read | ○ |
+| [`boot-cmdline`](boot-cmdline.md) | bake `toram` and friends into every entry; drop the broken `automount` | ○ |
 | [`host-grub-entry`](host-grub-entry.md) | a GRUB entry for booting Slax from a bootloader you already have | ○ |
 | [`iso-identity`](iso-identity.md) | label the image as yours, and write a verifiable checksum | ○ |
 

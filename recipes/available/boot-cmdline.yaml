@@ -1,0 +1,41 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: boot-cmdline
+  summary: Bake boot parameters into every menu entry so nobody has to type them
+  tags: [boot, cmdline]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+steps:
+  # Boot parameters are normally typed at the menu -- press Esc in the four-second
+  # window, then Tab to edit. That is fine once and useless at scale: an image handed to
+  # somebody else, or booted headless, or written to twenty sticks, needs its defaults
+  # already in the file.
+  #
+  # This edits the APPEND line of EXISTING entries rather than adding a new one, so the
+  # same parameters apply however the machine boots -- including the entries the user
+  # actually picks from the menu. boot.menu is the verb for adding a whole new entry.
+  #
+  # Both files are edited by default. Upstream keeps them deliberately different -- the
+  # CD's isolinux.cfg has no persistence entries, syslinux.cfg (USB/HDD) does -- so the
+  # entry COUNTS differ per file and that is expected, not a bug.
+  #
+  # `toram` is the example worth defaulting: it copies the whole image to RAM and frees
+  # the medium, so the stick can be pulled and the desktop stops hitting slow USB. It
+  # costs RAM equal to the image size, which is why upstream does not default it.
+  - verb: boot.cmdline
+    append:
+      - toram
+
+  # Removal is BY KEY, so `automount` drops both a bare `automount` and `automount=x`.
+  #
+  # This particular removal is the documented workaround for issue 12: `noautomount` is
+  # ignored, because fstab_create tests `grep -vq automount /proc/cmdline` and the string
+  # noautomount CONTAINS automount, so the test never short-circuits. Negating the flag
+  # cannot work; the flag has to not be there. Stock entries include it, hence this step.
+  - verb: boot.cmdline
+    remove:
+      - automount

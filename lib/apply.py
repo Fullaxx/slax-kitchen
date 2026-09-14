@@ -1146,9 +1146,27 @@ def v_boot_menu(ctx: Ctx, step: dict) -> None:
 
 @verb("boot.cmdline")
 def v_boot_cmdline(ctx: Ctx, step: dict) -> None:
-    """Add or remove kernel parameters on APPEND lines."""
-    add = step.get("append", [])
-    drop = step.get("remove", [])
+    """Add or remove kernel parameters on APPEND lines.
+
+    The schema already requires `append`/`remove` to be arrays, so _listify is only
+    defence for callers that bypass validation -- without it `for a in "toram"` would
+    append the letters t, o, r, a, m as five separate parameters.
+    """
+    def _listify(v):
+        if v is None:
+            return []
+        return [v] if isinstance(v, str) else list(v)
+
+    add = _listify(step.get("append"))
+    drop = _listify(step.get("remove"))
+    # A step that changes nothing is a mistake, and the commonest way to write one is a
+    # misspelled field -- the verb reference said `add:` for a while, which this verb
+    # silently ignored while reporting "cmdline updated on 2 entries". The step schema
+    # does not constrain per-verb fields, so this is the only place to catch it.
+    if not add and not drop:
+        raise RuntimeError(
+            "boot.cmdline: nothing to do -- give `append:` and/or `remove:` "
+            f"(got fields: {', '.join(sorted(k for k in step if k != 'verb'))})")
     only = set(step.get("labels", []))
     for path in _cfg_paths(ctx, step.get("targets")):
         if not os.path.isfile(path):
@@ -1172,8 +1190,13 @@ def v_boot_cmdline(ctx: Ctx, step: dict) -> None:
                 key = a.split("=", 1)[0]
                 parts = [p for p in parts if p != key and not p.startswith(key + "=")]
                 parts.append(a)
-            lines[i] = "APPEND " + " ".join(parts)
-            touched += 1
+            new_line = "APPEND " + " ".join(parts)
+            # Count what actually CHANGED, not what was visited. Reporting a number that
+            # is always the entry count is a report that cannot be wrong, which is worse
+            # than no report at all.
+            if new_line != ln:
+                lines[i] = new_line
+                touched += 1
         if not ctx.dry:
             open(path, "w").write("\n".join(lines))
         ctx.say(f"{name}: cmdline updated on {touched} entr{'y' if touched == 1 else 'ies'}")
