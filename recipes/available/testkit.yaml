@@ -1,0 +1,78 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: testkit
+  summary: Print facts about the assembled system to the console, so a boot test can assert them
+  tags: [testing, rootcopy]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  # Files to report on. Each becomes one `file <path>: ...` line. Defaults cover what the
+  # branding, locale, ssh and TLS recipes change, so `kitchen apply <recipe> testkit`
+  # boot-proves that recipe's artifacts reached the union.
+  report: >-
+    /etc/hostname /etc/slax-version /etc/timezone /etc/localtime /root/.xinitrc
+    /etc/ssl/cert.pem /var/lib/connman/kitchen.config
+    /etc/systemd/system/multi-user.target.wants/ssh.service /etc/rc.d/rc.local
+steps:
+  # WHY A ROOTCOPY PREINIT AND NOT A BUNDLE. Instrumenting a boot normally means building
+  # a bundle, which means mksquashfs and a repack of the ISO for every change to the
+  # instrumentation. rootcopy needs neither: livekitlib SOURCES this file just before
+  # change_root, so editing one small script is the whole edit loop.
+  #
+  # WHY BEFORE change_root RATHER THAN AFTER BOOT. A post-boot reporter needs a systemd
+  # unit on Debian and an rc script on Slackware -- two mechanisms, two failure modes,
+  # and nothing at all if the desktop does not start. user_preinit runs on both flavours,
+  # identically, with the union fully assembled at $1. Every fact below is a property of
+  # the ASSEMBLED FILESYSTEM, which is exactly what a recipe changes.
+  #
+  # The union type is the headline. A kernel without aufs silently downgrades to
+  # overlayfs, `slax activate` stops working, and nothing says why -- so print it.
+  #
+  # Output goes to stderr, which is where livekitlib's own messages go, and therefore to
+  # the serial console when `console=ttyS0` is on the cmdline. tests/boot/qemu_boot.py
+  # --expect can then match on these lines.
+  - verb: rootcopy.preinit
+    script: |
+      # Sourced, not executed: no shebang semantics, POSIX only, and `exit` would end the
+      # BOOT rather than this script. Everything below is wrapped accordingly.
+      UNION="$1"
+
+      (
+          echo "### TESTKIT BEGIN"
+
+          # aufs or overlayfs -- the silent failure mode for any kernel swap.
+          _u=$(awk '$2=="/memory/union"{print $3; exit}' /proc/mounts 2>/dev/null)
+          [ -n "$_u" ] || _u=$(awk '$2=="'"$UNION"'"{print $3; exit}' /proc/mounts 2>/dev/null)
+          echo "union: ${_u:-unknown}"
+
+          echo "bundles: $(ls /memory/bundles 2>/dev/null | tr '\n' ' ')"
+          echo "kernel: $(uname -r 2>/dev/null)"
+
+          # busybox reports its own version on the banner line; a replaced one shows here.
+          echo "busybox: $(busybox 2>&1 | head -1 | cut -d' ' -f1-2)"
+
+          for f in {{report}}; do
+              if [ -L "$UNION$f" ]; then
+                  echo "file $f: symlink -> $(readlink "$UNION$f")"
+              elif [ -d "$UNION$f" ]; then
+                  echo "file $f: directory"
+              elif [ -f "$UNION$f" ]; then
+                  # One line of content for short text files, a size for anything else:
+                  # enough to prove a recipe landed without dumping a CA bundle to serial.
+                  _sz=$(wc -c < "$UNION$f" 2>/dev/null | tr -d ' ')
+                  if [ "${_sz:-0}" -gt 0 ] && [ "${_sz:-0}" -le 200 ]; then
+                      echo "file $f: $(head -1 "$UNION$f" 2>/dev/null)"
+                  else
+                      echo "file $f: present ${_sz} bytes"
+                  fi
+              else
+                  echo "file $f: absent"
+              fi
+          done
+
+          echo "### TESTKIT END"
+      ) >&2 2>/dev/null || true

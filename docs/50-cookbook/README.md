@@ -2,9 +2,9 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Twenty-nine recipes ship today.** Every one is built and structurally asserted on all four
+**Thirty recipes ship today.** Every one is built and structurally asserted on all four
 targets by CI — but **verification is not uniform**, and each page states its own: the original
-fifteen were additionally boot-verified, while most of the fourteen added since are marked
+fifteen were additionally boot-verified, while most of the fifteen added since are marked
 "not boot-tested", which means exactly that.
 
 What is left is the work that needs more than YAML — a static busybox build, the `kernel.replace`
@@ -75,6 +75,7 @@ ConnMan and the desktop are all already installed, and only need switching or po
 | [`network-preseed`](network-preseed.md) | ship a Wi-Fi network via ConnMan | ○ |
 | [`kiosk-mode`](kiosk-mode.md) | boot straight into one fullscreen app, no desktop | ○ |
 | [`fix-slackware-bugs`](fix-slackware-bugs.md) | five confirmed upstream defects, including completely broken TLS | ◐ |
+| [`testkit`](testkit.md) | print facts about the assembled system so a boot test can assert them | ○ |
 
 ○ runs anywhere · ◐ needs a real `chroot` (`CAP_SYS_CHROOT` + `CAP_MKNOD`) —
 see [container vs host](../40-workflow/container-vs-host.md)

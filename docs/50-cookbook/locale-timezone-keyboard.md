@@ -1,7 +1,9 @@
 # `locale-timezone-keyboard` — the three things everyone changes first
 
-**Status: built and verified structurally** on all four targets; the per-flavour file sets and the
-generated tzfile were checked after unpacking. **Not boot-tested.**
+**Status: artifact boot-verified.** Built and structurally asserted on all four
+targets; then booted under QEMU with [`testkit`](testkit.md), which confirmed `/etc/timezone` and the 2301-byte tzfile reached the union.
+**Runtime behaviour is still untested** — that the file is correct is not the same as
+the feature working, and the difference needs a full desktop boot.
 
 ```sh
 kitchen apply locale-timezone-keyboard

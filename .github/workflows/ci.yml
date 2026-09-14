@@ -100,6 +100,19 @@ jobs:
         if: steps.cache-busybox.outputs.cache-hit != 'true'
         run: ./tools/build-busybox.sh --check-parity
 
+      # Gates 1-3 for the busybox replacement. These are millisecond checks, not boot
+      # tests, because the shipped i386 busybox executes directly on an x86_64 runner --
+      # so the 2017 binary is available as a reference oracle and the candidate can be
+      # diffed against it. Run per target, which also confirms bin/busybox really is
+      # byte-identical across all four images.
+      - name: busybox gates
+        run: |
+          mkdir -p build/irfs
+          xorriso -osirrox on -indev "isos/${{ matrix.iso }}" \
+                  -extract /slax/boot/initrfs.img build/initrfs.img -- 2>/dev/null
+          ( cd build/irfs && xz -dc ../initrfs.img | cpio -id --quiet 2>/dev/null )
+          ./tests/busybox/gates.sh build/busybox-1.37.0-i386-static build/irfs
+
       # Apply every compatible recipe individually, so one failure names one recipe.
       # Recipes that need a chroot are run under sudo; runners allow it.
       - name: recipe matrix

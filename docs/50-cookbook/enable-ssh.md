@@ -1,8 +1,9 @@
 # `enable-ssh` — turn on the sshd that is already there
 
-**Status: built and verified structurally** on all four targets; the bundle contents and the
-Debian enablement symlink were checked after unpacking. **Not boot-tested** — nobody has yet
-confirmed a login over the network.
+**Status: artifact boot-verified.** Built and structurally asserted on all four
+targets; then booted under QEMU with [`testkit`](testkit.md), which confirmed the enablement symlink reached the union intact (`symlink -> /lib/systemd/system/ssh.service`).
+**Runtime behaviour is still untested** — that the file is correct is not the same as
+the feature working, and the difference needs a full desktop boot.
 
 ```sh
 kitchen apply enable-ssh

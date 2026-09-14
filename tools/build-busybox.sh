@@ -93,7 +93,8 @@ sed -i \
   `# The initramfs carries no dynamic loader, so nothing else is even an option.` \
   -e 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' \
   -e 's/^CONFIG_FEATURE_SHARED_BUSYBOX=y/# CONFIG_FEATURE_SHARED_BUSYBOX is not set/' \
-  `# livekitlib calls \`date --date "$1" '+%s'\`, which is a long option.` \
+  `# livekitlib calls \`date --date "$1" '+%s'\`, which is a long option. Already y in` \
+  `# defconfig, so this is a guard against a future default rather than a change.` \
   -e 's/^# CONFIG_LONG_OPTS is not set/CONFIG_LONG_OPTS=y/' \
   `# MODPROBE_SMALL is a reduced implementation with different alias and blacklist` \
   `# handling, and modprobe_everything() fires it hundreds of times per boot. Alpine` \
@@ -106,6 +107,21 @@ sed -i \
   -e 's/^# CONFIG_LZOPCAT is not set/CONFIG_LZOPCAT=y/' \
   .config
 yes '' | make oldconfig >/dev/null 2>&1
+
+# ASSERT the outcome rather than hoping the seds matched. A sed that does not match is
+# silent, and one of these four turned out to be a no-op for weeks because defconfig had
+# already set it -- which is fine, but "fine" should be something the build knows rather
+# than something nobody checked. oldconfig can also flip a symbol back if a dependency
+# it needs is off.
+for want in CONFIG_STATIC=y CONFIG_LONG_OPTS=y CONFIG_AR=y CONFIG_UNLZOP=y CONFIG_LZOPCAT=y; do
+    grep -qx "$want" .config || { echo "config assertion failed: want $want, got:"; \
+        grep -E "^(# )?${want%%=*}( |=)" .config || echo "  (symbol absent entirely)"; exit 1; }
+done
+grep -qx '# CONFIG_MODPROBE_SMALL is not set' .config || {
+    echo "config assertion failed: CONFIG_MODPROBE_SMALL should be off"; exit 1; }
+grep -qx '# CONFIG_FEATURE_SHARED_BUSYBOX is not set' .config || {
+    echo "config assertion failed: CONFIG_FEATURE_SHARED_BUSYBOX should be off"; exit 1; }
+echo "config assertions passed"
 
 if ! make -j"$(nproc)" >/tmp/build.log 2>&1; then
     echo "=== build failed ==="
@@ -132,19 +148,26 @@ case "$desc" in
     *) echo "build-busybox: wrong binary type -- $desc" >&2; exit 1 ;;
 esac
 printf '  %s\n' "$desc" >&2
-printf '  %s\n' "$("$OUTPUT" 2>&1 | head -1)" >&2
+
+# busybox dispatches on argv[0]. Invoked as `busybox-1.37.0-i386-static` it hunts for an
+# applet of that name and answers "applet not found" -- so the identity line and --list
+# below have to go through a symlink actually called busybox.
+LINKDIR=$(mktemp -d)
+ln -sf "$(cd "$(dirname "$OUTPUT")" && pwd)/$(basename "$OUTPUT")" "$LINKDIR/busybox"
+trap 'rm -rf "$LINKDIR"' EXIT
+printf '  %s\n' "$("$LINKDIR/busybox" 2>&1 | head -1)" >&2
 
 if [ "$CHECK_PARITY" = 1 ]; then
     # Running the binary needs IA32 emulation on THIS host. If it is absent the applet
     # list cannot be read here -- which is also exactly the constraint the target kernel
     # has, so it is worth finding out now.
-    if ! "$OUTPUT" --list >/dev/null 2>&1; then
+    if ! "$LINKDIR/busybox" --list >/dev/null 2>&1; then
         echo "build-busybox: cannot execute the i386 binary on this host." >&2
         echo "  Parity cannot be checked here. The same limitation applies to any" >&2
         echo "  kernel without CONFIG_IA32_EMULATION -- see the cookbook page." >&2
         exit 1
     fi
-    printf '  %s applets\n' "$("$OUTPUT" --list | wc -l)" >&2
+    printf '  %s applets\n' "$("$LINKDIR/busybox" --list | wc -l)" >&2
 fi
 
 echo "$OUTPUT"
