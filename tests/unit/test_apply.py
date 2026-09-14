@@ -208,10 +208,45 @@ def test_wont_do_verbs():
           any(v in apply.VERB_REQUIRES for v in apply.WONT_DO), False)
 
 
+def test_parse_lsdl():
+    """Every xorriso entry type must survive the diff parser.
+
+    The El Torito boot catalog is type 'e', not '-', and report_lba never mentions it.
+    A pattern accepting only [-dl] dropped it without a word -- losing the one file
+    `uefi-bootable` rewrites from the comparison entirely.
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "..", "..", "lib"))
+    import diff  # noqa: E402
+
+    cases = [
+        ("-rw-r--r--    1 0        0             823 Oct  9  2023 '/readme.txt'",
+         "/readme.txt", "file", 823),
+        ("drwxr-xr-x    1 0        0               0 Oct  9  2023 '/slax'",
+         "/slax", "dir", 0),
+        ("er--r--r--    1 0        0            2048 Oct  9  2023 '/slax/boot/isolinux.boot'",
+         "/slax/boot/isolinux.boot", "bootcat", 2048),
+    ]
+    for line, path, kind, size in cases:
+        got = diff.parse_lsdl(line)
+        check(f"lsdl {kind} parsed", got is not None, True)
+        if got:
+            check(f"lsdl {kind} path", got[0], path)
+            check(f"lsdl {kind} type", got[1]["type"], kind)
+            check(f"lsdl {kind} size", got[1]["size"], size)
+
+    check("header line ignored",
+          diff.parse_lsdl("Report layout: xt , Startlba ,   Blocks"), None)
+
+    # A bundle 79 MiB in size must not print as bytes.
+    check("human MiB", diff._human(82_915_328), "79.1 MiB")
+    check("human B", diff._human(823), "823 B")
+
+
 def main():
     for fn in [test_bundle_exclude, test_slackware_pkgname, test_when_guard, test_subst,
                test_extract_member, test_preflight, test_under_containment,
-               test_wont_do_verbs]:
+               test_wont_do_verbs, test_parse_lsdl]:
         fn()
     if FAILURES:
         for f in FAILURES:

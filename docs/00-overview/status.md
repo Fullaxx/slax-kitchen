@@ -88,7 +88,7 @@ Full reasoning: [add-packages cookbook page](../50-cookbook/add-packages.md).
 
 ### CLI
 
-`shell`, `diff`, `upstream-diff` are declared in `--help` and **error out explicitly** rather than
+`shell` and `upstream-diff` are declared in `--help` and **error out explicitly** rather than
 pretending to work. (`fetch` is implemented and verified — it was listed here in error.)
 
 ### Verbs

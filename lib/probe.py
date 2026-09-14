@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -36,9 +37,18 @@ BENIGN_SUFFIX = {
 }
 
 
-def benign_reason(field: str) -> str | None:
+# Mastering tools stamp their own name into the Data Preparer field when nothing else
+# is supplied. That is the tool identifying itself, not a change anyone asked for, and
+# attributing it to iso-identity -- which also writes that field -- would be a confident
+# lie about an ISO nobody ran that recipe on.
+TOOL_STAMP = re.compile(r"^(XORRISO|GENISOIMAGE|MKISOFS|LIBISOFS)", re.I)
+
+
+def benign_reason(field: str, actual=None) -> str | None:
     if field in BENIGN:
         return BENIGN[field]
+    if field == "iso.preparer_id" and isinstance(actual, str) and TOOL_STAMP.match(actual):
+        return "the mastering tool stamps its own name here when none is given"
     for suf, why in BENIGN_SUFFIX.items():
         if field.endswith(suf):
             return why
@@ -57,6 +67,11 @@ EXPLAINS = [
     ("iso.publisher_id",        "",    ANY,   "iso-identity"),
     ("iso.preparer_id",         "",    ANY,   "iso-identity"),
     ("iso.system_id",           ANY,   ANY,   "iso-identity"),
+    # Named bundle, named recipe. Deliberately NOT a wildcard over bundles.*: a bundle
+    # going missing is exactly the kind of change probe exists to flag, and
+    # `remove-bundle` takes an arbitrary regex, so explaining every removal would mean
+    # never reporting one.
+    ("bundles.05-chromium.sb",  "present", "REMOVED", "remove-chromium"),
 ]
 # Changing any of these means the ISO is not the release it claims to be.
 CRITICAL_PREFIXES = ("kernel.release", "initramfs.scripts", "metadata.flavour",
@@ -156,8 +171,8 @@ def main(argv: list[str]) -> int:
         print("  verdict    : MATCH (byte-identical to the known release)")
         return 0
 
-    real = [(k, e, act) for k, e, act in diffs if not benign_reason(k)]
-    benign = [d for d in diffs if benign_reason(d[0])]
+    real = [(k, e, act) for k, e, act in diffs if not benign_reason(k, act)]
+    benign = [d for d in diffs if benign_reason(d[0], d[2])]
     critical = [d for d in real if d[0].startswith(CRITICAL_PREFIXES)]
 
     explained = []
@@ -191,10 +206,11 @@ def main(argv: list[str]) -> int:
         print("  CRITICAL -- this is not the release it claims to be:")
         for k, e, act in critical:
             print(f"    {k:<44} expected {e!r}, got {act!r}")
-    for k, e, act in real:
-        if (k, e, act) in critical:
-            continue
-        print(f"    {k:<44} expected {e!r}, got {act!r}")
+    rest = [d for d in real if d not in critical]
+    if rest:
+        print("  unexplained:")
+        for k, e, act in rest:
+            print(f"    {k:<44} expected {e!r}, got {act!r}")
     if a.verbose and benign:
         print("  benign (expected on any rebuild):")
         for k, e, act in benign:

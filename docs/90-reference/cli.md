@@ -164,6 +164,53 @@ accept any image — an ISO you already have, a corporate mirror, or one you pre
 known recipe, unexplained, or critical. `fingerprint` generates a new `compat/` entry. See
 [fingerprints.md](../70-compat/fingerprints.md).
 
+## `diff <isoA> <isoB> [--bundles] [--limit N]`
+
+What changed between two images — identity, boot structure, and every entry. Where `probe` asks
+"is this a known release, and has it been modified?", `diff` answers "what is the difference between
+**these two**?", which is the question you have when both are yours.
+
+```
+$ kitchen diff isos/slax-64bit-debian-12.2.0.iso out/custom.iso
+
+  size        435,853,312 -> 359,440,384   (-72.9 MiB)
+
+  identity    application_id  'slax' -> 'SLAX'
+
+  boot        El Torito       x86-BIOS  (2 entries) -> x86-BIOS, EFI  (4 entries)
+
+  entries     45 -> 48   (+4 added, -1 removed)
+    +  /boot/efi.img                                    6.2 MiB
+    +  /boot/grub/grub.cfg                              635 B
+    -  /slax/modules/05-chromium.sb                     79.1 MiB
+    =  /slax/boot/isolinux.bin                          boot-info-table only (checksum ok)
+                                                        moved LBA 46 -> 3214
+
+  DIFFERENT
+```
+
+Exit status is **0 when identical, 1 when different**, like `diff(1)`, so it drops into a script.
+
+**Nothing is extracted.** xorriso reports each file's start LBA and size, so content hashes come
+from reading those extents straight out of the image — comparing two 416 MiB ISOs takes about two
+seconds and no scratch space.
+
+Two cases get special handling, because the naive answer is confidently wrong:
+
+| | |
+|---|---|
+| `isolinux.bin` | bytes 8–63 are the boot-info-table, written **after** the file is placed, so two functionally identical builds differ there whenever the extent moves. Compared past byte 64, with the checksum verified separately and the LBA move reported. See [el-torito.md](../10-anatomy/el-torito.md). |
+| `*.sb` bundles | a squashfs is a container: "content changed" on a 79 MiB bundle is true and useless. `--bundles` lists which paths inside it moved, read at an offset without unpacking. |
+
+```
+  inside /slax/modules/07-branding.sb   5 -> 4 entries
+    +  squashfs-root/etc/motd
+    -  squashfs-root/etc/issue
+```
+
+The El Torito boot catalog is compared **by meaning** — platforms and bootable flags — not by bytes.
+It has no file extent of its own, so a byte comparison could not see it at all.
+
 ## `doctor [--install-hooks]`
 
 Reports every required tool, the kernel/container capabilities this machine has, and which recipe
@@ -184,12 +231,12 @@ never drift from CI.
 
 ## Not implemented yet
 
-`shell`, `diff` and `upstream-diff` are listed in `--help` and **error out explicitly** rather than
+`shell` and `upstream-diff` are listed in `--help` and **error out explicitly** rather than
 pretending to work:
 
 ```
-$ kitchen diff a.iso b.iso
-error: 'diff' is not implemented yet -- see docs/00-overview/status.md
+$ kitchen shell 07-mytools.sb
+error: 'shell' is not implemented yet -- see docs/00-overview/status.md
 ```
 
 See [project status](../00-overview/status.md).
