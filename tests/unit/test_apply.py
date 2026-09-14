@@ -273,12 +273,37 @@ def test_initramfs_busybox_registered():
     check("not listed as wont-do", "initramfs.busybox" in apply.WONT_DO, False)
 
 
+def test_say_does_not_journal():
+    """say() tells the user; record() is what provenance means.
+
+    These were one function until the journal became readable, at which point
+    "everything we printed" turned out to be ~69 lines of prose per recipe -- warnings,
+    indented file lists, and the same bundle recorded twice under two wordings.
+    """
+    import tempfile
+    work = tempfile.mkdtemp()
+    ctx = apply.Ctx(work, ".", "t")
+
+    ctx.say("warning: something a user should see but not a thing that changed")
+    check("say does not record", ctx.changes, [])
+
+    ctx.record("slax/modules/07-x.sb")
+    check("record records", ctx.changes, ["slax/modules/07-x.sb"])
+
+    # Recording the same artifact twice is a double-report, not two artifacts.
+    ctx.record("slax/modules/07-x.sb")
+    check("record is idempotent", ctx.changes, ["slax/modules/07-x.sb"])
+
+    apply.shutil.rmtree(work, ignore_errors=True)
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
                test_extract_member, test_preflight, test_under_containment,
                test_wont_do_verbs, test_parse_lsdl,
-               test_initramfs_busybox_registered]:
+               test_initramfs_busybox_registered,
+               test_say_does_not_journal]:
         fn()
     if FAILURES:
         for f in FAILURES:

@@ -193,8 +193,21 @@ class Ctx:
         return os.path.join(self.tree, *parts)
 
     def say(self, msg: str) -> None:
+        """Tell the user. Does NOT go in the journal.
+
+        These two were one function until the journal became something a user could
+        read, at which point "everything we printed" turned out to be 69 lines of prose
+        per recipe -- warnings, indented file lists, and the same bundle recorded twice
+        under two different wordings. Provenance wants artifacts, not narration.
+        """
         print(f"    {msg}")
-        self.changes.append(msg)
+
+    def record(self, artifact: str, msg: str | None = None) -> None:
+        """Note a durable artifact in the journal, and optionally say something too."""
+        if msg:
+            print(f"    {msg}")
+        if artifact not in self.changes:
+            self.changes.append(artifact)
 
     def hint(self, key: str, value) -> None:
         """Ask `kitchen pack` to do something at mastering time."""
@@ -314,7 +327,7 @@ def v_boot_payload(ctx: Ctx, step: dict) -> None:
             shutil.copy2(local, dest)
     if "mode" in step:
         os.chmod(dest, int(step["mode"], 8))
-    ctx.say(f"installed {step['dest']} ({os.path.getsize(dest)} bytes)")
+    ctx.record(step['dest'], f"installed {step['dest']} ({os.path.getsize(dest)} bytes)")
 
 
 @verb("iso.files")
@@ -337,7 +350,7 @@ def v_iso_files(ctx: Ctx, step: dict) -> None:
                 shutil.copy2(local, dest)
         if "mode" in spec and os.path.isfile(dest):
             os.chmod(dest, int(spec["mode"], 8))
-        ctx.say(f"wrote {spec['dest']}")
+        ctx.record(spec['dest'], f"wrote {spec['dest']}")
 
 
 # --------------------------------------------------------- initramfs --------
@@ -428,7 +441,7 @@ def _initramfs_pack(ctx: "Ctx", tree: str) -> None:
     os.replace(tmp, img)
     after = os.path.getsize(img)
     ctx.say(f"repacked initrfs.img  {before:,} -> {after:,} bytes ({after - before:+,})")
-    ctx.changes.append("slax/boot/initrfs.img")
+    ctx.record("slax/boot/initrfs.img")
 
 
 @verb("initramfs.files")
@@ -804,7 +817,7 @@ def v_initramfs_busybox(ctx: Ctx, step: dict) -> None:
                     f"livekitlib parses `blkid -o full`, which busybox cannot do.")
 
         _initramfs_pack(ctx, tree)
-        ctx.changes.append(f"initramfs busybox -> {os.path.basename(local)}")
+        ctx.record("slax/boot/initrfs.img")
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -847,7 +860,7 @@ def v_rootcopy_files(ctx: Ctx, step: dict) -> None:
             shutil.copy2(local, dest)
         if "mode" in spec:
             os.chmod(dest, int(spec["mode"], 8))
-        ctx.say(f"rootcopy: {spec['dest']}")
+        ctx.record(f"slax/rootcopy{spec['dest']}", f"rootcopy: {spec['dest']}")
 
 
 @verb("rootcopy.preinit")
@@ -881,8 +894,9 @@ def v_rootcopy_preinit(ctx: Ctx, step: dict) -> None:
         local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
         shutil.copy2(local, dest)
     os.chmod(dest, 0o755)
-    ctx.say(f"slax/rootcopy/run/preinit.sh ({os.path.getsize(dest)} bytes) "
-            "-- sourced by livekit just before change_root")
+    ctx.record("slax/rootcopy/run/preinit.sh",
+               f"slax/rootcopy/run/preinit.sh ({os.path.getsize(dest)} bytes) "
+               "-- sourced by livekit just before change_root")
 
 
 # ----------------------------------------------------------- bundles --------
@@ -948,7 +962,7 @@ def _make_bundle(ctx: "Ctx", src_dir: str, name: str, verb: str) -> str:
         raise RuntimeError(f"{verb}: mksquashfs failed: {r.stderr.strip()[:300]}")
     n = sum(len(f) for _, _, f in os.walk(src_dir))
     ctx.say(f"built slax/modules/{name} ({os.path.getsize(target) // 1024} KiB, {n} files)")
-    ctx.changes.append(f"slax/modules/{name}")
+    ctx.record(f"slax/modules/{name}")
     return target
 
 
@@ -1111,7 +1125,7 @@ def v_bundle_renumber(ctx: Ctx, step: dict) -> None:
         if not ctx.dry:
             os.rename(os.path.join(mods, n), os.path.join(mods, new))
         ctx.say(f"renumbered {n} -> {new}")
-        ctx.changes.append(f"slax/modules/{new}")
+        ctx.record(f"slax/modules/{new}")
 
 
 @verb("bundle.script")
@@ -1221,7 +1235,7 @@ def v_bundle_remove(ctx: Ctx, step: dict) -> None:
         size = os.path.getsize(os.path.join(mods, n))
         if not ctx.dry:
             os.unlink(os.path.join(mods, n))
-        ctx.say(f"removed {n} (-{size // 1048576} MiB)")
+        ctx.record(f"-slax/modules/{n}", f"removed {n} (-{size // 1048576} MiB)")
 
 
 # ---- syslinux config editing -------------------------------------------------
@@ -1335,7 +1349,8 @@ def v_boot_cmdline(ctx: Ctx, step: dict) -> None:
                 touched += 1
         if not ctx.dry:
             open(path, "w").write("\n".join(lines))
-        ctx.say(f"{name}: cmdline updated on {touched} entr{'y' if touched == 1 else 'ies'}")
+        ctx.record(f"slax/boot/{name}",
+                   f"{name}: cmdline updated on {touched} entr{'y' if touched == 1 else 'ies'}")
 
 
 @verb("boot.isohybrid")
@@ -1624,7 +1639,7 @@ def v_boot_grub(ctx: Ctx, step: dict) -> None:
         ctx.say("warning: grub-script-check not installed; snippet not validated")
     ctx.say(f"wrote {dest_rel} ({len(entries)} entries mirrored from "
             f"{os.path.basename(src_cfg)})")
-    ctx.changes.append(dest_rel)
+    ctx.record(dest_rel)
 
 
 @verb("boot.uefi")
@@ -2155,6 +2170,22 @@ def plan_recipe(path: str, facts: dict) -> tuple[dict, list[tuple[int, dict, boo
     return doc, steps
 
 
+def _journal_entry(work: str, recipe: str) -> dict | None:
+    """The journal entry for `recipe` in this tree, if it has been applied."""
+    jpath = os.path.join(work, ".kitchen", "journal.yaml")
+    if not os.path.isfile(jpath):
+        return None
+    try:
+        import yaml
+        j = yaml.safe_load(open(jpath)) or {}
+    except Exception:
+        return None
+    for entry in reversed(j.get("applied") or []):
+        if entry.get("recipe") == recipe:
+            return entry
+    return None
+
+
 def apply_recipe(path: str, work: str, dry: bool = False) -> int:
     facts = _tree_facts(work, os.path.join(work, "iso"))
     doc, steps = plan_recipe(path, facts)
@@ -2164,6 +2195,18 @@ def apply_recipe(path: str, work: str, dry: bool = False) -> int:
     print(f"  {name}: {doc['metadata']['summary']}")
     for w in check_compat(doc, work):
         print(f"    warning: {w}", file=sys.stderr)
+
+    # The journal already knows this recipe ran. Saying so beats letting the user
+    # discover it from whichever verb happens to collide first -- `bundle.files` used to
+    # report "slax/modules/07-branding.sb already exists. Pick another number", which is
+    # true, unhelpful, and points at the wrong problem.
+    prior = _journal_entry(work, name)
+    if prior and not dry:
+        raise RuntimeError(
+            f"{name} was already applied to this tree at {prior.get('at', 'an earlier time')}.\n"
+            f"  It produced: {', '.join(prior.get('artifacts') or ['(nothing recorded)'])}\n"
+            f"  Recipes are not idempotent -- applying one twice is a mistake, not a no-op.\n"
+            f"  See `kitchen status {work}`; to start over, unpack the base ISO again.")
 
     for i, step, run in steps:
         if not run:
@@ -2184,7 +2227,16 @@ def apply_recipe(path: str, work: str, dry: bool = False) -> int:
         import yaml
         jpath = os.path.join(ctx.meta, "journal.yaml")
         j = (yaml.safe_load(open(jpath)) if os.path.isfile(jpath) else None) or {"applied": []}
-        j["applied"].append({"recipe": name, "changes": ctx.changes})
+        import datetime
+        j["applied"].append({
+            "recipe": name,
+            "at": datetime.datetime.now(datetime.timezone.utc)
+                  .strftime("%Y-%m-%dT%H:%M:%SZ"),
+            # The verbs that actually ran, so a `when:`-skipped step does not appear as
+            # something this tree had done to it.
+            "verbs": [st["verb"] for _i, st, run in steps if run],
+            "artifacts": ctx.changes,
+        })
         with open(jpath, "w") as f:
             yaml.safe_dump(j, f, sort_keys=False)
     return 0

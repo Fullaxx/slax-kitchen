@@ -88,8 +88,8 @@ Full reasoning: [add-packages cookbook page](../50-cookbook/add-packages.md).
 
 ### CLI
 
-Nothing. Every command in `--help` is implemented. `diff`, `shell` and `upstream-diff` were the
-last three stubs and now work; see [the CLI reference](../90-reference/cli.md).
+Nothing. Every command in `--help` is implemented, and `kitchen status` now reads the journal
+`kitchen apply` has always written; see [the CLI reference](../90-reference/cli.md).
 
 ### Verbs
 

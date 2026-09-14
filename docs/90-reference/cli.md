@@ -164,6 +164,66 @@ accept any image — an ISO you already have, a corporate mirror, or one you pre
 known recipe, unexplained, or critical. `fingerprint` generates a new `compat/` entry. See
 [fingerprints.md](../70-compat/fingerprints.md).
 
+## `status [work] [-v]`
+
+What a work tree is, and what has been applied to it.
+
+```
+$ kitchen status work
+work tree  /home/you/slax-kitchen/work
+  origin     slax-64bit-debian-12.2.0.iso
+             unpacked 2026-09-14T21:28:55Z, 415.7 MiB
+
+  applied    4 recipes, in order
+    1. branding  2026-09-14T21:28:56Z
+       bundle.files
+       + slax/modules/07-branding.sb
+    2. boot-cmdline  2026-09-14T21:28:56Z
+       boot.cmdline x2
+       + slax/boot/isolinux.cfg
+       + slax/boot/syslinux.cfg
+    4. remove-chromium  2026-09-14T21:28:56Z
+       bundle.remove
+       - slax/modules/05-chromium.sb
+
+  pack hints (set by recipes, applied at mastering time)
+    checksums = sha256
+    volid = SLAX-CUSTOM
+
+  bundles    6, 314.3 MiB total (load order: higher wins)
+    01-core.sb                122.3 MiB
+    07-branding.sb              4.0 KiB  <- added here
+```
+
+`kitchen apply` has always written `<work>/.kitchen/journal.yaml`. **Nothing read it until
+this command existed** — and a record nobody reads is not provenance, it is a file.
+
+`-v` adds the source ISO's full path and sha256.
+
+### What the journal records
+
+Artifacts, not narration. Each entry is the recipe name, a UTC timestamp, the verbs that
+**actually ran** (a `when:`-skipped step does not appear), and the durable paths it produced.
+A `-` prefix means removed.
+
+This changed when the journal became readable: recording everything printed gave ~69 lines of
+prose per recipe, including warnings, indented file lists, and the same bundle under two
+different wordings. `Ctx.say()` now prints, and `Ctx.record()` notes an artifact.
+
+### Recipes are not idempotent
+
+Applying one twice is a mistake, not a no-op, and `apply` now says so using the journal:
+
+```
+error: branding was already applied to this tree at 2026-09-14T21:28:56Z.
+  It produced: slax/modules/07-branding.sb
+  Recipes are not idempotent -- applying one twice is a mistake, not a no-op.
+  See `kitchen status work`; to start over, unpack the base ISO again.
+```
+
+Previously this surfaced as whichever verb collided first — `slax/modules/07-branding.sb already
+exists. Pick another number` — which is true, unhelpful, and points at the wrong problem.
+
 ## `diff <isoA> <isoB> [--bundles] [--limit N]`
 
 What changed between two images — identity, boot structure, and every entry. Where `probe` asks

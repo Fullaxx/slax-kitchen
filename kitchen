@@ -34,6 +34,7 @@ ${B}USAGE${O}
 ${B}COMMANDS${O}
   doctor [--install-hooks]   check tools + capabilities; report what this machine can run
   selftest [stage]           run the commit gates (stage: pre-commit|pre-push|ci)
+  status [work]              what a work tree is, and what has been applied to it
   probe <iso>                match an ISO against compat/ and report what differs
   fingerprint <iso> [-o F]   generate a compat fingerprint
   fetch [target|--all]       download + verify a base ISO into isos/ (no args: list)
@@ -198,6 +199,7 @@ case "$cmd" in
     pack)          kitchen_pack "$@" ;;
     build)         kitchen_build "$@" ;;
     test)          kitchen_test "$@" ;;
+    status)        python3 "$REPO_ROOT/lib/status.py" "$@" ;;
     diff)          python3 "$REPO_ROOT/lib/diff.py" "$@" ;;
     upstream-diff) python3 "$REPO_ROOT/lib/upstream_diff.py" "$@" ;;
     shell)         python3 "$REPO_ROOT/lib/shell.py" "$@" ;;
