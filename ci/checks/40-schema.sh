@@ -1,6 +1,6 @@
 #!/bin/sh
 # stages: pre-commit pre-push ci
-# desc: yamllint + JSON Schema validation of recipes, profiles and fingerprints.
+# desc: yamllint + JSON Schema validation of recipes, profiles and sources.
 . "$(dirname "$0")/../lib.sh"
 
 have yamllint || warn "yamllint not installed - skipping lint half"
