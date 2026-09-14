@@ -199,7 +199,7 @@ case "$cmd" in
     build)         kitchen_build "$@" ;;
     test)          kitchen_test "$@" ;;
     diff)          python3 "$REPO_ROOT/lib/diff.py" "$@" ;;
-    shell|upstream-diff)
-        die "'$cmd' is not implemented yet -- see docs/00-overview/status.md" ;;
+    upstream-diff) python3 "$REPO_ROOT/lib/upstream_diff.py" "$@" ;;
+    shell)         python3 "$REPO_ROOT/lib/shell.py" "$@" ;;
     *)             usage; die "unknown command: $cmd" ;;
 esac

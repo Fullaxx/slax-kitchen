@@ -88,7 +88,8 @@ def _entries(iso: str) -> dict:
             path, ent = parsed
             out[path] = ent
 
-    for line in _run("xorriso", "-indev", iso, "-find", "/", "-exec", "report_lba", "--").splitlines():
+    lba_out = _run("xorriso", "-indev", iso, "-find", "/", "-exec", "report_lba", "--")
+    for line in lba_out.splitlines():
         if not line.startswith("File data lba:"):
             continue
         parts = [p.strip() for p in line.split(",")]

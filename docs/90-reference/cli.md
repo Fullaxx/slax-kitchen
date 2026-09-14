@@ -211,6 +211,68 @@ Two cases get special handling, because the naive answer is confidently wrong:
 The El Torito boot catalog is compared **by meaning** — platforms and bootable flags — not by bytes.
 It has no file extent of its own, so a byte comparison could not see it at all.
 
+## `shell <bundle|work> [--stack A,B] [-c CMD]`
+
+chroot into a bundle, or into a stack of them, to look around. Needs `CAP_SYS_CHROOT`
+and `CAP_MKNOD`.
+
+```
+$ kitchen shell work --stack 01-core,07-mytools
+kitchen shell: 01-core.sb + 07-mytools.sb
+  18,671 files, stacked low to high (higher wins, as at boot)
+  THROWAWAY: /tmp/kitchen-shell-xxxx/root is deleted on exit and the .sb files are never
+  written. To capture changes, use the bundle.script verb instead.
+```
+
+With no `--stack` it layers **every** bundle in load order, which reproduces the booted
+filesystem — the full Slax stack unpacks in about seven seconds.
+
+**Nothing you do inside persists.** The bundles are unpacked to a temporary directory that
+is deleted on exit and the `.sb` files are never written. That is deliberate: a session of
+typing is not reproducible, so the supported way to capture changes is
+[`bundle.script`](verbs.md#bundlescript--chroot), which runs a script in this same
+environment and packs the delta.
+
+**Only `01-core` ships a userland.** Every other bundle is a fragment meant to be layered
+on it, so chrooting into one alone has no `/bin/sh`. `shell` detects that and prints the
+stack you probably meant rather than letting `chroot` fail:
+
+```
+$ kitchen shell work --stack 07-mytools
+kitchen shell: 07-mytools.sb has no /bin/sh.
+  Only 01-core ships a userland; every other bundle is a fragment
+  meant to be layered on it. Stack it on a base:
+    kitchen shell work --stack 01-core.sb,07-mytools.sb
+```
+
+## `upstream-diff [--from REF] [--to REF] [--offline] [--write]`
+
+Which pages in [15-upstream/](../15-upstream/) does an upstream move invalidate?
+
+`ci/upstream-watch.sh` answers "did upstream move?" weekly. This answers the next question.
+Those pages describe upstream's own source — what `livekitlib`'s 49 functions do, what
+`initramfs_create` copies — and every one is a claim about a file at the pinned commit. When
+the pin moves those claims go stale silently: nothing in the repo changes and no test fails.
+
+```
+$ kitchen upstream-diff
+  a27eca6167fe -> 9825e9375700   (40 commits)
+
+  DOCUMENTED AND CHANGED -- these pages assert behaviour that moved:
+
+    docs/15-upstream/livekitlib-reference.md
+      106 lines across 1 file
+        livekitlib                                           +81 -25
+```
+
+Grouped by page and ranked by churn, because the action is "go re-read that page". Exit
+status is **1 when something documented moved**, 0 otherwise, so it runs in CI.
+
+**The map is scraped from the docs.** Each page cites its own source path, so a new page is
+covered the day it is written and a hardcoded table cannot rot — which is the exact failure
+this command exists to catch. `--write` regenerates
+[drift-report.md](../15-upstream/drift-report.md).
+
 ## `doctor [--install-hooks]`
 
 Reports every required tool, the kernel/container capabilities this machine has, and which recipe
@@ -229,17 +291,10 @@ never drift from CI.
 
 ---
 
-## Not implemented yet
+## Everything is implemented
 
-`shell` and `upstream-diff` are listed in `--help` and **error out explicitly** rather than
-pretending to work:
-
-```
-$ kitchen shell 07-mytools.sb
-error: 'shell' is not implemented yet -- see docs/00-overview/status.md
-```
-
-See [project status](../00-overview/status.md).
+Every command in `--help` works. `kernel.replace` is the one remaining **verb**; see
+[project status](../00-overview/status.md).
 
 ---
 
