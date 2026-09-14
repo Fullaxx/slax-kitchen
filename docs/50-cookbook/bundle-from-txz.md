@@ -70,7 +70,7 @@ and `wget` exits 5 with *"Unable to locally verify the issuer's authority"*.
 
 This is not a chroot artefact — it is equally true of the booted system. Debian's `01-core` ships a
 working bundle; Slackware's ships none. See
-[issue 13](../30-inventory/known-upstream-bugs.md).
+[issue 13](../30-inventory/known-upstream-bugs.md) and [`fix-slackware-bugs`](fix-slackware-bugs.md).
 
 `update-ca-certificates` does **not** help: it writes Debian's `certs/ca-certificates.crt` path,
 which this OpenSSL build never consults. Concatenating the shipped PEMs into OpenSSL's own default

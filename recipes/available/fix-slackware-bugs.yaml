@@ -1,0 +1,146 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: fix-slackware-bugs
+  summary: Fix five confirmed upstream defects in the Slackware flavour, in one bundle
+  tags: [slackware, bugfix]
+compat:
+  flavours: [slackware]
+  arch: [32bit, 64bit]
+  slax: ">=15.0.0"
+  # Every fix here patches a file that already exists, in place. A bundle of REPLACEMENT
+  # copies would work too and would mean carrying upstream's scripts and keeping them
+  # current; a sed against the real file does not.
+  privilege: chroot
+vars:
+  bundle: 09-slackfix
+  bundle2: 10-slackpkg
+  # Pin slackpkg to the release this image actually is. 15.0, never -current. The tree
+  # name differs by architecture -- slackware64-15.0 vs slackware-15.0 -- so there are
+  # two steps below rather than one var, guarded by `when:`.
+  mirror_base: "https://mirrors.slackware.com/slackware"
+steps:
+  # Five fixes from docs/30-inventory/known-upstream-bugs.md, chosen because a file
+  # change can actually reach them. EVERY PATCH VERIFIES ITSELF: if upstream's text is
+  # not what we expect, the step fails loudly rather than quietly patching nothing --
+  # the same contract initramfs.patch's expect_sha256 provides.
+  #
+  # 03-desktop is stacked because issue 7 lives in /root/.fluxbox/startup, which is not
+  # in 01-core.
+  #
+  # NOT FIXED HERE, deliberately:
+  #
+  #   issue 6   savechanges' systemd grep no-ops on Slackware -- and repointing it would
+  #             fix nothing. slax-automount writes /etc/fstab, which savechanges already
+  #             excludes unconditionally. The real leftover is empty /media/<dev>
+  #             directories, which IS fixed below, as part of the same line.
+  #
+  #   issue 12  noautomount is ignored because fstab_create tests
+  #             `grep -vq automount /proc/cmdline` and noautomount contains automount.
+  #             fstab_create lives in livekitlib inside initrfs.img, not in any bundle,
+  #             and has already run before any bundle is mounted. Use boot-cmdline to
+  #             remove the automount parameter instead.
+  - verb: bundle.script
+    bundle: "{{bundle}}"
+    from: [01-core, 03-desktop]
+    script: |
+      #!/bin/sh
+      set -e
+
+      # A patch that cannot fail is worse than no patch. Each fix states the text it
+      # expects; if that text is gone, upstream changed and a human should look.
+      expect() {
+          grep -qF "$2" "$1" || { echo "FAIL: $1 no longer contains: $2" >&2; exit 1; }
+      }
+
+      # --- issue 13: TLS cannot verify anything -------------------------------------
+      # 144 CA certificates ship in /etc/ssl/certs and OPENSSLDIR is /etc/ssl, but there
+      # is no /etc/ssl/cert.pem (OpenSSL's single-file default) and no hash symlinks
+      # (its directory default). c_rehash cannot make them -- Perl is not installed --
+      # and update-ca-certificates writes Debian's path, which this build never reads.
+      # Every TLS client on the system fails until this file exists.
+      [ -d /etc/ssl/certs ] || { echo "FAIL: no /etc/ssl/certs" >&2; exit 1; }
+      cat /etc/ssl/certs/*.pem > /etc/ssl/cert.pem
+      grep -qc 'BEGIN CERTIFICATE' /etc/ssl/cert.pem
+
+      # --- issue 4: genslaxiso calls a tool that is not installed --------------------
+      # /usr/bin/genslaxiso line 102 runs `genisoimage`. Slackware ships mkisofs and not
+      # genisoimage, so building an ISO from inside a running Slax fails. cdrtools'
+      # mkisofs accepts the same options genslaxiso passes, so a symlink is the whole
+      # fix and leaves upstream's script untouched.
+      expect /usr/bin/genslaxiso "genisoimage -o -"
+      [ -x /usr/bin/mkisofs ] || { echo "FAIL: mkisofs missing too" >&2; exit 1; }
+      ln -sf mkisofs /usr/bin/genisoimage
+
+      # --- issue 5: pxe calls busybox, which is not in the running system -----------
+      # /usr/bin/pxe line 86 runs `busybox httpd` to serve the PXE tree. There is no
+      # /usr/bin/busybox on a booted Slax -- but there IS one in the initramfs, still
+      # mounted at /run/initramfs. Upstream already uses that trick for /usr/bin/vi and
+      # /usr/bin/nslookup, so this follows a convention the image itself established
+      # rather than inventing one.
+      #
+      # The `killall dhclient` on line 16 is left alone: it is a cleanup call with its
+      # errors already redirected, so a missing dhclient costs nothing. Slackware uses
+      # dhcpcd, which pxe does not stop -- a real but separate defect.
+      expect /usr/bin/pxe "busybox httpd"
+      ln -sf /run/initramfs/bin/busybox /usr/bin/busybox
+
+      # --- issue 7: nosound is documented but not implemented -----------------------
+      # /slax/boot/help.txt advertises it; nothing reads it. On Slackware the volume is
+      # set in /root/.fluxbox/startup, and rc.alsa and rc.pulseaudio are both 0644
+      # (disabled), so there is no boot-time audio init to hook instead.
+      #
+      # -w matters. Without it `nonosound` would also match, which is exactly the
+      # substring trap that makes issue 12 unfixable in this layer.
+      expect /root/.fluxbox/startup "pamixer -u --set-volume 70"
+      sed -i 's|^pamixer -u --set-volume 70|grep -q -w nosound /proc/cmdline \|\| pamixer -u --set-volume 70|' \
+          /root/.fluxbox/startup
+      expect /root/.fluxbox/startup "grep -q -w nosound /proc/cmdline"
+
+      # --- issue 6, the half that is real: /media leftovers -------------------------
+      # savechanges' EXCLUDE has no /media entry, so a session saved while a disk was
+      # mounted carries empty /media/<dev> directories into every later boot.
+      expect /usr/bin/savechanges '^etc/fstab'
+      sed -i 's|\^etc/fstab|^media/\|^etc/fstab|' /usr/bin/savechanges
+      expect /usr/bin/savechanges '^media/'
+
+  # --- issue 9: slackpkg points at -current ---------------------------------------------
+  # This one CANNOT ride along in the step above, and the reason is worth knowing:
+  # BUNDLE_EXCLUDE strips etc/slackpkg/mirrors from any computed delta, deliberately, so
+  # that bundle.packages' own build-time mirror pinning never leaks onto the running
+  # system. A sed in the chroot would therefore be silently discarded -- which is exactly
+  # what happened the first time this recipe was written.
+  #
+  # bundle.files is not filtered: it ships precisely what you list. The exclusion guards
+  # against accidental capture, not deliberate inclusion, so this is the right tool and a
+  # second bundle is the honest way to say "I meant this one".
+  #
+  # The single active line upstream is slackware64-current, which has drifted years past
+  # this frozen 2023 base. That version mismatch is what makes slackpkg prompt for
+  # confirmation and defeat -batch=on. Pinning the mirror to the release this image
+  # actually is removes the mismatch, so the prompt never fires -- a better fix than
+  # feeding `y` to a prompt that exists for a good reason.
+  # The 64-bit tree is slackware64-15.0 and the 32-bit one is slackware-15.0. Pointing a
+  # 32-bit image at the 64-bit tree would install packages it cannot run, so the two are
+  # separate steps. Both resolve (HTTP 200), and only one runs.
+  - verb: bundle.files
+    when: arch==64bit
+    bundle: "{{bundle2}}"
+    files:
+      - dest: /etc/slackpkg/mirrors
+        content: |
+          # Pinned by the slax-kitchen fix-slackware-bugs recipe.
+          # Stock points at slackware64-current; this image is 15.0, and the mismatch is
+          # what makes slackpkg prompt and ignore -batch=on. See known-upstream-bugs 8-9.
+          {{mirror_base}}/slackware64-15.0/
+
+  - verb: bundle.files
+    when: arch==32bit
+    bundle: "{{bundle2}}"
+    files:
+      - dest: /etc/slackpkg/mirrors
+        content: |
+          # Pinned by the slax-kitchen fix-slackware-bugs recipe.
+          # Stock points at slackware-current; this image is 15.0, and the mismatch is
+          # what makes slackpkg prompt and ignore -batch=on. See known-upstream-bugs 8-9.
+          {{mirror_base}}/slackware-15.0/

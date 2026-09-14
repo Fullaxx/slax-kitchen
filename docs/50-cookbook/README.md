@@ -2,9 +2,14 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Fifteen recipes ship today**, all verified by booting the result. The plan lists roughly 32; the
-other two thirds do not exist yet, and this index says so rather than implying a fuller shelf than
-there is. [Project status](../00-overview/status.md) has the honest ledger.
+**Twenty-eight recipes ship today.** Every one is built and structurally asserted on all four
+targets by CI — but **verification is not uniform**, and each page states its own: the original
+fifteen were additionally boot-verified, while most of the thirteen added since are marked
+"not boot-tested", which means exactly that.
+
+What is left is the work that needs more than YAML — a static busybox build, the `kernel.replace`
+verb, and `boot-tools`, whose module source turned out not to be the obvious one.
+[Project status](../00-overview/status.md) has the honest ledger.
 
 ```sh
 kitchen apply <recipe>              # against an unpacked tree
@@ -25,6 +30,7 @@ kitchen build <profile>             # fetch -> unpack -> apply* -> pack -> test
 | [`boot-cmdline`](boot-cmdline.md) | bake `toram` and friends into every entry; drop the broken `automount` | ○ |
 | [`host-grub-entry`](host-grub-entry.md) | a GRUB entry for booting Slax from a bootloader you already have | ○ |
 | [`iso-identity`](iso-identity.md) | label the image as yours, and write a verifiable checksum | ○ |
+| [`firmware-refresh`](firmware-refresh.md) | the GPU firmware stock Slax ships **none** of; +90 MiB | ◐ |
 
 The first two fix real gaps in every stock image, and together produce one file that boots four
 ways: BIOS optical, UEFI optical, BIOS `dd`'d stick, UEFI `dd`'d stick.
@@ -67,6 +73,7 @@ ConnMan and the desktop are all already installed, and only need switching or po
 | [`locale-timezone-keyboard`](locale-timezone-keyboard.md) | timezone and keyboard; and why `LANG` is more limited than it looks | ○ |
 | [`network-preseed`](network-preseed.md) | ship a Wi-Fi network via ConnMan | ○ |
 | [`kiosk-mode`](kiosk-mode.md) | boot straight into one fullscreen app, no desktop | ○ |
+| [`fix-slackware-bugs`](fix-slackware-bugs.md) | five confirmed upstream defects, including completely broken TLS | ◐ |
 
 ○ runs anywhere · ◐ needs a real `chroot` (`CAP_SYS_CHROOT` + `CAP_MKNOD`) —
 see [container vs host](../40-workflow/container-vs-host.md)
@@ -133,6 +140,6 @@ directions.
 ## Not written yet
 
 The larger gaps, roughly in the order they would be useful: `boot-tools`
-(`hdt.c32`, `memdisk`, `chain.c32`), `firmware-refresh`
-(the stock `01-firmware` contains **no GPU firmware** on either flavour), `initramfs-busybox` (the
-shipped busybox is from 2017), and `kernel-replace`.
+(`hdt.c32`, `memdisk`, `chain.c32` — deferred, see
+[bootloader-payloads](../10-anatomy/bootloader-payloads.md) for why the module source is not
+obvious), `initramfs-busybox` (the shipped busybox is from 2017), and `kernel-replace`.

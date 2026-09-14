@@ -50,7 +50,7 @@ the commit gates in `ci/checks/`.
 | `20-boot-sequence/` | [Firmware → loader → kernel → init → chroot](20-boot-sequence/), per medium | **current** |
 | `30-inventory/` | [Software inventory](30-inventory/) + [known upstream issues](30-inventory/known-upstream-bugs.md) | **current** |
 | `40-workflow/` | [How to change an ISO](40-workflow/): tools, unpack, edit, repack, write to USB | **current** |
-| `50-cookbook/` | [15 recipes](50-cookbook/), incl. [uefi-bootable](50-cookbook/uefi-bootable.md) and [isohybrid](50-cookbook/isohybrid.md) | partial |
+| `50-cookbook/` | [28 recipes](50-cookbook/), incl. [uefi-bootable](50-cookbook/uefi-bootable.md) and [firmware-refresh](50-cookbook/firmware-refresh.md) | good |
 | `60-testing/` | [CI](60-testing/ci.md); QEMU and boot tests | partial |
 | `70-compat/` | [Fingerprints and `kitchen probe`](70-compat/fingerprints.md) | partial |
 | `90-reference/` | [CLI](90-reference/cli.md) · [all 22 verbs](90-reference/verbs.md) · profile format | partial |

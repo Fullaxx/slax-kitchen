@@ -68,6 +68,16 @@ Line 16 is only a `killall`, so it is harmless on its own; line 86 is fatal to t
 It greps `/etc/systemd/system/` for `Slax skip savechanges` markers. That path does not exist on the
 Slackware flavour, which is sysvinit + elogind with no systemd at all, so the exclusion never fires.
 
+**It has no consequence, and repointing the grep would fix nothing.** Traced through:
+Slackware's `/usr/sbin/slax-automount` recreates entries in `/etc/fstab` and `mkdir -p`s the mount
+point — it never writes a systemd unit and never writes the marker string anywhere. And
+`savechanges`' `EXCLUDE` already contains `^etc/fstab` unconditionally, so the file the exclusion
+would protect is protected by a different rule.
+
+What *is* left behind on Slackware is the mount-point directories: `/media` is **not** in `EXCLUDE`,
+so a session saved while a disk was mounted carries empty `/media/<dev>` directories. That, not the
+systemd grep, is the thing worth fixing — and it is one entry in a regex, not a rewrite.
+
 ## 7. `nosound` is documented but not implemented
 
 `boot/help.txt` lists it. Nothing in `livekitlib`, the initramfs or either flavour's userland reads

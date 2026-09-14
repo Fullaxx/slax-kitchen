@@ -108,8 +108,20 @@ clear message naming what *is* available, rather than silently skipping.
 
 ### Recipes
 
-15 of the ~32 planned. Missing notably: `ssh-server`, `boot-tools`, `initramfs-busybox`,
-`kernel-replace`.
+**28.** The remaining gaps are the ones that need real engineering rather than YAML:
+
+| | |
+|---|---|
+| `boot-tools` | **deferred.** Slax's SYSLINUX modules are Debian stretch's 2017 build, and upstream's own 6.03 binaries fail to load against them — proven in QEMU. See [bootloader-payloads](../10-anatomy/bootloader-payloads.md). |
+| `initramfs-busybox` | the shipped busybox is from 2017; replacing it means a static i386 build and five parity gates |
+| `initramfs-helpers` | rebuild the UPX-packed helpers from source via buildroot |
+| `kernel-replace` | waits on the `kernel.replace` verb |
+| `netboot-export` | emits a PXE tree, not an ISO — a CLI command rather than a recipe |
+| persistence | `persistence-preseed` as specified cannot work on read-only media; deferred pending a design conversation |
+
+**Verification is not uniform.** All 28 are built and structurally asserted on all four targets.
+The original 15 were boot-verified; most of the 13 added since are marked "not boot-tested" on
+their cookbook page.
 
 ### Documentation
 
@@ -120,8 +132,8 @@ it boots on every medium, what software is in it, and the upstream source of tru
 `40-workflow/` is also complete — 10 pages, every procedure written to work by hand with the
 `kitchen` verb noted alongside.
 
-Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 15 pages, one per
-shipped recipe — the other ~17 recipes do not exist yet), `60-testing/`, `70-compat/`,
+Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 28 pages, one per
+shipped recipe), `60-testing/`, `70-compat/`,
 `90-reference/` (CLI + all 22 verbs; the profile format is still thin). See [the index](../README.md).
 
 ---

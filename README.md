@@ -156,25 +156,27 @@ steps:
 ./kitchen pack                     # -> out/slax-...-custom.iso
 ```
 
-Fifteen recipes ship today, all verified by booting the result:
+**Twenty-eight recipes ship today.** The ones most people want first:
 
 | | |
 |---|---|
 | `uefi-bootable` | make the ISO boot on UEFI firmware |
 | `isohybrid` | make it `dd`-able to a USB stick |
-| `memtest86plus` | add Memtest86+ 8.10 to the boot menu |
+| `firmware-refresh` | the GPU firmware stock Slax ships **none** of — no amdgpu, i915 or radeon at all |
 | `add-packages` | install distro packages into a new bundle |
 | `remove-chromium` | drop the browser bundle (−79 to −115 MiB) |
-| `remove-bundle` | drop any bundle by regex |
+| `enable-ssh` | switch on the sshd both flavours already ship but never enable |
+| `users-and-auth` | replace the published `root`/`toor` password |
 | `rootcopy-overlay` | drop files onto the live system with no rebuild |
-| `serial-console` | add a serial boot entry, for headless and CI |
-| `initramfs-add-binary` | put a static tool into early boot |
-| `initramfs-add-modules` | promote drivers into the initramfs so `find_data` sees your disk |
-| `initramfs-boot-timeout` | change how long early boot waits for the Slax data |
-| `branding` | hostname, version and login banner via an override bundle |
-| `boot-branding` | an accurate boot help screen, and a readable menu timeout |
-| `host-grub-entry` | boot Slax from a GRUB you already have, nothing overwritten |
-| `iso-identity` | label the image as yours, plus a verifiable checksum |
+| `kiosk-mode` | boot straight into one fullscreen app |
+| `fix-slackware-bugs` | five confirmed upstream defects, including completely broken TLS |
+
+The other eighteen cover bundles, boot parameters, the initramfs, branding and ISO identity.
+
+**Verification is not uniform, and the cookbook says so per recipe.** All twenty-eight are built
+and structurally asserted on all four targets by CI. The original fifteen were additionally
+*boot-verified*; most of the newer ones are marked "not boot-tested" on their page, which means
+exactly that.
 
 See [the cookbook](docs/50-cookbook/), [all 22 verbs](docs/90-reference/verbs.md), and
 [the CLI reference](docs/90-reference/cli.md).

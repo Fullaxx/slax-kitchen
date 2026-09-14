@@ -1,0 +1,67 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: firmware-refresh
+  summary: Add the GPU firmware the stock image lacks entirely, plus current network firmware
+  tags: [firmware, hardware, bundle]
+compat:
+  # Debian only, for the reasons add-packages documents: Slackware has no
+  # dependency-resolving package manager and its stock mirror points at -current, years
+  # past this frozen base. The Slackware route is a pinned kernel-firmware .txz -- see
+  # the cookbook page.
+  flavours: [debian]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: chroot
+vars:
+  bundle: 09-firmware
+steps:
+  # THE GAP THIS FILLS IS REAL AND TOTAL. Every bundle of both flavours was searched:
+  # there is NO GPU firmware anywhere in a stock Slax. No amdgpu, no i915, no radeon, no
+  # nvidia, no nouveau. The 108 firmware subdirectories on Debian (129 on Slackware) are
+  # all networking -- `intel/` is iwlwifi, alongside rtl_nic and ath10k.
+  #
+  # The consequence is not cosmetic. A modern AMD card does not initialise at all without
+  # amdgpu firmware, and recent Intel graphics lose GuC/HuC and display power management
+  # without the i915 blobs. On the affected machines the symptom is a black screen or a
+  # fallback to a software framebuffer, which looks like a Slax bug and is not one.
+  #
+  # NO APT SOURCE CHANGES ARE NEEDED. The stock /etc/apt/sources.list already carries
+  # `non-free non-free-firmware` on all three lines (bookworm, -security, -updates), so
+  # everything below is reachable from the image as shipped.
+  #
+  # 09 so it sits above a 08-* system-config bundle and well above the stock 01-firmware
+  # it supplements. It does not REPLACE 01-firmware -- both are mounted, and for the
+  # paths that exist in both, the higher number wins, which is what you want since these
+  # packages are newer than the 2023 base.
+  #
+  # SIZE, measured rather than estimated: the bundle is 89 MiB and the ISO goes from
+  # 415 MiB to 505 MiB, so +90 MiB. Less than it sounds, because firmware compresses
+  # well under xz. That buys 158 firmware subdirectories where stock has 108 --
+  # including amdgpu (531 files), nvidia (482), radeon (248) and i915 (120), all of
+  # which were completely absent. If you know your target hardware, cut the list:
+  # firmware-linux alone fixes the GPU case.
+  - verb: bundle.packages
+    bundle: "{{bundle}}"
+    from: [01-core]
+    apt:
+      update: true
+      # Firmware packages Recommend other firmware packages; without this the closure is
+      # far larger than the list below and much of it is for hardware that cannot be in
+      # a machine that also has the rest.
+      no_recommends: true
+    packages:
+      # firmware-linux pulls in firmware-linux-free and firmware-linux-nonfree, and the
+      # latter is what brings firmware-amd-graphics and firmware-misc-nonfree -- between
+      # them the amdgpu, radeon and i915 blobs that are the actual gap.
+      - firmware-linux
+      # Wireless and wired NIC firmware. The stock 01-firmware has older copies of some
+      # of these; a higher-numbered bundle wins, so these are the ones that get used.
+      - firmware-realtek
+      - firmware-atheros
+      - firmware-iwlwifi
+      - firmware-brcm80211
+      # Audio DSP firmware for anything recent enough to use SOF, which is most laptops
+      # since about 2019. Without it the internal speakers are silent and nothing says
+      # why.
+      - firmware-sof-signed
