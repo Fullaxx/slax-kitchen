@@ -403,6 +403,75 @@
                   "no_recommends": {
                     "type": "boolean",
                     "default": true
+                  },
+                  "architectures": {
+                    "type": "array",
+                    "description": "foreign architectures to enable, e.g. [i386] for wine or a 32-bit browser",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9-]*$"
+                    }
+                  },
+                  "sources": {
+                    "type": "array",
+                    "description": "third-party apt repositories, for packages Debian does not carry",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "name",
+                        "uri",
+                        "suite"
+                      ],
+                      "dependentRequired": {
+                        "key_url": [
+                          "key_sha256"
+                        ]
+                      },
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9-]*$"
+                        },
+                        "uri": {
+                          "type": "string",
+                          "pattern": "^https?://"
+                        },
+                        "suite": {
+                          "type": "string"
+                        },
+                        "components": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "default": [
+                            "main"
+                          ]
+                        },
+                        "architectures": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "restrict this source to these architectures"
+                        },
+                        "key_url": {
+                          "type": "string",
+                          "pattern": "^https?://",
+                          "description": "signing key; requires key_sha256"
+                        },
+                        "key_sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "keep": {
+                          "type": "boolean",
+                          "default": false,
+                          "description": "ship the source and key in the bundle, so the live system trusts the repo and can upgrade from it"
+                        }
+                      }
+                    }
                   }
                 }
               },

@@ -119,10 +119,45 @@ Install distro packages into a new bundle. **Debian only**; see
 ```yaml
 - verb: bundle.packages
   bundle: 07-extras
-  from: [01-core]           # bundles to stack as the build root
   packages: [tmux, ncdu]
   apt: {update: true, no_recommends: true}
 ```
+
+**`from:` defaults to every bundle that will sit below this one**, which is almost always what
+you want. Name a shorter stack and apt reinstalls libraries the image already has, and those
+copies then shadow the originals from a higher bundle. It is a size-versus-independence dial:
+a shorter stack gives a larger, self-contained bundle that survives its neighbours being
+removed. See [composing bundles](../40-workflow/composing-bundles.md).
+
+The bundle carries **no `var/lib/dpkg/status`** — Debian's database is a single file and a
+union composes trees, not files. It ships a fragment instead, and `kitchen pack` merges them.
+
+Foreign architectures and third-party repositories, for the packages Debian does not carry:
+
+```yaml
+- verb: bundle.packages
+  bundle: 12-brave
+  packages: [brave-browser]
+  apt:
+    architectures: [i386]        # dpkg --add-architecture, before the index refresh
+    sources:
+      - name: brave
+        uri: https://brave-browser-apt-release.s3.brave.com/
+        suite: stable
+        components: [main]
+        key_url: https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+        key_sha256: "<64 hex>"   # required whenever key_url is given
+        keep: false              # default: the repo and key do NOT ship
+```
+
+A key is **pinned by sha256**, like every other download here — an unpinned key lets a remote
+party decide what your image trusts, and a bundle is where that becomes permanent. The
+armour format is detected from the content, because apt reads it from the *extension* under
+`signed-by=` and reports `NO_PUBKEY` for a key it is holding if the two disagree.
+
+`keep: false` means the source list and key exist only in the build chroot. `keep: true` ships
+them, so the booted system trusts that repository and can upgrade from it — say it deliberately.
+`/var/lib/dpkg/arch` always ships, so a foreign architecture survives into the image.
 
 ### `bundle.script` ◐ chroot
 

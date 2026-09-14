@@ -310,13 +310,41 @@ def test_say_does_not_journal():
     apply.shutil.rmtree(work, ignore_errors=True)
 
 
+def test_apt_source_line():
+    """A third-party source must not leave the chroot unless the recipe says so.
+
+    Shipping etc/apt/sources.list.d/<name>.list and its key would silently add that
+    repository -- and that key's trust -- to the live system of everyone who boots the
+    image. `keep: true` is how you say you meant it.
+    """
+    import tempfile
+    from types import SimpleNamespace
+    root = tempfile.mkdtemp(prefix="kitchen-apt-test.")
+    ctx = SimpleNamespace(say=lambda *_: None)
+    src = {"name": "vendor", "uri": "https://example.invalid/deb", "suite": "stable",
+           "components": ["main", "contrib"], "architectures": ["amd64"]}
+
+    extra = apply._apt_sources(ctx, root, {"sources": [dict(src)]})
+    line = open(os.path.join(root, "etc/apt/sources.list.d/vendor.list")).read()
+    check("source line", line.strip(),
+          "deb [arch=amd64] https://example.invalid/deb stable main contrib")
+    check("list excluded by default",
+          apply._excluded("etc/apt/sources.list.d/vendor.list", extra), True)
+    check("unrelated path not excluded",
+          apply._excluded("usr/bin/vendor-browser", extra), False)
+
+    keep = apply._apt_sources(ctx, root, {"sources": [dict(src, keep=True)]})
+    check("keep:true ships the list",
+          apply._excluded("etc/apt/sources.list.d/vendor.list", keep), False)
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
                test_extract_member, test_preflight, test_under_containment,
                test_wont_do_verbs, test_parse_lsdl,
                test_initramfs_busybox_registered,
-               test_say_does_not_journal]:
+               test_say_does_not_journal, test_apt_source_line]:
         fn()
     if FAILURES:
         for f in FAILURES:

@@ -32,6 +32,7 @@ Or `kitchen build <profile>` for all four in one step.
 | [`unpack.md`](unpack.md) | opening the ISO without losing Rock Ridge modes |
 | [`edit-bootloader.md`](edit-bootloader.md) | menus, branding, boot payloads. No rebuild of anything |
 | [`edit-bundles.md`](edit-bundles.md) | adding software — the chroot-and-diff technique |
+| [`composing-bundles.md`](composing-bundles.md) | splitting work across bundles so the pieces stay independent |
 | [`edit-initramfs.md`](edit-initramfs.md) | modules, static binaries, `livekitlib` patches |
 
 **Finishing**

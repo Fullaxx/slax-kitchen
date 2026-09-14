@@ -568,6 +568,85 @@ def _bundle_stack(ctx: "Ctx", want: list | None, below: str, verb: str) -> list[
     return picked
 
 
+def _excluded(rel: str, extra: list | None = None) -> bool:
+    """BUNDLE_EXCLUDE, plus anything this particular step asked to keep out.
+
+    A third-party apt source and its signing key are the motivating case: they have to
+    exist in the chroot for apt to use them, and shipping them would silently add that
+    repository -- and that key's trust -- to the user's live system.
+    """
+    return bool(BUNDLE_EXCLUDE.search(rel)) or any(p.search(rel) for p in (extra or []))
+
+
+def _apt_sources(ctx: "Ctx", root: str, apt: dict) -> list:
+    """Add foreign architectures and third-party repositories to the build chroot.
+
+    Returns exclusion patterns for anything that must not leave the chroot.
+
+    Keys are pinned by sha256 like every other download here. An unpinned key is a
+    remote party deciding what your image trusts, forever, and a bundle is exactly the
+    artifact where that decision becomes permanent.
+    """
+    extra = []
+
+    for arch in apt.get("architectures") or []:
+        r = _in_chroot(root, ["dpkg", "--add-architecture", arch])
+        if r.returncode != 0:
+            raise RuntimeError(f"dpkg --add-architecture {arch}: "
+                               + (r.stderr.strip() or r.stdout.strip())[-500:])
+        ctx.say(f"added foreign architecture {arch}")
+
+    for src in apt.get("sources") or []:
+        name = src["name"]
+        keyring = ""
+        opts = []
+        if src.get("key_url"):
+            tmp = os.path.join(root, "tmp", f"{name}.key")
+            os.makedirs(os.path.dirname(tmp), exist_ok=True)
+            with urllib.request.urlopen(src["key_url"], timeout=120) as r_, \
+                    open(tmp, "wb") as f:
+                shutil.copyfileobj(r_, f)
+            got = sha256(tmp)
+            if got != src["key_sha256"]:
+                os.unlink(tmp)
+                raise RuntimeError(
+                    f"apt source {name}: signing key sha256 mismatch\n"
+                    f"  want {src['key_sha256']}\n  got  {got}")
+            # apt reads the FORMAT FROM THE EXTENSION under signed-by=: .asc must be
+            # ASCII-armoured, .gpg must be binary. Naming an armoured key .gpg makes
+            # apt report NO_PUBKEY for a key it is holding -- which reads exactly like
+            # a wrong key, and cost an afternoon to see otherwise.
+            with open(tmp, "rb") as f:
+                armoured = f.read(40).lstrip().startswith(b"-----BEGIN PGP")
+            keyring = (f"usr/share/keyrings/{name}-archive-keyring"
+                       + (".asc" if armoured else ".gpg"))
+            dest = os.path.join(root, keyring)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            os.replace(tmp, dest)
+            os.chmod(dest, 0o644)
+            opts.append(f"signed-by=/{keyring}")
+            ctx.say(f"apt source {name}: key pinned {got[:16]}... "
+                    f"({'armoured' if armoured else 'binary'})")
+        if src.get("architectures"):
+            opts.append("arch=" + ",".join(src["architectures"]))
+        line = ("deb " + (f"[{' '.join(opts)}] " if opts else "")
+                + f"{src['uri']} {src['suite']} "
+                + " ".join(src.get("components") or ["main"]) + "\n")
+        listfile = f"etc/apt/sources.list.d/{name}.list"
+        dest = os.path.join(root, listfile)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "w") as f:
+            f.write(line)
+        ctx.say(f"apt source {name}: {src['uri']} {src['suite']}")
+        if src.get("keep"):
+            ctx.say(f"  ships in the bundle -- the live system will trust {name} "
+                    f"and can upgrade from it")
+        else:
+            extra.append(re.compile("^" + re.escape(listfile) + "$"))
+            extra.append(re.compile("^" + re.escape(keyring) + "$"))
+    return extra
+
+
 def _read_status(root: str) -> str:
     """The chroot's dpkg database, or "" on a Slackware root that has none."""
     try:
@@ -2029,9 +2108,13 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
 
         # 3. Snapshot, install, snapshot.
         before, before_status = _manifest(root), _read_status(root)
+        step_excludes: list = []
         if flavour == "debian":
             with open(os.path.join(root, "etc/apt/apt.conf.d/00kitchen"), "w") as f:
                 f.write('APT::Sandbox::User "root";\nAcquire::Retries "3";\n')
+            # Foreign architectures and third-party repos must be in place BEFORE the
+            # index refresh, or apt-get update will not see them.
+            step_excludes = _apt_sources(ctx, root, step.get("apt") or {})
             if step.get("apt", {}).get("update", True):
                 r = _in_chroot(root, ["apt-get", "update", "-qq"])
                 if r.returncode != 0:
@@ -2095,7 +2178,7 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
         # 4. Delta = added OR modified. Names alone are not enough.
         added = [k for k in after if k not in before]
         modified = [k for k in after if k in before and after[k] != before[k]]
-        keep = sorted(k for k in added + modified if not BUNDLE_EXCLUDE.search(k))
+        keep = sorted(k for k in added + modified if not _excluded(k, step_excludes))
         ctx.say(f"delta: {len(added)} added, {len(modified)} modified, "
                 f"{len(keep)} kept after exclusions")
         if not keep:
