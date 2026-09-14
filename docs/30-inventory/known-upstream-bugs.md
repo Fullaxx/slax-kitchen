@@ -134,6 +134,10 @@ CVE-2017-16544 (terminal-escape RCE via `ash` tab completion — and `/init` cal
 times) and CVE-2022-48174 (`ash` stack overflow). It also predates `CONFIG_TIME64`, so `date -r` on
 a post-2038 mtime already misbehaves.
 
+**Fixable, and fixed.** [`initramfs-busybox`](../50-cookbook/initramfs-busybox.md) replaces it with
+a static i386 1.37.0 built from pinned source. Applet parity is 247 of 248 — only `catv`, removed
+upstream and unused by Slax — and the result boots to `slax login:` under QEMU.
+
 ## 12. `noautomount` is honoured by one component and ignored by the other
 
 `fstab_create` in the initramfs tests `grep -vq automount /proc/cmdline`. The string `noautomount`

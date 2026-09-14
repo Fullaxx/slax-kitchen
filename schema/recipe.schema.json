@@ -145,6 +145,7 @@
             "initramfs.modules",
             "initramfs.config",
             "initramfs.patch",
+            "initramfs.busybox",
             "kernel.replace",
             "iso.files",
             "iso.metadata",

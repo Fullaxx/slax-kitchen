@@ -12,6 +12,7 @@
 isos/
 work/
 out/
+build/
 
 *.iso
 *.sb

@@ -82,6 +82,7 @@ VERB_REQUIRES: dict[str, dict] = {
     "initramfs.files": {"tools": ["cpio", "xz"], "caps": ["mknod"]},
     "initramfs.modules": {"tools": ["cpio", "xz", "unsquashfs"], "caps": ["mknod"]},
     "initramfs.patch": {"tools": ["cpio", "xz"], "caps": ["mknod"]},
+    "initramfs.busybox": {"tools": ["cpio", "xz"], "caps": ["mknod"]},
 }
 
 
@@ -687,6 +688,141 @@ def v_initramfs_patch(ctx: Ctx, step: dict) -> None:
 def _short(t: str, n: int = 48) -> str:
     t = " ".join(t.split())
     return t if len(t) <= n else t[:n - 1] + "\u2026"
+
+
+@verb("initramfs.busybox")
+def v_initramfs_busybox(ctx: Ctx, step: dict) -> None:
+    """Replace the initramfs busybox and regenerate its applet symlinks.
+
+    This is a behaviour-compatibility change, not a file drop, which is why it is a verb
+    rather than an `initramfs.files` entry. Swapping the binary alone leaves 245 symlinks
+    pointing at an applet set that no longer matches it.
+
+    THREE THINGS THE REGENERATION HAS TO GET RIGHT, all of them load-bearing:
+
+      * `blkid` and `eject` are REAL FILES that shadow busybox applets of the same name,
+        and livekitlib parses `blkid -o full`, an option busybox's applet does not have.
+        A symlink must never overwrite an existing file, which is what upstream's
+        `[ ! -e ]` guard does and what is reproduced here.
+
+      * `bin/init` must not exist as a busybox symlink, or the `init` applet shadows the
+        `/init` script and the machine boots into the wrong thing. Upstream deletes it
+        after generating; so do we. 1.38.0 adds `nuke` and `linuxrc`, which deserve the
+        same treatment if you move to it.
+
+      * STALE SYMLINKS MUST GO. The shipped 1.26.2 has a `catv` applet; 1.37.0 removed
+        it. Leaving the symlink behind gives a `catv` in PATH that fails at runtime
+        rather than being absent. Upstream never had to think about this because it
+        builds the tree from empty; we are editing one in place.
+
+    Upstream derives the applet list by scraping busybox's human-readable usage text
+    (`busybox | grep , | grep -v Copyright | tr "," " "`), which is not a stable
+    interface -- see known-upstream-bugs issue 10. This uses `busybox --list`, which is
+    documented and which the shipped 1.26.2 already answers correctly.
+    """
+    src = step.get("src")
+    if not src:
+        raise RuntimeError("initramfs.busybox: need `src` (build one with "
+                           "tools/build-busybox.sh)")
+    local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+    if not os.path.isfile(local):
+        raise RuntimeError(
+            f"initramfs.busybox: {local} not found.\n"
+            f"  Build it first:  tools/build-busybox.sh --check-parity")
+
+    # The initramfs has no dynamic loader, so a non-static binary would produce a
+    # machine that gets as far as /init and then cannot run a single command.
+    kind = ""
+    if shutil.which("file"):
+        kind = subprocess.run(["file", "-b", local], capture_output=True,
+                              text=True).stdout.strip()
+        if "statically linked" not in kind:
+            raise RuntimeError(f"initramfs.busybox: {src} is not static -- {kind}")
+        if "Intel 80386" not in kind:
+            ctx.say(f"warning: {src} is not i386 ({kind.split(',')[0]}); it will work "
+                    f"only on the 64-bit targets")
+
+    if ctx.dry:
+        ctx.say(f"would install {src} as bin/busybox and regenerate applet symlinks")
+        return
+
+    import tempfile
+    work = tempfile.mkdtemp(prefix="kitchen-bb-",
+                            dir=os.path.dirname(os.path.abspath(ctx.work)))
+    try:
+        tree = _initramfs_unpack(ctx, work)
+        bindir = os.path.join(tree, "bin")
+        target = os.path.join(bindir, "busybox")
+        old_size = os.path.getsize(target) if os.path.isfile(target) else 0
+
+        # Read the OLD applet set before overwriting, so stale links can be identified.
+        old_applets = _busybox_applets(target) if old_size else set()
+
+        shutil.copy2(local, target)
+        os.chmod(target, 0o755)
+        new_applets = _busybox_applets(target)
+        ctx.say(f"busybox {old_size:,} -> {os.path.getsize(target):,} bytes, "
+                f"{len(old_applets)} -> {len(new_applets)} applets")
+
+        gone = sorted(old_applets - new_applets)
+        if gone:
+            ctx.say(f"applets removed upstream: {', '.join(gone)}")
+
+        added = removed = kept = 0
+        for name in sorted(new_applets):
+            if name == "init":          # never shadow the /init script
+                continue
+            link = os.path.join(bindir, name)
+            if os.path.lexists(link):
+                # A real file here is a deliberate shadow (blkid, eject) -- leave it.
+                if not os.path.islink(link):
+                    kept += 1
+                continue
+            os.symlink("busybox", link)
+            added += 1
+
+        # Stale links: point at busybox but name an applet this build does not have.
+        for name in gone:
+            link = os.path.join(bindir, name)
+            if os.path.islink(link) and os.path.basename(os.readlink(link)) == "busybox":
+                os.unlink(link)
+                removed += 1
+
+        # Upstream deletes bin/init after generating; reproduce that unconditionally.
+        init_link = os.path.join(bindir, "init")
+        if os.path.islink(init_link):
+            os.unlink(init_link)
+
+        ctx.say(f"symlinks: +{added} new, -{removed} stale, {kept} real files left alone")
+        for shadow in ("blkid", "eject"):
+            p = os.path.join(bindir, shadow)
+            if os.path.isfile(p) and not os.path.islink(p):
+                ctx.say(f"  {shadow}: still a real binary, as it must be")
+            else:
+                raise RuntimeError(
+                    f"initramfs.busybox: bin/{shadow} is no longer a real file. "
+                    f"livekitlib parses `blkid -o full`, which busybox cannot do.")
+
+        _initramfs_pack(ctx, tree)
+        ctx.changes.append(f"initramfs busybox -> {os.path.basename(local)}")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _busybox_applets(path: str) -> set:
+    """Applet names from `busybox --list`.
+
+    Documented interface, unlike upstream's usage-text scraping (issue 10). Needs to
+    EXECUTE an i386 binary, so a build host without IA32 support cannot do this -- which
+    is the same constraint the target kernel has, and worth failing clearly on.
+    """
+    r = subprocess.run([path, "--list"], capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        raise RuntimeError(
+            f"initramfs.busybox: `{os.path.basename(path)} --list` failed. The binary is "
+            f"i386; this host may lack IA32 support (the same thing a kernel without "
+            f"CONFIG_IA32_EMULATION lacks). stderr: {r.stderr.strip()[:200]}")
+    return {ln.strip() for ln in r.stdout.splitlines() if ln.strip()}
 
 
 @verb("rootcopy.files")

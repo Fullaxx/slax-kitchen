@@ -156,7 +156,7 @@ steps:
 ./kitchen pack                     # -> out/slax-...-custom.iso
 ```
 
-**Twenty-eight recipes ship today.** The ones most people want first:
+**Twenty-nine recipes ship today.** The ones most people want first:
 
 | | |
 |---|---|
@@ -171,14 +171,14 @@ steps:
 | `kiosk-mode` | boot straight into one fullscreen app |
 | `fix-slackware-bugs` | five confirmed upstream defects, including completely broken TLS |
 
-The other eighteen cover bundles, boot parameters, the initramfs, branding and ISO identity.
+The other nineteen cover bundles, boot parameters, the initramfs, branding and ISO identity.
 
-**Verification is not uniform, and the cookbook says so per recipe.** All twenty-eight are built
+**Verification is not uniform, and the cookbook says so per recipe.** All twenty-nine are built
 and structurally asserted on all four targets by CI. The original fifteen were additionally
 *boot-verified*; most of the newer ones are marked "not boot-tested" on their page, which means
 exactly that.
 
-See [the cookbook](docs/50-cookbook/), [all 22 verbs](docs/90-reference/verbs.md), and
+See [the cookbook](docs/50-cookbook/), [all 23 verbs](docs/90-reference/verbs.md), and
 [the CLI reference](docs/90-reference/cli.md).
 
 ---

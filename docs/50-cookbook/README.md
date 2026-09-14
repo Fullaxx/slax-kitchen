@@ -2,9 +2,9 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Twenty-eight recipes ship today.** Every one is built and structurally asserted on all four
+**Twenty-nine recipes ship today.** Every one is built and structurally asserted on all four
 targets by CI — but **verification is not uniform**, and each page states its own: the original
-fifteen were additionally boot-verified, while most of the thirteen added since are marked
+fifteen were additionally boot-verified, while most of the fourteen added since are marked
 "not boot-tested", which means exactly that.
 
 What is left is the work that needs more than YAML — a static busybox build, the `kernel.replace`
@@ -42,6 +42,7 @@ ways: BIOS optical, UEFI optical, BIOS `dd`'d stick, UEFI `dd`'d stick.
 | [`initramfs-add-binary`](initramfs-add-binary.md) | put a static binary or script into early boot | ○ |
 | [`initramfs-add-modules`](initramfs-add-modules.md) | promote drivers from a bundle so `find_data` can see your disk | ○ |
 | [`initramfs-boot-timeout`](initramfs-boot-timeout.md) | change the 45 s `find_data` budget; the reference example for `initramfs.patch` | ○ |
+| [`initramfs-busybox`](initramfs-busybox.md) | replace the 2017 busybox; 248 → 406 applets, only `catv` lost | ◐ |
 
 Early boot runs before any bundle is mounted, so anything `find_data` or a `debug` shell needs has
 to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
@@ -131,7 +132,7 @@ steps:
 - `compat.privilege` is what lets `kitchen doctor` tell you whether this machine can run it.
 - `vars:` are substituted as `{{name}}` and can be overridden per profile.
 - `when:` guards a step on a fact about the tree, e.g. `flavour==debian`.
-- **22 of 25 declared verbs are implemented.** A recipe using an unimplemented one fails with a
+- **23 of 26 declared verbs are implemented.** A recipe using an unimplemented one fails with a
   message naming what *is* available. Full list and fields: [verb reference](../90-reference/verbs.md).
 
 Every recipe needs a page here — `ci/checks/90-doc-coverage.sh` fails the commit otherwise, in both

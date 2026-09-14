@@ -85,6 +85,21 @@ jobs:
       - name: probe stock ISO
         run: ./kitchen probe isos/${{ matrix.iso }}
 
+      # initramfs-busybox installs a binary that is deliberately NOT in the repository
+      # -- 00-no-binaries rejects it, and a 1.2 MB blob that runs as root at boot should
+      # be built from pinned source rather than committed. Cache it on the build script
+      # and the version it pins, so it is built once rather than four times.
+      - name: cache busybox build
+        id: cache-busybox
+        uses: actions/cache@v4
+        with:
+          path: build/
+          key: busybox-${{ hashFiles('tools/build-busybox.sh') }}
+
+      - name: build static i386 busybox
+        if: steps.cache-busybox.outputs.cache-hit != 'true'
+        run: ./tools/build-busybox.sh --check-parity
+
       # Apply every compatible recipe individually, so one failure names one recipe.
       # Recipes that need a chroot are run under sudo; runners allow it.
       - name: recipe matrix

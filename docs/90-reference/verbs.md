@@ -1,6 +1,6 @@
 # Verb reference
 
-A recipe step names a **verb** and its fields. **22 of 25** declared verbs are implemented; a recipe
+A recipe step names a **verb** and its fields. **23 of 26** declared verbs are implemented; a recipe
 using an unimplemented one fails with a message naming what *is* available.
 
 Every verb is validated against `schema/recipe.schema.json` before anything runs, and
@@ -289,6 +289,24 @@ result that fails `sh -n`. See [initramfs-boot-timeout](../50-cookbook/initramfs
 ---
 
 ## ISO
+
+### `initramfs.busybox` ◐ mknod
+
+Replace the initramfs busybox and regenerate its applet symlinks.
+
+```yaml
+- verb: initramfs.busybox
+  src: ../../build/busybox-1.37.0-i386-static
+```
+
+A verb rather than an `initramfs.files` entry because swapping the binary alone leaves 245 symlinks
+describing an applet set that no longer matches it. It regenerates them from `busybox --list` (not
+upstream's usage-text scraping), never overwrites a real file — which is what keeps the standalone
+`blkid` and `eject` winning — removes `bin/init` so the `init` applet cannot shadow the `/init`
+script, and **deletes symlinks for applets the new build no longer has**.
+
+Refuses to finish if `blkid` or `eject` has stopped being a real binary. Build the input with
+`tools/build-busybox.sh`; see [the cookbook page](../50-cookbook/initramfs-busybox.md).
 
 ### `iso.files` ○
 

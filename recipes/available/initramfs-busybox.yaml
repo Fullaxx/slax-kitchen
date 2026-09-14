@@ -1,0 +1,41 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: initramfs-busybox
+  summary: Replace the 2017 busybox in early boot with a current static build
+  tags: [initramfs, security, busybox]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  # The initramfs holds seven device nodes; a non-root cpio turns them into empty files.
+  privilege: mknod
+vars:
+  # Build it first:  tools/build-busybox.sh --check-parity
+  # Not committed -- ci/checks/00-no-binaries.sh rejects binaries, and rightly.
+  busybox: ../../build/busybox-1.37.0-i386-static
+steps:
+  # THE SHIPPED BUSYBOX IS FROM 2017. `BusyBox v1.26.2 (2017-12-14)`, byte-identical on
+  # all four ISOs. Among what that means in practice: CVE-2017-16544 is a terminal-escape
+  # RCE via ash tab completion, and /init calls debug_shell six times; CVE-2022-48174 is
+  # an ash stack overflow; and it predates CONFIG_TIME64, so `date -r` on a post-2038
+  # mtime already misbehaves today.
+  #
+  # ONE BUILD SERVES ALL FOUR TARGETS. bin/busybox is byte-identical across the four
+  # images, as is everything else in the initramfs except lib/modules/<ver>/. It is i386
+  # even on the 64-bit images -- which is the origin of the CONFIG_IA32_EMULATION
+  # requirement that any replacement kernel inherits.
+  #
+  # WHY THE BINARY IS NOT IN THIS REPOSITORY. 00-no-binaries rejects it, and that gate is
+  # right: a 1.2 MB blob that runs as root at boot is exactly the thing that should be
+  # built from pinned source rather than committed and forgotten. tools/build-busybox.sh
+  # does it in about 30 seconds, verifying upstream's published sha256 before compiling.
+  #
+  # APPLET PARITY, measured: 1.26.2 has 248 applets, this build has 406, and the only one
+  # that disappears is `catv` -- removed upstream, and unused by Slax. `ar`, `unlzop` and
+  # `lzopcat` are default n in 1.37.0 and are turned back on in the build config purely to
+  # keep that list at one entry.
+  #
+  # All 52 distinct commands /init, livekitlib and /shutdown actually invoke are present.
+  - verb: initramfs.busybox
+    src: "{{busybox}}"

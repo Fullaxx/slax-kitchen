@@ -258,11 +258,27 @@ def test_parse_lsdl():
     check("human B", diff._human(823), "823 B")
 
 
+def test_initramfs_busybox_registered():
+    """The busybox verb needs CAP_MKNOD like its siblings.
+
+    The initramfs holds seven device nodes and a non-root cpio silently turns them into
+    empty files, so a verb that repacks it must declare the capability or preflight
+    cannot warn before the damage is done.
+    """
+    check("verb registered", "initramfs.busybox" in apply.VERBS, True)
+    req = apply.VERB_REQUIRES.get("initramfs.busybox", {})
+    check("declares mknod", "mknod" in req.get("caps", []), True)
+    for tool in ("cpio", "xz"):
+        check(f"declares {tool}", tool in req.get("tools", []), True)
+    check("not listed as wont-do", "initramfs.busybox" in apply.WONT_DO, False)
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
                test_extract_member, test_preflight, test_under_containment,
-               test_wont_do_verbs, test_parse_lsdl]:
+               test_wont_do_verbs, test_parse_lsdl,
+               test_initramfs_busybox_registered]:
         fn()
     if FAILURES:
         for f in FAILURES:

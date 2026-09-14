@@ -1,0 +1,120 @@
+# `initramfs-busybox` — replace the 2017 busybox
+
+```sh
+tools/build-busybox.sh --check-parity     # ~30 s, needs docker
+kitchen apply initramfs-busybox
+```
+
+**Status: boot-verified once, by hand.** Built, applied, packed and booted to `slax login:` under
+QEMU with all three livekit markers — so early boot's `find_data`, `mount_bundles`, `init_union`,
+`union_append_bundles` and `change_root` all ran on the new binary.
+
+CI builds and structurally asserts it on all four targets every run, but **does not boot it** — the
+boot job builds only the `example` profile. If you change the busybox version or the config, redo
+the boot test:
+
+```sh
+kitchen pack -s work/iso -o out/bb.iso --force
+kitchen test out/bb.iso --kernel --seconds 300
+```
+
+## Why
+
+`BusyBox v1.26.2 (2017-12-14)`, byte-identical on all four ISOs. Among what that means in practice:
+
+| | |
+|---|---|
+| CVE-2017-16544 | terminal-escape RCE via `ash` tab completion — and `/init` calls `debug_shell` **six times** |
+| CVE-2022-48174 | `ash` stack overflow |
+| pre-`CONFIG_TIME64` | `date -r` on a post-2038 mtime already misbehaves today |
+
+## One build serves all four targets
+
+`bin/busybox` is byte-identical across the four images, and so is everything else in the initramfs
+**except `lib/modules/<ver>/`**. It is **i386 even on the 64-bit images** — which is where the
+`CONFIG_IA32_EMULATION` requirement comes from that any replacement kernel inherits.
+
+So there is one binary to build, not four.
+
+## The binary is not in this repository
+
+`ci/checks/00-no-binaries.sh` rejects it, and that gate is right: a 1.2 MB blob that runs as root at
+boot is exactly what should be built from pinned source rather than committed and forgotten.
+
+`tools/build-busybox.sh` builds it in about 30 seconds inside `i386/alpine`, verifying upstream's
+published sha256 **before compiling a line**. The container is needed because this host has neither
+a 32-bit libc nor musl; nothing is bind-mounted, because the docker daemon may not share the
+filesystem — the script goes in on stdin and the binary comes out on stdout.
+
+CI builds it too, cached on the script's own hash.
+
+### Not a checked-in `.config`
+
+A 1000-line `.config` pins every symbol, says nothing about intent, and has to be regenerated
+wholesale on a version bump. The script starts from the tarball's own `defconfig` and flips a named,
+commented list:
+
+| symbol | why |
+|---|---|
+| `CONFIG_STATIC=y` | the initramfs has no dynamic loader |
+| `CONFIG_LONG_OPTS=y` | `livekitlib` calls `date --date "$1" '+%s'` |
+| `CONFIG_MODPROBE_SMALL=n` | the small implementation handles aliases and blacklists differently, and `modprobe_everything()` fires it hundreds of times per boot. Alpine ships full modutils for the same reason |
+| `CONFIG_AR`, `UNLZOP`, `LZOPCAT` | `default n` in 1.37.0; enabled purely for applet parity |
+
+**Builds are not byte-reproducible.** busybox bakes the build time into its banner and does not
+honour `KBUILD_BUILD_TIMESTAMP` — verified by building twice and comparing. What is pinned is the
+*source*: the tarball sha256 and the config deltas.
+
+## Applet parity, measured
+
+| | |
+|---|---|
+| 1.26.2 | 248 applets |
+| 1.37.0 | **406** |
+| lost | **`catv`** — and nothing else |
+
+`catv` was removed upstream and is unused by Slax. All **52** distinct commands that `/init`,
+`livekitlib` and `/shutdown` actually invoke are present.
+
+## Three things the symlink regeneration must get right
+
+Swapping the binary alone leaves 245 symlinks describing an applet set that no longer matches it.
+That is why this is a verb and not an `initramfs.files` entry.
+
+1. **`blkid` and `eject` are real files that shadow busybox applets**, and `livekitlib` parses
+   `blkid -o full` — an option busybox's applet does not have. A symlink must never overwrite an
+   existing file. The verb refuses to finish if either has stopped being a real binary.
+2. **`bin/init` must not exist**, or busybox's `init` applet shadows the `/init` script and the
+   machine boots the wrong thing. (1.38.0 adds `nuke` and `linuxrc`, which deserve the same
+   treatment.)
+3. **Stale symlinks must go.** The shipped tree has a `catv` symlink; 1.37.0 has no such applet.
+   Leaving it gives a `catv` in `PATH` that fails at runtime rather than being absent. Upstream
+   never had to think about this because it builds the tree from empty — this edits one in place.
+
+```
+busybox 739,784 -> 1,213,688 bytes, 248 -> 406 applets
+applets removed upstream: catv
+symlinks: +159 new, -1 stale, 2 real files left alone
+  blkid: still a real binary, as it must be
+```
+
+Result: **403 applet symlinks + 8 real binaries**, 0 dangling, 0 orphaned, and the 7 device nodes
+intact.
+
+## It fixes upstream's symlink generation too
+
+`initramfs_create` derives the applet list by scraping busybox's **human-readable usage text**:
+
+```sh
+$INITRAMFS/bin/busybox | grep , | grep -v Copyright | tr "," " " | ...
+```
+
+That is not a stable interface — see [issue 10](../30-inventory/known-upstream-bugs.md). This verb
+uses `busybox --list`, which is documented and which even the shipped 1.26.2 answers correctly.
+
+Reading the list requires **executing an i386 binary on the build host**. If yours cannot, the verb
+says so plainly — and that is the same limitation a kernel without `CONFIG_IA32_EMULATION` has.
+
+## Cost
+
+The initramfs grows 8,872,472 → 9,152,792 bytes (**+280 KB**); the ISO stays 415 MiB.
