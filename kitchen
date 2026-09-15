@@ -45,7 +45,7 @@ ${B}USAGE${O}
   kitchen help <command>     detail for one command
 
 ${B}COMMANDS${O}
-  doctor [--install-hooks]   check tools + capabilities; report what this machine can run
+  doctor [--report]          check tools + capabilities; --report is the block to paste
   selftest [stage]           run the commit gates (stage: pre-commit|pre-push|ci)
   status [work]              what a work tree is, and what has been applied to it
   probe <iso>                match an ISO against compat/ and report what differs
