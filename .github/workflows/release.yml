@@ -98,7 +98,20 @@ jobs:
         env:
           TAG: ${{ needs.guard.outputs.tag }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: ./ci/release-notes.sh "$TAG" --run-url "$RUN_URL" | tee release-notes.md
+        # set -o pipefail is load-bearing. GitHub's default shell is `bash -e {0}` --
+        # WITHOUT pipefail -- so this pipeline exits with tee's status, which is always
+        # 0. A failing release-notes.sh would be masked and the next step would publish
+        # whatever landed in the file, possibly empty, from the one job in this repo
+        # holding contents: write. Measured: `bash -e -c 'false | tee x'` exits 0;
+        # adding -o pipefail exits 1.
+        #
+        # `shell: bash` would also do it -- GitHub runs that as `bash -eo pipefail` --
+        # but saying it here is checkable by reading the step rather than by knowing
+        # GitHub's shell table. Third instance of this trap: see upstream-watch.yml,
+        # whose own comment records the first two.
+        run: |
+          set -o pipefail
+          ./ci/release-notes.sh "$TAG" --run-url "$RUN_URL" | tee release-notes.md
       - name: dry run -- nothing is published
         if: github.event_name != 'push' && !inputs.publish
         run: |
