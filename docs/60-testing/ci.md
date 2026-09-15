@@ -124,6 +124,35 @@ releases on the same day — one per flavour — and the changelog carries the f
 So it flags a higher point release on a line we track, or an entirely higher line, and ignores
 history.
 
+## Action versions are a Node 24 floor
+
+GitHub removes the Node 20 runtime from Actions runners on **2026-09-23**; runners have defaulted to
+Node 24 since **2026-06-16**. A JavaScript action whose `action.yml` declares `runs.using: node20`
+stops working on that date ([changelog][node24]).
+
+The versions pinned in `ci.yml` are therefore a floor, not a preference. Each was checked against
+its own `action.yml` at the tag rather than assumed:
+
+| action | last node20 | first node24 | pinned |
+|---|---|---|---|
+| `actions/checkout` | v4 | **v5** | v7 |
+| `actions/cache` | v4 | **v5** | v6 |
+| `actions/upload-artifact` | **v5** | **v6** | v7 |
+| `actions/github-script` | v7 | **v8** | v9 |
+
+**`upload-artifact` v5 is still node20** — one major up from v4 would not have fixed it, which is
+why each was verified individually. Do not drop any of these below the "first node24" column.
+
+`github-script` v9 is ESM: `require('@actions/github')` fails, and a script declaring
+`const getOctokit` is a `SyntaxError`. Our `upstream-watch` script does neither and uses only
+`require('fs')`, which is unaffected. `cache` v5+ needs runner ≥ 2.327.1, which matters only for
+self-hosted runners; we use GitHub-hosted `ubuntu-24.04`.
+
+`ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true` would keep node20 working until 2026-09-23. We are
+not using it — the point of the upgrade is to not need it.
+
+[node24]: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+
 ## Not in CI yet
 
 The full Tier C matrix — USB image boot and persistence across two boots — needs KVM to be practical.

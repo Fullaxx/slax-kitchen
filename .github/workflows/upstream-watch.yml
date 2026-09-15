@@ -1,3 +1,7 @@
+# Action versions are a Node 24 floor -- see .github/workflows/ci.yml. github-script v9
+# is ESM: `require('@actions/github')` fails and a script declaring `const getOctokit`
+# is a SyntaxError. This script does neither, and `require('fs')` is unaffected.
+
 name: upstream-watch
 
 # Slax has shipped nothing since 2023-10-10 and linux-live has not been touched since
@@ -16,7 +20,7 @@ jobs:
   watch:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends python3-yaml
       - id: watch
         # $? after a pipeline is TEE's status, which is always 0 -- using it here made
@@ -28,7 +32,7 @@ jobs:
           echo "changed=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
       - name: open an issue when upstream moves
         if: steps.watch.outputs.changed != '0'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');

@@ -1,3 +1,17 @@
+# ACTION VERSIONS ARE A NODE 24 FLOOR, not a preference. GitHub removes the Node 20
+# runtime from runners on 2026-09-23; runners already default to Node 24 as of
+# 2026-06-16. Every action here was checked against its own action.yml `runs.using`
+# at the tag rather than assumed:
+#
+#   actions/checkout         v4 node20  ->  v5 first node24   (using v7)
+#   actions/cache            v4 node20  ->  v5 first node24   (using v6)
+#   actions/upload-artifact  v4 node20  ->  v6 first node24   (using v7)
+#   actions/github-script    v7 node20  ->  v8 first node24   (using v9)
+#
+# Note upload-artifact v5 is STILL node20 -- bumping one major would not have fixed it.
+# Do not drop any of these below the "first node24" column.
+# https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+
 name: ci
 
 on:
@@ -22,7 +36,7 @@ jobs:
     name: commit gates
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: true          # 20-vendor-pristine needs the submodule present
       - name: install lint tooling
@@ -52,7 +66,7 @@ jobs:
           - target: slackware-32bit-15.0.4
             iso: slax-32bit-slackware-15.0.4.iso
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: {submodules: true}
 
       - name: install toolchain
@@ -68,7 +82,7 @@ jobs:
       # a release since 2023 -- so cache on the content hash and download at most once.
       - name: cache base ISO
         id: cache-iso
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: isos/${{ matrix.iso }}
           key: iso-${{ matrix.target }}-${{ hashFiles('compat/sources.yaml') }}
@@ -91,7 +105,7 @@ jobs:
       # and the version it pins, so it is built once rather than four times.
       - name: cache busybox build
         id: cache-busybox
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/
           key: busybox-${{ hashFiles('tools/build-busybox.sh') }}
@@ -127,7 +141,7 @@ jobs:
       - name: round-trip fidelity
         run: ./ci/roundtrip.sh isos/${{ matrix.iso }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: logs-${{ matrix.target }}
@@ -147,7 +161,7 @@ jobs:
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'boot-test')
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: {submodules: true}
       - name: install toolchain
         run: |
@@ -158,7 +172,7 @@ jobs:
             mtools dosfstools grub-efi-amd64-bin grub-common \
             qemu-system-x86 ovmf \
             python3-yaml python3-jsonschema
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: isos/slax-64bit-debian-12.2.0.iso
           key: iso-debian-64bit-12.2.0-${{ hashFiles('compat/sources.yaml') }}
@@ -186,7 +200,7 @@ jobs:
         run: |
           ./kitchen test out/slax-example-12.2.0.iso --bios --seconds 120
           ./kitchen test out/slax-example-12.2.0.iso --uefi --seconds 120
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: boot-evidence
