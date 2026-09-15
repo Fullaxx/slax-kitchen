@@ -2452,7 +2452,8 @@ def apply_recipe(path: str, work: str, dry: bool = False) -> int:
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description="apply recipes to a work tree")
+    ap = argparse.ArgumentParser(prog="kitchen apply",
+                                 description="apply recipes to a work tree")
     ap.add_argument("recipes", nargs="+")
     ap.add_argument("-w", "--work", default="work")
     ap.add_argument("-n", "--dry-run", action="store_true")
