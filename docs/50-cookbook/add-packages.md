@@ -18,9 +18,14 @@ Debian 12 root filesystem with `apt` in it, so there is no `debootstrap` and no 
 and everything installed matches the shipped kernel's ABI by construction.
 
 ```
-unsquashfs 01-core.sb  ->  add the runtime dirs livekit makes at boot  ->  chroot
-  ->  apt-get install  ->  diff (added AND modified)  ->  mksquashfs -> 07-<name>.sb
+unsquashfs every bundle that will sit below yours  ->  add the runtime dirs livekit
+makes at boot  ->  chroot  ->  apt-get install  ->  diff (added AND modified)
+  ->  mksquashfs -> 07-<name>.sb
 ```
+
+**`from:` defaults to the whole stack**, which is what you want: name a shorter one and `apt`
+reinstalls libraries the image already has, and your copies — being higher — shadow the originals.
+See [composing bundles](../40-workflow/composing-bundles.md).
 
 Full mechanics, and why real `chroot` is used rather than `proot`, are in
 [edit-bundles.md](../40-workflow/edit-bundles.md).
@@ -38,13 +43,21 @@ session** — almost always what you want.
 Debian 12.2.0 64-bit, `packages: [tmux, ncdu]`:
 
 ```
-delta: 86 added, 32 modified, 61 kept after exclusions
-built slax/modules/07-extras.sb (664 KiB, 61 paths)
+unpacked 01-core.sb + 01-firmware.sb + 02-xorg.sb + 03-desktop.sb + 04-apps.sb + 05-chromium.sb
+delta: 72 added, 31 modified, 43 kept after exclusions
+dpkg fragment: 3 package(s) declared (merged into 98-dpkg-db.sb at pack time)
+built slax/modules/07-extras.sb (592 KiB, 32 files)
 ```
 
-The bundle carries `usr/bin/tmux`, `usr/bin/ncdu`, their dpkg `.list` files, and a
-`var/lib/dpkg/status` with 299 `Package:` stanzas where `01-core` ships 295. Booted: livekit mounts
-`modules/07-extras.sb` last and reaches `Live Kit done, starting slax`.
+The bundle carries `usr/bin/tmux`, `usr/bin/ncdu`, their dpkg `.list` files, and a fragment naming
+the three packages it added. It carries **no `var/lib/dpkg/status`** — `pack` merges the fragment
+into `98-dpkg-db.sb`, giving 603 packages against `05-chromium`'s 600. Booted: livekit mounts the
+bundle and reaches `Live Kit done, starting slax`.
+
+> This recipe used to build from `01-core` alone and ship a 299-package `status` that outranked
+> `05-chromium`'s 600, so a fully loaded image lost about three hundred packages from dpkg's view,
+> silently. It is "the template recipe", so anyone who copied it inherited that. The engine no
+> longer allows the shape; `tests/structure/bundle_assert.py` fails the build if it recurs.
 
 ---
 
