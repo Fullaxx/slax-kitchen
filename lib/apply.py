@@ -595,6 +595,31 @@ def _bundle_stack(ctx: "Ctx", want: list | None, below: str, verb: str) -> list[
     return picked
 
 
+# Maintainer scripts that need more of a running system than an unprivileged chroot
+# can offer. _prepare_chroot creates /proc, /sys and /dev/pts as EMPTY DIRECTORIES --
+# mounting them for real needs CAP_SYS_ADMIN, which a container usually does not have.
+# dpkg then buries the cause under a hundred lines of its own output, so surface it.
+CHROOT_LIMITS = [
+    ("requires a mounted proc fs",
+     "This package's postinst runs a program that needs a real /proc. The build chroot "
+     "has an empty /proc directory, because mounting one needs CAP_SYS_ADMIN -- run "
+     "`kitchen doctor` and look at the `mount` capability. Java is the common case: no "
+     "JRE can be installed this way, so libreoffice-base and anything else needing one "
+     "has to be left out or built on a privileged machine."),
+    ("Is /dev/pts mounted?",
+     "A maintainer script wanted a pty. The chroot has no /dev/pts, for the same reason "
+     "as /proc above. This one is usually only a warning."),
+]
+
+
+def _chroot_hint(output: str) -> str:
+    """Name the chroot limitation behind a maintainer-script failure, if it is one."""
+    for needle, explanation in CHROOT_LIMITS:
+        if needle in output:
+            return f"\n  -> {explanation}\n\n"
+    return ""
+
+
 def _excluded(rel: str, extra: list | None = None) -> bool:
     """BUNDLE_EXCLUDE, plus anything this particular step asked to keep out.
 
@@ -2191,8 +2216,9 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
         else:
             raise RuntimeError(f"bundle.packages: unknown flavour {flavour!r}")
         if r.returncode != 0:
+            out = (r.stderr.strip() or r.stdout.strip())
             raise RuntimeError(f"package install failed (exit {r.returncode}):\n"
-                               + (r.stderr.strip() or r.stdout.strip())[-1500:])
+                               + _chroot_hint(out) + out[-1500:])
 
         # Never trust the exit code alone -- see _installed().
         missing = [p for p in packages if not _installed(root, flavour, p)]

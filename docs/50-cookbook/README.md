@@ -58,6 +58,7 @@ to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
 | [`remove-chromium`](remove-chromium.md) | the named preset for the above: −79 MiB Debian, −115 MiB Slackware | ○ |
 | [`chromium-current`](chromium-current.md) | replace the 2023 browser — stock is chromium **117**, from September 2023 | ◐ |
 | [`firefox-esr`](firefox-esr.md) | add the second browser no Slax image ships; amd64 **and** i386 | ◐ |
+| [`libreoffice`](libreoffice.md) | Writer, Calc, Impress and Draw — 116 MiB, the largest single addition here | ◐ |
 | [`branding`](branding.md) | hostname, version string and login banner, from a 4 KiB override bundle | ○ |
 | [`bundle-from-dir`](bundle-from-dir.md) | pack a directory of your own files as a filesystem root | ○ |
 | [`bundle-from-tarball`](bundle-from-tarball.md) | fetch a published release tarball, verify it, pack it | ○ |

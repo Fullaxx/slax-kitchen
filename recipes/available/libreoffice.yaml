@@ -1,0 +1,43 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: libreoffice
+  summary: Add LibreOffice Writer, Calc and Impress — the largest single addition here
+  tags: [bundle, packages, office]
+compat:
+  # Debian only. Slackware has no official LibreOffice package -- it is an AlienBOB
+  # build -- and slackpkg points at a mirror years ahead of the frozen 2023 base, so
+  # anything installed from it may not run. See docs/50-cookbook/libreoffice.md.
+  flavours: [debian]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: chroot
+vars:
+  # 12: above the stock 01-06 and above the browsers at 10-11, below the generated
+  # 98-dpkg-db and a saved session at 99.
+  bundle: 12-libreoffice
+steps:
+  # SIZE IS THE WHOLE DESIGN CONSTRAINT HERE, so the default is the three applications
+  # people actually mean by "office" plus GTK integration, not the `libreoffice`
+  # metapackage. See the cookbook page for what each choice costs.
+  #
+  # WHY libreoffice-gtk3 IS NAMED EXPLICITLY. bundle.packages installs with
+  # --no-install-recommends by default, and gtk3 integration is a Recommends. Without
+  # it LibreOffice falls back to the "gen" VCL backend: it runs, but it draws its own
+  # widgets, ignores the desktop theme and has no native file dialog. Naming it costs
+  # little and is the difference between usable and merely present.
+  #
+  # hunspell-en-us is also a Recommends rather than a Depends. A word processor with no
+  # spell checker is a surprising thing to ship, and it is under a megabyte.
+  #
+  # DELIBERATELY NOT INCLUDED: libreoffice-base, which Depends on a JRE and adds
+  # roughly 180 MB for a database front-end few live-session users want; and
+  # libreoffice-java-common for the same reason. Add them by hand if you need Base.
+  - verb: bundle.packages
+    bundle: "{{bundle}}"
+    packages:
+      - libreoffice-writer
+      - libreoffice-calc
+      - libreoffice-impress
+      - libreoffice-gtk3
+      - hunspell-en-us

@@ -390,6 +390,7 @@ Every one of these is measured, and every one cost somebody a session.
 
 | | |
 |---|---|
+| **the build chroot has no real `/proc`** | `_prepare_chroot` creates `/proc`, `/sys` and `/dev/pts` as empty directories, because mounting them needs `CAP_SYS_ADMIN`. Any maintainer script wanting a live one fails — no JRE can be installed, so no LibreOffice Base. `kitchen` names the cause; dpkg does not. |
 | **uid matters** | Running as root hides failures that appear at uid 1001. Two CI failures here, both "worked locally". |
 | **`proot` is unsafe** | 5.1.0 does not translate `statx()`, so `stat` reads the **host** filesystem from inside the fake root. Silent and selective. Use real `chroot`. |
 | **initramfs work needs `CAP_MKNOD`** | The archive holds seven device nodes; a `cpio` without it turns them into empty files and the image cannot open its own console. |
