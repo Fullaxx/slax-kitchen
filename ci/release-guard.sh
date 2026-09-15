@@ -74,6 +74,11 @@ elif git -C "$REPO_ROOT" rev-parse --verify -q origin/master >/dev/null 2>&1; th
     else
         bad "$(echo "$HEAD_SHA" | cut -c1-7) is not an ancestor of origin/master"
     fi
+elif [ "$TAG_PUSH" = 1 ]; then
+    # On a real release this is not a skippable check: publishing a tree that never
+    # passed branch protection is exactly what it exists to stop. `actions/checkout`
+    # needs fetch-depth: 0 for the ref to be here at all.
+    bad "origin/master not fetched -- cannot verify the commit is on master"
 else
     printf '  %sskip%s origin/master not fetched -- cannot check the commit is on master\n' "$R" "$O" >&2
 fi

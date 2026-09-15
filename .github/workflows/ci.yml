@@ -19,12 +19,19 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+  # release.yml calls this rather than restating it. A release therefore runs the
+  # identical gates, the identical four-target matrix and the identical boot test --
+  # there is no second copy that can quietly diverge from what master is tested with.
+  workflow_call:
 
 permissions:
   contents: read
 
+# github.workflow is in the group because concurrency is evaluated in the CALLER's
+# context: without it, a release dry-run dispatched from master lands in the same
+# group as master's own CI and cancels it.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

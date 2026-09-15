@@ -1,0 +1,125 @@
+# Action versions are a Node 24 floor -- see .github/workflows/ci.yml.
+#
+# There is no release-upload action here on purpose. `gh` is preinstalled on the
+# runner, has no Node runtime to age out, and adds nothing new to trust: every
+# `uses:` line is a program fetched by a movable tag and run as root on the machine
+# that builds the ISO, and this workflow is the only one that holds contents: write.
+
+name: release
+
+# NO ISO IS ATTACHED, deliberately -- NOTICE.md puts the GPLv2 source-offer
+# obligation on whoever publishes a customized image, and part of it cannot be
+# satisfied from this repository (seven static binaries under
+# vendor/linux-live/initramfs/static/ ship with no in-tree source). What gets
+# published is a tag and an honest account of what was verified.
+on:
+  push:
+    tags: ['v*']
+  # A tag push happens once and cannot be rehearsed by pushing another one. The
+  # dispatch path runs the guard and the whole of CI for real and stops before
+  # publishing, so this workflow is exercised before the day it matters.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to rehearse, e.g. v0.1.0-dev (must match kitchen:8)"
+        required: true
+        type: string
+      publish:
+        description: "Actually create the Release. Leave off for a dry run."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  # ----------------------------------------------------------------- guard --
+  # Seconds of shell, ahead of seventeen minutes of CI. A tag that disagrees with
+  # kitchen:8 produces a Release whose bug reports point at the wrong tree, and
+  # deleting a published Release is a manual job.
+  guard:
+    name: release guard
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 0, not the default 1: the guard compares against origin/master and the
+          # notes generator needs the log. With a shallow checkout the guard fails
+          # a tag push rather than skipping the check, which is the right way round.
+          fetch-depth: 0
+      # Through env, never interpolated into the script body: `${{ inputs.tag }}`
+      # inside a run: block is substituted before the shell sees it, so a tag
+      # containing shell metacharacters would execute. Dispatch needs write access,
+      # so this is a small hole -- but it is the shape of hole worth not having.
+      - id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          PUSH_TAG: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            printf 'tag=%s\n' "$PUSH_TAG" >> "$GITHUB_OUTPUT"
+          else
+            printf 'tag=%s\n' "$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          fi
+      - name: tag and version must agree
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            ./ci/release-guard.sh "$TAG" --tag-push
+          else
+            ./ci/release-guard.sh "$TAG"
+          fi
+
+  # ---------------------------------------------------------------- verify --
+  # The whole of ci.yml: eleven gates, the reference container, four targets with
+  # the recipe matrix and round-trip, and the TCG boot test. Roughly 17 minutes.
+  verify:
+    needs: guard
+    uses: ./.github/workflows/ci.yml
+
+  # --------------------------------------------------------------- publish --
+  # The only job anywhere with write access to the repository.
+  publish:
+    name: publish the release
+    runs-on: ubuntu-24.04
+    needs: [guard, verify]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with: {fetch-depth: 0}
+      - name: write the notes
+        env:
+          TAG: ${{ needs.guard.outputs.tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: ./ci/release-notes.sh "$TAG" --run-url "$RUN_URL" | tee release-notes.md
+      - name: dry run -- nothing is published
+        if: github.event_name != 'push' && !inputs.publish
+        run: |
+          echo "::notice::Dry run. The notes above are what would have been published."
+      - name: create the release
+        if: github.event_name == 'push' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.guard.outputs.tag }}
+        run: |
+          set -e
+          # 0.x is a prerelease by definition: nothing here promises a stable
+          # interface yet, and marking it latest would say otherwise.
+          case "$TAG" in
+            v0.*) PRE=--prerelease ;;
+            *)    PRE=--latest ;;
+          esac
+          gh release create "$TAG" --title "$TAG" --notes-file release-notes.md $PRE
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: warn

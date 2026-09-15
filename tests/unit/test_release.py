@@ -31,23 +31,30 @@ def check_in(name, needle, haystack):
         FAILURES.append(f"{name}: {needle!r} not found in output")
 
 
-def fake_repo(tmp, version):
-    """A repo just real enough for the guard: a kitchen file and one commit."""
+def fake_repo(tmp, version, on_master=True):
+    """A repo just real enough for the guard: a kitchen file and one commit.
+
+    on_master=False leaves no refs/remotes/origin/master, which is both what a
+    shallow CI checkout looks like and what a tag on a feature branch looks like.
+    """
     with open(os.path.join(tmp, "kitchen"), "w") as fh:
         fh.write(f'#!/bin/sh\nKITCHEN_VERSION="{version}"\n')
     env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@e",
                GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@e")
-    for cmd in (["git", "init", "-q", "-b", "master"], ["git", "add", "kitchen"],
-                ["git", "commit", "-qm", "x"]):
+    cmds = [["git", "init", "-q", "-b", "master"], ["git", "add", "kitchen"],
+            ["git", "commit", "-qm", "x"]]
+    if on_master:
+        cmds.append(["git", "update-ref", "refs/remotes/origin/master", "HEAD"])
+    for cmd in cmds:
         subprocess.run(cmd, cwd=tmp, env=env, check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return tmp
 
 
-def guard(version, tag, tag_push=False):
+def guard(version, tag, tag_push=False, on_master=True):
     """Exit code and combined output of the guard against a fake repo."""
     with tempfile.TemporaryDirectory() as tmp:
-        fake_repo(tmp, version)
+        fake_repo(tmp, version, on_master=on_master)
         argv = [GUARD, tag] + (["--tag-push"] if tag_push else [])
         p = subprocess.run(argv, env=dict(os.environ, REPO_ROOT=tmp),
                            capture_output=True, text=True)
@@ -80,6 +87,20 @@ def test_dev_suffix_only_blocks_a_tag_push():
 
     rc, _ = guard("0.4.0", "v0.4.0", tag_push=True)
     check("a released version tag-pushes fine", rc, 0)
+
+
+def test_unverifiable_is_not_the_same_as_verified():
+    """A check that could not run must not report success on a real release. This is
+    the shape that kept upstream-watch silently inert for four runs."""
+    rc, out = guard("0.4.0", "v0.4.0", tag_push=True, on_master=False)
+    check("no origin/master fails a tag push", rc, 1)
+    check_in("and says it could not verify", "cannot verify", out)
+
+    # A dry run in a fork or a shallow clone has no origin/master either, and must
+    # still be usable -- it just says so, loudly, instead of pretending.
+    rc, out = guard("0.4.0", "v0.4.0", tag_push=False, on_master=False)
+    check("a dry run tolerates it", rc, 0)
+    check_in("but announces the skip", "skip", out)
 
 
 def test_guard_rejects_bad_usage():
