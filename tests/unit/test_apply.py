@@ -500,6 +500,90 @@ def test_renumber_refuses_reserved():
                 FAILURES.append(f"bundle.renumber refused to={to!r} wrongly: {e}")
 
 
+def test_link_targets_refused():
+    """A member's NAME being safe says nothing about where its LINK points.
+
+    Shipped: the loop checked m.name and never m.linkname, so an archive holding a
+    symlink `x -> /etc` followed by a regular member `x/cron.d/kitchen` wrote through it
+    to the host. Measured before the fix, the verb printed "unpacked 2 entries", said
+    "built slax/modules/07-poc.sb", exited 0, and left a file outside the work tree.
+
+    The last two cases are the reason the check runs AFTER bundle.fromTarball's `strip`
+    rewrite rather than beside the name check: stripping changes a member's depth, so the
+    identical link target is safe at one depth and an escape at another.
+    """
+    import tarfile
+
+    def member(name, linkname, typ):
+        m = tarfile.TarInfo(name)
+        m.linkname = linkname
+        m.type = typ
+        return m
+
+    cases = [
+        ("absolute symlink target", member("x", "/etc", tarfile.SYMTYPE), True),
+        ("relative symlink escape", member("x", "../../etc", tarfile.SYMTYPE), True),
+        # data_filter rejects these too; the advisory that prompted this did not mention
+        # them, but LNKTYPE resolves against the extraction root just as SYMTYPE does.
+        ("absolute hardlink target", member("x", "/etc/passwd", tarfile.LNKTYPE), True),
+        ("relative hardlink escape",
+         member("x", "../../etc/passwd", tarfile.LNKTYPE), True),
+        ("benign sibling symlink", member("x", "y", tarfile.SYMTYPE), False),
+        ("benign .. that stays inside", member("a/b/c", "../d", tarfile.SYMTYPE), False),
+        ("not a link at all", member("a/b", "", tarfile.REGTYPE), False),
+        ("deep enough to absorb ../..", member("a/b/c", "../../etc", tarfile.SYMTYPE),
+         False),
+        ("same target once strip:1 has shallowed it",
+         member("c", "../../etc", tarfile.SYMTYPE), True),
+    ]
+    for label, m, want_refusal in cases:
+        try:
+            apply._refuse_escaping_link(m, "bundle.fromTarball")
+            refused = False
+        except RuntimeError:
+            refused = True
+        check(f"_refuse_escaping_link: {label}", refused, want_refusal)
+
+
+def test_fromtarball_refuses_symlink_escape():
+    """End to end: a crafted tarball must not write outside the tree being unpacked.
+
+    The verb is `privilege: none` and VERB_REQUIRES asks only for mksquashfs, so a reader
+    of a recipe using it has every reason to treat it as harmless. This asserts the
+    refusal happens before extraction -- nothing is written and no bundle is built.
+    """
+    import io
+    import tarfile
+    import tempfile
+
+    work = tempfile.mkdtemp()
+    os.makedirs(os.path.join(work, "iso", "slax", "modules"))
+    outside = os.path.join(work, "OUTSIDE")
+    os.makedirs(outside)
+
+    archive = os.path.join(work, "evil.tar.gz")
+    with tarfile.open(archive, "w:gz") as t:
+        link = tarfile.TarInfo("x")
+        link.type = tarfile.SYMTYPE
+        link.linkname = outside
+        t.addfile(link)
+        payload = b"planted\n"
+        f = tarfile.TarInfo("x/cron.d/kitchen")
+        f.size = len(payload)
+        t.addfile(f, io.BytesIO(payload))
+
+    ctx = apply.Ctx(work, work, "t")
+    step = {"verb": "bundle.fromTarball", "bundle": "07-poc", "src": archive}
+    try:
+        apply.v_bundle_fromtarball(ctx, step)
+        FAILURES.append("bundle.fromTarball extracted an escaping symlink")
+    except RuntimeError:
+        pass
+    check("nothing written outside the tree", os.listdir(outside), [])
+    check("no bundle built",
+          os.listdir(os.path.join(work, "iso", "slax", "modules")), [])
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -512,7 +596,9 @@ def main():
                test_unknown_override_is_rejected,
                test_recipe_search_path,
                test_reserved_bundle_numbers,
-               test_renumber_refuses_reserved]:
+               test_renumber_refuses_reserved,
+               test_link_targets_refused,
+               test_fromtarball_refuses_symlink_escape]:
         fn()
     if FAILURES:
         for f in FAILURES:

@@ -226,7 +226,25 @@ doctor_toolchain() {
     else
         echo "squashfs-tools >= 4.2: unknown (mksquashfs not found)"
     fi
-    # The third one. apt's python3-yaml and python3-jsonschema are invisible to a
+    # The third one. containers/README.md has always DECLARED a floor of python3 >= 3.9
+    # and claimed doctor asserted it; doctor did not, so the floor was prose. It matters:
+    # 3.9 is what lets lib/ use builtin generics, and the floor is also what decides which
+    # stdlib APIs a fix may reach for. A proposed fix for GHSA-p2w2-qh4r-jr53 wanted
+    # tarfile's extractall(filter=...), which needs 3.11.4+ -- out of bounds here, and it
+    # would have been a TypeError on debian:12's 3.11.2, one of our two container bases.
+    # An unchecked floor cannot refuse that; this can.
+    _py=$(timeout 5 python3 -c 'import sys; print("%d %d" % sys.version_info[:2])' 2>/dev/null)
+    if [ -n "${_py:-}" ]; then
+        _pymaj=${_py%% *}; _pymin=${_py##* }
+        if [ "$_pymaj" -gt 3 ] || { [ "$_pymaj" -eq 3 ] && [ "$_pymin" -ge 9 ]; }; then
+            echo "python3 >= 3.9: yes ($_pymaj.$_pymin)"
+        else
+            echo "python3 >= 3.9: NO ($_pymaj.$_pymin) -- lib/ uses builtin generics (PEP 585)"
+        fi
+    else
+        echo "python3 >= 3.9: unknown (python3 did not run)"
+    fi
+    # The fourth one. apt's python3-yaml and python3-jsonschema are invisible to a
     # python3 that resolves into a venv, and the failure surfaces as a schema gate
     # that cannot run rather than as a missing package. Import them, the same way
     # lib/validate.py does, rather than asking dpkg.

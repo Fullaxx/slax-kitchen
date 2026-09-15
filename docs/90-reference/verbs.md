@@ -96,7 +96,11 @@ The offline equivalent of upstream's `dir2sb`.
   prefix: /opt/myapp        # place under a subdirectory instead of the root
 ```
 
-Absolute paths and `..` components in the archive are **refused**, not sanitised.
+Absolute paths and `..` components in the archive are **refused**, not sanitised — and so
+are link *targets*. A member named `x` that is a symlink to `/etc`, followed by a member
+`x/cron.d/kitchen`, would otherwise write through it to the host. Symlinks and hardlinks are
+both checked, after `strip:` has been applied, because stripping changes how deep a member
+sits and therefore where a relative target lands.
 
 ### `bundle.remove` ○
 

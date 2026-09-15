@@ -43,7 +43,11 @@ binary would end up at `/fzf` and the bundle would shadow the union's root direc
 `/usr/local/bin` is the right home for something the distribution did not ship, and it is already
 on `PATH` on both flavours.
 
-Absolute paths and `..` components inside the archive are **refused**, not sanitised.
+Absolute paths and `..` components inside the archive are **refused**, not sanitised — and so
+are link *targets*, for symlinks and hardlinks alike. Checking the member's name alone is not
+enough: extraction follows a symlink that is already on disk, so an archive shipping `x -> /etc`
+and then `x/cron.d/kitchen` writes outside the tree entirely. Reported against `06c13bb` by the
+slax-wine fork; see [SECURITY.md](../../SECURITY.md).
 
 ## Why this one is 64-bit only
 

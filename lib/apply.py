@@ -1111,7 +1111,9 @@ MKSQUASHFS_ARGS = ["-comp", "xz", "-b", "1024K", "-Xbcj", "x86",
 def _under(root: str, rel: str, verb: str, what: str = "dest") -> str:
     """Resolve `rel` inside `root`, refusing anything that escapes it.
 
-    Every verb that writes a caller-named path goes through here. Without it a
+    Every verb that writes a RECIPE-named path goes through here. (Verbs that write
+    ARCHIVE-named paths cannot use it -- see _refuse_escaping_link, which is the same
+    guarantee for the one place where the paths come from a tarball instead.) Without it a
     `dest: ../../../etc/cron.d/x` walks straight out of the work tree and writes to the
     host -- and it would do so from a recipe declaring `privilege: none`, which is
     exactly the set of verbs a reader trusts to be harmless. Recipes are meant to be
@@ -1127,6 +1129,45 @@ def _under(root: str, rel: str, verb: str, what: str = "dest") -> str:
             f"{verb}: {what} {rel!r} resolves outside the tree it belongs to "
             f"({full}). Paths are relative to the root of that tree; '..' is refused.")
     return full
+
+
+def _refuse_escaping_link(m, verb: str) -> None:
+    """A tar member's NAME being safe says nothing about where its link POINTS.
+
+    Checking only `m.name` leaves a whole class of escape open, because extraction
+    follows a symlink that is already on disk. An archive holding a symlink `x -> /etc`
+    and then a regular member `x/cron.d/kitchen` writes to the host through it -- and
+    does so from a verb declaring `privilege: none`, which is exactly the set a reader
+    trusts to be harmless. Measured before this existed: the verb printed "unpacked 2
+    entries" and "built slax/modules/07-poc.sb", reported success, and left a file
+    outside the work tree.
+
+    Not delegated to tarfile's `filter="data"`, which is the obvious fix and the wrong
+    one here. That parameter landed in 3.11.4/3.12; this project's floor is python3 >= 3.9
+    (containers/README.md) and Debian 12 -- one of our two container bases, and what
+    upstream actually builds Slax on -- ships 3.11.2, where `extractall(filter=...)` is a
+    TypeError and `tarfile.data_filter` does not exist. `filter="tar"` is available on the
+    same versions and would NOT help: measured, it allows all three escapes below.
+
+    Hardlinks count too. `data_filter` rejects them and the report that prompted this did
+    not mention them, but LNKTYPE resolves against the extraction root just as SYMTYPE
+    does.
+    """
+    if not (m.issym() or m.islnk()):
+        return
+    target = m.linkname
+    if target.startswith("/"):
+        raise RuntimeError(
+            f"{verb}: archive member {m.name!r} is a link to an absolute path "
+            f"({target!r}). Extraction would follow it out of the work tree.")
+    # A symlink resolves relative to its OWN directory; a hardlink's target is relative
+    # to the archive root. Both must stay inside the destination.
+    base = os.path.dirname(m.name) if m.issym() else ""
+    if os.path.normpath(os.path.join(base, target)).split("/")[0] == "..":
+        raise RuntimeError(
+            f"{verb}: archive member {m.name!r} is a link to {target!r}, which resolves "
+            f"outside the tree being unpacked. '..' is refused in a link target exactly "
+            f"as it is in a member name.")
 
 
 # THE ONLY TWO NUMBERS THAT ARE NOT MERELY ORDERING.
@@ -1318,10 +1359,23 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
                     if len(parts) <= strip:
                         continue
                     m.name = "/".join(parts[strip:])
+                # AFTER the strip, not with the name check above. Stripping changes the
+                # member's depth, and a relative link target is resolved from wherever the
+                # member ends up: `a/b/c -> ../../etc` stays inside at depth 3 and escapes
+                # at depth 1 once `strip: 1` has rewritten the name.
+                _refuse_escaping_link(m, "bundle.fromTarball")
                 members.append(m)
             if not members:
                 raise RuntimeError(f"bundle.fromTarball: nothing left after strip: {strip}")
-            t.extractall(dest, members=members)
+            # Pin the filter rather than inheriting a default that changes under us.
+            # 3.12 warns that 3.14 will switch the default to "data", which refuses device
+            # nodes and strips setuid/setgid -- a silent change to what a bundle CONTAINS,
+            # on some interpreters and not others. The checks above are the security
+            # guarantee and they run on every version we support, so pinning the old
+            # behaviour keeps the output identical everywhere. Guarded because 3.11.2
+            # (debian:12) has no filter machinery at all.
+            kw = {"filter": "fully_trusted"} if hasattr(tarfile, "fully_trusted_filter") else {}
+            t.extractall(dest, members=members, **kw)
         ctx.say(f"unpacked {len(members)} entries from {os.path.basename(src)}"
                 + (f" under /{prefix}" if prefix else ""))
         _make_bundle(ctx, root, name, "bundle.fromTarball")
