@@ -389,7 +389,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "bundles to stack as the build root (default 01-core)"
+                "description": "bundles to stack as the build root (default: every bundle that will load below this one)"
               },
               "flavour": {
                 "enum": [

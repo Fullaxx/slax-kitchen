@@ -639,6 +639,57 @@ def test_checksums_sign_is_a_key_id():
           False)
 
 
+def test_removes_come_first():
+    """A bundle.remove after a bundle.packages deletes ground the bundle stands on.
+
+    `from:` defaults to the whole stack below, so a bundle built that way assumes
+    everything beneath it survives to boot. Removing one afterwards leaves an
+    unresolvable NEEDED -- and nothing notices, because the file delta is empty for the
+    missing libraries, so the fragment does not declare them and the merged database
+    stays self-consistent. The build succeeds and passes every gate.
+
+    chromium-current is the discriminating case and must keep passing: it removes
+    05-chromium FIRST and then builds, deliberately (d0f48e8). The cross-recipe case is
+    the one that prompted this -- firefox-esr and remove-chromium are each fine alone.
+    """
+    remove = {"verb": "bundle.remove", "match": "^05-chromium\\.sb$"}
+    cases = [
+        ("remove then build, one recipe",
+         [("chromium-current", remove),
+          ("chromium-current", {"verb": "bundle.packages", "bundle": "10-chromium"})],
+         False),
+        ("build then remove, one recipe",
+         [("r", {"verb": "bundle.packages", "bundle": "20-wine"}), ("r", remove)],
+         True),
+        ("build then remove, across recipes",
+         [("firefox-esr", {"verb": "bundle.packages", "bundle": "11-firefox"}),
+          ("remove-chromium", remove)],
+         True),
+        ("bundle.script counts as building",
+         [("r", {"verb": "bundle.script", "bundle": "07-x"}), ("r", remove)],
+         True),
+        ("removes only", [("remove-bundle", remove)], False),
+        ("no bundle verbs at all",
+         [("serial-console", {"verb": "boot.append", "args": "console=ttyS0"})], False),
+    ]
+    for label, plan, want_refusal in cases:
+        check(f"check_plan_order: {label}",
+              bool(apply.check_plan_order(plan)), want_refusal)
+
+    # And the real shipped recipes must all pass, chromium-current above all.
+    import glob
+
+    import yaml
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.join(here, "..", "..")
+    for f in sorted(glob.glob(os.path.join(root, "recipes", "available", "*.yaml"))):
+        doc = yaml.safe_load(open(f))
+        name = doc["metadata"]["name"]
+        plan = [(name, st) for st in doc.get("steps", []) or []]
+        check(f"shipped recipe {name} is accepted",
+              apply.check_plan_order(plan), [])
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -654,7 +705,8 @@ def main():
                test_renumber_refuses_reserved,
                test_link_targets_refused,
                test_fromtarball_refuses_symlink_escape,
-               test_checksums_sign_is_a_key_id]:
+               test_checksums_sign_is_a_key_id,
+               test_removes_come_first]:
         fn()
     if FAILURES:
         for f in FAILURES:

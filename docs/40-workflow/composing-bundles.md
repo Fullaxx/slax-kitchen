@@ -53,6 +53,27 @@ the failure it replaced lost three hundred real packages silently.
 | **State-composable** | ships no file that aggregates whole-system state |
 | **Removable** | dropping it leaves a consistent system — which follows from the second |
 
+## Removes come first
+
+**Every `bundle.remove` must run before every `bundle.packages` and `bundle.script` in the
+plan.** This is enforced: the run is refused before anything is modified.
+
+The reason is the default above. A bundle built against the whole stack beneath it assumes that
+stack is still there at boot — `apt` saw those libraries as installed and shipped no copies. Remove
+one afterwards and the binaries have an unresolvable `NEEDED`. Nothing catches it: the file delta
+is empty for the missing libraries, so the status fragment does not declare them either and the
+merged `98-dpkg-db.sb` stays perfectly self-consistent. The image builds, passes every gate, and
+fails when someone runs the program.
+
+[`chromium-current`](../50-cookbook/chromium-current.md) already works this way on purpose — it
+drops `05-chromium` and *then* builds, which is also what makes its `from:` come out right on its
+own. The rule is plan-wide rather than per-recipe, because the case that motivated it spans two:
+a profile listing `firefox-esr` and then `remove-chromium`, where each recipe is fine alone.
+
+It is stricter than strictly necessary in one case — removing `98-dpkg-db.sb` or a `99-changes-N`,
+which are never part of a default stack and so cannot strand anything. Reorder, and it costs
+nothing. A rule with no exceptions is easier to hold in your head than one with a footnote.
+
 ## `from:` is a dial, not a switch
 
 `from:` says *what to assume is already present*. It defaults to every bundle that will load below

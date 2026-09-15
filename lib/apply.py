@@ -137,6 +137,59 @@ def step_requires(step: dict) -> dict:
     return req
 
 
+
+# Verbs that build a bundle against whatever is already beneath it.
+_STACKING_VERBS = ("bundle.packages", "bundle.script")
+
+
+def check_plan_order(plan: list[tuple[str, dict]]) -> list[str]:
+    """Every bundle.remove must come before every bundle.packages / bundle.script.
+
+    `from:` defaults to the whole stack below the bundle being built, which is the right
+    default and the reason this rule exists. A bundle built that way assumes everything
+    beneath it still exists at boot; a later bundle.remove deletes one of those and
+    leaves binaries with an unresolvable NEEDED. Nothing detects it -- the file delta is
+    empty for the missing libraries, so _write_fragment does not declare them either and
+    the merged 98-dpkg-db.sb stays perfectly self-consistent. The image builds, passes
+    every gate, and fails when a user runs the program.
+
+    The rule is stated as an ORDER rather than as "did this remove hit a bundle some
+    earlier step actually stacked". The narrow version needs the module list, and that is
+    not available where it would have to run: preflight takes no work tree, and
+    `kitchen build` preflights before it unpacks (lib/build.sh). Worse, a filesystem
+    check at that moment would be actively wrong -- 05-chromium.sb is still present
+    before the plan runs, so it would flag chromium-current, the one shipped recipe that
+    is deliberately correct. An order rule needs none of that and is decidable from the
+    step list alone.
+
+    It is stricter than necessary in one case: removing 98-dpkg-db.sb or a 99-changes-N,
+    which _bundle_stack already excludes from every default stack and which therefore
+    cannot dangle anything. Reordering fixes that, harmlessly, and a rule with no
+    exceptions is easier to remember than one with a footnote.
+
+    Plan-wide, not per-recipe: the case that prompted this was a profile listing
+    firefox-esr and then remove-chromium, where each recipe is fine on its own.
+    """
+    built: list[tuple[str, str]] = []          # (recipe, bundle name) already stacked
+    problems = []
+    for recipe, step in plan:
+        verb = step.get("verb")
+        if verb in _STACKING_VERBS:
+            built.append((recipe, str(step.get("bundle", "?"))))
+        elif verb == "bundle.remove" and built:
+            who, bundle = built[0]
+            where = f"{recipe}" if recipe == who else f"{recipe}, after {who}"
+            problems.append(
+                f"bundle.remove (match {step.get('match', '?')!r}) in {where} runs after "
+                f"{bundle} was built. A bundle takes everything below it as given, so "
+                f"removing one afterwards leaves an unresolvable NEEDED that no gate can "
+                f"see. Put every bundle.remove before every bundle.packages / "
+                f"bundle.script -- chromium-current does, deliberately. If the bundle "
+                f"being removed genuinely is not beneath it, say so with an explicit "
+                f"from: on the build step.")
+    return problems
+
+
 def preflight(plan: list[tuple[str, dict]], check_network: bool = True) -> list[str]:
     """Check everything the whole plan needs, before any of it runs.
 
@@ -1511,6 +1564,15 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
 
 @verb("bundle.remove")
 def v_bundle_remove(ctx: Ctx, step: dict) -> None:
+    """Delete bundles matching a regex. Must run before anything is built on top.
+
+    Removing a bundle is not just dropping files: every bundle above it was built with
+    that one in its `from:` stack, so apt saw its libraries as already installed and did
+    not ship copies. Delete it afterwards and those binaries have an unresolvable NEEDED
+    -- silently, because the file delta is empty for the missing libraries and the merged
+    package database stays self-consistent. check_plan_order refuses that ordering before
+    anything runs; this docstring is where the rule is stated.
+    """
     pat = re.compile(step["match"])
     mods = ctx.p("slax", "modules")
     if not os.path.isdir(mods):
@@ -2700,6 +2762,18 @@ def main(argv: list[str]) -> int:
             for _i, step, run in steps:
                 if run:
                     plan.append((doc["metadata"]["name"], step))
+        # Ordering is a property of the PLAN, not of this machine, so it gets its own
+        # message rather than being folded into preflight's "unmet requirement(s)".
+        order = check_plan_order(plan)
+        if order:
+            sys.stdout.flush()
+            print(f"\nplan rejected -- {len(order)} ordering problem(s), nothing has "
+                  "been modified:", file=sys.stderr)
+            for pr in order:
+                print(f"  - {pr}", file=sys.stderr)
+            print("\nSee docs/40-workflow/composing-bundles.md.", file=sys.stderr)
+            sys.stderr.flush()
+            return 2
         problems = preflight(plan)
         if problems:
             # stdout is block-buffered when piped; without this the error lands above

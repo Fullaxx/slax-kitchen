@@ -112,6 +112,11 @@ sits and therefore where a relative target lands.
 The only case where deleting beats overriding: a whiteout hides a file but does not reclaim its
 space. See [remove-chromium](../50-cookbook/remove-chromium.md).
 
+**This must run before every `bundle.packages` and `bundle.script` in the plan**, across all
+recipes, and the run is refused otherwise. A bundle built against the default `from:` stack takes
+everything below it as given; removing one of those afterwards leaves an unresolvable `NEEDED`
+that no gate can see. See [composing-bundles](../40-workflow/composing-bundles.md).
+
 ### `bundle.renumber` ○
 
 Change a bundle's position in the stack without rebuilding it.
