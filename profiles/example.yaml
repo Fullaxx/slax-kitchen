@@ -15,6 +15,13 @@ recipes:
   #
   # Order matters: uefi-bootable builds the GRUB menu by parsing isolinux.cfg, so it has
   # to run after anything that adds a menu entry. Keep it last.
+  # add-packages is here to make the dpkg count above a MOVING number. Without a
+  # bundle-building recipe, merge_tree returns 0, no 98-dpkg-db.sb is written, and the
+  # count is 05-chromium's stock 600 -- an assertion nothing kitchen does can change.
+  # It has to be bundle.packages or bundle.script specifically: those are the only two
+  # verbs that write a status fragment, so bundle.fromTarball would build a bundle and
+  # leave the assertion just as inert.
+  - add-packages
   - testkit
   - memtest86plus
   - serial-console

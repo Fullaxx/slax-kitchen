@@ -233,7 +233,18 @@ jobs:
           path: isos/slax-64bit-debian-12.2.0.iso
           key: iso-debian-64bit-12.2.0-${{ hashFiles('compat/sources.yaml') }}
       - run: ./kitchen fetch debian-64bit-12.2.0
-      - run: ./kitchen build example --keep
+      # sudo because the profile now includes add-packages, and bundle.packages needs a
+      # real chroot. lib/build.sh has no escalation of its own; ci/recipe-matrix.sh
+      # already does exactly this for the same reason.
+      #
+      # The chown is not tidiness. Building as root leaves out/ owned by root:root 755,
+      # and the NEXT step runs as the runner user (uid 1001) and writes screenshots and
+      # logs into out/boot-tests/ -- which it cannot create inside a root-owned
+      # directory. Without this the boot step dies on a permission error and the
+      # evidence upload finds nothing.
+      - run: |
+          sudo ./kitchen build example --keep
+          sudo chown -R "$(id -u):$(id -g)" out work
       # --kernel is the assertion; --bios/--uefi are evidence.
       #
       # A direct kernel boot puts the kernel on ttyS0 by construction and checks the
@@ -245,12 +256,26 @@ jobs:
       # overlayfs downgrade that breaks `slax activate`, and the package count catches
       # a bundle whose var/lib/dpkg/status shadowed a more complete one -- a failure
       # that is invisible everywhere else until a user runs apt.
+      #
+      # 603, not 600, and that is the whole point. Until add-packages joined the profile
+      # no recipe in it built a bundle, so merge_tree returned 0, no 98-dpkg-db.sb was
+      # written, and 600 was 05-chromium's stock constant that nothing kitchen does
+      # could move -- an assertion that could not fail for the reason it was written
+      # for. Measured on debian-64bit: "98-dpkg-db.sb: 600 from 05-chromium.sb +
+      # 1 fragment(s) -> 603 packages", and 98 sorts above 05 so that file is what the
+      # union presents. This is now the only place anywhere that proves a GENERATED
+      # dpkg database is what the booted system reads.
+      #
+      # It can now also fail for a second reason: an archive change that moves tmux or
+      # ncdu's dependency closure. bookworm is frozen, so that should not happen -- but
+      # if this ever fails while everything else passes, check that before suspecting
+      # the bundle machinery.
       - name: boot (direct kernel, asserts livekit markers)
         run: |
           ./kitchen test out/slax-example-12.2.0.iso --kernel --seconds 240 \
             --expect '### TESTKIT BEGIN' \
             --expect 'union: aufs' \
-            --expect 'dpkg-status: 600 packages'
+            --expect 'dpkg-status: 603 packages'
 
       - name: boot (bootloader screenshots, BIOS and UEFI)
         run: |
