@@ -32,7 +32,7 @@ The same YAML, three bundle sets, all correct:
 |---|---|---|
 | stock stack incl. `05-chromium` | 79,480 KiB | 2 |
 | `05-chromium` removed | 81,004 KiB | 5 |
-| `chromium-current` applied first | 79,648 KiB | 5 |
+| `chromium-current` applied first | 79,648 KiB | 3 |
 
 **1.9% between the extremes.** Firefox's own payload dominates, so `from:` is not a size knob here.
 What it decides is whether this bundle still stands up if someone removes the bundle underneath it.
@@ -40,6 +40,19 @@ Leaving `from:` unset means "whatever is actually below me", which is what you w
 
 In the third row the recipe stacked itself on `10-chromium.sb` automatically, because that is what
 the default resolves to once it exists — no ordering declaration needed.
+
+> **Row 3 read `5` until [#2](https://github.com/Fullaxx/slax-kitchen/issues/2) was fixed**, because
+> a build chroot never merged the status fragments of the add-on bundles beneath it — so `apt` read
+> `04-apps.sb`'s 575 packages and believed `10-chromium.sb` had installed nothing. The size did not
+> change (79,648 KiB before and after, on `debian-64bit-12.2.0`): the files were always right, and
+> it was the *declaration* that was wrong by two packages.
+>
+> **Three, not two.** Row 1 is not the target to match, and it is worth seeing why. Firefox now
+> declares `firefox-esr`, `libevent-2.1-7` and `libvpx7`. Stock `05-chromium` carries
+> `libevent-2.1-7` and not `libvpx7`, so with it beneath you, Firefox owes two. A *current*
+> Chromium no longer pulls `libevent-2.1-7` at all — `10-chromium.sb` declares twenty packages and
+> that is not among them — so Firefox owes three. Different bundle, different dependency closure;
+> the number is supposed to move.
 
 ## Two browsers, one package database
 

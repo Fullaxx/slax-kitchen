@@ -127,12 +127,68 @@ def test_render_round_trip():
     check("parse/render is lossless", dpkgdb.render(dpkgdb.parse(text)), text)
 
 
+def test_merge_fragments_into_chroot():
+    """A build chroot must see the add-on bundles beneath it, not just the stock ones.
+
+    Bundles ship a fragment instead of a cumulative var/lib/dpkg/status, and pack merged
+    them at the end -- but nothing merged them on the way IN. So stacking a previously
+    built 10-chromium.sb under a new bundle left apt reading 04-apps.sb's status and
+    believing chromium had installed nothing: unsquashfs -f cannot overwrite a status
+    file that 10-chromium.sb does not contain. Measured consequence in
+    docs/50-cookbook/firefox-esr.md: 5 packages declared where 2 was right.
+
+    The fragment files must survive untouched. They are deliberately kept in a built
+    bundle, so rewriting or re-timing them would put them in the NEXT bundle's file
+    delta -- the higher bundle would ship a copy of the lower one's fragment, which then
+    outlives the bundle it describes.
+    """
+    import tempfile
+
+    root = tempfile.mkdtemp()
+    os.makedirs(os.path.join(root, "var", "lib", "dpkg"))
+    fd = os.path.join(root, dpkgdb.FRAGMENT_DIR)
+    os.makedirs(fd)
+
+    status = os.path.join(root, dpkgdb.STATUS)
+    with open(status, "w") as f:
+        f.write(dpkgdb.render([("base:amd64", stanza("base", "1.0"))]))
+    # Two fragments, and the higher-numbered bundle must win on a shared package.
+    with open(os.path.join(fd, "10-chromium"), "w") as f:
+        f.write(dpkgdb.render([("libnss3:amd64", stanza("libnss3", "2:3.87")),
+                               ("shared:amd64", stanza("shared", "1.0"))]))
+    with open(os.path.join(fd, "11-firefox"), "w") as f:
+        f.write(dpkgdb.render([("shared:amd64", stanza("shared", "2.0"))]))
+
+    before = {n: os.stat(os.path.join(fd, n)).st_mtime_ns for n in os.listdir(fd)}
+    n, names = dpkgdb.merge_fragments_into_chroot(root)
+    check("fragments merged", n, 2)
+    check("named after their bundles", names, ["10-chromium", "11-firefox"])
+
+    got = dict(dpkgdb.parse(open(status).read()))
+    check("base survives", "base:amd64" in got, True)
+    check("add-on package is now visible to apt", "libnss3:amd64" in got, True)
+    check("later fragment wins", "Version: 2.0" in got.get("shared:amd64", ""), True)
+
+    after = {n: os.stat(os.path.join(fd, n)).st_mtime_ns for n in os.listdir(fd)}
+    check("fragment files untouched", after, before)
+
+    # Idempotent: a second pass must not duplicate or reorder anything.
+    dpkgdb.merge_fragments_into_chroot(root)
+    check("merging twice changes nothing", dict(dpkgdb.parse(open(status).read())), got)
+
+    # A stock-only stack has no fragment directory at all, and that is not an error.
+    bare = tempfile.mkdtemp()
+    os.makedirs(os.path.join(bare, "var", "lib", "dpkg"))
+    check("no fragment dir is a no-op", dpkgdb.merge_fragments_into_chroot(bare), (0, []))
+
+
 def main():
     for fn in [test_key_includes_architecture, test_blank_line_inside_description,
                test_delta_is_added_and_changed, test_delta_empty_when_nothing_changed,
                test_merge_replaces_in_place, test_merge_appends_new_and_keeps_base,
                test_merge_is_idempotent, test_merge_order_later_fragment_wins,
-               test_sortmod_matches_livekit, test_render_round_trip]:
+               test_sortmod_matches_livekit, test_render_round_trip,
+               test_merge_fragments_into_chroot]:
         fn()
     if FAILURES:
         for f in FAILURES:

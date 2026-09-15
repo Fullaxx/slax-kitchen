@@ -114,6 +114,15 @@ def main(argv: list[str]) -> int:
                   file=sys.stderr)
             return 2
 
+        # Same merge a build chroot gets, for the same reason: without it `kitchen shell`
+        # shows a dpkg database that disagrees with the one bundle.packages would see,
+        # and the shell is exactly where people go to check that. Read-only w.r.t. the
+        # fragment files themselves.
+        import dpkgdb
+        _n, _from = dpkgdb.merge_fragments_into_chroot(root)
+        if _n:
+            print(f"  merged {_n} status fragment(s): {', '.join(_from)}")
+
         names = " + ".join(os.path.basename(p) for p in picked)
         nfiles = sum(len(f) for _d, _s, f in os.walk(root))
 

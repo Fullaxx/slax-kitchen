@@ -1516,6 +1516,14 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
                 raise RuntimeError(f"unsquashfs {n}: {r.stderr.strip()[:300]}")
         ctx.say(f"unpacked {' + '.join(stack)} as the build root")
         _prepare_chroot(root)
+        # BEFORE the snapshot below, which is what keeps the delta honest: before_status
+        # becomes the merged view, so after-minus-before still isolates only what THIS
+        # bundle installed. Merging after the snapshot would re-declare everything the
+        # merge added. See dpkgdb.merge_fragments_into_chroot for why it is needed.
+        _n, _from = dpkgdb.merge_fragments_into_chroot(root)
+        if _n:
+            ctx.say(f"merged {_n} status fragment(s) into the build chroot "
+                    f"({', '.join(_from)})")
 
         before, before_status = _manifest(root), _read_status(root)
         sp = os.path.join(root, "tmp", "kitchen-script")
@@ -2316,6 +2324,14 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
 
         # 2. Make it a usable root filesystem (see RUNTIME_DIRS).
         _prepare_chroot(root)
+        # BEFORE the snapshot below, which is what keeps the delta honest: before_status
+        # becomes the merged view, so after-minus-before still isolates only what THIS
+        # bundle installed. Merging after the snapshot would re-declare everything the
+        # merge added. See dpkgdb.merge_fragments_into_chroot for why it is needed.
+        _n, _from = dpkgdb.merge_fragments_into_chroot(root)
+        if _n:
+            ctx.say(f"merged {_n} status fragment(s) into the build chroot "
+                    f"({', '.join(_from)})")
 
         # 3. Snapshot, install, snapshot.
         before, before_status = _manifest(root), _read_status(root)

@@ -112,6 +112,56 @@ def _read(path: str) -> str:
         return f.read()
 
 
+def merge_fragments_into_chroot(root: str) -> tuple[int, list[str]]:
+    """Fold any status fragments in an unpacked stack into that chroot's dpkg database.
+
+    Bundles ship a fragment instead of a cumulative var/lib/dpkg/status, because a union
+    composes trees and not files -- one bundle's copy would shadow the larger one below
+    it wholesale. pack merges the fragments into 98-dpkg-db.sb at the end. But nothing
+    merged them on the way IN, so a build chroot saw the status of the highest STOCK
+    bundle and believed every add-on beneath it had installed nothing.
+
+    Measured on the firefox-esr case: with 10-chromium.sb directly beneath it, the
+    chroot still read 04-apps.sb's 575 packages -- unsquashfs -f cannot overwrite a
+    status that 10-chromium.sb does not contain -- so apt reinstalled the browser
+    runtime that was already there and the fragment declared 5 packages instead of 2.
+    Harmless while the versions coincide; an archive update between the two builds makes
+    it version skew, and removing the lower bundle makes the fragment declare packages
+    whose files have left.
+
+    The fragment FILES are read and never touched. They are deliberately not in
+    BUNDLE_EXCLUDE (tests/unit/test_apply.py asserts they are kept), so rewriting or
+    even re-timing them would put them in the next bundle's delta -- the higher bundle
+    would ship a copy of the lower one's fragment, which then survives the lower bundle
+    being removed. Read-only is load-bearing.
+
+    Returns (fragments merged, bundle names they came from). The rewritten status cannot
+    leak into a built bundle: BUNDLE_EXCLUDE drops var/lib/dpkg/status and status-old.
+    """
+    fd = os.path.join(root, FRAGMENT_DIR)
+    if not os.path.isdir(fd):
+        return (0, [])
+    # Sorted, because each fragment is named after the bundle that wrote it and that is
+    # the order the union loads them in -- the same order merge_tree uses at pack time.
+    names = sorted(os.listdir(fd))
+    fragments = []
+    for n in names:
+        f = os.path.join(fd, n)
+        if os.path.isfile(f):
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                fragments.append(fh.read())
+    if not fragments:
+        return (0, [])
+    status = os.path.join(root, STATUS)
+    base = ""
+    if os.path.isfile(status):
+        with open(status, encoding="utf-8", errors="replace") as fh:
+            base = fh.read()
+    with open(status, "w", encoding="utf-8") as fh:
+        fh.write(merge(base, fragments))
+    return (len(fragments), names)
+
+
 def merge_tree(iso: str, quiet: bool = False) -> int:
     """Rebuild <iso>/slax/modules/98-dpkg-db.sb from the base status plus all fragments.
 
