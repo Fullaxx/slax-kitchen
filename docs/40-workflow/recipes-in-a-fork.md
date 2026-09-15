@@ -1,0 +1,124 @@
+# Recipes in a fork
+
+This project is meant to be forked. Two things a fork almost always wants — its own bundle
+numbers, and its own recipes — and the decision rule between them:
+
+> **Copy a recipe when you are changing what it *does*. Override a var when you are only
+> changing a *value*.**
+
+Copying costs you upstream fixes. `libreoffice.yaml` shipped with two wrong comments — a size
+claim contradicted by its own measurements, and a dependency relationship stated backwards — and
+both were corrected after it landed. A fork that had copied the file still has them.
+
+---
+
+## Changing a value: override it in a profile
+
+A **profile** is one complete build: the base ISO, an ordered recipe list, the output name, and
+which tests to run. `kitchen build <profile>` runs unpack → apply → pack → test from it. It lives
+in your git, so this is where a fork's own values belong — not in a shell alias and not in a
+modified copy of someone else's recipe.
+
+```yaml
+apiVersion: slax-kitchen/v1
+kind: Profile
+metadata:
+  name: myproject
+base: {flavour: debian, arch: 64bit, version: "12.2.0"}
+recipes:
+  - uefi-bootable                          # bare name: the recipe's own vars
+  - name: libreoffice
+    vars: {bundle: 20-office}              # object form: override them
+  - name: serial-console
+    vars: {port: ttyS1, speed: "9600"}
+```
+
+Both forms may be mixed freely. Overrides **merge** over the recipe's defaults, so setting `port`
+leaves `speed` at whatever the recipe says.
+
+Three things this will not let you do quietly:
+
+| | |
+|---|---|
+| **A var the recipe does not declare** | error, naming the ones it does |
+| **A value the schema rejects** | error at validation, before anything is built — `bundle: NONSENSE` fails the `NN-name` pattern rather than dying inside `bundle.packages` |
+| **Forget what you used** | `kitchen status` prints the overrides, and they are recorded in `.kitchen/journal.yaml` |
+
+`kitchen apply --profile <profile>` applies a profile's recipes to an existing work tree without
+rebuilding the ISO.
+
+**Only what a recipe exposes as a var can be overridden.** If you want to change something a recipe
+hardcodes, either send us a patch making it a var — that is a good contribution — or copy the
+recipe.
+
+---
+
+## Changing behaviour: keep your own recipes
+
+Make a directory under `recipes/` and put them in it. That is the whole setup:
+
+```
+recipes/
+  available/          this repo's library
+  myproject/          yours
+```
+
+```sh
+kitchen apply my-tools                    # resolves by bare name, no configuration
+```
+
+Every directory under `recipes/` is on the search path. What that gets you:
+
+- **`40-schema` validates your recipes** like any other — you get the schema, the verb argument
+  checks and the `NN-` bundle rule for free.
+- **`90-doc-coverage` ignores them.** It polices only `recipes/available/`, so you do not owe the
+  upstream cookbook a page for a recipe that is yours. Write docs for your own reasons.
+- **The matrix runs on them**, so you get the same four-target coverage we do:
+
+  ```sh
+  ci/recipe-matrix.sh debian-64bit-12.2.0 isos/slax-64bit-debian-12.2.0.iso recipes/myproject
+  ```
+
+Two rules worth knowing:
+
+- **`metadata.name` must match the filename stem.** `recipes/myproject/my-tools.yaml` needs
+  `name: my-tools`. Recipes are referenced by name, so these have to agree.
+- **A name that exists in two directories is an error**, naming both files. Nothing silently
+  picks one. Rename yours, or name the file you mean by path — `kitchen apply` accepts a path
+  anywhere, including outside the repo.
+
+### Sidecar files
+
+A recipe may have a directory of payload beside it — `enable-ssh.debian.files/`,
+`bundle-from-dir.files/`. `src:` resolves relative to the recipe's own directory, so these travel
+with the recipe wherever it lives. Copy both, or neither.
+
+---
+
+## Bundle numbers
+
+Load order is the numeric prefix and **higher wins**. `01`–`06` are upstream's, `98` is the
+generated package database, `99` is `savechanges`. Yours goes in `07`–`97`.
+
+Ties are not an error and not random: `sortmod` sorts on the number and falls back to an
+alphabetical compare, so `07-branding` loads before `07-extras`. Stock Slax relies on this —
+`01-core` before `01-firmware`. It is still worth avoiding, because nobody predicts it.
+
+If a shipped recipe's number collides with yours, override it in your profile rather than editing
+the recipe:
+
+```yaml
+  - name: add-packages
+    vars: {bundle: 30-mytools}
+```
+
+See [composing bundles](composing-bundles.md) for what a number actually decides.
+
+---
+
+## Sending something back
+
+General-purpose recipes are welcome upstream; project-specific ones belong in your fork. The line
+is roughly "would someone building an unrelated image want this?" — `firefox-esr` yes, "our
+company's VPN certificates" no. [CONTRIBUTING.md](../../CONTRIBUTING.md) has the bar, and the
+verification ladder you will be asked to state.

@@ -21,7 +21,8 @@ New to Slax? [What Slax is](00-overview/what-is-slax.md) in one page, and the
 [edit bundles](40-workflow/edit-bundles.md) → [repack](40-workflow/repack-iso.md) →
 [write to USB](40-workflow/write-to-usb.md), with [the cookbook](50-cookbook/) for worked recipes.
 If you are splitting work across several bundles — several browsers, say — read
-[composing bundles](40-workflow/composing-bundles.md) first.
+[composing bundles](40-workflow/composing-bundles.md) first. If you are forking this to build
+your own image, [recipes in a fork](40-workflow/recipes-in-a-fork.md) is the one to read.
 
 **I want to understand how Slax works.**
 [runtime-layout](10-anatomy/runtime-layout.md) first — nearly every "where does my file go?" question

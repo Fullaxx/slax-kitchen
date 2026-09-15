@@ -63,13 +63,18 @@ vars:
   speed: "115200"
 ```
 
-Override per build in a profile:
+Override per build in a profile — the recipe file stays untouched:
 
 ```yaml
 recipes:
+  - serial-console                              # the recipe's own defaults
   - name: serial-console
-    vars: {port: ttyS1, speed: "9600"}
+    vars: {port: ttyS1, speed: "9600"}          # or override them here
 ```
+
+Verified: that profile produces `console=ttyS1,9600n8` on the `serial` menu entry, and
+`kitchen status` records which values were used. See
+[recipes in a fork](../40-workflow/recipes-in-a-fork.md).
 
 ## Using it
 

@@ -135,7 +135,8 @@ steps:
 ```
 
 - `compat.privilege` is what lets `kitchen doctor` tell you whether this machine can run it.
-- `vars:` are substituted as `{{name}}` and can be overridden per profile.
+- `vars:` are substituted as `{{name}}`, and a profile can override them per build —
+  see [recipes in a fork](../40-workflow/recipes-in-a-fork.md).
 - `when:` guards a step on a fact about the tree, e.g. `flavour==debian`.
 - **23 of 26 declared verbs are implemented.** A recipe using an unimplemented one fails with a
   message naming what *is* available. Full list and fields: [verb reference](../90-reference/verbs.md).

@@ -94,10 +94,18 @@ Three details worth knowing:
 Requirements are declared per verb in `VERB_REQUIRES` (`lib/apply.py`); a new verb adds one entry
 there and gets preflight, `doctor` reporting and the error messages for free.
 
-## `apply <recipe>... [-w DIR]`
+## `apply <recipe>... [-w DIR]` / `apply --profile <profile>`
 
-Applies recipes to a work tree. Names resolve against `recipes/available/`, `recipes/examples/` and
-the current directory. `compat.requires` is resolved depth-first with cycle detection.
+Applies recipes to a work tree. A name resolves against **every directory under `recipes/`** and
+then the current directory, so a fork's `recipes/<project>/` needs no configuration — see
+[recipes in a fork](../40-workflow/recipes-in-a-fork.md). A path is accepted anywhere, including
+outside the repo. A name found in **two** directories is an error naming both files, rather than
+whichever sorted first. `compat.requires` is resolved depth-first with cycle detection.
+
+`--profile` takes the recipe list **and its per-recipe `vars:` overrides** from a profile instead
+of naming recipes on the command line; the two forms are mutually exclusive. This is how
+`kitchen build` invokes apply, and it is the supported way to change a shipped recipe's values
+without editing the recipe.
 
 `-n` / `--dry-run` reports what each step would do without touching anything.
 
@@ -409,7 +417,14 @@ base:
   arch: 64bit              # 32bit | 64bit
   version: "12.2.0"
   iso: path/to/base.iso    # optional; otherwise derived from the three above
-recipes: [memtest86plus, serial-console, isohybrid, uefi-bootable]
+recipes:                   # a bare name, or {name, vars} to override that recipe's vars
+  - memtest86plus
+  - isohybrid
+  - name: serial-console
+    vars: {port: ttyS1, speed: "9600"}
+  - name: libreoffice
+    vars: {bundle: 20-office}
+  - uefi-bootable          # order matters: it parses isolinux.cfg, so keep it last
 output:
   name: "slax-example-{{version}}.iso"    # {{version}} {{flavour}} {{arch}} {{name}}
   hybrid: true
@@ -418,3 +433,9 @@ test: [structure]          # structure | bios-boot | uefi-boot | usb | persisten
 ```
 
 `usb` and `persistence` are accepted and reported as skipped — they need a KVM host.
+
+**`vars:` overrides merge** over the recipe's own defaults, so setting one leaves the rest alone.
+Naming a var the recipe does not declare is an error listing what it does declare, and the value
+is schema-checked as though the recipe had been written that way — `bundle: NONSENSE` fails the
+`NN-name` pattern at validation rather than deep inside `bundle.packages`. What was used is
+recorded in the journal and shown by `kitchen status`.

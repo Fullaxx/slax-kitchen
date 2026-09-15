@@ -141,7 +141,7 @@ it boots on every medium, what software is in it, and the upstream source of tru
 
 Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 33 pages, one per
 shipped recipe), `60-testing/`, `70-compat/`,
-`90-reference/` (CLI + all 23 verbs; the profile format is still thin). See [the index](../README.md).
+`90-reference/` (CLI + all 23 verbs + the profile format). See [the index](../README.md).
 
 ---
 

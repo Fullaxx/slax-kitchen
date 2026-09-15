@@ -17,6 +17,10 @@ document is a tour of it.
 
 ---
 
+> **Forking rather than contributing?** [Recipes in a fork](docs/40-workflow/recipes-in-a-fork.md)
+> covers keeping your own recipes in `recipes/<project>/` and overriding a shipped recipe's vars
+> from your profile — both without editing anything you would later have to merge.
+
 ## 1. Engine or recipe?
 
 Two different things live here, and nearly every routing decision follows from telling them apart.
