@@ -178,15 +178,24 @@ def check_plan_order(plan: list[tuple[str, dict]]) -> list[str]:
             built.append((recipe, str(step.get("bundle", "?"))))
         elif verb == "bundle.remove" and built:
             who, bundle = built[0]
-            where = f"{recipe}" if recipe == who else f"{recipe}, after {who}"
+            # Attribution rides on the bundle, not the recipe: "in X, after Y runs after
+            # Z was built" said `after` twice in one clause.
+            by = "" if recipe == who else f" by {who}"
+            # REORDERING IS THE ONLY REMEDY THIS FUNCTION HONOURS, so it is the only one
+            # named. An earlier version also offered "say so with an explicit from: on
+            # the build step" -- advice that did nothing, because nothing here reads
+            # from:. Honouring it would mean deciding whether any bundle `match` matches
+            # could start with any prefix in `from:`, which needs the module list; that
+            # is exactly what is unavailable here and the reason this is an order rule at
+            # all. See the docstring.
             problems.append(
-                f"bundle.remove (match {step.get('match', '?')!r}) in {where} runs after "
-                f"{bundle} was built. A bundle takes everything below it as given, so "
-                f"removing one afterwards leaves an unresolvable NEEDED that no gate can "
-                f"see. Put every bundle.remove before every bundle.packages / "
-                f"bundle.script -- chromium-current does, deliberately. If the bundle "
-                f"being removed genuinely is not beneath it, say so with an explicit "
-                f"from: on the build step.")
+                f"bundle.remove (match {step.get('match', '?')!r}) in {recipe} runs after "
+                f"{bundle} was built{by}. A bundle takes everything below it as given, so "
+                f"removing one afterwards can leave an unresolvable NEEDED that no gate "
+                f"can see. Put every bundle.remove before every bundle.packages / "
+                f"bundle.script -- chromium-current does, deliberately, and removing "
+                f"first also makes the remaining from: stacks come out right on their "
+                f"own.")
     return problems
 
 

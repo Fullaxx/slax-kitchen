@@ -676,6 +676,32 @@ def test_removes_come_first():
         check(f"check_plan_order: {label}",
               bool(apply.check_plan_order(plan)), want_refusal)
 
+    # THE REMEDY THE MESSAGE NAMES MUST ACTUALLY WORK.
+    #
+    # The refusal used to end "if the bundle being removed genuinely is not beneath it,
+    # say so with an explicit from: on the build step" -- advice that did nothing,
+    # because this function never reads from:. A user could follow it exactly and get
+    # byte-identical output. Reported against 68879d9 by the slax-wine fork (#5).
+    #
+    # Asserting on the message text would be brittle. Applying the remedy is not: for
+    # every plan that is refused, moving the removes to the front must clear it, and the
+    # explicit from: form must still be refused -- that is the promise now being made.
+    for label, plan, want_refusal in cases:
+        if not want_refusal:
+            continue
+        removes = [(r, st) for r, st in plan if st.get("verb") == "bundle.remove"]
+        rest = [(r, st) for r, st in plan if st.get("verb") != "bundle.remove"]
+        check(f"the named remedy clears it: {label}",
+              apply.check_plan_order(removes + rest), [])
+
+    # And the remedy that is NOT named must not be implied to work either: an explicit
+    # from: changes nothing, by design, which is why the message no longer mentions it.
+    for from_ in (["01-core"], ["01-core", "05-chromium"]):
+        check(f"explicit from={from_} is still refused",
+              bool(apply.check_plan_order(
+                  [("r", {"verb": "bundle.packages", "bundle": "20-wine", "from": from_}),
+                   ("r", remove)])), True)
+
     # And the real shipped recipes must all pass, chromium-current above all.
     import glob
 
