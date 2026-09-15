@@ -1129,6 +1129,40 @@ def _under(root: str, rel: str, verb: str, what: str = "dest") -> str:
     return full
 
 
+# THE ONLY TWO NUMBERS THAT ARE NOT MERELY ORDERING.
+#
+# The rest of the scheme -- 00-09 platform, 10-89 yours, 90-97 headroom -- is convention.
+# A fork that ignores it gets a different load order and nothing else, which is its
+# business. These two are different, and both were measured rather than assumed:
+#
+#   98  `kitchen pack` DELETES and rewrites 98-dpkg-db.sb every time (dpkgdb.merge_tree).
+#       It has to: a generated bundle left in place becomes the base on the next pack and
+#       freezes the database. So a recipe's own 98-dpkg-db.sb is destroyed with no error,
+#       and a 98-anything-else silently outranks the package database.
+#
+#   99  upstream's savechanges picks the next session number by
+#           ls -1 | sort -V | tail -n 1 | sed 's/^99-changes-//; s/[.]sb$//'   then + 1
+#       which assumes the last file in slax/modules/ is a 99-changes-N.sb. With a bundle
+#       named 99-mystuff.sb present it computes 100 on EVERY boot -- 99-mystuff.sb sorts
+#       after 99-changes-100.sb -- so each saved session overwrites the previous one. With
+#       a dot in the stem (99-my.tools.sb) the arithmetic is a bash syntax error and the
+#       target becomes 99-changes-.sb. Either way the user loses saved work.
+#
+# 97 does everything 98 would and collides with nothing.
+RESERVED_PREFIXES = {
+    "98": "kitchen pack generates 98-dpkg-db.sb and rewrites it on every pack",
+    "99": "savechanges writes 99-changes-N.sb and derives N from the last file here",
+}
+
+
+def _check_reserved(num: str, name: str, verb: str) -> None:
+    """Refuse a reserved numeric prefix. See RESERVED_PREFIXES for the measurements."""
+    if num in RESERVED_PREFIXES:
+        raise RuntimeError(
+            f"{verb}: {num} is reserved -- {RESERVED_PREFIXES[num]}. Use 97 to sit "
+            f"above every other bundle; got {name!r}")
+
+
 def _bundle_name(raw: str, verb: str) -> str:
     """Validate and normalise a bundle filename.
 
@@ -1141,6 +1175,7 @@ def _bundle_name(raw: str, verb: str) -> str:
         raise RuntimeError(
             f"{verb}: bundle name must start with NN- (load order is the numeric "
             f"prefix, and higher wins); got {name!r}")
+    _check_reserved(name[:2], name, verb)
     return name
 
 
@@ -1309,6 +1344,7 @@ def v_bundle_renumber(ctx: Ctx, step: dict) -> None:
     to = str(step["to"]).zfill(2)
     if not re.match(r"^\d\d$", to):
         raise RuntimeError(f"bundle.renumber: 'to' must be two digits; got {step['to']!r}")
+    _check_reserved(to, f"{to}-", "bundle.renumber")
     hits = sorted(n for n in os.listdir(mods) if pat.search(n) and n.endswith(".sb"))
     if not hits:
         ctx.say(f"no bundle matched /{step['match']}/ (nothing renumbered)")
@@ -2126,12 +2162,10 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
     packages = step.get("packages") or []
     if not packages:
         raise RuntimeError("bundle.packages: no packages listed")
-    out_name = step.get("bundle") or "07-packages.sb"
-    if not out_name.endswith(".sb"):
-        out_name += ".sb"
-    if not re.match(r"^\d\d-", out_name):
-        raise RuntimeError(f"bundle.packages: bundle name must start with NN- "
-                           f"(load order is the numeric prefix); got {out_name!r}")
+    # _bundle_name rather than a second copy of the same check: this verb used to
+    # re-implement it inline, which is exactly how a rule ends up enforced by four verbs
+    # and not the fifth.
+    out_name = _bundle_name(step.get("bundle") or "07-packages", "bundle.packages")
 
     mods = ctx.p("slax", "modules")
     stack = _bundle_stack(ctx, step.get("from"), out_name, "bundle.packages")

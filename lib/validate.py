@@ -41,8 +41,7 @@ def validate_file(path: str, overrides: dict | None = None) -> list[str]:
     `overrides` are per-build values for the recipe's `vars:`, from a profile. They have
     to reach HERE rather than being applied afterwards: this function resolves vars
     before schema-checking, so validating without them would check the recipe's default
-    and let an override through. bundle.packages never calls _bundle_name(), which makes
-    the schema its only guard on a bundle name.
+    and let an override through.
     """
     import yaml
     try:

@@ -443,6 +443,63 @@ def test_recipe_search_path():
     check("the removed examples/ is not there", "examples" in paths, False)
 
 
+def test_reserved_bundle_numbers():
+    """98 and 99 are refused; everything else is the fork's business.
+
+    These two are not style. 98-dpkg-db.sb is deleted and rewritten by `kitchen pack` on
+    every pack, so a recipe's bundle there is destroyed silently. And upstream's
+    savechanges derives the next session index from the LAST file in slax/modules/ --
+    measured with a 99-mystuff.sb present, it recomputes 100 on every boot, so each saved
+    session overwrites the one before it.
+    """
+    for verb in ("bundle.files", "bundle.fromDir", "bundle.fromTarball",
+                 "bundle.script", "bundle.packages"):
+        for raw in ("98-x", "99-x", "98-dpkg-db", "99-my.tools"):
+            try:
+                apply._bundle_name(raw, verb)
+                FAILURES.append(f"{verb} accepted the reserved name {raw!r}")
+            except RuntimeError as e:
+                if "reserved" not in str(e):
+                    FAILURES.append(f"{verb} refused {raw!r} for the wrong reason: {e}")
+
+        # The escape hatch the message names has to actually work, or the advice is a
+        # dead end. 97 sits above every other bundle and collides with nothing.
+        check(f"{verb} accepts 97", apply._bundle_name("97-x", verb), "97-x.sb")
+        check(f"{verb} accepts 00", apply._bundle_name("00-x", verb), "00-x.sb")
+        check(f"{verb} accepts 10", apply._bundle_name("10-x", verb), "10-x.sb")
+
+    # The pre-existing NN- rule must survive unchanged.
+    for raw in ("mytools", "5-x"):
+        try:
+            apply._bundle_name(raw, "bundle.files")
+            FAILURES.append(f"accepted a bundle with no NN- prefix: {raw!r}")
+        except RuntimeError as e:
+            if "NN-" not in str(e):
+                FAILURES.append(f"wrong error for {raw!r}: {e}")
+
+
+def test_renumber_refuses_reserved():
+    """bundle.renumber takes a number, not a filename, so it needs its own check."""
+    import tempfile
+    for to, want_refusal in (("98", True), ("99", True), (99, True),
+                             ("97", False), (5, False)):
+        work = tempfile.mkdtemp()
+        mods = os.path.join(work, "iso", "slax", "modules")
+        os.makedirs(mods)
+        open(os.path.join(mods, "05-chromium.sb"), "w").close()
+        ctx = apply.Ctx(work, ".", "t", dry=True)
+        step = {"verb": "bundle.renumber", "match": "^05-chromium", "to": to}
+        try:
+            apply.v_bundle_renumber(ctx, step)
+            if want_refusal:
+                FAILURES.append(f"bundle.renumber accepted reserved to={to!r}")
+        except RuntimeError as e:
+            if not want_refusal:
+                FAILURES.append(f"bundle.renumber refused to={to!r}: {e}")
+            elif "reserved" not in str(e):
+                FAILURES.append(f"bundle.renumber refused to={to!r} wrongly: {e}")
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -453,7 +510,9 @@ def main():
                test_network_declaration, test_profile_recipe_forms,
                test_overrides_merge_not_replace,
                test_unknown_override_is_rejected,
-               test_recipe_search_path]:
+               test_recipe_search_path,
+               test_reserved_bundle_numbers,
+               test_renumber_refuses_reserved]:
         fn()
     if FAILURES:
         for f in FAILURES:
