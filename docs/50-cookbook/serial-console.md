@@ -121,7 +121,7 @@ serial, edit the existing entries instead:
 ```yaml
 - verb: boot.cmdline
   targets: [isolinux.cfg, syslinux.cfg]
-  add: "console=ttyS0,115200n8"
+  append: ["console=ttyS0,115200n8"]
 ```
 
 Note this appends only; the stock entries have no `console=` at all, so the result is a single

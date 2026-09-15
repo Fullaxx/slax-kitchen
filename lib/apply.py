@@ -1669,8 +1669,14 @@ def v_boot_cmdline(ctx: Ctx, step: dict) -> None:
     drop = _listify(step.get("remove"))
     # A step that changes nothing is a mistake, and the commonest way to write one is a
     # misspelled field -- the verb reference said `add:` for a while, which this verb
-    # silently ignored while reporting "cmdline updated on 2 entries". The step schema
-    # does not constrain per-verb fields, so this is the only place to catch it.
+    # silently ignored while reporting "cmdline updated on 2 entries".
+    #
+    # Two things have changed since that was written, and the comment used to claim this
+    # was "the only place to catch it". 42106db closed the step schema with
+    # unevaluatedProperties, so `add:` is now a validation error; and 45-doc-yaml
+    # validates the examples in docs/ too, which is what found the three pages still
+    # showing `add:` long after the verb reference had been corrected. This check stays
+    # as the backstop for a caller that bypasses validation.
     if not add and not drop:
         raise RuntimeError(
             "boot.cmdline: nothing to do -- give `append:` and/or `remove:` "

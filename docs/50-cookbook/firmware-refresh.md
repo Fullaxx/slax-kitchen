@@ -68,7 +68,7 @@ dependency-resolving package manager, and a stock mirror pointing years past thi
 The Slackware route is a pinned `kernel-firmware` package through
 [`bundle-from-txz`](bundle-from-txz.md):
 
-```yaml
+```sh
 PKGS="a/kernel-firmware-20211220_0c6a7b3-noarch-1.txz"
 ```
 

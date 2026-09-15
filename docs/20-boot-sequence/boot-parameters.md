@@ -156,7 +156,7 @@ debug
 ```yaml
 - verb: boot.cmdline
   targets: [isolinux.cfg, syslinux.cfg]
-  add: "noload=05-chromium"
+  append: ["noload=05-chromium"]
 ```
 
 `boot.cmdline` edits the `APPEND` lines of existing entries; `boot.menu` adds new entries alongside

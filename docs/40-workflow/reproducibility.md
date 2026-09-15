@@ -119,7 +119,11 @@ mirror points at `-current`. If you need a reproducible bundle, pin the source:
 
 ```yaml
 apt:
-  sources: ["deb http://snapshot.debian.org/archive/debian/20231009T000000Z bookworm main"]
+  sources:
+    - name: snapshot
+      uri: http://snapshot.debian.org/archive/debian/20231009T000000Z
+      suite: bookworm
+      components: [main]
 ```
 
 Without pinning, the same recipe run six months apart produces different bundles, and that has
