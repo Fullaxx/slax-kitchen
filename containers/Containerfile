@@ -45,7 +45,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # squashfuse and debootstrap (nothing here needs either).
 COPY packages/ /tmp/packages/
 RUN apt-get update -qq \
- && grep -hv '^#' /tmp/packages/*.txt | grep -v '^$' \
+ && cat /tmp/packages/*.txt | grep -v -e '^#' -e '^$' \
       | xargs apt-get install -y --no-install-recommends \
  && rm -rf /tmp/packages /var/lib/apt/lists/*
 

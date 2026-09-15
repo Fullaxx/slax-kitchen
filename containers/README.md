@@ -31,7 +31,7 @@ One package per line; `#` comments and blank lines are stripped. To install the 
 machine that is not a container:
 
 ```sh
-grep -hv '^#' containers/packages/*.txt | grep -v '^$' \
+cat containers/packages/*.txt | grep -v -e '^#' -e '^$' \
   | xargs sudo apt-get install -y --no-install-recommends
 ```
 
