@@ -22,6 +22,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import urllib.request
@@ -847,6 +848,61 @@ def _read_status(root: str) -> str:
             return f.read()
     except OSError:
         return ""
+
+
+def _stage_delta(root: str, keep: list[str], stage: str) -> None:
+    """Copy the delta out of a chroot, preserving what the chroot actually had.
+
+    ONE COPY, not two. bundle.packages and bundle.script had this loop character for
+    character, differing only in a temp variable -- so both bugs below lived in both
+    places and either fix would have half-landed. lib/apply.py already has a comment
+    about exactly this shape: "which is exactly how a rule ends up enforced by four verbs
+    and not the fifth".
+
+    Ownership is meaningful here and nowhere else in the bundle verbs: dpkg and the
+    recipe's own script set it deliberately, inside a root chroot. Two ways it was lost:
+
+    DIRECTORIES AND SYMLINKS had no chown at all. shutil.copystat copies "the permission
+    bits, last access time, last modification time, and flags" -- "The file contents,
+    owner, and group are unaffected". Measured against what users-and-auth leaves behind:
+
+        in the chroot:  drwx------ 1100:1100  home/slaxuser
+        in the bundle:  drwx------ root:root  <-- dir lost its owner
+                        -rw-r--r-- 1100:1100  <-- its contents kept theirs
+
+    mode 0700 on a root-owned directory is a hard deny, so the account that recipe exists
+    to create could not enter its own home.
+
+    SETUID AND SETGID were destroyed on files, which the old loop appeared to get right.
+    The kernel clears S_ISUID/S_ISGID on chown -- even root chowning root to root, since
+    Linux 2.2.13 -- so `copy2` then `chown` silently drops the bit:
+
+        after shutil.copy2:  0o4755
+        after os.chown(0,0): 0o755
+
+    chromium-current installs chromium-sandbox, whose entire content is a setuid helper
+    (-rwsr-xr-x root/root in the stock bundle). A recipe that exists to ship security
+    fixes was shipping a Chromium whose sandbox could not work. chmod AFTER chown is the
+    order tarfile itself uses, for this reason.
+    """
+    for rel in keep:
+        src, dst = os.path.join(root, rel), os.path.join(stage, rel)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        st = os.lstat(src)
+        if os.path.islink(src):
+            if not os.path.lexists(dst):
+                os.symlink(os.readlink(src), dst)
+                os.lchown(dst, st.st_uid, st.st_gid)
+        elif os.path.isdir(src):
+            os.makedirs(dst, exist_ok=True)
+            shutil.copystat(src, dst)
+            os.chown(dst, st.st_uid, st.st_gid)
+        else:
+            shutil.copy2(src, dst)
+            os.chown(dst, st.st_uid, st.st_gid)
+            # AFTER the chown, which clears setuid/setgid. Not cosmetic: see the
+            # docstring.
+            os.chmod(dst, stat.S_IMODE(st.st_mode))
 
 
 def _write_fragment(ctx: "Ctx", stage: str, name: str, before: str, after: str) -> None:
@@ -1712,19 +1768,7 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
                                "the exclusion list; nothing to package")
 
         stage = os.path.join(build, "stage")
-        for rel in keep:
-            src, dst = os.path.join(root, rel), os.path.join(stage, rel)
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            if os.path.islink(src):
-                if not os.path.lexists(dst):
-                    os.symlink(os.readlink(src), dst)
-            elif os.path.isdir(src):
-                os.makedirs(dst, exist_ok=True)
-                shutil.copystat(src, dst)
-            else:
-                shutil.copy2(src, dst)
-                st = os.lstat(src)
-                os.chown(dst, st.st_uid, st.st_gid)
+        _stage_delta(root, keep, stage)
         _write_fragment(ctx, stage, name, before_status, after_status)
         _make_bundle(ctx, stage, name, "bundle.script")
     finally:
@@ -2582,20 +2626,7 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
 
         # 5. Stage just the delta, preserving parent directory metadata.
         stage = os.path.join(build, "stage")
-        for rel in keep:
-            src, dst = os.path.join(root, rel), os.path.join(stage, rel)
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            if os.path.islink(src):
-                lnk = os.readlink(src)
-                if not os.path.lexists(dst):
-                    os.symlink(lnk, dst)
-            elif os.path.isdir(src):
-                os.makedirs(dst, exist_ok=True)
-                shutil.copystat(src, dst)
-            else:
-                shutil.copy2(src, dst)
-                st = os.lstat(src)
-                os.chown(dst, st.st_uid, st.st_gid)
+        _stage_delta(root, keep, stage)
 
         # 6. Declare what was added to the package database, without shipping the
         #    database itself. BUNDLE_EXCLUDE drops var/lib/dpkg/status; this replaces it.

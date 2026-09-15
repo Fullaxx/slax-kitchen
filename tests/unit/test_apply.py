@@ -1027,6 +1027,90 @@ def test_extract_members_matches_extractall_on_a_clean_archive():
     check("checked extraction matches extractall exactly", snap(b), snap(a))
 
 
+def test_stage_delta_preserves_what_the_chroot_had():
+    """Staging must ship the ownership and modes dpkg and the recipe's script set.
+
+    Two bugs lived in this loop, in both verbs, because the loop was copy-pasted:
+
+    * directories and symlinks got no chown at all -- shutil.copystat copies mode, times
+      and flags and leaves "contents, owner, and group unaffected". users-and-auth built
+      /home/slaxuser as root:root 0700, so the account it exists to create could not
+      enter its own home directory (#10).
+
+    * setuid and setgid were destroyed on files, in the branch that looked correct. The
+      kernel clears them on chown, even root to root, so copy2-then-chown drops the bit.
+      chromium-current installs chromium-sandbox, whose whole content is a setuid helper
+      (#13). chmod after chown is the order tarfile uses, for this reason.
+    """
+    import tempfile
+
+    root = tempfile.mkdtemp()
+    stage = tempfile.mkdtemp()
+    os.makedirs(os.path.join(root, "home", "user"))
+    os.makedirs(os.path.join(root, "usr", "bin"))
+    os.chown(os.path.join(root, "home", "user"), 1100, 1100)
+    os.chmod(os.path.join(root, "home", "user"), 0o700)
+    open(os.path.join(root, "home", "user", ".bashrc"), "w").close()
+    os.chown(os.path.join(root, "home", "user", ".bashrc"), 1100, 1100)
+    open(os.path.join(root, "usr", "bin", "helper"), "w").close()
+    os.chmod(os.path.join(root, "usr", "bin", "helper"), 0o4755)
+    open(os.path.join(root, "usr", "bin", "setgid"), "w").close()
+    os.chmod(os.path.join(root, "usr", "bin", "setgid"), 0o2755)
+    os.symlink("/etc/passwd", os.path.join(root, "usr", "bin", "link"))
+    # Owned by a NON-root uid, or the assertion below cannot tell a missing lchown from
+    # a symlink root happened to create.
+    os.lchown(os.path.join(root, "usr", "bin", "link"), 1100, 1100)
+
+    keep = ["home/user", "home/user/.bashrc", "usr/bin/helper", "usr/bin/setgid",
+            "usr/bin/link"]
+    apply._stage_delta(root, keep, stage)
+
+    def own(rel):
+        st = os.lstat(os.path.join(stage, rel))
+        return (st.st_uid, st.st_gid)
+
+    def mode(rel):
+        import stat as st_
+        return st_.S_IMODE(os.lstat(os.path.join(stage, rel)).st_mode)
+
+    check("directory keeps its owner", own("home/user"), (1100, 1100))
+    check("directory keeps its mode", mode("home/user"), 0o700)
+    check("file keeps its owner", own("home/user/.bashrc"), (1100, 1100))
+    check("setuid survives staging", mode("usr/bin/helper"), 0o4755)
+    check("setgid survives staging", mode("usr/bin/setgid"), 0o2755)
+    check("symlink is lchowned, not followed", own("usr/bin/link"), (1100, 1100))
+    # lchown, not chown: following the link would have changed /etc/passwd's owner.
+    check("the symlink target was not touched",
+          os.lstat("/etc/passwd").st_uid, 0)
+    check("symlink target is preserved",
+          os.readlink(os.path.join(stage, "usr/bin/link")), "/etc/passwd")
+
+
+def test_both_chroot_verbs_use_one_staging_loop():
+    """The loop was copy-pasted, so any fix to it landed twice or half-landed.
+
+    lib/apply.py already carries a comment about this exact shape -- "which is exactly
+    how a rule ends up enforced by four verbs and not the fifth" -- about a different
+    rule. This keeps the staging loop from drifting back apart.
+    """
+    import ast
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    tree = ast.parse(open(os.path.join(here, "..", "..", "lib", "apply.py")).read())
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        if fn.name not in ("v_bundle_script", "v_bundle_packages"):
+            continue
+        calls = [n for n in ast.walk(fn) if isinstance(n, ast.Call)
+                 and getattr(n.func, "id", "") == "_stage_delta"]
+        check(f"{fn.name} stages through the shared helper", len(calls), 1)
+        # ...and does not open-code a second copy of it.
+        chowns = [n for n in ast.walk(fn) if isinstance(n, ast.Call)
+                  and ast.unparse(n.func) in ("os.chown", "os.lchown", "shutil.copystat")]
+        check(f"{fn.name} has no inline staging left", chowns, [])
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -1047,7 +1131,9 @@ def main():
                test_network_is_declared_where_it_is_used,
                test_symlink_chain_cannot_escape,
                test_fromtarball_wires_both_guards_in,
-               test_extract_members_matches_extractall_on_a_clean_archive]:
+               test_extract_members_matches_extractall_on_a_clean_archive,
+               test_stage_delta_preserves_what_the_chroot_had,
+               test_both_chroot_verbs_use_one_staging_loop]:
         fn()
     if FAILURES:
         for f in FAILURES:
