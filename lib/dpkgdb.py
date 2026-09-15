@@ -182,7 +182,8 @@ def merge_tree(iso: str, quiet: bool = False) -> int:
     tmp = tempfile.mkdtemp(prefix="kitchen-dpkgdb.")
     try:
         base, base_from, fragments, frag_from = "", "", [], []
-        carriers = []
+        carriers: list = []
+        discarded: list = []
         for n in names:
             sb = os.path.join(mods, n)
             d = os.path.join(tmp, n)
@@ -190,6 +191,10 @@ def merge_tree(iso: str, quiet: bool = False) -> int:
             if p:
                 base, base_from = _read(p), n
                 # A real status outranks everything below it, fragments included.
+                # Remember what that cost: `discarded` deliberately survives the reset,
+                # because the reset is the only thing that can silently lose a bundle's
+                # packages and there is otherwise no trace of it afterwards.
+                discarded += frag_from
                 fragments, frag_from, carriers = [], [], []
                 continue
             fd = os.path.join(tmp, n + ".frag")
@@ -200,6 +205,22 @@ def merge_tree(iso: str, quiet: bool = False) -> int:
                     frag_from.append(f"{n}:{f}")
 
         if not fragments:
+            # Nothing to merge is normal -- a stock tree, or one with no add-on bundle.
+            # Fragments that EXISTED and were outranked is not: those packages are now
+            # in no database anywhere, and returning 0 here made that silent. It is how
+            # `bundle.renumber` moving 05-chromium to 95 loses the bundle beneath it --
+            # the real 600-package status sorts above the fragment, the reset fires, and
+            # pack writes no 98-dpkg-db.sb at all while exiting 0.
+            if discarded:
+                raise RuntimeError(
+                    "dpkgdb: every status fragment was outranked by a real "
+                    "var/lib/dpkg/status above it, so none could be merged and the "
+                    "packages they declare would be in no database at all.\n"
+                    f"  discarded: {', '.join(discarded)}\n"
+                    f"  outranked by: {base_from}\n"
+                    "  A bundle that ships a real status must sort BELOW every bundle "
+                    "carrying a fragment. Renumbering one above them is what usually "
+                    "causes this -- see docs/40-workflow/composing-bundles.md.")
             return 0
         if not base:
             raise RuntimeError(

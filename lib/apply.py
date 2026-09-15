@@ -151,41 +151,112 @@ def step_requires(step: dict) -> dict:
 _STACKING_VERBS = ("bundle.packages", "bundle.script")
 
 
-def check_plan_order(plan: list[tuple[str, dict]]) -> list[str]:
-    """Every bundle.remove must come before every bundle.packages / bundle.script.
+# Verbs that move a bundle out from under one already built. bundle.renumber belongs
+# here as much as bundle.remove: renumber-bundles.yaml ships `^05-chromium` -> 95 as its
+# default, which leaves chromium in place while the bundle above is built and THEN lifts
+# it over the top -- so the build is against it and the finished image is not.
+_DISTURBING_VERBS = ("bundle.remove", "bundle.renumber")
+
+
+def _bundle_number(name: str) -> int | None:
+    """The numeric prefix of a bundle name, or None if there is not one."""
+    m = re.match(r"^(\d+)", name)
+    return int(m.group(1)) if m else None
+
+
+def _only_above(step: dict, built: list[tuple[str, str]]) -> bool:
+    """True when this step can only touch bundles that no built bundle stacks on.
+
+    _bundle_stack drops EVERYTHING sorting at or above the bundle being built, not just
+    98 and 99 -- so removing a higher-numbered bundle afterwards is provably safe and
+    refusing it is pure friction. Decidable from the step list alone whenever the regex
+    is anchored on a literal number, which is how every shipped recipe writes it.
+
+    Conservative by construction: an unanchored or templated `match` yields None and the
+    step is treated as disturbing, because a regex can match anything.
+    """
+    m = re.match(r"^\^(\d+)", str(step.get("match", "")))
+    if not m:
+        return False
+    target = int(m.group(1))
+    numbers = [n for n in (_bundle_number(b) for _r, b in built) if n is not None]
+    return bool(numbers) and target > max(numbers)
+
+
+def _built_before(work: str | None) -> list[tuple[str, str]]:
+    """Bundles this tree was already given, from the journal, still present on disk.
+
+    Without this the rule holds inside one invocation and nowhere else: the two
+    one-liners every cookbook page documents -- `kitchen apply firefox-esr` then
+    `kitchen apply remove-chromium` -- both exit 0 and produce exactly the state the
+    single-invocation refusal exists to prevent.
+
+    The journal is the right source and the filesystem is not: it records what earlier
+    runs BUILT, which is the question, where `slax/modules/` only says what is there now.
+    Intersecting the two drops anything built and since removed. lib/status.py does the
+    same reconstruction to mark which bundles are ours.
+    """
+    if not work:
+        return []
+    import yaml
+    mods = os.path.join(work, "iso", "slax", "modules")
+    try:
+        with open(os.path.join(work, ".kitchen", "journal.yaml")) as fh:
+            j = yaml.safe_load(fh) or {}
+        present = set(os.listdir(mods))
+    except (OSError, yaml.YAMLError):
+        return []
+    out = []
+    for e in j.get("applied") or []:
+        for art in e.get("artifacts") or []:
+            base = os.path.basename(art)
+            if art.startswith("-") or not base.endswith(".sb") or base not in present:
+                continue
+            out.append((f"{e.get('recipe', '?')} (earlier run)", base))
+    return out
+
+
+def check_plan_order(plan: list[tuple[str, dict]], work: str | None = None) -> list[str]:
+    """bundle.remove and bundle.renumber must precede bundle.packages / bundle.script.
 
     `from:` defaults to the whole stack below the bundle being built, which is the right
     default and the reason this rule exists. A bundle built that way assumes everything
-    beneath it still exists at boot; a later bundle.remove deletes one of those and
-    leaves binaries with an unresolvable NEEDED. Nothing detects it -- the file delta is
-    empty for the missing libraries, so _write_fragment does not declare them either and
-    the merged 98-dpkg-db.sb stays perfectly self-consistent. The image builds, passes
-    every gate, and fails when a user runs the program.
+    beneath it still exists at boot; disturbing one of those afterwards leaves binaries
+    with an unresolvable NEEDED. Nothing detects it -- the file delta is empty for the
+    missing libraries, so _write_fragment does not declare them either and the merged
+    98-dpkg-db.sb stays self-consistent. The image builds, passes every gate, and fails
+    when a user runs the program.
 
-    The rule is stated as an ORDER rather than as "did this remove hit a bundle some
-    earlier step actually stacked". The narrow version needs the module list, and that is
-    not available where it would have to run: preflight takes no work tree, and
-    `kitchen build` preflights before it unpacks (lib/build.sh). Worse, a filesystem
-    check at that moment would be actively wrong -- 05-chromium.sb is still present
-    before the plan runs, so it would flag chromium-current, the one shipped recipe that
-    is deliberately correct. An order rule needs none of that and is decidable from the
-    step list alone.
+    Renumbering is the same class and is worse in one way: a remove at least takes the
+    bundle out of the next _bundle_stack, while a renumber leaves it in place for the
+    build and only then lifts it above. Move a real dpkg status above an add-on's
+    fragment and dpkgdb.merge_tree discards the fragment outright.
 
-    It is stricter than necessary in one case: removing 98-dpkg-db.sb or a 99-changes-N,
-    which _bundle_stack already excludes from every default stack and which therefore
-    cannot dangle anything. Reordering fixes that, harmlessly, and a rule with no
-    exceptions is easier to remember than one with a footnote.
+    THE SCOPE OF THE RULE, and what it needs to see:
 
-    Plan-wide, not per-recipe: the case that prompted this was a profile listing
-    firefox-esr and then remove-chromium, where each recipe is fine on its own.
+    * Within one plan, it is decidable from the step list alone.
+    * Across invocations it is not, and plan-only was not enough -- `kitchen apply
+      firefox-esr` then `kitchen apply remove-chromium` is what every cookbook page
+      documents, and both exited 0. `work` seeds the prior bundles from the journal.
+    * Under --preflight-only there is no tree yet, because `kitchen build` preflights
+      before it unpacks (lib/build.sh). `work` is None there and the rule is plan-only,
+      which is what it always was. The journal, not the filesystem, is what makes this
+      safe: `slax/modules/` before a run still holds 05-chromium.sb, so a filesystem
+      check would flag chromium-current -- the one shipped recipe that is deliberately
+      correct. The journal records what earlier runs BUILT, which is the real question.
+
+    Still stricter than necessary for 98-dpkg-db.sb and 99-changes-N, which no default
+    stack contains. _only_above covers the general form of that -- _bundle_stack drops
+    everything sorting at or above the target, not merely those two -- but only when the
+    match is anchored on a literal number. Reordering fixes the rest, harmlessly.
     """
-    built: list[tuple[str, str]] = []          # (recipe, bundle name) already stacked
+    built: list[tuple[str, str]] = list(_built_before(work))
     problems = []
     for recipe, step in plan:
         verb = step.get("verb")
         if verb in _STACKING_VERBS:
             built.append((recipe, str(step.get("bundle", "?"))))
-        elif verb == "bundle.remove" and built:
+        elif verb in _DISTURBING_VERBS and built and not _only_above(step, built):
             who, bundle = built[0]
             # Attribution rides on the bundle, not the recipe: "in X, after Y runs after
             # Z was built" said `after` twice in one clause.
@@ -194,17 +265,15 @@ def check_plan_order(plan: list[tuple[str, dict]]) -> list[str]:
             # named. An earlier version also offered "say so with an explicit from: on
             # the build step" -- advice that did nothing, because nothing here reads
             # from:. Honouring it would mean deciding whether any bundle `match` matches
-            # could start with any prefix in `from:`, which needs the module list; that
-            # is exactly what is unavailable here and the reason this is an order rule at
-            # all. See the docstring.
+            # could start with any prefix in `from:`, which the step list cannot answer.
             problems.append(
-                f"bundle.remove (match {step.get('match', '?')!r}) in {recipe} runs after "
+                f"{verb} (match {step.get('match', '?')!r}) in {recipe} runs after "
                 f"{bundle} was built{by}. A bundle takes everything below it as given, so "
-                f"removing one afterwards can leave an unresolvable NEEDED that no gate "
-                f"can see. Put every bundle.remove before every bundle.packages / "
-                f"bundle.script -- chromium-current does, deliberately, and removing "
-                f"first also makes the remaining from: stacks come out right on their "
-                f"own.")
+                f"disturbing one afterwards can leave an unresolvable NEEDED that no gate "
+                f"can see. Put every bundle.remove and bundle.renumber before every "
+                f"bundle.packages / bundle.script -- chromium-current does, deliberately, "
+                f"and removing first also makes the remaining from: stacks come out right "
+                f"on their own.")
     return problems
 
 
@@ -2790,30 +2859,40 @@ def main(argv: list[str]) -> int:
     # Check everything the WHOLE plan needs before touching anything. Without this the
     # first three recipes apply, download files and edit configs, and the fourth dies on
     # a missing tool -- leaving a half-modified tree.
-    if not a.skip_preflight:
-        facts = dict(override) if override else _tree_facts(a.work, os.path.join(a.work, "iso"))
-        plan: list[tuple[str, dict]] = []
-        for p in paths:
-            try:
-                doc, steps = plan_recipe(p, facts, ov(p))
-            except RuntimeError as e:
-                print(f"error: {os.path.basename(p)}: {e}", file=sys.stderr)
-                return 2
-            for _i, step, run in steps:
-                if run:
-                    plan.append((doc["metadata"]["name"], step))
-        # Ordering is a property of the PLAN, not of this machine, so it gets its own
-        # message rather than being folded into preflight's "unmet requirement(s)".
-        order = check_plan_order(plan)
-        if order:
-            sys.stdout.flush()
-            print(f"\nplan rejected -- {len(order)} ordering problem(s), nothing has "
-                  "been modified:", file=sys.stderr)
-            for pr in order:
-                print(f"  - {pr}", file=sys.stderr)
-            print("\nSee docs/40-workflow/composing-bundles.md.", file=sys.stderr)
-            sys.stderr.flush()
+    # The plan is built unconditionally. --skip-preflight is documented as "do not check
+    # tools/capabilities first" -- it is about this MACHINE, and it used to switch off
+    # the ordering rule too, because the rule lived inside its guard. Nothing said so,
+    # and composing-bundles.md says flatly "This is enforced".
+    facts = dict(override) if override else _tree_facts(a.work, os.path.join(a.work, "iso"))
+    plan: list[tuple[str, dict]] = []
+    for p in paths:
+        try:
+            doc, steps = plan_recipe(p, facts, ov(p))
+        except RuntimeError as e:
+            print(f"error: {os.path.basename(p)}: {e}", file=sys.stderr)
             return 2
+        for _i, step, run in steps:
+            if run:
+                plan.append((doc["metadata"]["name"], step))
+
+    # Ordering is a property of the PLAN, not of this machine, so it gets its own
+    # message rather than being folded into preflight's "unmet requirement(s)".
+    #
+    # The work tree goes in whenever there is one. Under --preflight-only there is not
+    # -- `kitchen build` preflights before it unpacks -- and the check falls back to
+    # plan-only, which is exactly its old behaviour.
+    order = check_plan_order(plan, None if a.preflight_only else a.work)
+    if order:
+        sys.stdout.flush()
+        print(f"\nplan rejected -- {len(order)} ordering problem(s), nothing has "
+              "been modified:", file=sys.stderr)
+        for pr in order:
+            print(f"  - {pr}", file=sys.stderr)
+        print("\nSee docs/40-workflow/composing-bundles.md.", file=sys.stderr)
+        sys.stderr.flush()
+        return 2
+
+    if not a.skip_preflight:
         problems = preflight(plan)
         if problems:
             # stdout is block-buffered when piped; without this the error lands above

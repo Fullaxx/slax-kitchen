@@ -182,13 +182,82 @@ def test_merge_fragments_into_chroot():
     check("no fragment dir is a no-op", dpkgdb.merge_fragments_into_chroot(bare), (0, []))
 
 
+def test_outranked_fragments_are_not_lost_silently():
+    """Fragments discarded by the reset must be an error, not a quiet return 0.
+
+    merge_tree's "a real status outranks everything below it, fragments included" reset
+    is correct. What was wrong is what happened when it discarded EVERYTHING: the walk
+    ended with no fragments, `return 0` fired, pack treated that as "nothing to merge"
+    and exited 0, and no 98-dpkg-db.sb was written at all. The packages that bundle
+    declared were then in no database anywhere, with no message on any stream.
+
+    That is how `bundle.renumber` moving 05-chromium to 95 loses the bundle beneath it,
+    and bundle_assert.py cannot see it -- it skips bundles that ship no status, and 600
+    is a superset of 575 so the pairwise check passes. Reported as #11.
+
+    Needs real squashfs images because merge_tree unsquashfs-es each bundle; they are
+    two-file trees, so it costs milliseconds.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    if not shutil.which("mksquashfs"):
+        return                      # doctor reports this; the gate should not fail on it
+
+    def sb(path, files):
+        src = tempfile.mkdtemp()
+        for rel, body in files.items():
+            full = os.path.join(src, rel)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w") as f:
+                f.write(body)
+        subprocess.run(["mksquashfs", src, path, "-noappend", "-no-progress"],
+                       capture_output=True, check=True)
+
+    iso = tempfile.mkdtemp()
+    mods = os.path.join(iso, "slax", "modules")
+    os.makedirs(mods)
+    # 01-core ships a real status; 07-extras ships only a fragment, above it.
+    sb(os.path.join(mods, "01-core.sb"),
+       {dpkgdb.STATUS: dpkgdb.render([("base:amd64", stanza("base", "1.0"))])})
+    sb(os.path.join(mods, "07-extras.sb"),
+       {os.path.join(dpkgdb.FRAGMENT_DIR, "07-extras"):
+        dpkgdb.render([("tmux:amd64", stanza("tmux", "3.3a"))])})
+
+    # Ordered correctly, the fragment merges and a generated bundle appears.
+    check("a fragment above the status merges", dpkgdb.merge_tree(iso, quiet=True), 1)
+    check("and writes the generated bundle",
+          os.path.isfile(os.path.join(mods, dpkgdb.GENERATED)), True)
+
+    # Now move the real status ABOVE the fragment, exactly as bundle.renumber does.
+    os.unlink(os.path.join(mods, dpkgdb.GENERATED))
+    os.rename(os.path.join(mods, "01-core.sb"), os.path.join(mods, "95-core.sb"))
+    try:
+        n = dpkgdb.merge_tree(iso, quiet=True)
+        FAILURES.append(f"merge_tree discarded every fragment and returned {n}")
+    except RuntimeError as e:
+        check("the error names what was lost", "07-extras" in str(e), True)
+    check("and no generated bundle is left behind",
+          os.path.isfile(os.path.join(mods, dpkgdb.GENERATED)), False)
+
+    # A tree with no fragments at all is still a quiet, correct 0.
+    plain = tempfile.mkdtemp()
+    pmods = os.path.join(plain, "slax", "modules")
+    os.makedirs(pmods)
+    sb(os.path.join(pmods, "01-core.sb"),
+       {dpkgdb.STATUS: dpkgdb.render([("base:amd64", stanza("base", "1.0"))])})
+    check("no fragments anywhere is not an error", dpkgdb.merge_tree(plain, quiet=True), 0)
+
+
 def main():
     for fn in [test_key_includes_architecture, test_blank_line_inside_description,
                test_delta_is_added_and_changed, test_delta_empty_when_nothing_changed,
                test_merge_replaces_in_place, test_merge_appends_new_and_keeps_base,
                test_merge_is_idempotent, test_merge_order_later_fragment_wins,
                test_sortmod_matches_livekit, test_render_round_trip,
-               test_merge_fragments_into_chroot]:
+               test_merge_fragments_into_chroot,
+               test_outranked_fragments_are_not_lost_silently]:
         fn()
     if FAILURES:
         for f in FAILURES:

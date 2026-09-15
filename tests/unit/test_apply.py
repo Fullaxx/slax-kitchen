@@ -702,6 +702,64 @@ def test_removes_come_first():
                   [("r", {"verb": "bundle.packages", "bundle": "20-wine", "from": from_}),
                    ("r", remove)])), True)
 
+    # bundle.renumber disturbs a bundle just as bundle.remove does -- and worse in one
+    # way: a remove takes it out of the next _bundle_stack, while a renumber leaves it
+    # in place for the build and only then lifts it above. renumber-bundles.yaml ships
+    # ^05-chromium -> 95 as its default, so this needs no configuration to hit. (#11)
+    check("bundle.renumber counts as disturbing",
+          bool(apply.check_plan_order(
+              [("r", {"verb": "bundle.packages", "bundle": "11-firefox"}),
+               ("r", {"verb": "bundle.renumber", "match": "^05-chromium", "to": "95"})])),
+          True)
+
+    # _bundle_stack drops EVERYTHING sorting at or above the bundle being built, not
+    # just 98 and 99, so disturbing a higher-numbered bundle afterwards is provably safe
+    # and refusing it was pure friction. Conservative when the match is not anchored on
+    # a literal number, because a regex can match anything. (#11)
+    build10 = {"verb": "bundle.packages", "bundle": "10-foo"}
+    for label, step, want_refusal in (
+        ("above the target", {"verb": "bundle.remove", "match": "^95-x\\.sb$"}, False),
+        ("below the target", {"verb": "bundle.remove", "match": "^05-chromium\\.sb$"}, True),
+        ("a saved session", {"verb": "bundle.remove", "match": "^99-changes"}, False),
+        ("the generated db", {"verb": "bundle.remove", "match": "^98-dpkg-db\\.sb$"}, False),
+        ("unanchored, so unknowable", {"verb": "bundle.remove", "match": "chromium"}, True),
+        ("templated, so unknowable", {"verb": "bundle.remove", "match": "{{drop}}"}, True),
+    ):
+        check(f"over-refusal: {label}",
+              bool(apply.check_plan_order([("r", build10), ("r", step)])), want_refusal)
+
+    # Across invocations. The rule held inside one plan and nowhere else, so running the
+    # two one-liners every cookbook page documents -- `kitchen apply firefox-esr` then
+    # `kitchen apply remove-chromium` -- produced exactly the state the single-plan
+    # refusal exists to prevent. The journal is what makes the second run see the first.
+    import tempfile
+    work = tempfile.mkdtemp()
+    mods = os.path.join(work, "iso", "slax", "modules")
+    os.makedirs(mods)
+    os.makedirs(os.path.join(work, ".kitchen"))
+    for b in ("05-chromium.sb", "11-firefox.sb"):
+        open(os.path.join(mods, b), "w").close()
+    journal = os.path.join(work, ".kitchen", "journal.yaml")
+    with open(journal, "w") as f:
+        f.write("applied:\n  - recipe: firefox-esr\n    verbs: [bundle.packages]\n"
+                "    artifacts: [slax/modules/11-firefox.sb]\n")
+    later = [("remove-chromium", {"verb": "bundle.remove", "match": "^05-chromium\\.sb$"})]
+
+    check("a later invocation sees the earlier build",
+          bool(apply.check_plan_order(later, work)), True)
+    # ...but only while that bundle is still there. Built-then-removed is not ground.
+    os.unlink(os.path.join(mods, "11-firefox.sb"))
+    check("a bundle since removed is not ground to stand on",
+          apply.check_plan_order(later, work), [])
+    # ...and a tree with no journal is a fresh unpack: those bundles came with the ISO.
+    open(os.path.join(mods, "11-firefox.sb"), "w").close()
+    os.unlink(journal)
+    check("no journal means nothing was built here",
+          apply.check_plan_order(later, work), [])
+    # work=None is the --preflight-only path, where kitchen build has not unpacked yet.
+    check("work=None falls back to plan-only",
+          apply.check_plan_order(later, None), [])
+
     # And the real shipped recipes must all pass, chromium-current above all.
     import glob
 
