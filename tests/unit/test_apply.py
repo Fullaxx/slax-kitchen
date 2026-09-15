@@ -584,6 +584,61 @@ def test_fromtarball_refuses_symlink_escape():
           os.listdir(os.path.join(work, "iso", "slax", "modules")), [])
 
 
+def test_checksums_sign_is_a_key_id():
+    """`sign` is a gpg key id, and every layer disagreed about that.
+
+    The schema typed it boolean, so the form both docs show -- sign: "your-key-id" --
+    was a hard validation error, and the ONLY schema-legal truthy value could not sign
+    either: str(True) reaches pack.sh as the key id "True". Nothing caught it because no
+    shipped recipe sets sign, and 40-schema never validates the YAML fenced in docs/.
+
+    The quote half is tested separately below and is not cosmetic: PyYAML quotes any
+    scalar that would reparse as a non-string, so 0xDEADBEEF and an all-digit key id
+    arrive with their quotes attached.
+    """
+    import json
+    import tempfile
+
+    import jsonschema
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    schema = json.load(open(os.path.join(here, "..", "..", "schema", "recipe.schema.json")))
+
+    def recipe(sign):
+        step = {"verb": "iso.checksums", "algorithm": "sha256"}
+        if sign is not None:
+            step["sign"] = sign
+        return {"apiVersion": "slax-kitchen/v1", "kind": "Recipe",
+                "metadata": {"name": "signcheck", "summary": "sign field type check"},
+                "steps": [step]}
+
+    v = jsonschema.Draft202012Validator(schema)
+    for label, value in (("key id", "ABCD1234EF"), ("false", False), ("omitted", None)):
+        check(f"schema accepts sign: {label}", list(v.iter_errors(recipe(value))), [])
+
+    # A key id must reach the hints file able to survive pack.sh's sed.
+    work = tempfile.mkdtemp()
+    ctx = apply.Ctx(work, ".", "t")
+    apply.v_iso_checksums(ctx, {"verb": "iso.checksums", "algorithm": "sha256",
+                                "sign": "ABCD1234EF"})
+    hints = open(os.path.join(work, ".kitchen", "pack.yaml")).read()
+    check("hint carries the key id", "checksums_sign: ABCD1234EF" in hints, True)
+
+    # `true` is schema-legal and can never work, so the verb refuses it.
+    try:
+        apply.v_iso_checksums(ctx, {"verb": "iso.checksums", "sign": True})
+        FAILURES.append("iso.checksums accepted sign: true")
+    except RuntimeError:
+        pass
+    # `false` means "no signature", not an error, and must write no hint.
+    work2 = tempfile.mkdtemp()
+    ctx2 = apply.Ctx(work2, ".", "t")
+    apply.v_iso_checksums(ctx2, {"verb": "iso.checksums", "sign": False})
+    check("sign: false writes no sign hint",
+          "checksums_sign" in open(os.path.join(work2, ".kitchen", "pack.yaml")).read(),
+          False)
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -598,7 +653,8 @@ def main():
                test_reserved_bundle_numbers,
                test_renumber_refuses_reserved,
                test_link_targets_refused,
-               test_fromtarball_refuses_symlink_escape]:
+               test_fromtarball_refuses_symlink_escape,
+               test_checksums_sign_is_a_key_id]:
         fn()
     if FAILURES:
         for f in FAILURES:

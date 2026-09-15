@@ -966,7 +966,11 @@
                 "type": "string"
               },
               "sign": {
-                "type": "boolean"
+                "description": "gpg key id to detach-sign the checksum file with; false disables",
+                "type": [
+                  "string",
+                  "boolean"
+                ]
               }
             }
           }

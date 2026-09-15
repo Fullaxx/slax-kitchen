@@ -184,7 +184,13 @@ kitchen_pack() {
         ( cd "$(dirname "$out")" && "${_sums}sum" "$(basename "$out")" ) > "$_sumfile" \
             || die "pack: ${_sums}sum failed"
         printf '  %sok%s   wrote %s\n' "$G" "$O" "$_sumfile"
-        _key=$(sed -n 's/^checksums_sign: *//p' "$_hints" 2>/dev/null | head -1)
+        # Quote-stripped like volid/appid/sysid above. PyYAML quotes any scalar that
+        # would reparse as something other than a string, so a key id of 0xDEADBEEF or
+        # one that is all digits arrives as '0xDEADBEEF' -- quotes included -- and gpg
+        # is handed a key id no keyring has. Stripping also makes the `!= "false"` test
+        # below reachable; it could never match while the value was still quoted.
+        _key=$(sed -n 's/^checksums_sign: *//p' "$_hints" 2>/dev/null | head -1 \
+               | sed "s/^[\"']//;s/[\"']$//")
         if [ -n "$_key" ] && [ "$_key" != "false" ]; then
             if have gpg; then
                 if gpg --batch --yes --local-user "$_key" \

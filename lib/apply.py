@@ -1766,6 +1766,13 @@ def v_iso_checksums(ctx: Ctx, step: dict) -> None:
         raise RuntimeError(f"iso.checksums: unsupported algorithm {algo!r} "
                            f"(want sha256 or sha512)")
     ctx.hint("checksums", algo)
+    # `sign: true` validates and can never work: it reaches pack.sh as the gpg key id
+    # "True". The schema cannot express "a string, or the boolean false but not true",
+    # so the verb says it. `false` stays legal and is already a no-op below.
+    if step.get("sign") is True:
+        raise RuntimeError("iso.checksums: sign takes a gpg key id, not a boolean -- "
+                           "e.g. sign: \"ABCD1234EF\". Omit it, or set false, for no "
+                           "signature.")
     if step.get("sign"):
         # Only record the request. Signing needs a key and a passphrase, neither of
         # which belongs in a recipe or in this process.
