@@ -859,6 +859,20 @@
               },
               "help": {
                 "type": "string"
+              },
+              "bootlogo": {
+                "description": "menu background; a path, or {src: path}",
+                "type": [
+                  "string",
+                  "object"
+                ]
+              },
+              "helpbg": {
+                "description": "background behind the F1 screen; a path, or {src: path}",
+                "type": [
+                  "string",
+                  "object"
+                ]
               }
             }
           }
@@ -883,7 +897,8 @@
                 "type": "string"
               },
               "probe": {
-                "type": "boolean"
+                "description": "file `search --file` looks for; default /slax/boot/vmlinuz",
+                "type": "string"
               }
             }
           }
