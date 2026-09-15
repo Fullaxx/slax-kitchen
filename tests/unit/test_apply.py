@@ -366,6 +366,83 @@ def test_network_declaration():
           bool(apply.step_requires({"verb": "bundle.packages"}).get("network")), True)
 
 
+def test_profile_recipe_forms():
+    """A profile mixes bare names and {name, vars}; both must survive the round trip."""
+    import tempfile
+    import textwrap
+    d = tempfile.mkdtemp(prefix="kitchen-prof-test.")
+    path = os.path.join(d, "p.yaml")
+    with open(path, "w") as f:
+        f.write(textwrap.dedent("""\
+            apiVersion: slax-kitchen/v1
+            kind: Profile
+            metadata:
+              name: p
+              summary: A throwaway profile exercising both recipe entry forms
+            base: {flavour: debian, arch: 64bit, version: "12.2.0"}
+            recipes:
+              - isohybrid
+              - name: serial-console
+                vars: {port: ttyS1}
+            """))
+    names, overrides = apply.read_profile_recipes(path)
+    check("order preserved", names, ["isohybrid", "serial-console"])
+    check("only the object form contributes overrides",
+          overrides, {"serial-console": {"port": "ttyS1"}})
+
+
+def test_overrides_merge_not_replace():
+    """Setting one var must not blank the others.
+
+    `--facts` gets this wrong -- `dict(override) if override else _tree_facts(...)`
+    replaces wholesale, so `--facts flavour=debian` discards the derived arch and any
+    step guarding on it then fails with "unknown fact 'arch'". Overrides must not
+    repeat that.
+    """
+    declared = {"port": "ttyS0", "speed": "115200"}
+    merged = {**declared, **{"port": "ttyS1"}}
+    check("overridden key wins", merged["port"], "ttyS1")
+    check("untouched key survives", merged["speed"], "115200")
+
+
+def test_unknown_override_is_rejected():
+    """A var the recipe does not declare is an error, not a silent no-op."""
+    import tempfile
+    import textwrap
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "..", "..", "lib"))
+    from validate import validate_file  # noqa: PLC0415
+    d = tempfile.mkdtemp(prefix="kitchen-ov-test.")
+    path = os.path.join(d, "ovtest.yaml")
+    with open(path, "w") as f:
+        f.write(textwrap.dedent("""\
+            apiVersion: slax-kitchen/v1
+            kind: Recipe
+            metadata:
+              name: ovtest
+              summary: A throwaway recipe used to check override rejection
+            compat: {flavours: [debian], arch: [64bit], privilege: none}
+            vars: {bundle: 07-x}
+            steps:
+              - {verb: bundle.files, bundle: "{{bundle}}", files: []}
+            """))
+    check("a declared var is accepted",
+          validate_file(path, {"bundle": "20-y"}), [])
+    problems = validate_file(path, {"bundel": "20-y"})
+    check("a typo is rejected", len(problems), 1)
+    # Indexing blind would turn a regression into a traceback instead of a FAIL line,
+    # which is a worse test even though it still goes red.
+    check("the message names the declared var",
+          any("declared: bundle" in p for p in problems), True)
+
+
+def test_recipe_search_path():
+    """Every directory under recipes/ is searched, with available/ first."""
+    paths = [os.path.basename(p) for p in apply.recipe_search_path()]
+    check("available/ is present and first", paths[0], "available")
+    check("the removed examples/ is not there", "examples" in paths, False)
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -373,7 +450,10 @@ def main():
                test_wont_do_verbs, test_parse_lsdl,
                test_initramfs_busybox_registered,
                test_say_does_not_journal, test_apt_source_line,
-               test_network_declaration]:
+               test_network_declaration, test_profile_recipe_forms,
+               test_overrides_merge_not_replace,
+               test_unknown_override_is_rejected,
+               test_recipe_search_path]:
         fn()
     if FAILURES:
         for f in FAILURES:
