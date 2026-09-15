@@ -47,7 +47,12 @@ Absolute paths and `..` components inside the archive are **refused**, not sanit
 are link *targets*, for symlinks and hardlinks alike. Checking the member's name alone is not
 enough: extraction follows a symlink that is already on disk, so an archive shipping `x -> /etc`
 and then `x/cron.d/kitchen` writes outside the tree entirely. Reported against `06c13bb` by the
-slax-wine fork; see [SECURITY.md](../../SECURITY.md).
+slax-wine fork; see [SECURITY.md](../../SECURITY.md). A second report showed that fix was
+incomplete — a two-member chain, where one symlink makes a later member resolve elsewhere — so
+containment is now checked against the filesystem before each member is written.
+
+Setuid and setgid members, device nodes and FIFOs are **refused**. This verb is `privilege: none`
+and its output runs as root at boot; `bundle.script` is the route for content that needs them.
 
 ## Why this one is 64-bit only
 

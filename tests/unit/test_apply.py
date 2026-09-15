@@ -1111,6 +1111,61 @@ def test_both_chroot_verbs_use_one_staging_loop():
         check(f"{fn.name} has no inline staging left", chowns, [])
 
 
+def test_fromtarball_refuses_privileged_members():
+    """A privilege: none verb must not decide what runs privileged on the image.
+
+    The verb declares privilege: none and asks only for mksquashfs, but extraction runs
+    as root whenever apply.py is under sudo for a plan -- and tarfile's fully_trusted
+    extraction applies whatever the archive asks for. sha256: is optional here, so an
+    unpinned URL's publisher would be choosing. Filed as #4.
+
+    Refused, not stripped: a bundle that silently does less than its archive said is the
+    quieter failure, and bundle.script under privilege: chroot is the honest route.
+
+    This also has to hold BEFORE -all-root is enabled for this verb: -all-root rewrites
+    ids and leaves modes alone, so it turns a surviving "setuid nobody" into "setuid
+    root".
+    """
+    import tarfile
+
+    def member(name, typ=tarfile.REGTYPE, mode=0o644):
+        i = tarfile.TarInfo(name)
+        i.type = typ
+        i.mode = mode
+        return i
+
+    cases = [
+        ("plain file", member("usr/share/doc/x"), False),
+        ("executable", member("usr/bin/tool", mode=0o755), False),
+        ("sticky directory", member("tmp", tarfile.DIRTYPE, 0o1777), False),
+        ("symlink", member("lib", tarfile.SYMTYPE, 0o777), False),
+        ("setuid binary", member("usr/bin/tool", mode=0o4755), True),
+        ("setgid binary", member("usr/bin/tool", mode=0o2755), True),
+        ("character device", member("dev/null", tarfile.CHRTYPE, 0o666), True),
+        ("block device", member("dev/sda", tarfile.BLKTYPE, 0o660), True),
+        ("FIFO", member("run/sock", tarfile.FIFOTYPE, 0o644), True),
+    ]
+    for label, m, want_refusal in cases:
+        try:
+            apply._refuse_privileged_member(m, "bundle.fromTarball")
+            refused = False
+        except RuntimeError:
+            refused = True
+        check(f"privileged member: {label}", refused, want_refusal)
+
+    # And the verb must call it -- the cases above exercise the helper directly.
+    import ast
+    here = os.path.dirname(os.path.abspath(__file__))
+    tree = ast.parse(open(os.path.join(here, "..", "..", "lib", "apply.py")).read())
+    wired = False
+    for fn in ast.walk(tree):
+        if isinstance(fn, ast.FunctionDef) and fn.name == "v_bundle_fromtarball":
+            wired = any(isinstance(n, ast.Call)
+                        and getattr(n.func, "id", "") == "_refuse_privileged_member"
+                        for n in ast.walk(fn))
+    check("v_bundle_fromtarball calls the refusal", wired, True)
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -1133,7 +1188,8 @@ def main():
                test_fromtarball_wires_both_guards_in,
                test_extract_members_matches_extractall_on_a_clean_archive,
                test_stage_delta_preserves_what_the_chroot_had,
-               test_both_chroot_verbs_use_one_staging_loop]:
+               test_both_chroot_verbs_use_one_staging_loop,
+               test_fromtarball_refuses_privileged_members]:
         fn()
     if FAILURES:
         for f in FAILURES:

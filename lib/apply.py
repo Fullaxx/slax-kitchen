@@ -1571,6 +1571,7 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
                 # member ends up: `a/b/c -> ../../etc` stays inside at depth 3 and escapes
                 # at depth 1 once `strip: 1` has rewritten the name.
                 _refuse_escaping_link(m, "bundle.fromTarball")
+                _refuse_privileged_member(m, "bundle.fromTarball")
                 members.append(m)
             if not members:
                 raise RuntimeError(f"bundle.fromTarball: nothing left after strip: {strip}")
@@ -1587,6 +1588,46 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
         _make_bundle(ctx, root, name, "bundle.fromTarball")
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _refuse_privileged_member(m, verb: str) -> None:
+    """Refuse what a `privilege: none` verb has no business producing.
+
+    This verb declares privilege: none and VERB_REQUIRES asks only for mksquashfs, so a
+    reader of a recipe using it treats it as harmless. Extraction runs as root in
+    practice -- apply.py is run under sudo for a whole plan whenever any recipe in it
+    needs a chroot -- and tarfile's fully_trusted extraction faithfully applies whatever
+    the archive asks for. So without this an unpinned tarball could put a setuid-root
+    binary in /usr/bin and a device node in /dev, in a bundle that is mounted into the
+    union on every boot. sha256: is optional on this verb; absent, it only warns.
+
+    Refused rather than stripped. Stripping is quieter and would produce a bundle that
+    silently does less than the archive said -- and this project would rather stop than
+    guess. bundle.script under privilege: chroot is the honest route for content that
+    genuinely needs either, which is what bundle-from-txz already does deliberately.
+
+    Not delegated to filter="data", which refuses both: it needs 3.11.4+ and debian:12
+    ships 3.11.2. Same floor argument as _extract_members.
+
+    Ordering note: this must land BEFORE -all-root is turned on for this verb.
+    -all-root rewrites ids and leaves mode bits alone, so it converts a surviving
+    "setuid nobody" into "setuid root" -- measured. Without this check, that flag makes
+    the problem worse rather than better.
+    """
+    if m.isdev() or m.isfifo():
+        kind = "device node" if m.isdev() else "FIFO"
+        raise RuntimeError(
+            f"{verb}: archive member {m.name!r} is a {kind}. This verb is "
+            f"privilege: none and its output is mounted as root at boot. Use "
+            f"bundle.script (privilege: chroot) if the bundle genuinely needs one.")
+    if m.mode & (stat.S_ISUID | stat.S_ISGID):
+        which = "setuid" if m.mode & stat.S_ISUID else "setgid"
+        raise RuntimeError(
+            f"{verb}: archive member {m.name!r} is {which} (mode {m.mode:04o}). An "
+            f"archive this verb downloads must not decide what runs privileged on the "
+            f"built image -- sha256: is optional here, so the publisher of the URL "
+            f"would be deciding. Use bundle.script (privilege: chroot) if it is "
+            f"genuinely needed.")
 
 
 def _extract_members(t, dest: str, members: list, kw: dict) -> None:

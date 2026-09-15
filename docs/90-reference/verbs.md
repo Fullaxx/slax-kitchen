@@ -100,7 +100,14 @@ Absolute paths and `..` components in the archive are **refused**, not sanitised
 are link *targets*. A member named `x` that is a symlink to `/etc`, followed by a member
 `x/cron.d/kitchen`, would otherwise write through it to the host. Symlinks and hardlinks are
 both checked, after `strip:` has been applied, because stripping changes how deep a member
-sits and therefore where a relative target lands.
+sits and therefore where a relative target lands. Containment is then re-checked against the
+filesystem before each member is written, because a member can be a symlink that an *earlier*
+member has already made point somewhere else — a purely textual check cannot see that.
+
+The verb also **refuses setuid/setgid members, device nodes and FIFOs**. It is a ○ verb whose
+output is mounted as root at every boot, and `sha256:` is optional, so otherwise an unpinned
+archive's publisher would be choosing what runs privileged on your image. Use `bundle.script`
+(◐ `chroot`) if a bundle genuinely needs one.
 
 ### `bundle.remove` ○
 
