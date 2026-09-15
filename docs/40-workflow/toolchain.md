@@ -108,7 +108,12 @@ failure only appears when a recipe reaches for it.
 pip install PyYAML jsonschema
 ```
 
-`kitchen doctor` catches this — it imports the modules rather than checking for the apt package.
+`kitchen doctor` catches this — it imports the modules rather than checking for the apt package,
+the same way `lib/validate.py` does:
+
+```
+python3 imports yaml + jsonschema: NO -- yaml jsonschema not importable
+```
 
 ## Not required
 

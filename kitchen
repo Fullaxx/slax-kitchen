@@ -113,6 +113,10 @@ doctor_tools() {
         have "$bin" || missing=$((missing+1))
     done
     [ "$missing" -eq 0 ] || printf '  %s%d tool(s) missing%s\n' "$Y" "$missing" "$O"
+    # Published rather than returned: --strict needs it, and `doctor` with no flags
+    # must still exit 0 on an incomplete machine -- telling you what you are missing
+    # is the whole job, and a non-zero exit would make it look like doctor broke.
+    DOCTOR_MISSING=$missing
     return 0
 }
 
@@ -222,6 +226,21 @@ doctor_toolchain() {
     else
         echo "squashfs-tools >= 4.2: unknown (mksquashfs not found)"
     fi
+    # The third one. apt's python3-yaml and python3-jsonschema are invisible to a
+    # python3 that resolves into a venv, and the failure surfaces as a schema gate
+    # that cannot run rather than as a missing package. Import them, the same way
+    # lib/validate.py does, rather than asking dpkg.
+    _pymiss=
+    for _m in yaml jsonschema; do
+        timeout 5 python3 -c "import $_m" >/dev/null 2>&1 || _pymiss="$_pymiss $_m"
+    done
+    if [ -z "$_pymiss" ]; then
+        echo "python3 imports yaml + jsonschema: yes"
+    else
+        echo "python3 imports yaml + jsonschema: NO --$_pymiss not importable"
+        echo "  (a venv python3 cannot see apt's python3-yaml / python3-jsonschema:"
+        echo "   pip install PyYAML jsonschema, or use the system python3)"
+    fi
 }
 
 # One pasteable block, no colour, with VERSIONS. This is what a bug report should
@@ -269,9 +288,11 @@ doctor_report() {
 }
 
 cmd_doctor() {
+    _strict=0
     case "${1:-}" in
         -h|--help) usage_cmd doctor; return 0 ;;
         --report)  doctor_report; return 0 ;;
+        --strict)  _strict=1; shift ;;
     esac
     if [ "${1:-}" = "--install-hooks" ]; then
         [ -d "$REPO_ROOT/.git" ] || die "not a git repo: $REPO_ROOT"
@@ -283,13 +304,30 @@ cmd_doctor() {
         return 0
     fi
     printf '%sslax-kitchen doctor%s  (%s)\n\n' "$B" "$O" "$(kitchen_version)"
+    DOCTOR_MISSING=0
     doctor_tools
     printf '\n%sToolchain%s\n' "$B" "$O"
-    doctor_toolchain | sed 's/^/  /'
+    # Captured, not piped straight to sed: a pipeline runs in a subshell, so --strict
+    # could not see the result. Same output either way.
+    _tc=$(doctor_toolchain)
+    printf '%s\n' "$_tc" | sed 's/^/  /'
     doctor_tier "$(doctor_caps)"
     printf '\n%shooks%s  ' "$B" "$O"
     if [ -L "$REPO_ROOT/.git/hooks/pre-commit" ]; then printf '%sinstalled%s\n' "$G" "$O"
     else printf '%snot installed%s  (kitchen doctor --install-hooks)\n' "$Y" "$O"; fi
+
+    # Capabilities are deliberately NOT part of --strict. Missing KVM is a speed
+    # problem and missing mount is expected in every container this runs in; a
+    # missing tool is a build that will fail later with a worse message.
+    if [ "$_strict" = 1 ]; then
+        _rc=0
+        [ "${DOCTOR_MISSING:-0}" -eq 0 ] || _rc=1
+        case "$_tc" in *': NO'*) _rc=1 ;; esac
+        if [ "$_rc" -ne 0 ]; then
+            printf '\n%s--strict:%s the toolchain is incomplete (see above)\n' "$R" "$O" >&2
+        fi
+        return "$_rc"
+    fi
 }
 
 # Detail for one command. The four shell subcommands hand-roll their flag loops and
@@ -358,6 +396,8 @@ kitchen doctor [options]          what this machine can and cannot build
 
   --report             one pasteable plain-text block, with tool VERSIONS --
                        this is what a bug report should carry
+  --strict             exit 1 if any tool is missing or a toolchain assertion
+                       fails -- for CI, which needs doctor to be able to fail
   --install-hooks      symlink .git/hooks/{pre-commit,pre-push} into ci/hooks/
 
 With no options: tools, kernel capabilities, and a summary of which recipe
