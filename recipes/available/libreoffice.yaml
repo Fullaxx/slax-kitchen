@@ -17,22 +17,38 @@ vars:
   # 98-dpkg-db and a saved session at 99.
   bundle: 12-libreoffice
 steps:
-  # SIZE IS THE WHOLE DESIGN CONSTRAINT HERE, so the default is the three applications
-  # people actually mean by "office" plus GTK integration, not the `libreoffice`
-  # metapackage. See the cookbook page for what each choice costs.
+  # TWO CHOICES HERE ARE DELIBERATE, and neither is the one you would guess.
   #
-  # WHY libreoffice-gtk3 IS NAMED EXPLICITLY. bundle.packages installs with
-  # --no-install-recommends by default, and gtk3 integration is a Recommends. Without
-  # it LibreOffice falls back to the "gen" VCL backend: it runs, but it draws its own
-  # widgets, ignores the desktop theme and has no native file dialog. Naming it costs
-  # little and is the difference between usable and merely present.
+  # 1. THREE APPLICATIONS, NOT THE `libreoffice` METAPACKAGE -- and NOT for size.
+  #    Measured on debian-64bit: this set is 116.2 MiB and the metapackage is 129.0
+  #    MiB. Thirteen megabytes is not worth a decision.
   #
-  # hunspell-en-us is also a Recommends rather than a Depends. A word processor with no
-  # spell checker is a surprising thing to ship, and it is under a megabyte.
+  #    The real reason is that the metapackage gives you a Base THAT CANNOT OPEN A
+  #    DATABASE. Base needs a JRE, and `default-jre` is a Recommends rather than a
+  #    Depends -- so under --no-install-recommends apt installs the application and
+  #    leaves out the runtime it needs, without complaining. Measured: the metapackage
+  #    pulls 121 packages and not one of them is a JRE. Shipping something that looks
+  #    installed and fails when clicked is worse than not shipping it.
   #
-  # DELIBERATELY NOT INCLUDED: libreoffice-base, which Depends on a JRE and adds
-  # roughly 180 MB for a database front-end few live-session users want; and
-  # libreoffice-java-common for the same reason. Add them by hand if you need Base.
+  #    And you cannot simply add the JRE: openjdk's postinst runs `java`, which will
+  #    not start without a mounted /proc, and the build chroot only has an empty
+  #    directory there. See the cookbook page.
+  #
+  #    Draw arrives as a dependency regardless, so this is really four applications.
+  #
+  # 2. TWO RECOMMENDS ARE NAMED EXPLICITLY, because bundle.packages installs with
+  #    --no-install-recommends and would otherwise skip them:
+  #
+  #      libreoffice-gtk3   without it LibreOffice falls back to the "gen" VCL
+  #                         backend -- it runs, but draws its own widgets, ignores the
+  #                         desktop theme and has no native file dialog. The difference
+  #                         between usable and merely present.
+  #      hunspell-en-us     a word processor with no spell checker is a strange thing
+  #                         to ship, and it is under a megabyte.
+  #
+  #    The same reasoning applies to fonts-crosextra-carlito and -caladea, which are
+  #    metric-compatible with Calibri and Cambria; left out because they only matter if
+  #    you open documents authored in Microsoft Office. The cookbook page says how.
   - verb: bundle.packages
     bundle: "{{bundle}}"
     packages:

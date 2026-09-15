@@ -123,6 +123,16 @@ Install distro packages into a new bundle. **Debian only**; see
   apt: {update: true, no_recommends: true}
 ```
 
+**`apt.no_recommends` defaults to `true`**, which is right for a bundle — it is what stops one
+package dragging in a desktop's worth of suggestions. The cost is that it also drops packages the
+thing you asked for genuinely needs to be *usable*, and nothing warns you. Check the Recommends of
+what you install and name the ones that matter.
+
+Two real examples, both from [`libreoffice`](../50-cookbook/libreoffice.md): without
+`libreoffice-gtk3` the suite runs but draws its own widgets and has no native file dialog; and
+`libreoffice-base` installs happily without the JRE it needs, so it starts and then cannot open a
+database. An application that looks installed and fails when clicked is worse than one you left out.
+
 **`from:` defaults to every bundle that will sit below this one**, which is almost always what
 you want. Name a shorter stack and apt reinstalls libraries the image already has, and those
 copies then shadow the originals from a higher bundle. It is a size-versus-independence dial:

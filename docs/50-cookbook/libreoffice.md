@@ -25,38 +25,52 @@ Installed size of the 64-bit delta is 408 MB.
 It compresses about 3.5:1 under xz, which is why the largest software addition in this cookbook
 costs less on the ISO than the firmware refresh plus a browser.
 
-## What you get, and what is deliberately left out
+## The two choices, and why
 
-The default is **Writer, Calc and Impress**, not the `libreoffice` metapackage. **Draw arrives
-anyway** as a dependency, so in practice it is four applications.
+Neither is the one you would guess, so both are worth reading before you copy this recipe.
 
-Two packages are named explicitly that you might not expect, because `bundle.packages` installs
-with `--no-install-recommends` and both are Recommends rather than Depends:
+### 1. Three applications, not the `libreoffice` metapackage — and not for size
 
-- **`libreoffice-gtk3`.** Without it LibreOffice falls back to the `gen` VCL backend: it runs, but
-  draws its own widgets, ignores the desktop theme and has no native file dialog. This is the
-  difference between usable and merely present.
-- **`hunspell-en-us`.** A word processor with no spell checker is a surprising thing to ship, and
-  it is under a megabyte.
-
-**Not included: `libreoffice-base`.** See below — this is not only about size.
-
-## Why not the full metapackage?
-
-Measured, the same way:
+Measured, the same way as everything else here:
 
 | set | bundle | packages |
 |---|---|---|
 | Writer + Calc + Impress + gtk3 (this recipe) | 116.2 MiB | 110 |
 | `libreoffice` metapackage + gtk3 | 129.0 MiB | 121 |
 
-**Only 13 MiB apart**, which is not the reason to prefer the smaller one. The reason is that the
-metapackage gives you a **Base that cannot open a database**. Base needs a JRE, `default-jre` is a
-Recommends, and with `--no-install-recommends` you get the application without the runtime it
-requires. Shipping something that looks installed and fails when clicked is worse than not shipping
-it.
+**Thirteen megabytes.** That is not worth a decision, and if size were the reason this recipe
+would ship the metapackage.
 
-The extra 11 packages are Base, Math, the `python3-uno` scripting bridge and Python 3.11.
+The reason is that the metapackage gives you a **Base that cannot open a database.** Base needs a
+JRE; `default-jre` is a **Recommends, not a Depends**; and `bundle.packages` installs with
+`--no-install-recommends`. So apt installs the application, leaves out the runtime it requires, and
+does not complain. Measured: those 121 packages contain **no JRE at all**.
+
+Shipping something that looks installed and fails when clicked is worse than not shipping it.
+
+The extra 11 packages are Base, Math, the `python3-uno` scripting bridge and Python 3.11. **Draw
+arrives as a dependency either way**, so this recipe is really four applications, not three.
+
+If you want Base, read the next section first — you cannot simply add the JRE.
+
+### 2. Two Recommends are named explicitly
+
+`--no-install-recommends` is the right default for a bundle: it is what stops one package dragging
+in a desktop's worth of suggestions. The cost is that it also drops things a package genuinely
+needs to be *usable*, and nothing warns you. Two are worth paying for here:
+
+- **`libreoffice-gtk3`.** Without it LibreOffice falls back to the `gen` VCL backend: it runs, but
+  draws its own widgets, ignores the desktop theme and has no native file dialog. The difference
+  between usable and merely present.
+- **`hunspell-en-us`.** A word processor with no spell checker is a strange thing to ship, and it
+  is under a megabyte.
+
+The same reasoning applies to Carlito and Caladea — see [Fonts](#fonts-worth-adding) — which are
+left out only because they matter solely for documents authored in Microsoft Office.
+
+**This generalises.** Any recipe using `bundle.packages` should check the Recommends of what it
+installs and decide deliberately, rather than discovering at boot that an application starts but
+behaves oddly.
 
 ## ⚠ You cannot add a JRE here
 
