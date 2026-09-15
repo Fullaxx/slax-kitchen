@@ -118,10 +118,22 @@ def main(argv: list[str]) -> int:
         # shows a dpkg database that disagrees with the one bundle.packages would see,
         # and the shell is exactly where people go to check that. Read-only w.r.t. the
         # fragment files themselves.
+        #
+        # Unless a saved session is in the stack. This is the one place that can happen
+        # -- _bundle_stack drops 99- and 98- so a BUILD chroot never sees one, but with
+        # no --stack this picks up every .sb in the tree. A session's status is a copy-up
+        # of the complete merged database and is newer than the fragments that fed it, so
+        # merging them back over it downgrades packages: measured, tmux 3.4 -> 3.3a. Same
+        # rule dpkgdb.merge_tree applies at pack time.
         import dpkgdb
-        _n, _from = dpkgdb.merge_fragments_into_chroot(root)
-        if _n:
-            print(f"  merged {_n} status fragment(s): {', '.join(_from)}")
+        session = [os.path.basename(p) for p in picked
+                   if os.path.basename(p).startswith("99-")]
+        if session:
+            print(f"  not merging fragments: {', '.join(session)} supersedes them")
+        else:
+            _n, _from = dpkgdb.merge_fragments_into_chroot(root)
+            if _n:
+                print(f"  merged {_n} status fragment(s): {', '.join(_from)}")
 
         names = " + ".join(os.path.basename(p) for p in picked)
         nfiles = sum(len(f) for _d, _s, f in os.walk(root))

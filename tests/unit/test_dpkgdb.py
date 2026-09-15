@@ -182,28 +182,32 @@ def test_merge_fragments_into_chroot():
     check("no fragment dir is a no-op", dpkgdb.merge_fragments_into_chroot(bare), (0, []))
 
 
-def test_outranked_fragments_are_not_lost_silently():
-    """Fragments discarded by the reset must be an error, not a quiet return 0.
+def test_a_real_status_does_not_discard_the_fragments_below_it():
+    """The base is the highest real status; every fragment still merges into it.
 
-    merge_tree's "a real status outranks everything below it, fragments included" reset
-    is correct. What was wrong is what happened when it discarded EVERYTHING: the walk
-    ended with no fragments, `return 0` fired, pack treated that as "nothing to merge"
-    and exited 0, and no 98-dpkg-db.sb was written at all. The packages that bundle
-    declared were then in no database anywhere, with no message on any stream.
+    This used to be the other way round -- any real var/lib/dpkg/status discarded the
+    fragments beneath it. Measured, that is wrong for every carrier except a saved
+    session:
 
-    That is how `bundle.renumber` moving 05-chromium to 95 loses the bundle beneath it,
-    and bundle_assert.py cannot see it -- it skips bundles that ship no status, and 600
-    is a superset of 575 so the pairwise check passes. Reported as #11.
+      stock status   upstream builds it from stock bundles only, so it cannot know about
+                     an add-on beneath it. Discarding lost those packages for good, even
+                     though 98-dpkg-db.sb sorts above every stock bundle and is what dpkg
+                     actually reads at boot.
 
-    Needs real squashfs images because merge_tree unsquashfs-es each bundle; they are
-    two-file trees, so it costs milliseconds.
+    The loss was silent whenever at least one fragment survived, because the error that
+    was supposed to catch it only fired when EVERY fragment had been discarded.
+
+    Inverting the reset also removes a fragility the old rule had: because fragments are
+    no longer dropped by position, nothing here compares bundle numbers. sortmod still
+    decides which status becomes the BASE -- the highest one -- and that is what the two
+    status carriers below pin, since 05-chromium's must win over 01-core's.
     """
     import shutil
     import subprocess
     import tempfile
 
     if not shutil.which("mksquashfs"):
-        return                      # doctor reports this; the gate should not fail on it
+        return
 
     def sb(path, files):
         src = tempfile.mkdtemp()
@@ -212,42 +216,99 @@ def test_outranked_fragments_are_not_lost_silently():
             os.makedirs(os.path.dirname(full), exist_ok=True)
             with open(full, "w") as f:
                 f.write(body)
-        subprocess.run(["mksquashfs", src, path, "-noappend", "-no-progress"],
+        subprocess.run(["mksquashfs", src, path, "-noappend", "-no-progress", "-all-root"],
+                       capture_output=True, check=True)
+
+    def packed(mods):
+        out = tempfile.mkdtemp()
+        subprocess.run(["unsquashfs", "-n", "-q", "-d", out,
+                        os.path.join(mods, dpkgdb.GENERATED)], capture_output=True)
+        with open(os.path.join(out, dpkgdb.STATUS)) as f:
+            return sorted(k for k, _ in dpkgdb.parse(f.read()))
+
+    iso = tempfile.mkdtemp()
+    mods = os.path.join(iso, "slax", "modules")
+    os.makedirs(mods)
+    frag = dpkgdb.FRAGMENT_DIR
+    # below the stock status, at a tie-broken 05, and above it
+    sb(os.path.join(mods, "00-mytools.sb"),
+       {os.path.join(frag, "00-mytools"): dpkgdb.render([("mytool:amd64", stanza("mytool", "1.0"))])})
+    sb(os.path.join(mods, "05-audio.sb"),
+       {os.path.join(frag, "05-audio"): dpkgdb.render([("alsa:amd64", stanza("alsa", "1.2"))])})
+    # Two status carriers, so the base is order-dependent: the higher must win.
+    sb(os.path.join(mods, "01-core.sb"),
+       {dpkgdb.STATUS: dpkgdb.render([("base:amd64", stanza("base", "1.0"))])})
+    sb(os.path.join(mods, "05-chromium.sb"),
+       {dpkgdb.STATUS: dpkgdb.render([("base:amd64", stanza("base", "1.0")),
+                                      ("chromium:amd64", stanza("chromium", "117"))])})
+    sb(os.path.join(mods, "07-extras.sb"),
+       {os.path.join(frag, "07-extras"): dpkgdb.render([("tmux:amd64", stanza("tmux", "3.3a"))])})
+
+    check("sortmod puts 05-audio below 05-chromium",
+          dpkgdb.sortmod(["05-chromium.sb", "05-audio.sb"]), ["05-audio.sb", "05-chromium.sb"])
+    n = dpkgdb.merge_tree(iso, quiet=True)
+    check("every fragment merged, not just the ones above", n, 3)
+    got = packed(mods)
+    check("a fragment below the status survives", "mytool:amd64" in got, True)
+    check("a tie-broken fragment below it survives", "alsa:amd64" in got, True)
+    check("the HIGHEST status is the base, not the first",
+          "chromium:amd64" in got, True)
+
+
+def test_a_saved_session_supersedes_the_fragments_below_it():
+    """...and a session is the one carrier that legitimately does discard them.
+
+    savechanges squashes the WRITABLE layer, so 99-changes-N carries a status only if
+    packages changed -- and that copy is a copy-up of the complete merged database,
+    newer than the fragments that fed it. Merging them back over it downgrades: measured,
+    tmux 3.4 became 3.3a.
+
+    This is also a regression test. A guard added earlier RAISED on this tree, so
+    `kitchen pack` failed on any work tree unpacked from an ISO somebody had saved
+    changes onto -- and nothing in the suite packed such a tree, which is why it got
+    through.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    if not shutil.which("mksquashfs"):
+        return
+
+    def sb(path, files):
+        src = tempfile.mkdtemp()
+        for rel, body in files.items():
+            full = os.path.join(src, rel)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w") as f:
+                f.write(body)
+        subprocess.run(["mksquashfs", src, path, "-noappend", "-no-progress", "-all-root"],
                        capture_output=True, check=True)
 
     iso = tempfile.mkdtemp()
     mods = os.path.join(iso, "slax", "modules")
     os.makedirs(mods)
-    # 01-core ships a real status; 07-extras ships only a fragment, above it.
     sb(os.path.join(mods, "01-core.sb"),
        {dpkgdb.STATUS: dpkgdb.render([("base:amd64", stanza("base", "1.0"))])})
     sb(os.path.join(mods, "07-extras.sb"),
        {os.path.join(dpkgdb.FRAGMENT_DIR, "07-extras"):
         dpkgdb.render([("tmux:amd64", stanza("tmux", "3.3a"))])})
+    # the session upgraded tmux on the booted system
+    sb(os.path.join(mods, "99-changes-1.sb"),
+       {dpkgdb.STATUS: dpkgdb.render([("base:amd64", stanza("base", "1.0")),
+                                      ("tmux:amd64", stanza("tmux", "3.4"))])})
 
-    # Ordered correctly, the fragment merges and a generated bundle appears.
-    check("a fragment above the status merges", dpkgdb.merge_tree(iso, quiet=True), 1)
-    check("and writes the generated bundle",
-          os.path.isfile(os.path.join(mods, dpkgdb.GENERATED)), True)
-
-    # Now move the real status ABOVE the fragment, exactly as bundle.renumber does.
-    os.unlink(os.path.join(mods, dpkgdb.GENERATED))
-    os.rename(os.path.join(mods, "01-core.sb"), os.path.join(mods, "95-core.sb"))
-    try:
-        n = dpkgdb.merge_tree(iso, quiet=True)
-        FAILURES.append(f"merge_tree discarded every fragment and returned {n}")
-    except RuntimeError as e:
-        check("the error names what was lost", "07-extras" in str(e), True)
-    check("and no generated bundle is left behind",
+    n = dpkgdb.merge_tree(iso, quiet=True)
+    check("a session supersedes the fragments below it", n, 0)
+    check("so no generated bundle is written",
           os.path.isfile(os.path.join(mods, dpkgdb.GENERATED)), False)
 
-    # A tree with no fragments at all is still a quiet, correct 0.
-    plain = tempfile.mkdtemp()
-    pmods = os.path.join(plain, "slax", "modules")
-    os.makedirs(pmods)
-    sb(os.path.join(pmods, "01-core.sb"),
-       {dpkgdb.STATUS: dpkgdb.render([("base:amd64", stanza("base", "1.0"))])})
-    check("no fragments anywhere is not an error", dpkgdb.merge_tree(plain, quiet=True), 0)
+    # And the direction that matters: merging would have downgraded it.
+    session = dpkgdb.render([("tmux:amd64", stanza("tmux", "3.4"))])
+    frag = dpkgdb.render([("tmux:amd64", stanza("tmux", "3.3a"))])
+    merged = dict(dpkgdb.parse(dpkgdb.merge(session, [frag])))
+    check("merging a fragment over a session would downgrade it",
+          "3.3a" in merged["tmux:amd64"], True)
 
 
 def main():
@@ -257,7 +318,8 @@ def main():
                test_merge_is_idempotent, test_merge_order_later_fragment_wins,
                test_sortmod_matches_livekit, test_render_round_trip,
                test_merge_fragments_into_chroot,
-               test_outranked_fragments_are_not_lost_silently]:
+               test_a_real_status_does_not_discard_the_fragments_below_it,
+               test_a_saved_session_supersedes_the_fragments_below_it]:
         fn()
     if FAILURES:
         for f in FAILURES:

@@ -173,7 +173,24 @@ def merge_fragments_into_chroot(root: str) -> tuple[int, list[str]]:
 def merge_tree(iso: str, quiet: bool = False) -> int:
     """Rebuild <iso>/slax/modules/98-dpkg-db.sb from the base status plus all fragments.
 
-    Returns the number of fragments merged; 0 means nothing was written.
+    The base is the highest real var/lib/dpkg/status in the stack. Every fragment is
+    merged into it, wherever it sits -- EXCEPT fragments below a saved session, which
+    supersedes them.
+
+    That exception is the whole rule, and it used to be the other way round: any real
+    status discarded the fragments below it. Measured, that is right for a session and
+    wrong for everything else.
+
+      stock status     upstream builds it from stock bundles only, so it cannot know
+                       about an add-on beneath it. Discarding lost those packages for
+                       good, even though 98-dpkg-db.sb sorts above every stock bundle
+                       and is what dpkg actually reads.
+      saved session    savechanges squashes the writable layer, so its status exists
+                       only if packages changed and is a copy-up of the complete merged
+                       database. Merging fragments back over it downgrades them.
+
+    Returns the number of fragments merged; 0 means nothing was written -- a stock tree,
+    a tree with no add-on bundle, or one whose session supersedes every fragment.
     """
     mods = os.path.join(iso, "slax", "modules")
     if not os.path.isdir(mods):
@@ -191,19 +208,33 @@ def merge_tree(iso: str, quiet: bool = False) -> int:
     try:
         base, base_from, fragments, frag_from = "", "", [], []
         carriers: list = []
-        discarded: list = []
+        superseded: list = []
         for n in names:
             sb = os.path.join(mods, n)
             d = os.path.join(tmp, n)
             p = _extract(sb, STATUS, d)
             if p:
                 base, base_from = _read(p), n
-                # A real status outranks everything below it, fragments included.
-                # Remember what that cost: `discarded` deliberately survives the reset,
-                # because the reset is the only thing that can silently lose a bundle's
-                # packages and there is otherwise no trace of it afterwards.
-                discarded += frag_from
-                fragments, frag_from, carriers = [], [], []
+                # A real status becomes the base. Whether it also SUPERSEDES the
+                # fragments below it depends entirely on where it came from, and this
+                # used to discard them unconditionally, which is backwards.
+                #
+                #   a stock bundle   upstream built it from stock bundles only, so it
+                #                    cannot know about an add-on beneath it. Discarding
+                #                    loses those packages outright -- and they would
+                #                    otherwise be visible, because 98-dpkg-db.sb sorts
+                #                    above every stock bundle and is what dpkg reads.
+                #   a saved session  savechanges squashes the WRITABLE layer, so a
+                #                    session carries a status only if packages changed,
+                #                    and that copy is a copy-up of the complete merged
+                #                    database. It already contains the fragments, newer.
+                #                    Merging them back in DOWNGRADES it -- measured,
+                #                    tmux 3.4 became 3.3a.
+                #
+                # So reset for a session and keep everything otherwise.
+                if n.startswith("99-"):
+                    superseded += frag_from
+                    fragments, frag_from, carriers = [], [], []
                 continue
             fd = os.path.join(tmp, n + ".frag")
             if _extract(sb, FRAGMENT_DIR, fd):
@@ -212,23 +243,14 @@ def merge_tree(iso: str, quiet: bool = False) -> int:
                     fragments.append(_read(os.path.join(fd, FRAGMENT_DIR, f)))
                     frag_from.append(f"{n}:{f}")
 
+        if superseded and not quiet:
+            # Not an error: a session legitimately carries these already, and newer.
+            # Said out loud because "my bundle is not in the merge" should be findable.
+            print(f"  --   superseded by {base_from}: {', '.join(superseded)}")
+
         if not fragments:
-            # Nothing to merge is normal -- a stock tree, or one with no add-on bundle.
-            # Fragments that EXISTED and were outranked is not: those packages are now
-            # in no database anywhere, and returning 0 here made that silent. It is how
-            # `bundle.renumber` moving 05-chromium to 95 loses the bundle beneath it --
-            # the real 600-package status sorts above the fragment, the reset fires, and
-            # pack writes no 98-dpkg-db.sb at all while exiting 0.
-            if discarded:
-                raise RuntimeError(
-                    "dpkgdb: every status fragment was outranked by a real "
-                    "var/lib/dpkg/status above it, so none could be merged and the "
-                    "packages they declare would be in no database at all.\n"
-                    f"  discarded: {', '.join(discarded)}\n"
-                    f"  outranked by: {base_from}\n"
-                    "  A bundle that ships a real status must sort BELOW every bundle "
-                    "carrying a fragment. Renumbering one above them is what usually "
-                    "causes this -- see docs/40-workflow/composing-bundles.md.")
+            # Nothing to merge. Normal for a stock tree, for one with no add-on bundle,
+            # and for a tree whose saved session supersedes every fragment in it.
             return 0
         if not base:
             raise RuntimeError(

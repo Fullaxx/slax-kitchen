@@ -37,7 +37,17 @@ packages. **This is the constraint that decides how you split a customization.**
 
 `kitchen` breaks the chain instead. Add-on bundles ship no `status` at all; each carries
 `var/lib/slax-kitchen/dpkg-status.d/<bundle>` holding only the stanzas it added or changed, and
-`kitchen pack` merges base plus fragments into a generated `98-dpkg-db.sb`. A directory of
+`kitchen pack` merges base plus fragments into a generated `98-dpkg-db.sb`. The base is the highest
+real `var/lib/dpkg/status` in the stack, and **every** fragment merges into it wherever it sits —
+a bundle numbered below a stock one is still counted, because `98-dpkg-db.sb` sorts above every
+stock bundle and is what dpkg reads at boot.
+
+The one exception is a saved session. `savechanges` squashes the writable layer, so `99-changes-N`
+carries a status only if packages changed, and that copy is already the complete merged database —
+newer than the fragments that fed it. It therefore supersedes them, and `pack` says so rather than
+merging stale versions back over it.
+
+A directory of
 fragments composes the way Slackware's database already does, so add-on bundles become independent
 and removable in any order.
 
