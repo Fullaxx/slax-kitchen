@@ -120,12 +120,21 @@ def _have_cap(cap: str) -> bool:
     return True
 
 
+# Verbs that fetch their `src` over the network when it is a URL. Anything added here
+# must actually urlopen a `src`; anything that urlopens and is NOT here is a preflight
+# that lies, which is what tests/unit/test_apply.py checks against the AST.
+_URL_SRC_VERBS = ("boot.payload", "bundle.fromTarball")
+
+
 def step_requires(step: dict) -> dict:
     """Requirements for one step, including the ones that depend on its arguments."""
     req = {k: (dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v)
            for k, v in VERB_REQUIRES.get(step.get("verb", ""), {}).items()}
-    # boot.payload only touches the network when its source is a URL.
-    if step.get("verb") == "boot.payload" and re.match(r"^https?://", str(step.get("src", ""))):
+    # These verbs urlopen their `src`, so they need the network only when it is a URL.
+    # bundle.fromTarball was missing here while doing the identical fetch: preflight said
+    # nothing, and `kitchen build` unpacked 436 MiB before dying at the download.
+    # test_network_is_declared_where_it_is_used keeps the list honest against the code.
+    if step.get("verb") in _URL_SRC_VERBS and re.match(r"^https?://", str(step.get("src", ""))):
         req["network"] = True
     # `network: true` on any step. bundle.script's docstring has promised this for
     # months and nothing read it, because $defs/step was open and the key validated

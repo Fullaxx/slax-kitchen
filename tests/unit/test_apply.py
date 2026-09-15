@@ -716,6 +716,73 @@ def test_removes_come_first():
               apply.check_plan_order(plan), [])
 
 
+def test_network_is_declared_where_it_is_used():
+    """Every verb that reaches the network must say so at preflight.
+
+    bundle.fromTarball did the identical urllib fetch boot.payload does, and the
+    inference in step_requires named only boot.payload -- so preflight passed and
+    `kitchen build` unpacked 436 MiB before dying at the download. Reported as #9.
+
+    Asserting on a hand-written list of verbs would rot the moment someone adds a
+    fetch. This reads lib/apply.py's own AST instead: find every urlopen, resolve it to
+    the function containing it, map that to a verb -- directly by its @verb decorator,
+    or for a helper via the @verb functions that call it -- and require each one to
+    declare network unconditionally or to be in _URL_SRC_VERBS. Finding the answer this
+    way is how #9 was confirmed to be exactly one verb and not three.
+    """
+    import ast
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, "..", "..", "lib", "apply.py")
+    tree = ast.parse(open(path).read())
+
+    funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+
+    def enclosing(line):
+        inner = [f for f in funcs if f.lineno <= line <= (f.end_lineno or f.lineno)]
+        return min(inner, key=lambda f: (f.end_lineno or f.lineno) - f.lineno) if inner else None
+
+    def verb_of(fn):
+        for d in fn.decorator_list:
+            if isinstance(d, ast.Call) and getattr(d.func, "id", "") == "verb":
+                return d.args[0].value
+        return None
+
+    def callers_of(name):
+        out = []
+        for f in funcs:
+            for n in ast.walk(f):
+                if isinstance(n, ast.Call) and getattr(n.func, "id", "") == name:
+                    out.append(f)
+        return out
+
+    fetchers = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not ast.unparse(node.func).endswith("urlopen"):
+            continue
+        fn = enclosing(node.lineno)
+        if fn is None:
+            continue
+        v = verb_of(fn)
+        if v:
+            fetchers.add(v)
+            continue
+        # A helper. Attribute it to every verb that calls it -- _apt_sources is one,
+        # reached only from bundle.packages.
+        for c in callers_of(fn.name):
+            cv = verb_of(c)
+            if cv:
+                fetchers.add(cv)
+
+    check("found the urlopen verbs at all", bool(fetchers), True)
+    for v in sorted(fetchers):
+        declares = apply.VERB_REQUIRES.get(v, {}).get("network") is True
+        infers = v in apply._URL_SRC_VERBS
+        check(f"{v} declares or infers network", declares or infers, True)
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -732,7 +799,8 @@ def main():
                test_link_targets_refused,
                test_fromtarball_refuses_symlink_escape,
                test_checksums_sign_is_a_key_id,
-               test_removes_come_first]:
+               test_removes_come_first,
+               test_network_is_declared_where_it_is_used]:
         fn()
     if FAILURES:
         for f in FAILURES:
