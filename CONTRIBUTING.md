@@ -357,19 +357,22 @@ you add a test, **make it fail on purpose once** and check it says something use
 `savechanges`. Yours goes in `07`–`98`. Override, do not edit: a 4 KiB bundle at `07` beats a
 122 MiB one at `01`, and leaves the original byte-identical so `probe` still recognises it.
 
-**Debian's package database is cumulative, and this is a trap.** Every Debian bundle carries its
-own `var/lib/dpkg/status`, growing 295 → 600 across the stack. Because higher wins, a new bundle
-that ships a *smaller* status shadows the real one and dpkg forgets most of the system. If your
-recipe installs packages, stack the whole thing in `from:`, not just `01-core`. See
-[the bundle map](docs/30-inventory/bundle-map.md).
+**A union composes trees, not files** — and Debian's package database is a single file. Whichever
+bundle ships `var/lib/dpkg/status` highest wins outright, so a bundle built from a short stack used
+to replace 600 packages with 299 and dpkg would forget the difference, silently.
 
-> **Our own `add-packages` recipe currently gets this wrong**, and since its page calls it "the
-> template recipe", anyone copying it inherits the bug. Measured: with the shipped
-> `from: [01-core]`, the resulting `07-extras.sb` ships a `var/lib/dpkg/status` listing **299**
-> packages and sits above `05-chromium`'s **600** — so on a fully loaded image dpkg loses about
-> three hundred packages. `firmware-refresh` and `users-and-auth` have the same shape. A fix is
-> queued; until then, name the full stack in `from:` yourself. Found while writing this document,
-> which is roughly the point of it.
+You no longer have to think about this. Bundles ship a *fragment* instead — only what they added —
+and `kitchen pack` merges base plus fragments into a generated `98-dpkg-db.sb`, which is why two
+recipes can each add a browser without erasing the other's packages. `from:` now defaults to the
+whole stack below you, and is a size-versus-removability dial rather than a correctness knob. The
+reasoning is in [composing bundles](docs/40-workflow/composing-bundles.md).
+
+`tests/structure/bundle_assert.py` walks the assembled stack and fails if any bundle's database is
+less complete than the one it shadows; `ci/recipe-matrix.sh` runs it for every recipe.
+
+> This was found while writing this document, which is roughly the point of it. Our own
+> `add-packages` shipped the bug, and its page calls it "the template recipe", so anyone copying
+> it inherited it. If you are on an older checkout, name the full stack in `from:` yourself.
 
 **`bundle.files` builds a bundle in one shot** and refuses to write one that already exists, so
 several steps cannot accumulate into the same bundle. Split by flavour with `when:`, not by concern.

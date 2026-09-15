@@ -88,17 +88,25 @@ fine. Installing `tmux` and `ncdu` into 01-core produced:
 | filenames only | 57 |
 | size + mtime + mode manifest | **85 added + 31 modified** |
 
-The 31 modified files include `var/lib/dpkg/status`. Miss it and the bundle ships new binaries that
-the package database does not know about. Upstream's `savechanges` never hits this, because it reads
-the aufs *changes* layer where a modified file is physically present as a copy-up; an offline diff
-has to detect modification explicitly.
+The 31 modified files include `var/lib/dpkg/status`. Detecting modification matters in general —
+miss it and a bundle ships files whose *changed* form never makes it out. Upstream's `savechanges`
+never hits this, because it reads the aufs *changes* layer where a modified file is physically
+present as a copy-up; an offline diff has to look for it.
+
+**But `dpkg/status` itself must not ship**, and that is the exception worth knowing. It is a single
+file holding whole-system state, and a union composes trees rather than files, so the highest copy
+wins outright — a bundle built from a short stack would replace the real 600-package database with
+its own 299. `kitchen` excludes it and ships a fragment in
+`var/lib/slax-kitchen/dpkg-status.d/<bundle>` instead, which `pack` merges. See
+[composing bundles](composing-bundles.md).
 
 Verified in the built bundle:
 
 ```
 squashfs-root/usr/bin/tmux
 squashfs-root/usr/bin/ncdu
-squashfs-root/var/lib/dpkg/status     <- 299 Package: stanzas (01-core shipped 295)
+squashfs-root/var/lib/dpkg/info/tmux.list           <- a DIRECTORY, so it unions correctly
+squashfs-root/var/lib/slax-kitchen/dpkg-status.d/07-extras   <- the 3 packages this bundle added
 ```
 
 ## Build the bundle with upstream's exact parameters
