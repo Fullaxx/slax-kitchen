@@ -1,15 +1,22 @@
 #!/bin/sh
 # Apply every compatible recipe INDIVIDUALLY against one base ISO.
 #
-#   ci/recipe-matrix.sh <target> <iso>
+#   ci/recipe-matrix.sh <target> <iso> [recipe-dir]
+#
+# recipe-dir defaults to recipes/available. A fork keeping its own recipes under
+# recipes/<project>/ points this at them and gets the same four-target coverage:
+#   ci/recipe-matrix.sh debian-64bit-12.2.0 isos/....iso recipes/myproject
 #
 # One recipe per work tree on purpose: a failure then names exactly one recipe, and
 # recipes cannot mask each other. This is what catches a recipe that silently only
 # works on 64-bit Debian.
 set -u
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
-TARGET=${1:?usage: recipe-matrix.sh <target> <iso>}
-ISO=${2:?usage: recipe-matrix.sh <target> <iso>}
+TARGET=${1:?usage: recipe-matrix.sh <target> <iso> [recipe-dir]}
+ISO=${2:?usage: recipe-matrix.sh <target> <iso> [recipe-dir]}
+RECIPE_DIR=${3:-recipes/available}
+case "$RECIPE_DIR" in /*) ;; *) RECIPE_DIR="$REPO_ROOT/$RECIPE_DIR" ;; esac
+[ -d "$RECIPE_DIR" ] || { echo "no such recipe directory: $RECIPE_DIR" >&2; exit 2; }
 
 FLAVOUR=${TARGET%%-*}
 case "$TARGET" in *-32bit-*) ARCH=32bit ;; *) ARCH=64bit ;; esac
@@ -22,10 +29,12 @@ else G=; R=; Y=; D=; O=; fi
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/kitchen-matrix.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
-printf 'recipe matrix: %s  (flavour=%s arch=%s)\n' "$TARGET" "$FLAVOUR" "$ARCH"
+printf 'recipe matrix: %s  (flavour=%s arch=%s)  %s\n' "$TARGET" "$FLAVOUR" "$ARCH" \
+       "${RECIPE_DIR#"$REPO_ROOT"/}"
 pass=0; fail=0; skip=0
 
-for recipe in "$REPO_ROOT"/recipes/available/*.yaml; do
+for recipe in "$RECIPE_DIR"/*.yaml; do
+    [ -e "$recipe" ] || { echo "no recipes in $RECIPE_DIR" >&2; exit 2; }
     name=$(basename "$recipe" .yaml)
 
     # Respect the recipe's own compat declaration rather than guessing.
@@ -73,7 +82,7 @@ PY
         RUN=""
     fi
 
-    if ! $RUN python3 "$REPO_ROOT/lib/apply.py" "$name" -w "$tree" >>"$log" 2>&1; then
+    if ! $RUN python3 "$REPO_ROOT/lib/apply.py" "$recipe" -w "$tree" >>"$log" 2>&1; then
         printf '  %sFAIL%s %-18s apply failed\n' "$R" "$O" "$name"; tail -12 "$log" | sed 's/^/        /'
         fail=$((fail+1)); rm -rf "$tree"; continue
     fi

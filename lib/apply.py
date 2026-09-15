@@ -2298,9 +2298,9 @@ def _when_ok(expr: str, facts: dict) -> bool:
     return (facts[key] == want) if op == "==" else (facts[key] != want)
 
 
-def load_recipe(path: str) -> dict:
+def load_recipe(path: str, overrides: dict | None = None) -> dict:
     import yaml
-    problems = validate_file(path)
+    problems = validate_file(path, overrides)
     if problems:
         raise RuntimeError("invalid recipe:\n  " + "\n  ".join(problems))
     return yaml.safe_load(open(path))
@@ -2315,12 +2315,20 @@ def resolve(names: list[str], search: list[str]) -> list[str]:
     def find(n: str) -> str:
         if os.path.isfile(n):
             return n
-        for d in search:
-            for ext in (".yaml", ".yml"):
-                p = os.path.join(d, n + ext)
-                if os.path.isfile(p):
-                    return p
-        raise RuntimeError(f"recipe not found: {n} (searched {', '.join(search)})")
+        # Collect EVERY match, not the first. A name that exists in two recipe
+        # directories is ambiguous, and silently taking whichever sorted first is the
+        # same bug _find_bundle had: the caller gets something plausible and wrong.
+        hits = [os.path.join(d, n + ext)
+                for d in search for ext in (".yaml", ".yml")
+                if os.path.isfile(os.path.join(d, n + ext))]
+        if not hits:
+            raise RuntimeError(f"recipe not found: {n} (searched {', '.join(search)})")
+        if len(hits) > 1:
+            raise RuntimeError(
+                f"recipe name {n!r} is ambiguous -- it exists in more than one place:\n  "
+                + "\n  ".join(os.path.relpath(h, ROOT) for h in hits)
+                + "\n  Rename one, or name the file you mean by path.")
+        return hits[0]
 
     def walk(n: str, stack: tuple) -> None:
         p = find(n)
@@ -2360,14 +2368,21 @@ def check_compat(doc: dict, work: str) -> list[str]:
     return warn
 
 
-def plan_recipe(path: str, facts: dict) -> tuple[dict, list[tuple[int, dict, bool]]]:
+def plan_recipe(path: str, facts: dict,
+                overrides: dict | None = None) -> tuple[dict, list[tuple[int, dict, bool]]]:
     """Resolve a recipe into (doc, [(index, step, will_run)]).
 
     Shared by preflight and apply so they cannot disagree about which steps run --
     demanding a tool for a step that `when:` is going to skip would be its own bug.
+
+    `overrides` come from a profile's per-recipe `vars:`. They are merged OVER the
+    recipe's own defaults, never replacing the block, so a profile setting one var does
+    not silently blank the rest -- which is the trap `--facts` fell into.
     """
-    doc = load_recipe(path)
+    doc = load_recipe(path, overrides)
     vars_ = dict(doc.get("vars", {}) or {})
+    if overrides:
+        vars_.update(overrides)
     steps = []
     for i, raw in enumerate(doc["steps"], 1):
         step = subst(raw, vars_)
@@ -2392,9 +2407,10 @@ def _journal_entry(work: str, recipe: str) -> dict | None:
     return None
 
 
-def apply_recipe(path: str, work: str, dry: bool = False) -> int:
+def apply_recipe(path: str, work: str, dry: bool = False,
+                 overrides: dict | None = None) -> int:
     facts = _tree_facts(work, os.path.join(work, "iso"))
-    doc, steps = plan_recipe(path, facts)
+    doc, steps = plan_recipe(path, facts, overrides)
     name = doc["metadata"]["name"]
     ctx = Ctx(work, os.path.dirname(os.path.abspath(path)), name, dry)
     ctx.facts = facts
@@ -2437,7 +2453,7 @@ def apply_recipe(path: str, work: str, dry: bool = False) -> int:
         jpath = os.path.join(ctx.meta, "journal.yaml")
         j = (yaml.safe_load(open(jpath)) if os.path.isfile(jpath) else None) or {"applied": []}
         import datetime
-        j["applied"].append({
+        entry = {
             "recipe": name,
             "at": datetime.datetime.now(datetime.timezone.utc)
                   .strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -2445,16 +2461,77 @@ def apply_recipe(path: str, work: str, dry: bool = False) -> int:
             # something this tree had done to it.
             "verbs": [st["verb"] for _i, st, run in steps if run],
             "artifacts": ctx.changes,
-        })
+        }
+        # Without this, two applications of serial-console with different ports are
+        # indistinguishable on disk. The journal exists so a `kitchen probe` difference
+        # can be traced back to a recipe; a var that changed the output is part of that.
+        if overrides:
+            entry["vars"] = dict(overrides)
+        j["applied"].append(entry)
         with open(jpath, "w") as f:
             yaml.safe_dump(j, f, sort_keys=False)
     return 0
 
 
+def recipe_search_path() -> list[str]:
+    """Every directory under recipes/, in order, so a fork can just make one.
+
+    `recipes/available/` is this repo's library. A fork keeping its own recipes in
+    `recipes/<project>/` gets them resolvable by bare name with no configuration: drop
+    the folder in, and `kitchen apply my-tools` finds it. 40-schema validates everything
+    under recipes/; 90-doc-coverage polices only available/, so a fork owes the upstream
+    cookbook nothing.
+
+    available/ comes first so this repo's own names win a tie predictably -- but a tie is
+    reported rather than resolved, see resolve().
+    """
+    base = os.path.join(ROOT, "recipes")
+    if not os.path.isdir(base):
+        return []
+    dirs = sorted(d for d in os.listdir(base)
+                  if os.path.isdir(os.path.join(base, d)) and not d.endswith(".files"))
+    first = [d for d in dirs if d == "available"]
+    return [os.path.join(base, d) for d in first + [d for d in dirs if d != "available"]]
+
+
+def read_profile_recipes(path: str) -> tuple[list[str], dict[str, dict]]:
+    """Recipe names and per-recipe var overrides from a profile.
+
+    A profile is the authoritative place for a fork's own values -- a bundle number, a
+    serial port -- because it is committed next to the recipes it configures, and
+    `kitchen build <profile>` reproduces it. The cookbook has documented this syntax
+    since before it worked.
+    """
+    import yaml
+    if not os.path.isfile(path):
+        cand = os.path.join(ROOT, "profiles", path + ".yaml")
+        if os.path.isfile(cand):
+            path = cand
+        else:
+            raise RuntimeError(f"profile not found: {path}")
+    problems = validate_file(path)
+    if problems:
+        raise RuntimeError(f"invalid profile {path}:\n  " + "\n  ".join(problems))
+    doc = yaml.safe_load(open(path))
+    names: list[str] = []
+    overrides: dict[str, dict] = {}
+    for entry in doc.get("recipes") or []:
+        if isinstance(entry, str):
+            names.append(entry)
+            continue
+        names.append(entry["name"])
+        if entry.get("vars"):
+            overrides[entry["name"]] = dict(entry["vars"])
+    return names, overrides
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="kitchen apply",
                                  description="apply recipes to a work tree")
-    ap.add_argument("recipes", nargs="+")
+    ap.add_argument("recipes", nargs="*")
+    ap.add_argument("--profile", metavar="PATH",
+                    help="take the recipe list AND its per-recipe vars from a profile "
+                         "instead of naming recipes here")
     ap.add_argument("-w", "--work", default="work")
     ap.add_argument("-n", "--dry-run", action="store_true")
     ap.add_argument("--skip-preflight", action="store_true",
@@ -2474,13 +2551,33 @@ def main(argv: list[str]) -> int:
     if not a.preflight_only and not os.path.isdir(os.path.join(a.work, "iso")):
         print(f"no work tree at {a.work}/iso (run 'kitchen unpack' first)", file=sys.stderr)
         return 2
-    search = [os.path.join(ROOT, "recipes", "available"),
-              os.path.join(ROOT, "recipes", "examples"), os.getcwd()]
+    var_overrides: dict[str, dict] = {}
+    names = a.recipes
+    if a.profile:
+        if a.recipes:
+            print("error: --profile and naming recipes are mutually exclusive",
+                  file=sys.stderr)
+            return 2
+        try:
+            names, var_overrides = read_profile_recipes(a.profile)
+        except RuntimeError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+    if not names:
+        print("error: name at least one recipe, or pass --profile", file=sys.stderr)
+        return 2
+    search = recipe_search_path() + [os.getcwd()]
     try:
-        paths = resolve(a.recipes, search)
+        paths = resolve(names, search)
     except RuntimeError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
+
+    # Overrides are keyed by recipe name, and validate_file guarantees the name matches
+    # the filename stem -- so a recipe pulled in by compat.requires, which the profile
+    # never named, correctly gets none.
+    def ov(path: str) -> dict | None:
+        return var_overrides.get(os.path.splitext(os.path.basename(path))[0])
     if a.preflight_only:
         print(f"preflight {len(paths)} recipe(s)"
               + (f"  [{a.facts}]" if a.facts else ""))
@@ -2496,7 +2593,7 @@ def main(argv: list[str]) -> int:
         plan: list[tuple[str, dict]] = []
         for p in paths:
             try:
-                doc, steps = plan_recipe(p, facts)
+                doc, steps = plan_recipe(p, facts, ov(p))
             except RuntimeError as e:
                 print(f"error: {os.path.basename(p)}: {e}", file=sys.stderr)
                 return 2
@@ -2522,7 +2619,7 @@ def main(argv: list[str]) -> int:
 
     for p in paths:
         try:
-            apply_recipe(p, a.work, a.dry_run)
+            apply_recipe(p, a.work, a.dry_run, ov(p))
         except Exception as e:                       # noqa: BLE001
             print(f"error: {os.path.basename(p)}: {e}", file=sys.stderr)
             return 1

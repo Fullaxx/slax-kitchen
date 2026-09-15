@@ -64,7 +64,11 @@ def main(argv: list[str]) -> int:
         "BASE_VERSION": base["version"],
         "BASE_ISO": iso,
         "BASE_ISO_SOURCE": how,
-        "RECIPES": " ".join(doc["recipes"]),
+        # NAMES ONLY. build.sh uses this to decide test expectations and to print what
+        # will run; the authoritative list -- including any per-recipe vars -- goes to
+        # apply.py via --profile, because a space-joined shell string cannot carry them.
+        "RECIPES": " ".join(r if isinstance(r, str) else r["name"]
+                            for r in doc["recipes"]),
         "OUTPUT_NAME": name,
         "OUTPUT_HYBRID": "1" if out.get("hybrid") else "",
         "OUTPUT_BACKEND": out.get("backend", ""),

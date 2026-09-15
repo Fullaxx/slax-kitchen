@@ -4,43 +4,132 @@
   "title": "slax-kitchen Profile",
   "description": "One build: a base ISO plus an ordered list of recipes.",
   "type": "object",
-  "required": ["apiVersion", "kind", "metadata", "base", "recipes"],
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "base",
+    "recipes"
+  ],
   "additionalProperties": false,
   "properties": {
-    "apiVersion": { "const": "slax-kitchen/v1" },
-    "kind": { "const": "Profile" },
+    "apiVersion": {
+      "const": "slax-kitchen/v1"
+    },
+    "kind": {
+      "const": "Profile"
+    },
     "metadata": {
       "type": "object",
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "properties": {
-        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
-        "summary": { "type": "string" }
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "summary": {
+          "type": "string"
+        }
       }
     },
     "base": {
       "type": "object",
-      "required": ["flavour", "arch", "version"],
+      "required": [
+        "flavour",
+        "arch",
+        "version"
+      ],
       "additionalProperties": false,
       "properties": {
-        "flavour": { "enum": ["debian", "slackware"] },
-        "arch": { "enum": ["32bit", "64bit"] },
-        "version": { "type": "string" },
-        "iso": { "type": "string", "description": "explicit path; otherwise kitchen fetch" }
+        "flavour": {
+          "enum": [
+            "debian",
+            "slackware"
+          ]
+        },
+        "arch": {
+          "enum": [
+            "32bit",
+            "64bit"
+          ]
+        },
+        "version": {
+          "type": "string"
+        },
+        "iso": {
+          "type": "string",
+          "description": "explicit path; otherwise kitchen fetch"
+        }
       }
     },
-    "recipes": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "recipes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "recipes to apply, in order. A bare name (or path) uses the recipe's own vars; the object form overrides them for this build.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "recipe name, or a path to a recipe file"
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "vars": {
+                "type": "object",
+                "description": "override the recipe's vars for this build; a name the recipe does not declare is an error",
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
     "output": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string" },
-        "hybrid": { "type": "boolean", "default": false },
-        "backend": { "enum": ["genisoimage", "xorriso"] }
+        "name": {
+          "type": "string"
+        },
+        "hybrid": {
+          "type": "boolean",
+          "default": false
+        },
+        "backend": {
+          "enum": [
+            "genisoimage",
+            "xorriso"
+          ]
+        }
       }
     },
     "test": {
       "type": "array",
-      "items": { "enum": ["structure", "bios-boot", "uefi-boot", "usb", "persistence"] }
+      "items": {
+        "enum": [
+          "structure",
+          "bios-boot",
+          "uefi-boot",
+          "usb",
+          "persistence"
+        ]
+      }
     }
   }
 }

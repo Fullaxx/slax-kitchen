@@ -35,8 +35,15 @@ def _subst(obj, vars_: dict):
     return obj
 
 
-def validate_file(path: str) -> list[str]:
-    """Return a list of human-readable problems; empty means valid."""
+def validate_file(path: str, overrides: dict | None = None) -> list[str]:
+    """Return a list of human-readable problems; empty means valid.
+
+    `overrides` are per-build values for the recipe's `vars:`, from a profile. They have
+    to reach HERE rather than being applied afterwards: this function resolves vars
+    before schema-checking, so validating without them would check the recipe's default
+    and let an override through. bundle.packages never calls _bundle_name(), which makes
+    the schema its only guard on a bundle name.
+    """
     import yaml
     try:
         import jsonschema
@@ -53,8 +60,18 @@ def validate_file(path: str) -> list[str]:
     # Validate the RESOLVED document. A recipe's vars are substituted into step strings
     # at apply time, so validating the raw form would reject a perfectly good
     # bundle: "{{bundle}}" against the NN-name pattern the verb actually requires.
-    if isinstance(doc.get("vars"), dict):
-        doc = _subst(doc, {k: str(v) for k, v in doc["vars"].items()})
+    declared = doc.get("vars") if isinstance(doc.get("vars"), dict) else {}
+    if overrides:
+        unknown = [k for k in overrides if k not in declared]
+        if unknown:
+            # Silently ignoring an override is how `network: true` sat in a docstring
+            # for months doing nothing. Name what IS available instead.
+            return [f"overrides a var this recipe does not declare: "
+                    f"{', '.join(sorted(unknown))} "
+                    f"(declared: {', '.join(sorted(declared)) or 'none'})"]
+        declared = {**declared, **overrides}
+    if declared:
+        doc = _subst(doc, {k: str(v) for k, v in declared.items()})
 
     kind = doc.get("kind")
     if kind == "Fingerprint":
@@ -73,7 +90,18 @@ def validate_file(path: str) -> list[str]:
 
     problems = []
     v = jsonschema.Draft202012Validator(schema)
-    for err in sorted(v.iter_errors(doc), key=lambda e: list(e.path)):
+    errs = sorted(v.iter_errors(doc), key=lambda e: list(e.path))
+    # `unevaluatedProperties` reports a step's OWN fields as unexpected whenever the
+    # verb's if/then branch failed for some other reason -- so one bad bundle name
+    # produced "('bundle', 'packages') were unexpected", which is both alarming and
+    # untrue. When a more specific error exists for the same step, that one is the
+    # answer; the unevaluated complaint is a consequence of it.
+    specific = [tuple(e.path) for e in errs if e.validator != "unevaluatedProperties"]
+    for err in errs:
+        here = tuple(err.path)
+        if err.validator == "unevaluatedProperties" and any(
+                other[:len(here)] == here for other in specific):
+            continue
         where = "/".join(str(p) for p in err.path) or "(root)"
         problems.append(f"{where}: {err.message}")
 

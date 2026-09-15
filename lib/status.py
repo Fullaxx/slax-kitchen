@@ -92,6 +92,13 @@ def status(work: str, verbose: bool = False) -> int:
             print(f"    {i}. {G}{name}{O}  {D}{entry.get('at', '')}{O}")
             if vs:
                 print(f"       {D}{vs}{O}")
+            # Vars a profile overrode. Without these, two applications of the same
+            # recipe with different values look identical here, and a `kitchen probe`
+            # difference has no explanation in the one place that should hold it.
+            ov = entry.get("vars") or {}
+            if ov:
+                print(f"       {D}vars: "
+                      + ", ".join(f"{k}={v}" for k, v in sorted(ov.items())) + O)
             for a in entry.get("artifacts") or []:
                 mark = f"{Y}-{O}" if a.startswith("-") else "+"
                 print(f"       {mark} {a.lstrip('-')}")

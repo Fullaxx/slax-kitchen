@@ -124,8 +124,10 @@ kitchen_build() {
     # Preflight BEFORE unpacking 400+ MiB. Facts come from the profile, so `when:`
     # guards resolve without needing a work tree that does not exist yet.
     if [ -n "$RECIPES" ]; then
-        # shellcheck disable=SC2086
-        python3 "$REPO_ROOT/lib/apply.py" $RECIPES --preflight-only \
+        # --profile, not $RECIPES: the profile may attach per-recipe vars, which a
+        # space-joined shell string cannot carry -- and unquoted word-splitting broke on
+        # any recipe path containing a space.
+        python3 "$REPO_ROOT/lib/apply.py" --profile "$PROFILE_PATH" --preflight-only \
             --facts "flavour=$BASE_FLAVOUR,arch=$BASE_ARCH" || exit 1
     fi
     # pack's own tools, checked here rather than after the build has run.
@@ -158,8 +160,7 @@ kitchen_build() {
     kitchen_unpack "$BASE_ISO" -o "$work" || exit 1
     echo
     if [ -n "$RECIPES" ]; then
-        # shellcheck disable=SC2086
-        python3 "$REPO_ROOT/lib/apply.py" $RECIPES -w "$work" || exit 1
+        python3 "$REPO_ROOT/lib/apply.py" --profile "$PROFILE_PATH" -w "$work" || exit 1
         echo
     fi
 
