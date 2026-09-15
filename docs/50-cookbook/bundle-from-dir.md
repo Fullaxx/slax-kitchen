@@ -58,9 +58,13 @@ flavours' `/etc/profile`, so it is the portable place to put shell-wide defaults
 
 ## Numbering
 
-`07` because the stock bundles occupy `01`–`06` and `savechanges` writes `99-changes-N.sb`.
-Anything in `07`–`98` overrides the shipped system and is itself overridden by a saved session.
-**Higher wins** — see [the anatomy notes on the union](../10-anatomy/union-and-persistence.md).
+`07` overrides the shipped system and is itself overridden by a saved session. **Higher wins** —
+see [the anatomy notes on the union](../10-anatomy/union-and-persistence.md).
+
+If you are building your own content rather than adjusting the platform, **`10`–`89` is the range
+to use**; `07` here is a shipped example, and `bundle:` is a var you can point anywhere. `98` and
+`99` are refused outright. →
+[which numbers are whose](../10-anatomy/bundles-squashfs.md#which-numbers-are-whose)
 
 The verb refuses a name without an `NN-` prefix, because a bundle with no number has no defined
 position in the stack and would silently never override anything.

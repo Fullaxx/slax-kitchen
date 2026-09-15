@@ -109,7 +109,10 @@ matters, copy this recipe and add:
 ## Bundle number
 
 `12-`, above the stock `01`–`06` and above the browsers at `10`–`11`, below the generated
-`98-dpkg-db.sb` and a saved session at `99`. It carries no `var/lib/dpkg/status` — it ships a
+`98-dpkg-db.sb` and a saved session at `99`. That puts it in `10`–`89`, which is
+[a fork's range](../10-anatomy/bundles-squashfs.md#which-numbers-are-whose) rather than
+slax-kitchen's — deliberately, because installing an application is downstream work and this
+recipe is an example of it. `bundle:` is a var, so a profile can move it. It carries no `var/lib/dpkg/status` — it ships a
 fragment declaring its 110 packages, which `pack` merges:
 
 ```

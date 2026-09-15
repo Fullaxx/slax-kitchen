@@ -10,8 +10,11 @@ compat:
   slax: ">=12.0.0"
   privilege: chroot
 vars:
-  # 10, not 06: above every stock bundle, below the 07-09 band the other recipes use,
-  # and well below 98-dpkg-db and 99-changes.
+  # 10, not 06: above every stock bundle and above the 00-09 platform band. That puts it
+  # in 10-89, which is a FORK's range rather than slax-kitchen's -- deliberately, because
+  # installing an application is downstream work and this recipe is an example of it.
+  # `bundle` is a var, so a profile can move it. 98 and 99 are refused outright; see
+  # docs/10-anatomy/bundles-squashfs.md for why those two are not just ordering.
   bundle: "10-chromium"
 steps:
   # WHY THIS RECIPE EXISTS. Both flavours ship chromium 117.0.5938.149, released in

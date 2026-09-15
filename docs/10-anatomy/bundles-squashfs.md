@@ -69,6 +69,71 @@ Consequences that catch people out:
   `lowerdir` chain with `sortmod | tac`, and `union_append_bundles` has nothing left to do — which is
   why `slax activate` cannot work there.
 
+## Which numbers are whose
+
+**This is slax-kitchen's convention, not upstream's.** Upstream documents no ranges at all:
+`vendor/linux-live/DOC/bundle.txt` describes the squashfs format and never mentions a numeric
+prefix, `98` appears nowhere in the upstream tree, and `99` exists only as a hard-coded default
+path inside `savechanges`. `01`–`06` is an observable fact about six directory names, not a
+reservation anyone wrote down. So the table below is ours to keep, and yours to read.
+
+| range | whose | what goes there |
+|---|---|---|
+| `00`–`09` | upstream and slax-kitchen | **the platform.** Upstream ships `01`–`06`; the recipes here that adjust the OS rather than add to it use `07`–`09` |
+| `10`–`89` | **yours** | applications and content. A fork numbers freely in here |
+| `90`–`97` | slax-kitchen | headroom, and where [`renumber-bundles`](../50-cookbook/renumber-bundles.md) parks a stock bundle it has moved above everything. `97` is the highest a recipe may take. If you want your own top-of-stack, `80`–`89` is the tidier place for it |
+| `98` | generated | `kitchen pack` writes `98-dpkg-db.sb` — **refused to recipes** |
+| `99` | `savechanges` | saved sessions — **refused to recipes** |
+
+`00`–`89` is advice. Nothing enforces it, nothing needs to: picking a number in the wrong band
+changes your load order and nothing else, and a fork that wants a different split is entitled to
+one.
+
+**`98` and `99` are different, and are refused.** They are the two numbers where a collision costs
+you something other than ordering:
+
+- **`98`** — `kitchen pack` *deletes and rewrites* `98-dpkg-db.sb` on every pack. It has to: a
+  generated bundle left in place would become the base on the next pack and freeze the package
+  database at whatever the first one produced. A bundle you put at `98-dpkg-db.sb` is destroyed
+  with no error; one at `98-anything-else` silently outranks the merged database.
+- **`99`** — `savechanges` picks the next session number by taking the **last** file in
+  `slax/modules/` and doing arithmetic on its name:
+
+  ```sh
+  ix=$(cd $TARGETDIR; ls -1 | sort -V | tail -n 1 | sed -r "s/^99-changes-//" | sed -r "s/[.]sb\$//")
+  ix=$(($ix + 1))
+  ```
+
+  It assumes that last file is a `99-changes-N.sb`. Put a bundle called `99-mystuff.sb` there and
+  it sorts *after* `99-changes-100.sb`, so every fresh boot computes `100` again and **each saved
+  session overwrites the one before it**. Put a dot in the name — `99-my.tools.sb` — and the
+  arithmetic is a shell syntax error, `ix` comes out empty, and the target becomes
+  `99-changes-.sb`. Either way the loss is silent and it is the user's work.
+
+`kitchen apply` therefore refuses `98-` and `99-` from every bundle verb and from
+`bundle.renumber`, and says to use `97` instead — which sits above every other bundle and collides
+with nothing. The refusal is at apply time rather than in the schema, so there is one
+implementation of the rule rather than two that can drift.
+
+One consequence of `98` worth knowing even though it harms nothing: on a stock image the first
+saved session is `99-changes-6.sb`, because upstream's arithmetic runs on `05-chromium`. On an
+image built here it is `99-changes-99.sb`, because it runs on `98-dpkg-db` instead. It still
+increments correctly from there.
+
+### If a shipped recipe's number collides with yours
+
+Every recipe here is an example you are meant to copy and edit. The three application recipes sit
+at `10`–`12` — `chromium-current`, `firefox-esr`, `libreoffice` — which is inside *your* range on
+purpose, because installing an application is the kind of thing a fork does. Override the number
+from your profile rather than editing the recipe:
+
+```yaml
+  - name: libreoffice
+    vars: {bundle: 40-office}
+```
+
+→ [recipes in a fork](../40-workflow/recipes-in-a-fork.md)
+
 ## What is in them
 
 | | Debian 12.2.0 | Slackware 15.0.4 |

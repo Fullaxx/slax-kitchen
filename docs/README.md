@@ -70,8 +70,9 @@ a single BIOS entry, and the whole 32 KiB system area is zero — no MBR, no GPT
 and `isohybrid` recipes fix both. → [the UEFI gap](20-boot-sequence/uefi-cd-gap.md)
 
 **Bundle load order is the numeric prefix, and higher wins.** `union_append_bundles` inserts each
-branch at aufs index 1, so each insertion outranks the previous. Stock bundles are `01`–`06` and
-`savechanges` writes `99-changes-N.sb`, which is why new bundles land at `07`.
+branch at aufs index 1, so each insertion outranks the previous. `00`–`09` is the platform,
+`10`–`89` is yours, and `98`/`99` are refused —
+[which numbers are whose](10-anatomy/bundles-squashfs.md#which-numbers-are-whose).
 
 **The two flavours' bundles are shaped differently.** Debian's `01-core` has no `/dev`, `/proc` or
 `/tmp` at all; Slackware's is a full FHS tree with 7,323 device nodes. Neither is a usable chroot as

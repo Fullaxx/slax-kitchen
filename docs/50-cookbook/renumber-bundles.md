@@ -23,7 +23,7 @@ Nothing is unpacked and nothing is recompressed. Renumbering an 80 MiB bundle co
 
 ## The example, and why it is the wrong direction on purpose
 
-Moving Chromium from `05` to `95` puts it above `06-devel` and above anything you add in `07`–`94`.
+Moving Chromium from `05` to `95` puts it above `06-devel` and above anything you add in `07`–`89`.
 Concretely: a file you ship in `07-mytools` **no longer wins** over Chromium's copy of the same
 path.
 
@@ -50,9 +50,16 @@ Removing a bundle leaves `01,01,02,03,04` after dropping `05`, and that is compl
 
 | range | who |
 |---|---|
-| `01`–`06` | the stock bundles |
-| `07`–`98` | yours — overrides the shipped system |
-| `99` | `savechanges` writes `99-changes-N.sb`, so a saved session wins over everything |
+| `00`–`09` | the platform — upstream's `01`–`06`, plus recipes here that adjust the OS |
+| `10`–`89` | **yours** |
+| `90`–`97` | slax-kitchen's headroom — and where this recipe parks `05-chromium`. `97` is the highest a recipe may take |
+| `98` | the generated package database — **refused**, `to: 98` is an error |
+| `99` | `savechanges` — **refused**, `to: 99` is an error |
+
+An earlier version of this table gave `07`–`98` to users. `98` is `kitchen pack`'s generated
+database and `99` is where saved sessions land, and neither collision is merely an ordering
+problem: [which numbers are whose](../10-anatomy/bundles-squashfs.md#which-numbers-are-whose) has
+the measurements.
 
 See [union and persistence](../10-anatomy/union-and-persistence.md) for what aufs is actually doing
 underneath.

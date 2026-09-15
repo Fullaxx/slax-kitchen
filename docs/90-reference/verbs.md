@@ -38,6 +38,16 @@ All seven produce or modify `slax/modules/*.sb`. **Load order is the numeric pre
 wins**, so a bundle name must start with `NN-`; the verbs refuse one that does not, because a
 bundle without a prefix has no defined position in the stack.
 
+They also refuse **`98-`** and **`99-`**, including as `bundle.renumber`'s `to:`. Those two are the
+only numbers where a collision costs something other than ordering: `kitchen pack` deletes and
+rewrites `98-dpkg-db.sb` on every pack, and `savechanges` derives the next session number from the
+last file in `slax/modules/` — a bundle sitting there makes every saved session overwrite the one
+before it. Use `97`, which is above every other bundle and collides with nothing.
+→ [which numbers are whose](../10-anatomy/bundles-squashfs.md#which-numbers-are-whose)
+
+Every other number is convention only: `00`–`09` platform, `10`–`89` a fork's, `90`–`97` headroom.
+Nothing enforces those, because getting one wrong changes your load order and nothing else.
+
 Every bundle is built with upstream's exact `mksquashfs` line, so a built bundle is
 format-indistinguishable from a shipped one (superblock flags `0x04e0`, 1 MiB blocks):
 

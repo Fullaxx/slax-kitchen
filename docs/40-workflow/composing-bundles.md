@@ -161,8 +161,11 @@ To remove something, remove the bundle that contains it.
 
 ## Numbering
 
-Load order is the numeric prefix and **higher wins**. `01`–`06` are upstream's, `98` is the
-generated package database, `99` is `savechanges`. Yours goes in `07`–`97`.
+Load order is the numeric prefix and **higher wins**. `00`–`09` is the platform — upstream's
+`01`–`06` plus the recipes here that adjust the OS. **`10`–`89` is yours.** `90`–`97` is headroom,
+`98` is the generated package database and `99` is `savechanges`; the last two are refused to
+recipes, for reasons that are not about tidiness —
+[which numbers are whose](../10-anatomy/bundles-squashfs.md#which-numbers-are-whose).
 
 Ties are not an error and they are not random: `sortmod` sorts on the number and falls back to an
 alphabetical compare, so `01-core` loads before `01-firmware`, and `07-branding` before

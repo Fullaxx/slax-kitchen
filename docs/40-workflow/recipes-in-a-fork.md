@@ -97,20 +97,31 @@ with the recipe wherever it lives. Copy both, or neither.
 
 ## Bundle numbers
 
-Load order is the numeric prefix and **higher wins**. `01`–`06` are upstream's, `98` is the
-generated package database, `99` is `savechanges`. Yours goes in `07`–`97`.
+Load order is the numeric prefix and **higher wins**, and **`10`–`89` is yours** — number freely
+in there. `00`–`09` is the platform (upstream's `01`–`06`, plus the recipes here that adjust the OS
+rather than add to it), `90`–`97` is headroom, and `98`/`99` are refused to recipes because a
+collision there costs a saved session rather than an ordering.
+The whole table, and the measurements behind the two refusals, are in
+[which numbers are whose](../10-anatomy/bundles-squashfs.md#which-numbers-are-whose).
+
+None of it is upstream's convention — upstream documents no ranges at all. It is ours, which is
+why it is written down in one place.
 
 Ties are not an error and not random: `sortmod` sorts on the number and falls back to an
 alphabetical compare, so `07-branding` loads before `07-extras`. Stock Slax relies on this —
 `01-core` before `01-firmware`. It is still worth avoiding, because nobody predicts it.
 
-If a shipped recipe's number collides with yours, override it in your profile rather than editing
-the recipe:
+Every shipped recipe takes its bundle number from a var, so if one collides with yours, override it
+in your profile rather than editing the recipe:
 
 ```yaml
   - name: add-packages
     vars: {bundle: 30-mytools}
 ```
+
+The three application recipes — `chromium-current`, `firefox-esr`, `libreoffice` — sit at `10`–`12`,
+inside your range. That is deliberate: installing an application is downstream work, and they are
+examples of it. Renumber them the same way if you want that space.
 
 See [composing bundles](composing-bundles.md) for what a number actually decides.
 

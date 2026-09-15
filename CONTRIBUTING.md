@@ -357,9 +357,15 @@ you add a test, **make it fail on purpose once** and check it says something use
 
 ## 6. Writing a recipe: the parts that surprise people
 
-**Load order is the numeric prefix, and higher wins.** `01`–`06` are upstream's. `99` is
-`savechanges`. Yours goes in `07`–`98`. Override, do not edit: a 4 KiB bundle at `07` beats a
-122 MiB one at `01`, and leaves the original byte-identical so `probe` still recognises it.
+**Load order is the numeric prefix, and higher wins.** `00`–`09` is the platform (upstream's
+`01`–`06`, plus recipes here that adjust the OS), **`10`–`89` is a fork's**, `90`–`97` is headroom,
+and `98`/`99` are refused — `kitchen apply` errors rather than letting a bundle collide with the
+generated package database or with saved sessions. The table and the measurements behind those two
+refusals: [which numbers are whose](docs/10-anatomy/bundles-squashfs.md#which-numbers-are-whose).
+None of it is upstream's convention; upstream documents no ranges at all.
+
+Override, do not edit: a 4 KiB bundle at `07` beats a 122 MiB one at `01`, and leaves the original
+byte-identical so `probe` still recognises it.
 
 **A union composes trees, not files** — and Debian's package database is a single file. Whichever
 bundle ships `var/lib/dpkg/status` highest wins outright, so a bundle built from a short stack used
@@ -403,7 +409,7 @@ Every one of these is measured, and every one cost somebody a session.
 | **No `/dev/kvm` is a speed problem** | Not a capability one. TCG is 10–20× slower; everything still works. |
 | **busybox dispatches on `argv[0]`** | Invoked by any other name it answers `--list` with one line — which reads exactly like "this binary will not run here". |
 | **readdir order varies by filesystem** | Comparing ISO *sector positions* tests your build host, not your build. |
-| **Bundle numbers collide** | `add-packages` uses `07`, `network-preseed` `08`, `firmware-refresh` `09`. Pick your own. |
+| **Bundle numbers collide** | Five shipped recipes use `07` and five use `08`; ties load alphabetically, so `07-branding` quietly ends up under `07-extras`. Every recipe takes its number from a var — override it in your profile. |
 
 ---
 

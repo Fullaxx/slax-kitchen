@@ -14,7 +14,8 @@ compat:
   privilege: chroot
 vars:
   # 12: above the stock 01-06 and above the browsers at 10-11, below the generated
-  # 98-dpkg-db and a saved session at 99.
+  # 98-dpkg-db and a saved session at 99. 10-89 is a FORK's range rather than
+  # slax-kitchen's -- deliberately, since this is an example of downstream work.
   bundle: 12-libreoffice
 steps:
   # TWO CHOICES HERE ARE DELIBERATE, and neither is the one you would guess.

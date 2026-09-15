@@ -10,6 +10,12 @@ compat:
   slax: ">=12.0.0"
   privilege: chroot
 vars:
+  # 11: next to the browsers at 10, and inside 10-89 -- which is a FORK's range, not
+  # slax-kitchen's, on purpose. Installing an application is downstream work and this
+  # recipe is an example of it. `bundle` is a var, so a profile can move it:
+  #   - name: firefox-esr
+  #     vars: {bundle: 42-firefox}
+  # docs/10-anatomy/bundles-squashfs.md has the whole scheme.
   bundle: "11-firefox"
 steps:
   # No Slax image ships a second browser, and firefox-esr is in Debian proper -- no
