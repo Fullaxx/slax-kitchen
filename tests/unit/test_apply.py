@@ -1044,22 +1044,32 @@ def test_stage_delta_preserves_what_the_chroot_had():
     """
     import tempfile
 
+    # Changing a file's owner to ANOTHER uid needs root, and the gates job runs as the
+    # runner user -- so the ownership half is root-only while the mode half is not. Both
+    # are asserted where they can be: the setuid clearing reproduces unprivileged,
+    # because the kernel strips the bit on chown even when the ids do not change.
+    privileged = hasattr(os, "geteuid") and os.geteuid() == 0
+    owner = (1100, 1100) if privileged else (os.getuid(), os.getgid())
+
     root = tempfile.mkdtemp()
     stage = tempfile.mkdtemp()
     os.makedirs(os.path.join(root, "home", "user"))
     os.makedirs(os.path.join(root, "usr", "bin"))
-    os.chown(os.path.join(root, "home", "user"), 1100, 1100)
+    if privileged:
+        os.chown(os.path.join(root, "home", "user"), *owner)
     os.chmod(os.path.join(root, "home", "user"), 0o700)
     open(os.path.join(root, "home", "user", ".bashrc"), "w").close()
-    os.chown(os.path.join(root, "home", "user", ".bashrc"), 1100, 1100)
+    if privileged:
+        os.chown(os.path.join(root, "home", "user", ".bashrc"), *owner)
     open(os.path.join(root, "usr", "bin", "helper"), "w").close()
     os.chmod(os.path.join(root, "usr", "bin", "helper"), 0o4755)
     open(os.path.join(root, "usr", "bin", "setgid"), "w").close()
     os.chmod(os.path.join(root, "usr", "bin", "setgid"), 0o2755)
     os.symlink("/etc/passwd", os.path.join(root, "usr", "bin", "link"))
-    # Owned by a NON-root uid, or the assertion below cannot tell a missing lchown from
-    # a symlink root happened to create.
-    os.lchown(os.path.join(root, "usr", "bin", "link"), 1100, 1100)
+    if privileged:
+        # Owned by a NON-root uid, or the assertion below cannot tell a missing lchown
+        # from a symlink root happened to create.
+        os.lchown(os.path.join(root, "usr", "bin", "link"), *owner)
 
     keep = ["home/user", "home/user/.bashrc", "usr/bin/helper", "usr/bin/setgid",
             "usr/bin/link"]
@@ -1073,12 +1083,16 @@ def test_stage_delta_preserves_what_the_chroot_had():
         import stat as st_
         return st_.S_IMODE(os.lstat(os.path.join(stage, rel)).st_mode)
 
-    check("directory keeps its owner", own("home/user"), (1100, 1100))
+    # Mode, always -- this is the half that reproduces unprivileged, and #13.
     check("directory keeps its mode", mode("home/user"), 0o700)
-    check("file keeps its owner", own("home/user/.bashrc"), (1100, 1100))
     check("setuid survives staging", mode("usr/bin/helper"), 0o4755)
     check("setgid survives staging", mode("usr/bin/setgid"), 0o2755)
-    check("symlink is lchowned, not followed", own("usr/bin/link"), (1100, 1100))
+    if not privileged:
+        return
+    # Ownership, root only. #10 proper: copystat leaves owner and group alone.
+    check("directory keeps its owner", own("home/user"), owner)
+    check("file keeps its owner", own("home/user/.bashrc"), owner)
+    check("symlink is lchowned, not followed", own("usr/bin/link"), owner)
     # lchown, not chown: following the link would have changed /etc/passwd's owner.
     check("the symlink target was not touched",
           os.lstat("/etc/passwd").st_uid, 0)
