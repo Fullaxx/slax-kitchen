@@ -1,0 +1,66 @@
+# The reference container: the environment every measurement in docs/ was taken on.
+#
+#   docker build -f containers/Containerfile -t slax-kitchen containers/
+#   docker run --rm -it -v "$PWD:/work" slax-kitchen
+#
+# The -f is not optional with docker: only podman looks for a file named
+# `Containerfile` on its own. The name is the OCI spelling and both engines
+# accept the contents, so it stays.
+#
+# Add --device /dev/kvm if the host has it. That one flag turns a 5-15 minute
+# boot-to-desktop run into about 30 seconds, and it is the ONLY flag worth adding:
+# bundle.packages turned out to need CAP_SYS_CHROOT and CAP_MKNOD, both of which
+# Docker grants by default, so --cap-add SYS_ADMIN and --security-opt
+# seccomp=unconfined are not needed for anything.
+#
+# WHY A FLOATING TAG. Every other download in this project is pinned by sha256 --
+# base ISOs, apt signing keys, the busybox tarball -- because those end up inside
+# an image that boots as root. This one does not: nothing from this container is
+# copied into the ISO. `bundle.packages` chroots into the bundle and runs Debian's
+# own apt against Debian's own glibc, so the host userland never leaks in. What
+# this image has to get right is that the tools work, and a newer Ubuntu 24.04
+# does not stop them working. The image records what it actually installed instead
+# -- see /etc/slax-kitchen-toolchain.txt.
+#
+# Ubuntu 24.04 specifically, not "any distro": two absolute paths are hardcoded in
+# the toolkit -- /usr/lib/ISOLINUX/isohdpfx.bin and /usr/share/OVMF/OVMF_*_4M.fd --
+# and they are Debian-family spellings. It is also what the CI runner is, which is
+# how a CI-only failure stays impossible.
+
+FROM ubuntu:24.04
+
+LABEL org.opencontainers.image.title="slax-kitchen reference container" \
+      org.opencontainers.image.source="https://github.com/Fullaxx/slax-kitchen" \
+      org.opencontainers.image.licenses="MIT"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# One layer, one package list. containers/packages/*.txt is the single source of
+# truth: .github/workflows/ci.yml installs from the same files, so the two cannot
+# drift the way four hand-maintained copies did.
+#
+# Deliberately NOT installed: proot (unsafe -- it does not translate statx(), so
+# stat escapes the fake root and reads the HOST filesystem), fakechroot (LD_PRELOADs
+# host binaries against target libs; glibc 2.39 cannot load against 2.36),
+# squashfuse and debootstrap (nothing here needs either).
+COPY packages/ /tmp/packages/
+RUN apt-get update -qq \
+ && grep -hv '^#' /tmp/packages/*.txt | grep -v '^$' \
+      | xargs apt-get install -y --no-install-recommends \
+ && rm -rf /tmp/packages /var/lib/apt/lists/*
+
+# The image does not pin what it installs, so it records it. `kitchen doctor
+# --report` tells you the versions of the 20 tools; this is everything else, for
+# the day a measurement in docs/ needs to name what it ran on.
+RUN { echo "# slax-kitchen reference container"; \
+      echo "built:  $(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+      sed -n 's/^PRETTY_NAME="\(.*\)"$/base:   \1/p' /etc/os-release; \
+      echo "python: $(python3 -V 2>&1)"; \
+      echo; \
+      dpkg-query -W -f='${Package}\t${Version}\n' | sort; \
+    } > /etc/slax-kitchen-toolchain.txt
+
+# Bind-mount the checkout here: -v "$PWD:/work"
+WORKDIR /work
+
+CMD ["/bin/bash"]

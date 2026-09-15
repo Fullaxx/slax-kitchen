@@ -1,0 +1,41 @@
+# Unpack, edit and repack an ISO. Used by: ci.yml `build`, and the reference container.
+#
+# This is the set that turns a stock Slax ISO into a customized one. Everything here
+# is unprivileged -- no mount, no loop device, no /dev/fuse anywhere in the path.
+
+# bundles (.sb). Any squashfs-tools since 4.2 writes the format Slax reads;
+# `kitchen doctor` asserts the floor rather than trusting it.
+squashfs-tools
+
+# initramfs. xz MUST support --check=crc32: the kernel's xz decoder cannot do
+# CRC64, and CRC64 is xz's default -- get this wrong and the image will not boot.
+cpio
+xz-utils
+
+# mastering. xorriso is the default backend and the only one of the two that can
+# add a second El Torito entry, so UEFI needs it; genisoimage matches upstream's
+# own byte layout, so `kitchen diff` needs it. Both ship; `pack` picks by task.
+xorriso
+genisoimage
+
+# BIOS bootloader. `extlinux` is a separate package from `syslinux` and is easy to
+# miss. syslinux-common and isolinux supply /usr/lib/ISOLINUX/isohdpfx.bin, which
+# `boot.isohybrid` requires by absolute path.
+syslinux
+syslinux-common
+syslinux-utils
+isolinux
+extlinux
+
+# EFI System Partition, built as a plain file and never mounted:
+# mkfs.vfat -C, then mmd/mcopy write into it.
+mtools
+dosfstools
+
+# BOOTX64.EFI. grub-common supplies grub-script-check, which `boot.grub` uses to
+# refuse a grub.cfg that would not parse.
+grub-efi-amd64-bin
+grub-common
+
+python3-yaml
+python3-jsonschema

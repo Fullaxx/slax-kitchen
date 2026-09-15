@@ -1,0 +1,14 @@
+# Boot tests. Used by: ci.yml `boot`, and the reference container.
+# Additive to build.txt -- install both.
+#
+# No /dev/kvm on a GitHub runner or in an unprivileged container, so QEMU falls
+# back to TCG. That is a speed problem, not a capability one: the direct-kernel
+# boot still reaches the livekit markers, it just takes minutes instead of seconds.
+
+qemu-system-x86
+qemu-utils
+
+# OVMF firmware for the UEFI boot test. tests/boot/qemu_boot.py reads
+# /usr/share/OVMF/OVMF_CODE_4M.fd and OVMF_VARS_4M.fd by absolute path, and copies
+# VARS to a private writable file first -- the packaged one is read-only.
+ovmf

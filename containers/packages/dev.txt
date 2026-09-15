@@ -1,0 +1,28 @@
+# The rest of what a working checkout needs. Used by the reference container.
+#
+# Not installed by any ci.yml job today, because no CI step reaches for them --
+# but `kitchen doctor` lists several, and a developer shell without them is not
+# the environment the documentation describes.
+
+# doctor's tool table. 7z reads ISO9660 and squashfs without mounting; do NOT
+# unpack with it, it drops Rock Ridge modes. qemu-img builds USB test images.
+p7zip-full
+
+git
+jq
+curl
+ca-certificates
+file
+
+# squashfs decompressor fallbacks. lib/fingerprint.py reaches for these when a
+# bundle was built with something other than xz.
+zstd
+lz4
+
+# ci/recipe-matrix.sh re-invokes itself under sudo for any recipe whose
+# compat.privilege is above `none`. Already root here, but the script checks.
+sudo
+
+# docs/40-workflow/host-handoff.md tells you to reach the KVM host from here.
+openssh-client
+rsync

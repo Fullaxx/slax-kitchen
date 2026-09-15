@@ -1,0 +1,15 @@
+# Commit gates only -- what `ci/run-checks.sh` needs and nothing more.
+# Used by: ci.yml `gates`, and the reference container.
+#
+# The gates job installs only this file, which is why it finishes in ~35 s while a
+# build job takes seven minutes. Keep it that way: anything added here is paid on
+# every push and every PR.
+
+shellcheck
+yamllint
+
+# 40-schema.sh validates recipes and profiles. Both modules are imported, not
+# shelled out to, so a venv python3 that cannot see the apt packages breaks the
+# gate -- `kitchen doctor` probes for exactly that.
+python3-yaml
+python3-jsonschema
