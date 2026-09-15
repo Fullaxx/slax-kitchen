@@ -72,13 +72,22 @@ jobs:
   # clock. Not merged INTO a build job on purpose: this one must fail for a reason
   # about the image, not about a recipe.
   container:
-    name: reference container
+    name: reference container (${{ matrix.base }})
     runs-on: ubuntu-24.04
     needs: gates
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both supported bases, because containers/README.md claims any current
+        # Debian-family release works and a claim nobody runs is an assumption.
+        # debian:12 is not decoration: it is what upstream actually builds Slax on.
+        base: [ubuntu:24.04, "debian:12"]
     steps:
       - uses: actions/checkout@v7
         with: {submodules: true}
-      - run: docker build -f containers/Containerfile -t slax-kitchen:ci containers/
+      - run: |
+          docker build -f containers/Containerfile \
+            --build-arg BASE=${{ matrix.base }} -t slax-kitchen:ci containers/
       - name: the image can build a Slax, and says so
         # `set -e` is load-bearing. `sh -c 'a; b'` exits with b's status, so without
         # it a failing `doctor --strict` was swallowed whole by the passing gates

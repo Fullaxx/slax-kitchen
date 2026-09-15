@@ -63,7 +63,7 @@ finished bundle (`BUNDLE_EXCLUDE`). See [edit-bundles](edit-bundles.md).
 | | verdict |
 |---|---|
 | **`proot`** | ⚠ **unsafe — do not use.** proot 5.1.0 does not translate `statx()`, so `stat` escapes the fake root and reads the **host** filesystem. Proven: it reported `/etc/lsb-release` as present when the bundle has no such file. Silent and selective, so it can emit a corrupt bundle that looks fine. |
-| **`fakechroot`** | fails outright — it `LD_PRELOAD`s host binaries against target libraries, and Ubuntu 24.04's glibc 2.39 cannot load against Debian 12's 2.36. |
+| **`fakechroot`** | fails on any glibc mismatch between host and target — it `LD_PRELOAD`s host binaries against target libraries. Measured on the default `ubuntu:24.04` container: glibc 2.39 cannot load against Debian 12's 2.36. A `debian:12` container happens to match the Debian bundles, but not the Slackware ones, and real `chroot` needs neither to agree. |
 
 Real `chroot` works and is the only supported backend. `proot` is no longer listed by
 `kitchen doctor` for this reason.

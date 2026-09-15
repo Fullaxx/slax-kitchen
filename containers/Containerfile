@@ -1,6 +1,8 @@
 # The reference container: the environment every measurement in docs/ was taken on.
 #
 #   docker build -f containers/Containerfile -t slax-kitchen containers/
+#   docker build -f containers/Containerfile --build-arg BASE=debian:12 \
+#                -t slax-kitchen:deb12 containers/
 #   docker run --rm -it -v "$PWD:/work" slax-kitchen
 #
 # The -f is not optional with docker: only podman looks for a file named
@@ -13,21 +15,51 @@
 # Docker grants by default, so --cap-add SYS_ADMIN and --security-opt
 # seccomp=unconfined are not needed for anything.
 #
+# WHICH BASE. Any current Debian-family release satisfies every constraint the
+# toolkit has: two absolute paths are hardcoded -- /usr/lib/ISOLINUX/isohdpfx.bin
+# and /usr/share/OVMF/OVMF_*_4M.fd -- and they are Debian-family spellings, which
+# rules out Fedora and Alpine but NOT Debian. CI builds both ubuntu:24.04 and
+# debian:12 and runs `doctor --strict` plus all eleven gates in each, so that is a
+# tested claim rather than an assumption.
+#
+# The default is ubuntu:24.04 for exactly one reason: it is what `runs-on` gives
+# us, and ci.yml installs the toolchain on the RUNNER rather than in this image.
+# Matching it is what keeps a CI-only failure impossible. Move CI inside this
+# image and the default becomes a free choice -- see containers/README.md.
+#
+# ONE FILE, AND WHEN TO STOP. This stays a single Containerfile only while both
+# bases need the identical RUN steps. If they ever diverge -- a package pinned on
+# one, a different GRUB or squashfs-tools handling, a workaround that applies to
+# one and not the other -- do NOT add a conditional on $BASE. Split into
+# containers/Containerfile.Ubuntu.24.04 and containers/Containerfile.Debian.12 and
+# point the CI matrix at the two files. A Containerfile that branches on its own
+# base is two Containerfiles wearing a trench coat, and it hides the divergence
+# instead of recording it.
+#
 # WHY A FLOATING TAG. Every other download in this project is pinned by sha256 --
 # base ISOs, apt signing keys, the busybox tarball -- because those end up inside
-# an image that boots as root. This one does not: nothing from this container is
-# copied into the ISO. `bundle.packages` chroots into the bundle and runs Debian's
-# own apt against Debian's own glibc, so the host userland never leaks in. What
-# this image has to get right is that the tools work, and a newer Ubuntu 24.04
-# does not stop them working. The image records what it actually installed instead
-# -- see /etc/slax-kitchen-toolchain.txt.
+# an image that boots as root. Two things from THIS image do too, and it is worth
+# being straight about them:
 #
-# Ubuntu 24.04 specifically, not "any distro": two absolute paths are hardcoded in
-# the toolkit -- /usr/lib/ISOLINUX/isohdpfx.bin and /usr/share/OVMF/OVMF_*_4M.fd --
-# and they are Debian-family spellings. It is also what the CI runner is, which is
-# how a CI-only failure stays impossible.
+#   BOOTX64.EFI   built here by grub-mkstandalone, copied into boot/efi.img, and
+#                 the first code UEFI firmware executes
+#   the MBR       /usr/lib/ISOLINUX/isohdpfx.bin from the host's syslinux, written
+#                 into the ISO's first 432 bytes by xorriso -isohybrid-mbr
+#
+# Measured across the two supported bases: the MBR is byte-identical (both ship
+# syslinux 6.04~git20190206, sha256 7b43a4dd...), and BOOTX64.EFI is NOT --
+# ubuntu:24.04's GRUB 2.12 builds 6,193,152 bytes and debian:12's GRUB 2.06 builds
+# 10,334,208 from the same module list. So the base is output-affecting in exactly
+# one place, and it moves the ISO by about 4 MB.
+#
+# What does NOT leak is the userland -- bundle.packages chroots into the bundle and
+# runs Debian's own apt against Debian's own glibc. The tag stays floating because
+# the image is rebuilt and re-proven on every push rather than consumed by digest;
+# the image records exactly what it installed either way, at
+# /etc/slax-kitchen-toolchain.txt.
 
-FROM ubuntu:24.04
+ARG BASE=ubuntu:24.04
+FROM ${BASE}
 
 LABEL org.opencontainers.image.title="slax-kitchen reference container" \
       org.opencontainers.image.source="https://github.com/Fullaxx/slax-kitchen" \
@@ -41,8 +73,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 #
 # Deliberately NOT installed: proot (unsafe -- it does not translate statx(), so
 # stat escapes the fake root and reads the HOST filesystem), fakechroot (LD_PRELOADs
-# host binaries against target libs; glibc 2.39 cannot load against 2.36),
-# squashfuse and debootstrap (nothing here needs either).
+# host binaries against target libs, so it fails on any glibc mismatch between host
+# and target), squashfuse and debootstrap (nothing here needs either).
 COPY packages/ /tmp/packages/
 RUN apt-get update -qq \
  && cat /tmp/packages/*.txt | grep -v -e '^#' -e '^$' \
@@ -52,8 +84,10 @@ RUN apt-get update -qq \
 # The image does not pin what it installs, so it records it. `kitchen doctor
 # --report` tells you the versions of the 20 tools; this is everything else, for
 # the day a measurement in docs/ needs to name what it ran on.
+ARG BASE
 RUN { echo "# slax-kitchen reference container"; \
       echo "built:  $(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+      echo "from:   ${BASE}"; \
       sed -n 's/^PRETTY_NAME="\(.*\)"$/base:   \1/p' /etc/os-release; \
       echo "python: $(python3 -V 2>&1)"; \
       echo; \

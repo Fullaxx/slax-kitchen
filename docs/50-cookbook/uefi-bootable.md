@@ -82,6 +82,32 @@ Live Kit init <http://www.linux-live.org/>
 * Mounting bundles
 ```
 
+### The GRUB in your ESP is your build host's GRUB
+
+`grub-mkstandalone` builds `BOOTX64.EFI` from whatever GRUB is installed where you are building, and
+that binary is the first code the firmware executes. So the [reference
+container](../../containers/README.md)'s base changes what ships:
+
+| built on | GRUB | `BOOTX64.EFI` | ESP |
+|---|---|---|---|
+| `ubuntu:24.04` (default) | 2.12 | 6,193,152 B | ~6.3 MiB |
+| `debian:12` | **2.06** | 10,334,208 B | 10,368 KiB |
+
+Both boot. The 2.12 log above is the default build; the Debian 12 build was checked the same way on
+2026-09-15 and reached a login prompt:
+
+```
+GNU GRUB  version 2.06
+...
+[  OK  ] Started getty@tty1.service - Getty on tty1.
+[  OK  ] Reached target getty.target - Login Prompts.
+slax login:
+```
+
+The 4 MB difference is GRUB's, not ours — the module list
+(`lib/apply.py` `GRUB_MODULES`) is identical in both. Structure assertions pass either way:
+16 passed, 0 failed with `--expect-uefi`.
+
 ## Limitations
 
 - **x86_64 only.** There is no `bootia32.efi`, matching upstream — a 32-bit UEFI machine is not

@@ -59,8 +59,9 @@ exactly this. A build tool that silently reads the wrong filesystem can emit a c
 this is not a workaround-able quirk.
 
 **`fakechroot` — rejected.** It works by `LD_PRELOAD`ing **host** binaries against the **target's**
-libraries, so it needs compatible glibc on both sides. Ubuntu 24.04 host (glibc 2.39) against a
-Debian 12 bundle (2.36) fails outright:
+libraries, so it needs compatible glibc on both sides — and on *every* target, which no single host
+gives you here. Measured on the default `ubuntu:24.04` container, glibc 2.39 against a Debian 12
+bundle's 2.36 fails outright:
 
 ```
 /usr/sbin/chroot: .../libc.so.6: version `GLIBC_2.38' not found

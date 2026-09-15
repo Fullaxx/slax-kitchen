@@ -6,7 +6,7 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` → `gates` | every push and PR | the eleven commit gates, ~1 min, no ISOs |
-| `ci.yml` → `container` | every push and PR | builds the reference container, then `doctor --strict` and the gates *inside* it |
+| `ci.yml` → `container` | every push and PR | builds the reference container on **both** `ubuntu:24.04` and `debian:12`, then `doctor --strict` and the gates *inside* each |
 | `ci.yml` → `build` | every push and PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
 | `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | QEMU BIOS + UEFI boot under TCG |
 | `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml`, then publish a Release |
@@ -25,6 +25,11 @@ tool reaches CI and a developer's machine in the same commit.
 The `container` job is what keeps that honest. `kitchen doctor --strict` exits non-zero if any of
 the 20 tools is missing or any toolchain assertion fails, so an incomplete list fails the build
 rather than surfacing later as a recipe that cannot find `mcopy`.
+
+It runs on both supported bases. `containers/README.md` claims any current Debian-family release
+works; building `ubuntu:24.04` and `debian:12` on every push is what turns that from an assumption
+into a tested statement. Both legs are under a minute and run beside the eight-minute build jobs,
+so the second one costs nothing.
 
 ## Run any of it locally
 

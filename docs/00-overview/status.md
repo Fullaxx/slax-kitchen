@@ -33,7 +33,7 @@ the resulting ISO in QEMU and reading the console.
 
 | Recipe | Status |
 |---|---|
-| `uefi-bootable` | ✅ **booted** — OVMF loads GRUB 2.12 from our ESP, `efifb` comes up, livekit mounts all bundles |
+| `uefi-bootable` | ✅ **booted** — OVMF loads GRUB from our ESP, `efifb` comes up, livekit mounts all bundles. 2.12 on the default `ubuntu:24.04` container, 2.06 on `debian:12`; both reach a login prompt |
 | `isohybrid` | ✅ MBR + GPT + type-`0xEF` partition verified in the image |
 | `serial-console` | ✅ entry present in both configs |
 | `memtest86plus` | ✅ **booted on BIOS and UEFI** — Memtest86+ 8.10 selected from each menu and running |
@@ -85,7 +85,7 @@ Full reasoning: [add-packages cookbook page](../50-cookbook/add-packages.md).
 | **`boot.secureboot` verb** | Slax's kernel is custom-built and unsigned, so shim + signed GRUB gets you two links of a three-link chain. Closing the third needs a key we cannot ship (a public private key is theatre), enrolled per-machine through MokManager by a physically present human, on a path we cannot boot-test here. Documented instead: [secure-boot](../20-boot-sequence/secure-boot.md). |
 | **`initramfs.config` verb** | Only 2 of the 8 variables in `/lib/config` are read at runtime — `LIVEKITNAME` (14 uses) and `BEXT` (3). The other six are build-time only. And `LIVEKITNAME` is merely the *default* for `from=` (`livekitlib:640`), so a second Live Kit tree on one stick needs no rename at all. Renaming costs the `from=…iso` and PXE paths, and on CD requires re-patching `isolinux.bin`. A verb for one variable nobody should change. |
 | **`proot` for unprivileged chroot** | **Unsafe.** proot 5.1.0 does not translate `statx()`, so `stat` escapes the fake root and reads the **host** filesystem. Silent and selective — paths that exist on the host appear to work. Could emit a corrupt bundle. Real `chroot` works instead. |
-| **`fakechroot`** | LD_PRELOADs host binaries against target libs; Ubuntu 24.04 glibc 2.39 cannot load against Debian 12's 2.36. |
+| **`fakechroot`** | LD_PRELOADs host binaries against target libs, so it fails on any glibc mismatch. Measured on the `ubuntu:24.04` container: 2.39 cannot load against Debian 12's 2.36. |
 | **byte-identical ISO rebuilds** | No single backend is both faithful and reproducible: `genisoimage` matches upstream but cannot pin dates; `xorriso` pins dates but uppercases the application id. Both ship; pick by task. |
 
 ---
