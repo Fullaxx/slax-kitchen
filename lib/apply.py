@@ -2548,23 +2548,28 @@ def main(argv: list[str]) -> int:
             if "=" in pair:
                 k, v = pair.split("=", 1)
                 override[k.strip()] = v.strip()
-    if not a.preflight_only and not os.path.isdir(os.path.join(a.work, "iso")):
-        print(f"no work tree at {a.work}/iso (run 'kitchen unpack' first)", file=sys.stderr)
+    # Argument errors first. "no work tree" is a confusing answer to "you named no
+    # recipes", and checking the tree earlier hid the mutually-exclusive case entirely.
+    if a.profile and a.recipes:
+        print("error: --profile and naming recipes are mutually exclusive "
+              "(the profile already carries the list)", file=sys.stderr)
+        return 2
+    if not a.profile and not a.recipes:
+        print("error: name at least one recipe, or pass --profile PATH", file=sys.stderr)
         return 2
     var_overrides: dict[str, dict] = {}
     names = a.recipes
     if a.profile:
-        if a.recipes:
-            print("error: --profile and naming recipes are mutually exclusive",
-                  file=sys.stderr)
-            return 2
         try:
             names, var_overrides = read_profile_recipes(a.profile)
         except RuntimeError as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
-    if not names:
-        print("error: name at least one recipe, or pass --profile", file=sys.stderr)
+        if not names:
+            print(f"error: {a.profile} lists no recipes", file=sys.stderr)
+            return 2
+    if not a.preflight_only and not os.path.isdir(os.path.join(a.work, "iso")):
+        print(f"no work tree at {a.work}/iso (run 'kitchen unpack' first)", file=sys.stderr)
         return 2
     search = recipe_search_path() + [os.getcwd()]
     try:
