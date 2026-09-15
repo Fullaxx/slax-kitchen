@@ -56,6 +56,12 @@ logic run in milliseconds with no ISO. The gates have caught real bugs in their 
 repeatedly — including a `$'\r'` that silently degraded to matching `$r` under `dash`, and a link
 checker that only examined one link per line.
 
+The toolchain is one list — [`containers/packages/`](../../containers/README.md) — read by both the
+workflows and the reference container, and CI builds that container on every push and runs
+`kitchen doctor --strict` plus all eleven gates *inside* it. A `v*` tag runs the same CI and then
+publishes a Release; it attaches no ISO, for the reasons in [NOTICE.md](../../NOTICE.md), and its
+notes name the rung each target reached. See [CI](../60-testing/ci.md).
+
 ---
 
 ## Implemented but unsupported

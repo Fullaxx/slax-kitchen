@@ -1,8 +1,7 @@
 # Continuous integration
 
-Two workflow files, five jobs, all driving the **same scripts you can run locally**. Nothing
-meaningful lives in the YAML — that is deliberate, so a CI failure is reproducible on a laptop with
-one command.
+Three workflow files, all driving the **same scripts you can run locally**. Nothing meaningful lives
+in the YAML — that is deliberate, so a CI failure is reproducible on a laptop with one command.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
@@ -10,7 +9,12 @@ one command.
 | `ci.yml` → `container` | every push and PR | builds the reference container, then `doctor --strict` and the gates *inside* it |
 | `ci.yml` → `build` | every push and PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
 | `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | QEMU BIOS + UEFI boot under TCG |
+| `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml`, then publish a Release |
 | `upstream-watch.yml` | weekly, Mondays | new Slax release, linux-live commits, mirror health |
+
+A full `ci.yml` run is about **17 minutes** wall clock: gates ~35 s, the reference container ~45 s,
+the four builds in parallel at 2½–8 min, then the boot test at ~8½ min. The boot job's
+`timeout-minutes: 45` is a ceiling, not a cost.
 
 ## The toolchain list
 
@@ -136,6 +140,63 @@ releases on the same day — one per flavour — and the changelog carries the f
 So it flags a higher point release on a line we track, or an entirely higher line, and ignores
 history.
 
+## Releases
+
+`release.yml` runs on a `v*` tag. Three jobs:
+
+| job | what |
+|---|---|
+| `guard` | `ci/release-guard.sh` — seconds of shell, ahead of seventeen minutes of CI |
+| `verify` | `uses: ./.github/workflows/ci.yml` — the whole of it, not a copy |
+| `publish` | `gh release create`. **The only job in this repository with `contents: write`.** |
+
+### No ISO is attached, on purpose
+
+[NOTICE.md](../../NOTICE.md) puts the obligations of a built image on whoever publishes it, and part
+of the GPLv2 source offer cannot be satisfied from this repository at all: seven prebuilt static
+binaries under `vendor/linux-live/initramfs/static/` ship with no in-tree source, and the kernel is
+custom-built with an out-of-tree aufs patch set. So a Release carries a tag and an account of what
+was verified. You build the ISO.
+
+It also publishes no checksum for a built ISO, because **nobody could check one**: the ISO container
+is not byte-reproducible — see [reproducibility](../40-workflow/reproducibility.md). The four base
+ISO hashes it does publish are verifiable, and `kitchen fetch` enforces them on every download.
+
+What it does say is what was *not* done. Tier C — BIOS menu, UEFI, USB image, persistence, boot to a
+desktop — needs `/dev/kvm`, which GitHub-hosted runners do not have, so no release claims a desktop
+came up. Three of the four targets are matrix-verified and not boot-verified, and the notes say so
+in those words.
+
+### Cutting one
+
+```sh
+$EDITOR kitchen                       # KITCHEN_VERSION: 0.1.0-dev -> 0.1.0
+./ci/release-guard.sh v0.1.0          # must pass before you tag
+git commit -am 'Release 0.1.0' && git push
+git tag v0.1.0 && git push --tags     # -> guard, full CI, Release published
+$EDITOR kitchen                       # -> 0.2.0-dev, commit
+```
+
+`0.x` tags are published as prereleases: nothing here promises a stable interface yet.
+
+`ci/release-notes.sh v0.1.0` prints the body to stdout, so you can read it before any of this.
+
+### Rehearsing it
+
+A tag push happens once and cannot be undone by pushing another one, so the workflow is exercised
+before it matters. Run it from the Actions tab with **Run workflow**, `tag: v0.1.0-dev`, and
+**publish** left off. That runs the guard and the whole of CI for real, prints the notes, and
+publishes nothing.
+
+This is why `release-guard.sh` splits its rules. "The tag matches `kitchen:8`" is always enforced;
+"a released version has no `-dev` suffix" applies only to a real tag push. Without the split, a
+rehearsal would have to skip the guard — and a rehearsal that skips the thing being rehearsed is
+not one.
+
+The guard also refuses to treat *could not check* as *checked*. Its third rule compares the commit
+against `origin/master`; on a shallow checkout that ref is absent, and it fails a tag push rather
+than passing. That failure mode is why `actions/checkout` there uses `fetch-depth: 0`.
+
 ## Action versions are a Node 24 floor
 
 GitHub removes the Node 20 runtime from Actions runners on **2026-09-23**; runners have defaulted to
@@ -162,6 +223,10 @@ self-hosted runners; we use GitHub-hosted `ubuntu-24.04`.
 
 `ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true` would keep node20 working until 2026-09-23. We are
 not using it — the point of the upgrade is to not need it.
+
+**There is no row here for a release-upload action**, because `release.yml` does not use one. `gh` is
+preinstalled on the runner, has no Node runtime to age out of support, and is one less program
+fetched by a movable tag and run as root on the machine that builds the ISO.
 
 [node24]: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
 
