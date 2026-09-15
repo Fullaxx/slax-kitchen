@@ -1,14 +1,26 @@
 # Continuous integration
 
-Three workflows, all driving the **same scripts you can run locally**. Nothing meaningful lives in
-the YAML — that is deliberate, so a CI failure is reproducible on a laptop with one command.
+Two workflow files, five jobs, all driving the **same scripts you can run locally**. Nothing
+meaningful lives in the YAML — that is deliberate, so a CI failure is reproducible on a laptop with
+one command.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` → `gates` | every push and PR | the eleven commit gates, ~1 min, no ISOs |
+| `ci.yml` → `container` | every push and PR | builds the reference container, then `doctor --strict` and the gates *inside* it |
 | `ci.yml` → `build` | every push and PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
 | `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | QEMU BIOS + UEFI boot under TCG |
 | `upstream-watch.yml` | weekly, Mondays | new Slax release, linux-live commits, mirror health |
+
+## The toolchain list
+
+`containers/packages/*.txt` is the only copy. The three install steps in `ci.yml` read those files,
+and so does [the reference container](../../containers/README.md) — so a package added for a new
+tool reaches CI and a developer's machine in the same commit.
+
+The `container` job is what keeps that honest. `kitchen doctor --strict` exits non-zero if any of
+the 20 tools is missing or any toolchain assertion fails, so an incomplete list fails the build
+rather than surfacing later as a recipe that cannot find `mcopy`.
 
 ## Run any of it locally
 

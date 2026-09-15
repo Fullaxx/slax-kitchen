@@ -40,7 +40,8 @@ will otherwise cost you an afternoon.
 
 **I want to contribute.**
 [container vs host](40-workflow/container-vs-host.md) — what needs privilege and what does not — then
-the commit gates in `ci/checks/`.
+the commit gates in `ci/checks/`. [`containers/`](../containers/README.md) builds the reference
+container, which is the environment the measurements in these pages were taken on.
 
 ## Sections
 

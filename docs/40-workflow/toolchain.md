@@ -15,16 +15,25 @@ recipe whose tools are absent fails before it has half-applied — see [below](#
 Debian / Ubuntu:
 
 ```sh
-apt-get install --no-install-recommends \
-  squashfs-tools cpio xz-utils p7zip-full \
-  xorriso genisoimage \
-  syslinux syslinux-common syslinux-utils isolinux extlinux \
-  mtools dosfstools \
-  grub-efi-amd64-bin grub-common \
-  qemu-system-x86 qemu-utils ovmf \
-  python3-yaml python3-jsonschema \
-  shellcheck yamllint \
-  git jq curl ca-certificates file
+cat containers/packages/*.txt | grep -v -e '^#' -e '^$' \
+  | xargs sudo apt-get install -y --no-install-recommends
+```
+
+The list itself lives in [`containers/packages/`](../../containers/README.md), split by the CI job
+that installs it — `lint.txt`, `build.txt`, `boot.txt`, `dev.txt`, one package per line with a
+comment saying why it is there. `.github/workflows/ci.yml` and the reference container read the
+same files.
+
+**It used to be written out here as well**, and in three places in `ci.yml`, and the four copies had
+drifted: this page's list was the superset, and CI was missing `p7zip-full`, `qemu-utils`, `git`,
+`jq`, `curl`, `ca-certificates` and `file`. Nothing detected it, because nothing on a runner asked
+for those tools. One list is why that cannot recur.
+
+Or skip the question entirely and use the image the list builds:
+
+```sh
+docker build -f containers/Containerfile -t slax-kitchen containers/
+docker run --rm -it -v "$PWD:/work" slax-kitchen
 ```
 
 ## What each is for
