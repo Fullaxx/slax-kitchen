@@ -55,6 +55,41 @@ jobs:
             | xargs sudo apt-get install -y --no-install-recommends
       - run: ./ci/run-checks.sh ci
 
+  # ------------------------------------------------------------- container --
+  # The reference container is what docs/ cites for every capability measurement,
+  # and what containers/packages/*.txt is written for. An image nobody builds rots,
+  # so build it here and make it prove itself: `doctor --strict` exits non-zero on a
+  # missing tool or a failed toolchain assertion, and the gates then run inside it.
+  #
+  # Parallel with the build matrix and far shorter than it, so this costs no wall
+  # clock. Not merged INTO a build job on purpose: this one must fail for a reason
+  # about the image, not about a recipe.
+  container:
+    name: reference container
+    runs-on: ubuntu-24.04
+    needs: gates
+    steps:
+      - uses: actions/checkout@v7
+        with: {submodules: true}
+      - run: docker build -f containers/Containerfile -t slax-kitchen:ci containers/
+      - name: the image can build a Slax, and says so
+        # `set -e` is load-bearing. `sh -c 'a; b'` exits with b's status, so without
+        # it a failing `doctor --strict` was swallowed whole by the passing gates
+        # that followed -- verified, this step reported success with mcopy deleted.
+        #
+        # safe.directory because the runner checks out as uid 1001 and the container
+        # is root: without it `git rev-parse` refuses and every gate that scopes to
+        # the work tree dies with git's dubious-ownership message instead of its own.
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work slax-kitchen:ci sh -c '
+            set -e
+            git config --global --add safe.directory /work
+            ./kitchen doctor --strict
+            ./ci/run-checks.sh ci
+          '
+      - name: what it actually installed
+        run: docker run --rm slax-kitchen:ci head -5 /etc/slax-kitchen-toolchain.txt
+
   # ----------------------------------------------------------------- build --
   # One job per supported target. This is what catches a recipe that silently only
   # works on 64-bit Debian.
