@@ -12,6 +12,13 @@ compat:
 vars:
   hostname: slax-custom
   version: "Slax 12.2.0 (customized)"
+  # A var, not an inline literal, so a fork can move it from a profile:
+  #   - name: branding
+  #     vars: {bundle: 20-branding}
+  # recipes-in-a-fork.md has documented that escape hatch since it was written, and
+  # this was the one shipped recipe it did not work on: validate.py rejects an override
+  # naming a var the recipe does not declare, so `bundle:` here was unreachable.
+  bundle: 07-branding
 steps:
   # Override rather than edit. All three files live in 01-core.sb, and a bundle numbered
   # above it wins in the union -- so the shipped bundle stays byte-identical, `kitchen
@@ -19,9 +26,10 @@ steps:
   # 4 KiB file. Unpacking and repacking a 122 MiB bundle to change three text files would
   # be the wrong trade.
   #
-  # 07 because the stock bundles run 01-06 and savechanges writes 99-changes-N.sb.
+  # 07: branding adjusts the platform rather than adding content, so it belongs in the
+  # 00-09 band. See docs/10-anatomy/bundles-squashfs.md for the whole scheme.
   - verb: bundle.files
-    bundle: 07-branding
+    bundle: "{{bundle}}"
     files:
       - dest: /etc/hostname
         content: "{{hostname}}\n"

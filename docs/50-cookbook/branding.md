@@ -10,6 +10,7 @@ kitchen apply branding
 vars:
   hostname: slax-custom
   version: "Slax 12.2.0 (customized)"
+  bundle: 07-branding
 ```
 
 ## What it changes
@@ -40,7 +41,18 @@ Three things follow, and they are the reason this is the right shape for almost 
 - **Reversible by deleting one file.**
 - **Skippable at the boot prompt** with `noload=07-branding`, without rebuilding anything.
 
-`07` because the stock bundles occupy `01`–`06` and `savechanges` writes `99-changes-N.sb`.
+`07` because branding adjusts the platform rather than adding content, which puts it in the
+`00`–`09` band — [which numbers are whose](../10-anatomy/bundles-squashfs.md#which-numbers-are-whose).
+It is a var, so a profile can move it:
+
+```yaml
+  - name: branding
+    vars: {bundle: 20-branding}
+```
+
+That did not work until recently: the number was written inline in the recipe, and overriding a var
+a recipe does not declare is rejected. `branding` was the one shipped recipe the override advice in
+[recipes in a fork](../40-workflow/recipes-in-a-fork.md) did not apply to.
 
 ## On leaving the password in the banner
 
