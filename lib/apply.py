@@ -577,10 +577,19 @@ def _bundle_stack(ctx: "Ctx", want: list | None, below: str, verb: str) -> list[
         # the very fragments this build is about to produce. Neither belongs in a chroot.
         picked = [n for n in have
                   if not n.startswith("99-") and n != dpkgdb.GENERATED]
-    # Deduplicate, order as the union will, and never stack something that loads at or
-    # above the bundle being built -- it would not be present underneath it at boot.
+    # Deduplicate and order as the union will.
     picked = dpkgdb.sortmod(list(dict.fromkeys(picked)))
-    picked = [n for n in picked if n != below and dpkgdb.sortmod([n, below])[0] == n]
+    # Nothing that loads at or above the bundle being built: it would not be underneath
+    # it at boot, so a chroot containing it would be a lie about the finished image.
+    # Naming one explicitly is always a mistake, so say so rather than dropping it --
+    # silently building against the wrong base is how this whole class of bug works.
+    high = [n for n in picked if n == below or dpkgdb.sortmod([n, below])[0] != n]
+    if high and want:
+        raise RuntimeError(
+            f"{verb}: from: names {', '.join(high)}, which load at or above {below}. "
+            f"A bundle can only be built against what will sit BELOW it at boot "
+            f"(load order is the numeric prefix, and higher wins).")
+    picked = [n for n in picked if n not in high]
     if not picked:
         raise RuntimeError(f"{verb}: no bundles to stack below {below}")
     return picked
