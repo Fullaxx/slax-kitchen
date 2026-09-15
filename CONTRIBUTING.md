@@ -81,7 +81,7 @@ Run these four, in this order. They are fast and they answer most questions outr
 ./kitchen probe out/my.iso             # is the output what I think it is?
 ```
 
-**`selftest ci`** runs the same eleven gates CI runs. If it fails, fix that first — you are not
+**`selftest ci`** runs the same twelve gates CI runs. If it fails, fix that first — you are not
 looking at the bug you think you are.
 
 **`doctor`** is the single most useful thing to paste into a report. It reports every tool it needs,
@@ -321,7 +321,7 @@ cause, or one would change the other's fix, say so in the issue.
 ### The bar
 
 ```sh
-./kitchen selftest ci        # all eleven gates, or it will not merge
+./kitchen selftest ci        # all twelve gates, or it will not merge
 ```
 
 The gates enforce, among other things: no binaries in the repository, no gitignored working files,
@@ -331,6 +331,23 @@ cookbook page has a recipe**.
 
 CI re-runs all of them, so `--no-verify` only defers the failure.
 
+### YAML in documentation is validated too
+
+`45-doc-yaml` runs every ```yaml block in the tree through the same schemas recipes are held to.
+Fragments are fine — a bare list of steps, or a lone `vars:` map — the gate wraps them in the
+smallest legal envelope first. So **a doc example is a testable claim**, not decoration.
+
+That gate exists because [#3](https://github.com/Fullaxx/slax-kitchen/issues/3) shipped: both docs
+showed `sign: "your-key-id"` while the schema typed the field boolean, and nothing ever ran the
+documented form. On the day it was written it found seven more, across three verbs.
+
+If a value genuinely cannot be shown, write it as `…`, `...`, or `<something>`. Those exact forms —
+matching the **whole** value, not part of it — mean "your value here": the gate substitutes
+something the schema accepts, so the key is still checked and only its contents are skipped. A
+partial ellipsis such as `src: https://…/thing.tar.gz` is not a placeholder and is validated
+normally, and neither is a made-up value like `"your-key-id"` — which is exactly why #3 would be
+caught today.
+
 ### Say what you actually verified
 
 This is the one thing the project treats as a real error. There is a ladder, and each rung means
@@ -339,7 +356,7 @@ something specific:
 | Rung | Means | How |
 |---|---|---|
 | **schema-valid** | the YAML is well-formed, and every key is one a verb reads | `kitchen validate` |
-| **gate-clean** | the tree passes the eleven gates | `kitchen selftest ci` |
+| **gate-clean** | the tree passes the twelve gates | `kitchen selftest ci` |
 | **matrix-verified** | it builds and passes structure assertions on all four targets | `ci/recipe-matrix.sh` |
 | **artifact boot-verified** | it booted, and `testkit` confirmed the artifact reached the union | `testkit` + `kitchen test --kernel` |
 | **boot-verified** | it booted to `slax login:` with all three livekit markers | `kitchen test --kernel` |
@@ -401,7 +418,7 @@ A new verb needs: the implementation, the `schema/recipe.schema.json` enum entry
 [the verb reference](docs/90-reference/verbs.md), and a recipe that exercises it.
 
 Pure logic — anything that does not need an ISO — belongs in `tests/unit/test_apply.py`, which runs
-in milliseconds as one of the eleven gates. Every case in that file is a bug that actually shipped.
+in milliseconds as one of the twelve gates. Every case in that file is a bug that actually shipped.
 
 **A check that cannot fail is worse than no check.** This has bitten this project at least four
 times — a workflow that never opened an issue because `$?` after a pipeline is `tee`'s status; a
