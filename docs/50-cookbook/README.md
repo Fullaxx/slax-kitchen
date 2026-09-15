@@ -2,7 +2,7 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Thirty-two recipes ship today.** Every one is built and structurally asserted on all four
+**Thirty-three recipes ship today.** Every one is built and structurally asserted on all four
 targets by CI (or on the subset its `compat:` block declares). Each page opens with the rung of
 the [verification ladder](../../CONTRIBUTING.md) it actually reached — `matrix-verified`,
 `artifact boot-verified`, `boot-verified` or `runtime-verified` — and the `95-status-vocab` gate

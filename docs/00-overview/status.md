@@ -108,7 +108,7 @@ clear message naming what *is* available, rather than silently skipping.
 
 ### Recipes
 
-**32.** The remaining gaps are the ones that need real engineering rather than YAML:
+**33.** The remaining gaps are the ones that need real engineering rather than YAML:
 
 | | |
 |---|---|
@@ -139,7 +139,7 @@ it boots on every medium, what software is in it, and the upstream source of tru
 `40-workflow/` is also complete — 10 pages, every procedure written to work by hand with the
 `kitchen` verb noted alongside.
 
-Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 32 pages, one per
+Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 33 pages, one per
 shipped recipe), `60-testing/`, `70-compat/`,
 `90-reference/` (CLI + all 23 verbs; the profile format is still thin). See [the index](../README.md).
 

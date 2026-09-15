@@ -156,7 +156,7 @@ steps:
 ./kitchen pack                     # -> out/slax-...-custom.iso
 ```
 
-**Thirty-two recipes ship today.** The ones most people want first:
+**Thirty-three recipes ship today.** The ones most people want first:
 
 | | |
 |---|---|
@@ -170,6 +170,7 @@ steps:
 | `users-and-auth` | replace the published `root`/`toor` password |
 | `rootcopy-overlay` | drop files onto the live system with no rebuild |
 | `kiosk-mode` | boot straight into one fullscreen app |
+| `libreoffice` | Writer, Calc, Impress and Draw — 408 MB installed, 116 MiB on the ISO |
 | `fix-slackware-bugs` | five confirmed upstream defects, including completely broken TLS |
 
 The other twenty-one cover bundles, browsers, boot parameters, the initramfs, branding and
@@ -206,7 +207,7 @@ differences it recognises to the recipes that cause them. A weekly CI job watche
 
 See **[docs/00-overview/status.md](docs/00-overview/status.md)** for what is verified, what is
 written but unsupported, and what does not exist yet. Short version: the core loop
-(unpack → apply → pack → test) works and is boot-tested in CI, thirty-two recipes ship across
+(unpack → apply → pack → test) works and is boot-tested in CI, thirty-three recipes ship across
 23 verbs, and the documentation of Slax itself is complete. `kernel.replace` is the one verb still
 unwritten.
 

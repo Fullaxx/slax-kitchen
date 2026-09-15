@@ -1,6 +1,6 @@
 #!/bin/sh
 # stages: pre-commit pre-push ci
-# desc: Every recipe has a cookbook page, is linked from the index, and vice versa.
+# desc: Every recipe has a page, is linked from the index, and the prose count is right.
 #
 # A recipe nobody can find is not shipped, and a page describing a recipe that no
 # longer exists is worse than no page. This gate was added after `serial-console`
@@ -44,5 +44,41 @@ for d in "$COOKBOOK"/*.md; do
     [ -f "$RECIPES/$n.yaml" ] || \
         fail "cookbook page has no recipe: docs/50-cookbook/$n.md -> recipes/available/$n.yaml"
 done
+
+# ...and the prose count matches reality. "Thirty recipes ship today" drifted to 29 in
+# one file, 30 in another and 32 on disk before anyone noticed, then drifted again the
+# next time a recipe landed. A number spelled out in words is exactly the kind of fact
+# nobody thinks to re-check.
+n=$(find "$RECIPES" -maxdepth 1 -name '*.yaml' | wc -l | tr -d ' ')
+case "$n" in
+    28) want=twenty-eight ;;  29) want=twenty-nine ;;
+    30) want=thirty ;;        31) want=thirty-one ;;
+    32) want=thirty-two ;;    33) want=thirty-three ;;
+    34) want=thirty-four ;;   35) want=thirty-five ;;
+    36) want=thirty-six ;;    37) want=thirty-seven ;;
+    38) want=thirty-eight ;;  39) want=thirty-nine ;;
+    40) want=forty ;;
+    # Add the next word when you add the next recipe -- an unknown count skips the
+    # check rather than failing, because a gate that blocks on its own lookup table
+    # being short teaches people to disable it.
+    *)  want= ; note "90-doc-coverage: no word for $n recipes; count check skipped" ;;
+esac
+if [ -n "$want" ]; then
+    for f in "$REPO_ROOT/README.md" "$REPO_ROOT/docs/50-cookbook/README.md"; do
+        [ -f "$f" ] || continue
+        # Every "<Word> recipes ship today/across" must spell the real count.
+        #
+        # Collected into a variable rather than piped into `while read`: a pipeline runs
+        # its last stage in a SUBSHELL, so fail() would set _FAILED=1 in a process that
+        # then exits, printing FAIL and returning 0. This gate had exactly that bug for
+        # the length of one test run.
+        said=$(grep -oiE '[a-z-]+ recipes ship (today|across)' "$f" \
+               | awk '{print tolower($1)}' | sort -u)
+        for w in $said; do
+            [ "$w" = "$want" ] || \
+                fail "${f#"$REPO_ROOT"/}: says '$w recipes ship', but $n recipes ship (want '$want')"
+        done
+    done
+fi
 
 check_result
