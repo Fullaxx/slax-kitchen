@@ -51,6 +51,19 @@ else
     SINCE="since the first commit -- this is the first tagged release"
 fi
 
+# A shallow clone has no history to log, and `git log` does not complain about it --
+# it just returns what was fetched. Caught by the unit test running under CI's own
+# `gates` job, which checks out at the default depth of 1: the changelog came out as
+# a single line with nothing to say it was not the whole story. release.yml uses
+# fetch-depth: 0, so the real path is fine; a wrong one should still say so.
+SHALLOW=""
+if [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+    SHALLOW="
+
+> **This changelog is incomplete.** It was generated from a shallow clone, so it lists
+> only the commits that were fetched. Re-run with \`fetch-depth: 0\`."
+fi
+
 # Capped, but never silently: a truncated changelog that says nothing about being
 # truncated is worse than a long one.
 LOG_CAP=${LOG_CAP:-100}    # overridable so the truncation path can be tested
@@ -71,7 +84,7 @@ cat <<EOF
 
 ## Changes
 
-$(git log --no-merges --pretty='- %s' "$RANGE" 2>/dev/null | head -"$LOG_CAP")$MORE
+$(git log --no-merges --pretty='- %s' "$RANGE" 2>/dev/null | head -"$LOG_CAP")$MORE$SHALLOW
 
 <sub>$SINCE</sub>
 

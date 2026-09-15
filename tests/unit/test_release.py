@@ -108,12 +108,40 @@ def test_guard_rejects_bad_usage():
     check("no argument is a usage error, not a pass", p.returncode, 2)
 
 
-def notes(tag, env=None):
+def notes(tag, env=None, repo=None):
     p = subprocess.run([NOTES, tag], cwd=ROOT, capture_output=True, text=True,
-                       env=dict(os.environ, **(env or {})))
+                       env=dict(os.environ, REPO_ROOT=repo or ROOT, **(env or {})))
     if p.returncode != 0:
         FAILURES.append(f"release-notes.sh exited {p.returncode}: {p.stderr}")
     return p.stdout
+
+
+def fake_history(tmp, ncommits):
+    """A repo with a known number of commits, plus the two files the notes read.
+
+    History-dependent assertions cannot run against this checkout: CI's own `gates`
+    job clones at the default depth of 1, so `git log` there sees one commit. That
+    is how the shallow-clone bug in release-notes.sh was found -- and why these
+    cases build their own history instead.
+    """
+    os.makedirs(os.path.join(tmp, "compat"), exist_ok=True)
+    with open(os.path.join(tmp, "kitchen"), "w") as fh:
+        fh.write('#!/bin/sh\nKITCHEN_VERSION="0.4.0"\n')
+    with open(os.path.join(ROOT, "compat", "sources.yaml")) as src, \
+         open(os.path.join(tmp, "compat", "sources.yaml"), "w") as dst:
+        dst.write(src.read())
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@e",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@e")
+    subprocess.run(["git", "init", "-q", "-b", "master"], cwd=tmp, env=env, check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for i in range(ncommits):
+        with open(os.path.join(tmp, "f"), "w") as fh:
+            fh.write(str(i))
+        subprocess.run(["git", "add", "-A"], cwd=tmp, env=env, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "commit", "-qm", f"commit {i}"], cwd=tmp, env=env,
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return tmp
 
 
 def test_notes_say_what_was_not_done():
@@ -148,16 +176,40 @@ def test_notes_publish_only_verifiable_hashes():
 
 def test_notes_never_truncate_silently():
     """A changelog cut at the cap with no marker is quiet data loss."""
-    capped = notes("v9.9.9", env={"LOG_CAP": "5"})
-    check_in("truncation is announced", "more. Full list:", capped)
-    # Count inside ## Changes only: the base-ISO list further down is also bullets,
-    # which is how the first version of this assertion read 9 instead of 5.
-    changes = capped.split("## Changes", 1)[1].split("## What was verified", 1)[0]
-    check("exactly LOG_CAP entries kept", changes.count("\n- "), 5)
+    with tempfile.TemporaryDirectory() as tmp:
+        fake_history(tmp, 8)
+        capped = notes("v9.9.9", env={"LOG_CAP": "5"}, repo=tmp)
+        check_in("truncation is announced", "more. Full list:", capped)
+        check_in("and says how many are missing", "and 3 more", capped)
+        # Count inside ## Changes only: the base-ISO list further down is also
+        # bullets, which is how this assertion first read 9 instead of 5.
+        changes = capped.split("## Changes", 1)[1].split("## What was verified", 1)[0]
+        check("exactly LOG_CAP entries kept", changes.count("\n- "), 5)
 
-    full = notes("v9.9.9")
-    if "more. Full list:" in full:
-        FAILURES.append("uncapped run claimed truncation")
+        full = notes("v9.9.9", repo=tmp)
+        if "more. Full list:" in full:
+            FAILURES.append("uncapped run claimed truncation")
+        changes = full.split("## Changes", 1)[1].split("## What was verified", 1)[0]
+        check("all 8 commits listed uncapped", changes.count("\n- "), 8)
+
+
+def test_notes_admit_a_shallow_clone():
+    """`git log` on a shallow clone returns what was fetched and says nothing about
+    the rest, so a release cut from one would publish a one-line changelog that
+    looked complete. CI's `gates` job checks out at depth 1, which is how this
+    surfaced."""
+    with tempfile.TemporaryDirectory() as outer:
+        src = fake_history(os.path.join(outer, "src"), 5)
+        dst = os.path.join(outer, "shallow")
+        subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{src}", dst],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        out = notes("v9.9.9", repo=dst)
+        check_in("says the changelog is incomplete", "This changelog is incomplete", out)
+        check_in("and how to fix it", "fetch-depth: 0", out)
+
+        deep = notes("v9.9.9", repo=src)
+        if "changelog is incomplete" in deep:
+            FAILURES.append("full clone claimed to be shallow")
 
 
 def test_notes_links_are_absolute():
