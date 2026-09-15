@@ -1295,13 +1295,10 @@ def v_rootcopy_preinit(ctx: Ctx, step: dict) -> None:
 
 # ----------------------------------------------------------- bundles --------
 #
-# Every bundle on every shipped image has superblock flags 0x04e0, because upstream uses
-# one mksquashfs line in four places: livekitlib's create_bundle, dir2sb, savechanges and
-# both flavours' module builders. Matching it exactly is what keeps a built bundle
-# indistinguishable from a shipped one, so `kitchen probe` can still reason about an ISO.
-
-MKSQUASHFS_ARGS = ["-comp", "xz", "-b", "1024K", "-Xbcj", "x86",
-                   "-always-use-fragments", "-noappend"]
+# Bundle-building parameters live in dpkgdb, which is the lower module and also
+# builds a bundle (98-dpkg-db.sb). Aliased rather than redefined: a second copy is
+# how that call site silently missed every change made here.
+MKSQUASHFS_ARGS = dpkgdb.MKSQUASHFS_ARGS
 
 
 def _under(root: str, rel: str, verb: str, what: str = "dest") -> str:
@@ -1427,8 +1424,33 @@ def _bundle_name(raw: str, verb: str) -> str:
     return name
 
 
-def _make_bundle(ctx: "Ctx", src_dir: str, name: str, verb: str) -> str:
-    """mksquashfs src_dir into slax/modules/<name> with upstream's exact parameters."""
+def _make_bundle(ctx: "Ctx", src_dir: str, name: str, verb: str,
+                 all_root: bool = False) -> str:
+    """mksquashfs src_dir into slax/modules/<name> with upstream's exact parameters.
+
+    `all_root` is PER VERB and must never become a property of this function, because the
+    five callers do not agree about what ownership means:
+
+      bundle.packages / bundle.script   dpkg and the recipe's script set it deliberately,
+                                        inside a root chroot. Forcing root here would
+                                        undo _stage_delta and put /home/<user> back to
+                                        root:root. all_root=False.
+      bundle.fromDir / bundle.files     ownership is an accident of whoever ran kitchen.
+                                        Built on a developer desktop that is uid 1000 --
+                                        which on Slax is `guest` -- so enable-ssh would
+                                        ship a guest-owned /etc/rc.d/rc.local that root
+                                        executes at boot. all_root=True.
+      bundle.fromTarball                the archive chooses, and sha256: is optional.
+                                        all_root=True, and only safe because
+                                        _refuse_privileged_member already rejects setuid
+                                        and setgid: -all-root rewrites ids and leaves
+                                        mode bits alone, so on its own it would turn
+                                        `setuid nobody` into `setuid root`. Measured.
+
+    -all-root does not touch the superblock flags, so a bundle stays byte-compatible with
+    what `kitchen probe` expects -- the "indistinguishable from a shipped one" claim above
+    is about FORMAT, not about content ownership.
+    """
     if not os.listdir(src_dir):
         raise RuntimeError(f"{verb}: {src_dir} is empty; refusing to build an empty bundle")
     mods = ctx.p("slax", "modules")
@@ -1437,7 +1459,8 @@ def _make_bundle(ctx: "Ctx", src_dir: str, name: str, verb: str) -> str:
     if os.path.exists(target):
         raise RuntimeError(f"{verb}: slax/modules/{name} already exists. Pick another "
                            f"number, or remove it first with bundle.remove.")
-    r = subprocess.run(["mksquashfs", src_dir, target] + MKSQUASHFS_ARGS,
+    args = MKSQUASHFS_ARGS + (["-all-root"] if all_root else [])
+    r = subprocess.run(["mksquashfs", src_dir, target] + args,
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"{verb}: mksquashfs failed: {r.stderr.strip()[:300]}")
@@ -1465,7 +1488,17 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
             else:
                 raise RuntimeError(f"{verb}: source not found: {local}")
         if "mode" in spec:
-            os.chmod(dest, int(str(spec["mode"]), 8))
+            _mode = int(str(spec["mode"]), 8)
+            # A recipe may not ask for setuid/setgid here. bundle.files is
+            # privilege: none and now builds with -all-root, so `mode: "4755"` would be
+            # a setuid ROOT binary requested by a line of YAML that reads like an
+            # ordinary permission. bundle.script (chroot) is the route if it is real.
+            if _mode & (stat.S_ISUID | stat.S_ISGID):
+                raise RuntimeError(
+                    f"{verb}: mode {spec['mode']!r} on {spec.get('dest')!r} sets "
+                    f"setuid/setgid. This verb is privilege: none and its output runs "
+                    f"as root at boot; use bundle.script if that is genuinely needed.")
+            os.chmod(dest, _mode)
         ctx.say(f"  {spec['dest']}")
 
 
@@ -1484,7 +1517,7 @@ def v_bundle_fromdir(ctx: Ctx, step: dict) -> None:
         return
     if not os.path.isdir(local):
         raise RuntimeError(f"bundle.fromDir: not a directory: {local}")
-    _make_bundle(ctx, local, name, "bundle.fromDir")
+    _make_bundle(ctx, local, name, "bundle.fromDir", all_root=True)
 
 
 @verb("bundle.files")
@@ -1510,7 +1543,7 @@ def v_bundle_files(ctx: Ctx, step: dict) -> None:
         root = os.path.join(work, "root")
         os.makedirs(root)
         _place_files(ctx, root, files, "bundle.files")
-        _make_bundle(ctx, root, name, "bundle.files")
+        _make_bundle(ctx, root, name, "bundle.files", all_root=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -1585,7 +1618,7 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
             _extract_members(t, dest, members, kw)
         ctx.say(f"unpacked {len(members)} entries from {os.path.basename(src)}"
                 + (f" under /{prefix}" if prefix else ""))
-        _make_bundle(ctx, root, name, "bundle.fromTarball")
+        _make_bundle(ctx, root, name, "bundle.fromTarball", all_root=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 

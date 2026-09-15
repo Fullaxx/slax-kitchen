@@ -1166,6 +1166,70 @@ def test_fromtarball_refuses_privileged_members():
     check("v_bundle_fromtarball calls the refusal", wired, True)
 
 
+def test_all_root_is_per_verb():
+    """Which bundles get -all-root is a per-verb decision, and it cannot be global.
+
+    The five bundle verbs disagree about what ownership means. bundle.packages and
+    bundle.script stage a chroot delta where dpkg and the recipe's script set ownership
+    deliberately -- forcing root there would undo _stage_delta and put /home/<user> back
+    to root:root, i.e. re-break #10. The other three take content whose ownership is an
+    accident of whoever ran kitchen, or of an archive.
+
+    That matters in a way that is easy to miss: built on a developer desktop, uid 1000 on
+    Slax is `guest`, so enable-ssh shipped a guest-owned /etc/rc.d/rc.local that root
+    executes at every boot (#8).
+
+    -all-root rewrites ids and leaves mode bits alone, so for bundle.fromTarball it is
+    only safe because _refuse_privileged_member already rejects setuid and setgid --
+    otherwise it would convert `setuid nobody` into `setuid root`.
+    """
+    import ast
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    tree = ast.parse(open(os.path.join(here, "..", "..", "lib", "apply.py")).read())
+
+    want = {
+        "bundle.fromDir": True, "bundle.files": True, "bundle.fromTarball": True,
+        "bundle.script": False, "bundle.packages": False,
+    }
+    seen = {}
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_make_bundle"):
+            continue
+        verb = node.args[3].value
+        seen[verb] = any(k.arg == "all_root" and k.value.value is True
+                         for k in node.keywords)
+    check("every bundle verb accounted for", sorted(seen), sorted(want))
+    for verb, expected in want.items():
+        check(f"{verb} all_root", seen.get(verb), expected)
+
+
+def test_bundle_files_refuses_a_setuid_mode():
+    """`mode: "4755"` is a line of YAML that reads like a permission and is not.
+
+    bundle.files is privilege: none and now builds with -all-root, so a setuid mode here
+    would be a setuid ROOT binary requested by a recipe that looks harmless.
+    """
+    import tempfile
+
+    work = tempfile.mkdtemp()
+    os.makedirs(os.path.join(work, "iso", "slax", "modules"))
+    ctx = apply.Ctx(work, work, "t")
+    for mode, want_refusal in (("0644", False), ("0755", False),
+                               ("4755", True), ("2755", True)):
+        step = {"verb": "bundle.files", "bundle": "07-f",
+                "files": [{"dest": "/usr/bin/x", "content": "x", "mode": mode}]}
+        try:
+            apply.v_bundle_files(ctx, step)
+            refused = False
+        except RuntimeError as e:
+            refused = "setuid" in str(e) or "setgid" in str(e)
+        check(f"bundle.files mode {mode}", refused, want_refusal)
+        sb = os.path.join(work, "iso", "slax", "modules", "07-f.sb")
+        if os.path.exists(sb):
+            os.unlink(sb)
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -1189,7 +1253,9 @@ def main():
                test_extract_members_matches_extractall_on_a_clean_archive,
                test_stage_delta_preserves_what_the_chroot_had,
                test_both_chroot_verbs_use_one_staging_loop,
-               test_fromtarball_refuses_privileged_members]:
+               test_fromtarball_refuses_privileged_members,
+               test_all_root_is_per_verb,
+               test_bundle_files_refuses_a_setuid_mode]:
         fn()
     if FAILURES:
         for f in FAILURES:

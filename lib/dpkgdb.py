@@ -35,6 +35,14 @@ STATUS = "var/lib/dpkg/status"
 FRAGMENT_DIR = "var/lib/slax-kitchen/dpkg-status.d"
 
 # Sits above every add-on bundle but below 99-changes-N, so a saved session still wins.
+# Every bundle on every shipped image has superblock flags 0x04e0, because upstream uses
+# one mksquashfs line in four places: livekitlib's create_bundle, dir2sb, savechanges and
+# both flavours' module builders. Matching it exactly is what keeps a built bundle
+# indistinguishable from a shipped one, so `kitchen probe` can still reason about an ISO.
+
+MKSQUASHFS_ARGS = ["-comp", "xz", "-b", "1024K", "-Xbcj", "x86",
+                   "-always-use-fragments", "-noappend"]
+
 GENERATED = "98-dpkg-db.sb"
 
 
@@ -244,9 +252,27 @@ def merge_tree(iso: str, quiet: bool = False) -> int:
         with open(os.path.join(stage, STATUS), "w") as f:
             f.write(merged)
 
-        r = subprocess.run(["mksquashfs", stage, os.path.join(mods, GENERATED),
-                            "-comp", "xz", "-b", "1024K", "-Xbcj", "x86",
-                            "-always-use-fragments", "-noappend"],
+        # Explicit, not umask-dependent. os.makedirs and open() above take whatever
+        # umask the caller happened to have, and -all-root then fixes the ids but not
+        # the modes -- so without this the generated bundle's permissions varied by who
+        # ran pack, which also quietly contradicted the reproducibility claim in
+        # docs/40-workflow/reproducibility.md.
+        os.chmod(os.path.join(stage, STATUS), 0o644)
+        for d in ("var/lib/dpkg", "var/lib", "var"):
+            os.chmod(os.path.join(stage, d), 0o755)
+
+        # -all-root because this bundle is GENERATED: nothing in it came from a chroot
+        # whose ownership meant anything, and it is created by whoever ran `kitchen
+        # pack`. ci/recipe-matrix.sh runs apply under sudo and pack without it, so on a
+        # runner this shipped /var/lib/dpkg owned by uid 1001 -- and 98- outranks
+        # everything below it, so that was the ownership the booted union saw for dpkg's
+        # own database directory.
+        #
+        # MKSQUASHFS_ARGS is imported rather than retyped. This call site was a hand
+        # copy, which made it the one place a change to lib/apply.py's bundle building
+        # silently missed.
+        r = subprocess.run(["mksquashfs", stage, os.path.join(mods, GENERATED)]
+                           + MKSQUASHFS_ARGS + ["-all-root"],
                            capture_output=True, text=True)
         if r.returncode != 0:
             raise RuntimeError(f"dpkgdb: mksquashfs failed: {r.stderr.strip()[:300]}")
