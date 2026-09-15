@@ -39,7 +39,13 @@ wrong claim is not. We have no real hardware, no KVM and no Secure Boot here eit
 - [ ] Docs that state the old behaviour are updated — including docstrings
 
 <!--
-Boot tests do not run on pull requests by default, because they take 45 minutes under
-TCG. Ask a maintainer to add the `boot-test` label if this change could affect booting
--- anything touching the initramfs, the bootloader, the kernel, or bundle load order.
+Boot tests do not run on pull requests by default. Ask a maintainer to add the
+`boot-test` label if this change could affect booting -- anything touching the
+initramfs, the bootloader, the kernel, or bundle load order.
+
+The job takes about 8.5 minutes: measured across the last four green runs, 8.5 / 8.5 /
+8.5 / 8.6. It runs under TCG because GitHub runners have no /dev/kvm. This note used to
+say 45 minutes, which was the `timeout-minutes:` ceiling in ci.yml read as if it were a
+runtime -- five times the real figure, and the kind of number that makes people avoid
+asking for a test they should ask for.
 -->

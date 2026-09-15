@@ -260,6 +260,62 @@ worth telling us about.
 
 ---
 
+## What happens after you file
+
+This section exists because the process above went unused until slax-kitchen's first four reports
+arrived at once, and using it taught us things the rest of this document had simply never had to
+say.
+
+### The forms are the reason the reports were good
+
+Every field in the issue forms earns its place. "The exact command, and its full output", "What you
+expected instead", "Smallest reproduction" and the mandatory `doctor --report` are why those first
+reports arrived with quoted code, line numbers and a clean-tree gate result, and why three of the
+four could be confirmed without a round trip. **Fill them in even when the answer feels obvious**,
+and quote rather than describe.
+
+### Reading an issue from the terminal
+
+`gh issue view <n>` is broken against this repository on gh 2.45.0 — it asks for `projectCards`, a
+field GitHub has deprecated, and prints the deprecation notice instead of the issue:
+
+```
+GraphQL: Projects (classic) is being deprecated in favor of the new Projects experience […]
+```
+
+`gh issue list` is unaffected. To read a body, go through the REST API:
+
+```sh
+gh api repos/:owner/:repo/issues/4 --jq '"\(.title)\n\n\(.body)"'
+```
+
+### There is no pull request for maintainer-side fixes
+
+This repository fixes on `master`. §5 below is for contributions from a fork; work done by the
+maintainer in response to an issue lands as a direct commit. Either way, **the commit closes the
+issue** — put `Closes #N` on its own line in the message, and GitHub closes it on the push to
+`master`. One commit per issue, so `git log` reads as the answer to `gh issue list`.
+
+### Proposing a fix is welcome, and it will be checked
+
+Three of the first four reports proposed a fix. Two were right. One suggested a Python API that
+needs 3.11.4+, which is past this project's declared floor of `python3 >= 3.9` and a `TypeError` on
+`debian:12` — one of the two container bases CI builds inside. It would have turned a security patch
+into a crash on half the matrix.
+
+That is not a complaint about the report; it was a good report and its own closing paragraph
+anticipated the problem. It is the reason the floor is now asserted by `kitchen doctor` rather than
+merely stated in prose. **Propose the fix — and expect it to be measured against the floor and both
+container bases before it is taken.** A fix nobody re-derived is a claim, and this project does not
+run on claims.
+
+### Related issues are common, and worth saying out loud
+
+Two of the first three turned out to interact: an ordering rule had to land before a change to how
+build chroots read the package database was safe. Both reporters flagged the relationship
+themselves ("Related: #2"), which is what made the ordering obvious. If two things you found share a
+cause, or one would change the other's fix, say so in the issue.
+
 ## 5. Pull requests
 
 ### The bar

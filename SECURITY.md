@@ -9,6 +9,32 @@ through their GitHub profile.
 Include: what you found, how to reproduce it, and which of the four targets you saw it on. If it
 involves a built ISO, the output of `kitchen probe` on that ISO pins down exactly what you built.
 
+## What happens after you report
+
+Written after the first real one, GHSA-p2w2-qh4r-jr53, so it describes what actually happened
+rather than what was imagined.
+
+1. **Confirmed by reproduction, not by reading.** The report is rebuilt here before anything is
+   written — including proposed fixes, which are measured against the declared `python3 >= 3.9`
+   floor and both container bases (`ubuntu:24.04` and `debian:12`). The first advisory's suggested
+   one-liner needed a Python API newer than that floor and would have been a `TypeError` on Debian
+   12; the explicit check it also suggested turned out to be the only portable half.
+2. **Fixed in the open, on `master`.** There are no tagged releases yet and nothing downstream pins
+   a version, so a private fork would buy secrecy nobody needs and cost the fix a public commit to
+   point at. If that changes — a release, downstream consumers — so does this step.
+3. **The fix must be shown failing first.** A check that cannot fail is worse than no check, so the
+   commit records the exploit working against the unpatched code and refused against the patched
+   code, with the real output of both.
+4. **The advisory is published** with the fixing commit as its patched version, the reporter
+   credited, and a note correcting anything in the original report that a downstream fork should
+   not copy.
+5. **Anything adjacent but distinct becomes a public issue**, not a quiet extra commit inside the
+   security fix. The first advisory was about escaping the work tree; what a `privilege: none` verb
+   may put *inside* an image is a different question and is tracked as
+   [#4](https://github.com/Fullaxx/slax-kitchen/issues/4).
+
+No CVE is requested at this stage, for the same reason as (2).
+
 ## What is in scope
 
 This project builds **bootable images that run as root**, so the interesting surface is not the
