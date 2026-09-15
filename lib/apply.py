@@ -1282,6 +1282,17 @@ def _refuse_escaping_link(m, verb: str) -> None:
     entries" and "built slax/modules/07-poc.sb", reported success, and left a file
     outside the work tree.
 
+    THIS IS THE LEXICAL HALF ONLY, and it is not the same guarantee as _under. _under
+    resolves with os.path.realpath, which FOLLOWS symlinks; this uses normpath, which does
+    not -- so it cannot see a chain where an earlier member has already put a symlink on
+    disk at a component it is collapsing. _extract_members does that half, at write time,
+    and that is what closes the escape.
+
+    This half still matters: it refuses an absolute link target, which _under deliberately
+    does not (it lstrips the leading slash, correctly, for recipe-named paths). Without
+    it a bundle can ship `x -> /etc`. Nothing can be written through that symlink, but a
+    bundle has no business containing one.
+
     Not delegated to tarfile's `filter="data"`, which is the obvious fix and the wrong
     one here. That parameter landed in 3.11.4/3.12; this project's floor is python3 >= 3.9
     (containers/README.md) and Debian 12 -- one of our two container bases, and what
@@ -1510,17 +1521,80 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
             # Pin the filter rather than inheriting a default that changes under us.
             # 3.12 warns that 3.14 will switch the default to "data", which refuses device
             # nodes and strips setuid/setgid -- a silent change to what a bundle CONTAINS,
-            # on some interpreters and not others. The checks above are the security
-            # guarantee and they run on every version we support, so pinning the old
-            # behaviour keeps the output identical everywhere. Guarded because 3.11.2
-            # (debian:12) has no filter machinery at all.
+            # on some interpreters and not others. `data` would also refuse the chain
+            # _extract_members guards against, and it is still unusable here: it needs
+            # 3.11.4+ and debian:12 ships 3.11.2 with no filter machinery at all.
             kw = {"filter": "fully_trusted"} if hasattr(tarfile, "fully_trusted_filter") else {}
-            t.extractall(dest, members=members, **kw)
+            _extract_members(t, dest, members, kw)
         ctx.say(f"unpacked {len(members)} entries from {os.path.basename(src)}"
                 + (f" under /{prefix}" if prefix else ""))
         _make_bundle(ctx, root, name, "bundle.fromTarball")
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _extract_members(t, dest: str, members: list, kw: dict) -> None:
+    """Extract one member at a time, refusing any that resolves outside `dest`.
+
+    THE LEXICAL CHECK CANNOT DO THIS. _refuse_escaping_link reads each member's link
+    target with os.path.normpath, which collapses `..` textually -- it has no way to know
+    an EARLIER member already placed a symlink on disk at one of the components it is
+    collapsing. GHSA-p2w2-qh4r-jr53 was published claiming 804725c fixed it; it did not,
+    and this is the miss. Three members, each individually clean:
+
+        'a/d'            -> symlink '..'        normpath("a/..")   == "."  accepted
+        'e'              -> symlink 'a/d/..'    normpath("a/d/..") == "a"  accepted
+        'e/OUTSIDE/pwned'   regular file        name is clean              accepted
+
+    and the kernel resolves `e` through the on-disk `a/d` and lands above dest. Measured
+    before this existed: "wrote OUTSIDE dest? True", "files left inside dest: 0" -- the
+    payload left the tree entirely, from a verb declaring privilege: none.
+
+    WHAT EACH HALF IS FOR. Measured, not assumed -- an earlier draft of this comment
+    claimed deleting the lexical pass would reopen GHSA-p2w2-qh4r-jr53, and that is
+    false: with the lexical pass removed, the original PoC is still refused here, at the
+    payload member ("archive member 'x/cron.d/kitchen' resolves outside"). This check
+    alone closes the escape.
+
+    The lexical pass earns its place for a different reason. _under is blind to absolute
+    link TARGETS by design -- it does rel.lstrip("/"), because for a recipe-named `dest:`
+    "/etc" properly means "etc, under the tree" -- so `x -> /etc` passes here and the
+    symlink gets created. Nothing can then be written through it, but the bundle ships a
+    symlink pointing at an absolute host path, which is not something a bundle should
+    contain. _refuse_escaping_link refuses that outright, before anything is extracted.
+
+      _refuse_escaping_link  absolute targets, single-member ..   fails fast, no writes
+      _under (here)          chains, symlinked parents           closes the escape
+
+    Member by member, because the check has to run BEFORE each write: after a bulk
+    extractall the file is already outside. The directory handling mirrors CPython's
+    extractall, which defers directory attributes "since permissions can interfere with
+    extraction and extracting contents can reset mtime" -- without that, every bundle
+    built from a tarball would carry wrong directory modes and mtimes. Verified
+    byte-for-byte identical to extractall on an archive with a 0700 dir, a sticky 1777
+    dir and pinned mtimes.
+    """
+    dest = os.path.realpath(dest)
+    directories = []
+    for m in members:
+        # Where it will actually land, following any symlink already extracted.
+        _under(dest, m.name, "bundle.fromTarball", "archive member")
+        if m.issym() or m.islnk():
+            # A symlink resolves from its own directory; a hardlink from the root.
+            base = os.path.dirname(m.name) if m.issym() else ""
+            _under(dest, os.path.join(base, m.linkname),
+                   "bundle.fromTarball", f"link target of {m.name!r}")
+        if m.isdir():
+            directories.append(m)
+            saved, m.mode = m.mode, 0o700
+            t.extract(m, dest, **kw)
+            m.mode = saved
+        else:
+            t.extract(m, dest, **kw)
+    for m in sorted(directories, key=lambda a: a.name, reverse=True):
+        p = os.path.join(dest, m.name)
+        os.chmod(p, m.mode)
+        os.utime(p, (m.mtime, m.mtime))
 
 
 @verb("bundle.renumber")

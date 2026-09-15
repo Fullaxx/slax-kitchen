@@ -841,6 +841,192 @@ def test_network_is_declared_where_it_is_used():
         check(f"{v} declares or infers network", declares or infers, True)
 
 
+def test_symlink_chain_cannot_escape():
+    """A two-member chain escapes a lexical check, so the guard has to be a real one.
+
+    GHSA-p2w2-qh4r-jr53 was published naming 804725c as patched. It was not:
+    _refuse_escaping_link resolves with normpath, which collapses `..` textually and
+    cannot know an earlier member already put a symlink on disk at a component it is
+    collapsing. Each of these three passes that check on its own, and together they
+    walked the payload out of the tree entirely -- "files left inside dest: 0".
+
+    The battery runs both halves, because neither is sufficient: _under is blind to
+    absolute link targets (it lstrips the leading slash, correctly, for recipe-named
+    paths) and the lexical pass is blind to chains. Deleting either reopens an advisory.
+    """
+    import io
+    import shutil
+    import tarfile
+    import tempfile
+
+    R, S, L, D = tarfile.REGTYPE, tarfile.SYMTYPE, tarfile.LNKTYPE, tarfile.DIRTYPE
+    cases = [
+        ("absolute symlink (the first advisory)", [("x", "/etc", S), ("x/p", "", R)], True),
+        ("single .. traversal", [("x", "../..", S), ("x/p", "", R)], True),
+        ("two-member chain (the bypass)",
+         [("a/d", "..", S), ("e", "a/d/..", S), ("e/O/p", "", R)], True),
+        ("three-deep chain",
+         [("a/d", "..", S), ("b/e", "../a/d/..", S), ("b/e/O/p", "", R)], True),
+        ("hardlink through a planted symlink",
+         [("a/d", "..", S), ("h", "a/d/../etc/passwd", L)], True),
+        # Legitimate, and real tarballs contain them. `a/d -> ..` points AT the archive
+        # root; only realpath tells it from `current -> ..`, which points above it.
+        ("relative link to the archive root", [("a/d", "..", S), ("a/f", "", R)], False),
+        ("link to the current directory", [("lib", ".", S), ("f", "", R)], False),
+        ("plain nested content", [("pkg", None, D), ("pkg/bin", "", R)], False),
+        # No payload member, so the realpath pass never sees a write through it. Only the
+        # lexical pass refuses this -- and without it the bundle would ship a symlink
+        # pointing at an absolute host path.
+        ("lone absolute symlink, nothing written through it",
+         [("x", "/etc", S)], True),
+    ]
+    kw = {"filter": "fully_trusted"} if hasattr(tarfile, "fully_trusted_filter") else {}
+    for label, spec, want_refusal in cases:
+        box = tempfile.mkdtemp()
+        dest = os.path.join(box, "dest")
+        os.makedirs(dest)
+        arc = os.path.join(box, "a.tar.gz")
+        with tarfile.open(arc, "w:gz") as t:
+            for name, link, typ in spec:
+                i = tarfile.TarInfo(name)
+                i.type = typ
+                if typ in (tarfile.SYMTYPE, tarfile.LNKTYPE):
+                    i.linkname = link
+                    t.addfile(i)
+                elif typ == tarfile.DIRTYPE:
+                    t.addfile(i)
+                else:
+                    body = b"x\n"
+                    i.size = len(body)
+                    t.addfile(i, io.BytesIO(body))
+        try:
+            with tarfile.open(arc) as t:
+                ms = t.getmembers()
+                for m in ms:
+                    apply._refuse_escaping_link(m, "bundle.fromTarball")
+                apply._extract_members(t, dest, ms, kw)
+            refused = False
+        except RuntimeError:
+            refused = True
+        except Exception as e:                       # noqa: BLE001
+            # Anything else means the guard did not run and tarfile met the malformed
+            # chain itself -- a KeyError from _find_link_target, say. Report it rather
+            # than letting it escape: an uncaught exception aborts the run, which reads
+            # as "no failures" to anything counting FAIL lines.
+            FAILURES.append(f"chain battery: {label} raised "
+                            f"{type(e).__name__}, expected RuntimeError")
+            refused = True
+        check(f"chain battery: {label}", refused, want_refusal)
+        stray = [os.path.join(r, f)[len(box) + 1:]
+                 for r, _d, fs in os.walk(box) for f in fs
+                 if not os.path.join(r, f)[len(box) + 1:].startswith(("dest/", "a.tar.gz"))]
+        check(f"chain battery: {label} left nothing outside", stray, [])
+        shutil.rmtree(box, ignore_errors=True)
+
+
+def test_fromtarball_wires_both_guards_in():
+    """The verb itself must call both halves -- not just have them available.
+
+    test_symlink_chain_cannot_escape composes the two functions by hand, so it would
+    still pass if v_bundle_fromtarball stopped calling one of them. This drives the verb.
+    """
+    import io
+    import tarfile
+    import tempfile
+
+    for label, spec in (
+        ("absolute symlink", [("x", "/etc", tarfile.SYMTYPE),
+                              ("x/p", None, tarfile.REGTYPE)]),
+        ("two-member chain", [("a/d", "..", tarfile.SYMTYPE),
+                              ("e", "a/d/../..", tarfile.SYMTYPE),
+                              ("e/O/p", None, tarfile.REGTYPE)]),
+        # No payload member, so the realpath pass never sees a write through it. This
+        # one is refused only if the verb still calls the lexical pass -- it is what
+        # catches the verb quietly dropping that call.
+        ("lone absolute symlink", [("x", "/etc", tarfile.SYMTYPE)]),
+    ):
+        work = tempfile.mkdtemp()
+        os.makedirs(os.path.join(work, "iso", "slax", "modules"))
+        arc = os.path.join(work, "evil.tar.gz")
+        with tarfile.open(arc, "w:gz") as t:
+            for name, link, typ in spec:
+                i = tarfile.TarInfo(name)
+                i.type = typ
+                if typ == tarfile.SYMTYPE:
+                    i.linkname = link
+                    t.addfile(i)
+                else:
+                    body = b"planted\n"
+                    i.size = len(body)
+                    t.addfile(i, io.BytesIO(body))
+        ctx = apply.Ctx(work, work, "t")
+        step = {"verb": "bundle.fromTarball", "bundle": "07-poc", "src": arc}
+        try:
+            apply.v_bundle_fromtarball(ctx, step)
+            FAILURES.append(f"v_bundle_fromtarball accepted {label}")
+        except RuntimeError:
+            pass
+        check(f"{label}: no bundle built",
+              os.listdir(os.path.join(work, "iso", "slax", "modules")), [])
+
+
+def test_extract_members_matches_extractall_on_a_clean_archive():
+    """The containment check must not change what a legitimate tarball produces.
+
+    Checking before each write means extracting member by member, and CPython's
+    extractall defers directory attributes on purpose -- "permissions can interfere with
+    extraction and extracting contents can reset mtime". A naive loop would give every
+    bundle built from a tarball wrong directory modes and mtimes.
+    """
+    import io
+    import stat
+    import tarfile
+    import tempfile
+
+    box = tempfile.mkdtemp()
+    arc = os.path.join(box, "legit.tar.gz")
+    with tarfile.open(arc, "w:gz") as t:
+        for name, mode in (("pkg", 0o755), ("pkg/etc", 0o700), ("pkg/var", 0o1777)):
+            i = tarfile.TarInfo(name)
+            i.type = tarfile.DIRTYPE
+            i.mode = mode
+            i.mtime = 1600000000
+            t.addfile(i)
+        for name, mode in (("pkg/etc/conf", 0o600), ("pkg/bin", 0o755)):
+            body = b"data\n"
+            i = tarfile.TarInfo(name)
+            i.size = len(body)
+            i.mode = mode
+            i.mtime = 1600000001
+            t.addfile(i, io.BytesIO(body))
+        s = tarfile.TarInfo("pkg/link")
+        s.type = tarfile.SYMTYPE
+        s.linkname = "etc/conf"
+        t.addfile(s)
+
+    kw = {"filter": "fully_trusted"} if hasattr(tarfile, "fully_trusted_filter") else {}
+
+    def snap(root):
+        out = {}
+        for r, ds, fs in os.walk(root):
+            for n in ds + fs:
+                p = os.path.join(r, n)
+                st = os.lstat(p)
+                out[p[len(root) + 1:]] = (stat.S_IMODE(st.st_mode), int(st.st_mtime))
+        return out
+
+    a = os.path.join(box, "A")
+    os.makedirs(a)
+    with tarfile.open(arc) as t:
+        t.extractall(a, members=t.getmembers(), **kw)
+    b = os.path.join(box, "B")
+    os.makedirs(b)
+    with tarfile.open(arc) as t:
+        apply._extract_members(t, b, t.getmembers(), kw)
+
+    check("checked extraction matches extractall exactly", snap(b), snap(a))
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -858,7 +1044,10 @@ def main():
                test_fromtarball_refuses_symlink_escape,
                test_checksums_sign_is_a_key_id,
                test_removes_come_first,
-               test_network_is_declared_where_it_is_used]:
+               test_network_is_declared_where_it_is_used,
+               test_symlink_chain_cannot_escape,
+               test_fromtarball_wires_both_guards_in,
+               test_extract_members_matches_extractall_on_a_clean_archive]:
         fn()
     if FAILURES:
         for f in FAILURES:
