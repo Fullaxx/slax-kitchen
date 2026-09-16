@@ -451,7 +451,9 @@ whole stack below you, and is a size-versus-removability dial rather than a corr
 reasoning is in [composing bundles](docs/40-workflow/composing-bundles.md).
 
 `tests/structure/bundle_assert.py` walks the assembled stack and fails if any bundle's database is
-less complete than the one it shadows; `ci/recipe-matrix.sh` runs it for every recipe.
+less complete than the one it shadows; `ci/recipe-matrix.sh` runs it for every recipe — except
+those listed in `ci/slow-recipes.txt`, which are built weekly and on every release tag rather than
+on every push. Each such skip is printed with its reason.
 
 > This was found while writing this document, which is roughly the point of it. Our own
 > `add-packages` shipped the bug, and its page calls it "the template recipe", so anyone copying

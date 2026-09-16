@@ -96,7 +96,7 @@ and mean exactly what they say there.
 | | |
 |---|---|
 | **gate-clean** | all $GATES commit gates |
-| **matrix-verified** | every compatible recipe applied individually to all four targets, then structure-asserted — \`debian-{32,64}bit-12.2.0\`, \`slackware-{32,64}bit-15.0.4\` |
+| **matrix-verified** | every compatible recipe applied individually to all four targets, then structure-asserted — \`debian-{32,64}bit-12.2.0\`, \`slackware-{32,64}bit-15.0.4\`. A release runs the FULL matrix: the per-push path skips \`ci/slow-recipes.txt\`, a tag does not. |
 | **boot-verified** | \`debian-64bit-12.2.0\` only: direct-kernel QEMU boot under TCG, all three livekit markers, plus \`union: aufs\` and the dpkg package count |
 
 **Tier C was not run.** The full boot matrix — BIOS menu, UEFI, USB image, persistence,

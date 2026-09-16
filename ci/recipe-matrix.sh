@@ -2,10 +2,16 @@
 # Apply every compatible recipe INDIVIDUALLY against one base ISO.
 #
 #   ci/recipe-matrix.sh <target> <iso> [recipe-dir]
+#   MATRIX_SKIP=ci/slow-recipes.txt ci/recipe-matrix.sh <target> <iso>
 #
 # recipe-dir defaults to recipes/available. A fork keeping its own recipes under
 # recipes/<project>/ points this at them and gets the same four-target coverage:
 #   ci/recipe-matrix.sh debian-64bit-12.2.0 isos/....iso recipes/myproject
+#
+# MATRIX_SKIP names a file of recipes to leave out of THIS run -- see ci/slow-recipes.txt
+# for the format and the standing reasons. An env var rather than a fourth positional so
+# the interface above, which forks use, does not change. Every skip is printed with its
+# reason: a matrix that quietly ran less than it looks like is worse than a slow one.
 #
 # One recipe per work tree on purpose: a failure then names exactly one recipe, and
 # recipes cannot mask each other. This is what catches a recipe that silently only
@@ -17,6 +23,25 @@ ISO=${2:?usage: recipe-matrix.sh <target> <iso> [recipe-dir]}
 RECIPE_DIR=${3:-recipes/available}
 case "$RECIPE_DIR" in /*) ;; *) RECIPE_DIR="$REPO_ROOT/$RECIPE_DIR" ;; esac
 [ -d "$RECIPE_DIR" ] || { echo "no such recipe directory: $RECIPE_DIR" >&2; exit 2; }
+
+# A named-but-absent skip file is an error, not an empty skip list. Silently skipping
+# nothing because of a typo'd path is the failure mode this repo keeps finding.
+MATRIX_SKIP=${MATRIX_SKIP:-}
+if [ -n "$MATRIX_SKIP" ]; then
+    case "$MATRIX_SKIP" in /*) ;; *) MATRIX_SKIP="$REPO_ROOT/$MATRIX_SKIP" ;; esac
+    [ -f "$MATRIX_SKIP" ] || { echo "MATRIX_SKIP: no such file: $MATRIX_SKIP" >&2; exit 2; }
+fi
+
+# Reason text for a skipped recipe, or empty if it is not skipped. Format is
+# "<name><whitespace><reason>"; blank lines and # comments ignored.
+skip_reason() {
+    [ -n "$MATRIX_SKIP" ] || return 0
+    awk -v want="$1" '
+        /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+        $1 == want { $1 = ""; sub(/^[[:space:]]+/, ""); print; found = 1; exit }
+        END { if (!found) exit 1 }
+    ' "$MATRIX_SKIP" 2>/dev/null
+}
 
 FLAVOUR=${TARGET%%-*}
 case "$TARGET" in *-32bit-*) ARCH=32bit ;; *) ARCH=64bit ;; esac
@@ -31,7 +56,7 @@ trap 'rm -rf "$WORK"' EXIT
 
 printf 'recipe matrix: %s  (flavour=%s arch=%s)  %s\n' "$TARGET" "$FLAVOUR" "$ARCH" \
        "${RECIPE_DIR#"$REPO_ROOT"/}"
-pass=0; fail=0; skip=0
+pass=0; fail=0; skip=0; skipped_by_file=""
 
 for recipe in "$RECIPE_DIR"/*.yaml; do
     [ -e "$recipe" ] || { echo "no recipes in $RECIPE_DIR" >&2; exit 2; }
@@ -54,6 +79,12 @@ PY
 )
     if [ "$flav_ok" != yes ] || [ "$arch_ok" != yes ]; then
         printf '  %sskip%s %-18s not declared compatible with %s/%s\n' "$Y" "$O" "$name" "$FLAVOUR" "$ARCH"
+        skip=$((skip+1)); continue
+    fi
+
+    if reason=$(skip_reason "$name") && [ -n "$reason" ]; then
+        printf '  %sSKIP%s %-18s %s\n' "$Y" "$O" "$name" "$reason"
+        skipped_by_file="$skipped_by_file $name"
         skip=$((skip+1)); continue
     fi
 

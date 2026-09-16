@@ -8,13 +8,38 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 | `ci.yml` → `gates` | every push and PR | the twelve commit gates, ~1 min, no ISOs |
 | `ci.yml` → `container` | every push and PR | builds the reference container on **both** `ubuntu:24.04` and `debian:12`, then `doctor --strict` and the gates *inside* each |
 | `ci.yml` → `build` | every push and PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
-| `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | QEMU BIOS + UEFI boot under TCG |
-| `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml`, then publish a Release |
-| `upstream-watch.yml` | weekly, Mondays | new Slax release, linux-live commits, mirror health |
+| `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | one direct-kernel QEMU boot under TCG, asserting |
+| `ci.yml` (weekly) | Thursdays 05:41 UTC, or dispatch | the same, plus the skipped recipes and the two screenshot boots |
+| `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml` — **the full matrix**, not the per-push subset — then publish |
+| `upstream-watch.yml` | Mondays 06:17 UTC, or dispatch | linux-live HEAD, new Slax release, mirror health, pinned signing keys |
 
-A full `ci.yml` run is about **17 minutes** wall clock: gates ~35 s, the reference container ~45 s,
-the four builds in parallel at 2½–8 min, then the boot test at ~8½ min. The boot job's
-`timeout-minutes: 45` is a ceiling, not a cost.
+## Two cadences, and what is on each
+
+Most of CI runs on every push. Two things deliberately do not, and both are on the weekly run:
+
+| | per push | weekly / tag / dispatch |
+|---|---|---|
+| gates, container, 4-target build matrix | ✅ | ✅ |
+| the recipes in [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) | ❌ | ✅ |
+| direct-kernel boot, asserting markers | ✅ | ✅ |
+| BIOS + UEFI screenshot boots | ❌ | ✅ |
+
+**The bar for `ci/slow-recipes.txt` is not "slow".** It is that the recipe's failure mode is
+*external* — something outside this repository breaks it — so running it per-push converts someone
+else's change into a red master at a cadence nobody can act on. Being merely expensive is not
+enough; cost is not a reason to stop checking. Today the file holds one entry: `all-browsers`,
+whose four vendor signing keys are pinned by sha256 and will rotate.
+
+Each skip is printed with its reason. A matrix that quietly ran less than it looks like would be
+worse than a slow one:
+
+```
+  SKIP all-browsers      weekly, not per-push: four sha256-pinned vendor keys are an
+                         external dependency (622 s, and a key rotation would redden master)
+```
+
+A **release tag runs everything**, because a release should be verified more than a push, not less.
+`ci.yml` distinguishes them with `startsWith(github.ref, 'refs/tags/')`.
 
 ## The toolchain list
 
@@ -97,9 +122,34 @@ downloaded at most once and re-verified on every run.
 ## Boot tests: one asserts, two are evidence
 
 ```sh
-kitchen test out.iso --kernel --seconds 240      # the assertion
-kitchen test out.iso --bios --uefi               # the evidence
+kitchen test out.iso --kernel --seconds 240      # the assertion, on every push
+kitchen test out.iso --bios --uefi               # the evidence, weekly
 ```
+
+### `--seconds` is a ceiling, not a bill
+
+It used to be a bill. The harness ran `time.sleep(seconds)` and *then* read the log, so a run cost
+its whole budget whatever the guest did — 240 + 120 + 120 = **480 s of sleeping per CI run**, and
+the duration it reported back was the flag it had been given rather than anything it measured.
+
+`tests/boot/qemu_boot.py` now polls the serial log and returns as soon as **every** `--expect`
+string is present. Measured on the example ISO, under TCG, in a container with no KVM:
+
+```
+waited     : 20s of a 240s ceiling (all expectations seen)
+```
+
+Same assertions, 20 seconds instead of 240. Two properties make that safe, and both are pinned by
+[`tests/unit/test_qemu_boot.py`](../../tests/unit/test_qemu_boot.py):
+
+- **A missing expectation still burns the whole ceiling.** Returning early on a marker that never
+  came would report the failure faster but by luck of ordering; waiting as long as we promised is
+  what makes "it never appeared" an honest answer.
+- **It waits for `all`, not `any`.** `Live Kit done` is the last marker livekit prints, so stopping
+  at the first would skip the stages this test exists to cover.
+
+Modes with no expectations keep the flat sleep: `--bios` and `--uefi` produce an **empty** serial
+log, so there is nothing a poll could ever satisfy.
 
 **`--kernel` is the one that can fail.** It boots `vmlinuz` + `initrfs.img` directly with
 `console=ttyS0`, bypassing the bootloader, so the whole of livekit init lands in a machine-readable
@@ -134,16 +184,87 @@ Serial logs and screenshots upload as artifacts on every boot run, pass or fail.
 not a nicety: **a bootloader menu never reaches the serial log**, because isolinux and GRUB draw to
 the video console.
 
+## What CI does not run, and how to run it yourself
+
+CI covers nearly everything. What it cannot do is boot an image the way a person would, because
+GitHub-hosted runners have no `/dev/kvm` — TCG works but is 10–20× slower, which is why the boot job
+asserts on a serial log rather than looking at a desktop.
+
+Everything below runs on **any KVM-capable Linux host** with `qemu-system-x86_64`, `qemu-img`,
+`xorriso` and OVMF. Nothing here is specific to a particular machine.
+
+**The recipes CI skips per-push.** Unset the skip list and the matrix builds everything — this is
+exactly what the weekly run does:
+
+```sh
+MATRIX_SKIP= ./ci/recipe-matrix.sh debian-64bit-12.2.0 isos/slax-64bit-debian-12.2.0.iso
+```
+
+**The screenshot boots**, if you want to see a bootloader rather than trust a serial log:
+
+```sh
+./kitchen test out/slax-example-12.2.0.iso --bios --uefi --seconds 120
+```
+
+**Boot it and actually look at it.** This is the part CI structurally cannot do, and it is where a
+local machine earns its place — the recipe matrix is apt and `mksquashfs` and gains nothing from
+virtualisation, but a boot gains everything. Measured: all three livekit markers inside **5 seconds**
+with KVM, against a 150-second budget under TCG.
+
+```sh
+tools/qemu/boot-bios.sh out/slax-custom.iso
+```
+
+See [QEMU by hand](qemu.md) for the display, the ssh tunnel, and installing to a virtual disk.
+
+**What is worth committing from such a run** is the *result* — an ISO size, a package count, a boot
+marker — because those are facts about the artifact. Facts about the machine that produced them are
+not, and do not belong in the repository.
+
 ## Upstream watch
 
-Weekly. Compares `linux-live` HEAD and the slax.org changelog against `compat/upstream-baseline.yaml`,
-and HEADs every mirror URL checking status *and* size. On a change it opens (or comments on) an
-issue labelled `upstream-watch`.
+**When:** `cron: "17 6 * * 1"` — Mondays 06:17 UTC — plus `workflow_dispatch`.
+`ci/upstream-watch.sh` runs standalone too, and takes about a minute.
 
-The release comparison is per release line, not a single "latest": Slax publishes two current
+**Why at all:** upstream is dormant. Slax has shipped nothing since **2023-10-10** and `linux-live`
+was last touched **2024-11-14**, so any movement is notable rather than routine — there is no steady
+stream of releases to filter. And the things this project pins rot *silently*: `slackonly.com` went
+NXDOMAIN and broke `slackpkg` on every stock Slax image, which is the incident the mirror check
+exists for. Nothing here fails because of our code; it fails because the world moved.
+
+**What it watches** — four checks, each against a recorded baseline:
+
+| | check | how | baseline |
+|---|---|---|---|
+| 1 | **`linux-live` HEAD** | `git ls-remote` against Tomáš's repo | `linux_live_head` in [`compat/upstream-baseline.yaml`](../../compat/upstream-baseline.yaml) |
+| 2 | **A new Slax release** | the mirror directory listing at `ftp.linux.cz`, cross-checked against `slax.org/changelog.php` | `latest_releases: [12.2.0, 15.0.4]` |
+| 3 | **Mirror health** | `curl -sSIL` every mirror × every target | [`compat/sources.yaml`](../../compat/sources.yaml) — HTTP 200 **and** the recorded `Content-Length` |
+| 4 | **Pinned signing keys** | fetch each `key_url` and sha256 it | the `key_sha256` in each recipe's `apt.sources` |
+
+Two details worth knowing, because each is a lesson someone already paid for:
+
+**The release comparison is per release line, not a single "latest".** Slax publishes two current
 releases on the same day — one per flavour — and the changelog carries the full history back to 9.x.
-So it flags a higher point release on a line we track, or an entirely higher line, and ignores
-history.
+So neither "the newest entry" nor set membership works: it flags a higher point release on a line we
+track, or an entirely new line, and ignores history.
+
+**The mirror check compares size, not just status.** A 200 that returns an error page is exactly the
+failure a status-only check waves through.
+
+**Check 4 is why `all-browsers` can safely be weekly.** Its build fails by design when a vendor
+rotates a signing key — an unpinned key would let a remote party decide what the image trusts — but
+discovering that from a ten-minute build is the expensive way. Fetching four keys and hashing them
+takes seconds and names the recipe, the source and both hashes. The pins are parsed out of
+`recipes/**/*.yaml`, so a recipe added later is covered without anyone remembering to update the
+watch.
+
+**On a change** it opens an issue labelled `upstream-watch` — or comments on the open one rather
+than filing a duplicate every week — carrying the adoption procedure: `kitchen probe` each ISO,
+regenerate the fingerprint, `kitchen selftest ci`, then fix what breaks. See
+[fingerprints](../70-compat/fingerprints.md).
+
+> It does **not** watch busybox or CVEs. The busybox replacement is pinned and tested by
+> [`tests/busybox/gates.sh`](../../tests/busybox/gates.sh), not by this.
 
 ## Releases
 
@@ -151,7 +272,7 @@ history.
 
 | job | what |
 |---|---|
-| `guard` | `ci/release-guard.sh` — seconds of shell, ahead of seventeen minutes of CI |
+| `guard` | `ci/release-guard.sh` — seconds of shell, ahead of a full-matrix CI run |
 | `verify` | `uses: ./.github/workflows/ci.yml` — the whole of it, not a copy |
 | `publish` | `gh release create`. **The only job in this repository with `contents: write`.** |
 

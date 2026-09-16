@@ -105,6 +105,51 @@ for name, spec in sorted(src["targets"].items()):
 sys.exit(1 if bad else 0)
 PY
 
+# --- pinned signing keys ---------------------------------------------------
+# A recipe using apt.sources pins its vendor's signing key by sha256, so a rotation makes
+# the build fail by design -- correctly, because an unpinned key lets a remote party
+# decide what the image trusts. The failure is right; discovering it from a ten-minute
+# build that happens to run is not. A few HTTP fetches and a sha256 find it in seconds.
+#
+# Parsed out of the recipes rather than hardcoded, so a recipe added later is covered
+# without anyone remembering to update this.
+python3 - "$REPO_ROOT/recipes" <<'PY' || changed=1
+import hashlib, pathlib, subprocess, sys, yaml
+
+pins, bad = [], 0
+for f in sorted(pathlib.Path(sys.argv[1]).rglob("*.yaml")):
+    try:
+        doc = yaml.safe_load(f.read_text()) or {}
+    except yaml.YAMLError:
+        continue
+    if not isinstance(doc, dict):
+        continue
+    for step in doc.get("steps") or []:
+        for src in ((step.get("apt") or {}).get("sources") or []):
+            if src.get("key_url") and src.get("key_sha256"):
+                pins.append((f.stem, src.get("name", "?"), src["key_url"], src["key_sha256"]))
+
+if not pins:
+    print("  no pinned signing keys to check")
+    sys.exit(0)
+
+for recipe, name, url, want in pins:
+    r = subprocess.run(["curl", "-sSL", "--max-time", "30", url], capture_output=True)
+    if r.returncode != 0 or not r.stdout:
+        print(f"  CHANGED: {recipe}/{name} signing key unreachable -> {url}")
+        bad += 1
+        continue
+    got = hashlib.sha256(r.stdout).hexdigest()
+    if got == want:
+        print(f"  ok       {recipe}/{name} key {got[:12]}... ({len(r.stdout)} bytes)")
+    else:
+        print(f"  CHANGED: {recipe}/{name} signing key ROTATED -> {url}")
+        print(f"           want {want}")
+        print(f"           got  {got}")
+        bad += 1
+sys.exit(1 if bad else 0)
+PY
+
 echo
 if [ "$changed" -eq 0 ]; then
     echo "nothing changed"

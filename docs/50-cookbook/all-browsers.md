@@ -1,8 +1,14 @@
 # `all-browsers` — six browsers in one bundle
 
 **Status: boot-verified** — built, packed, and booted to `slax login:` with all three livekit
-markers under TCG. CI's recipe matrix builds it on `debian-64bit-12.2.0` and correctly skips the
-other three targets. The six browsers have **not been run**; that would be `runtime-verified`.
+markers under TCG. The six browsers have **not been run**; that would be `runtime-verified`.
+
+> **CI builds this weekly, not on every push** — the only recipe treated that way. Its four vendor
+> signing keys are pinned by sha256, so a rotation fails the build *by design*, and that is someone
+> else's change: running it per-push would turn Google republishing a key into a red master. The
+> weekly run builds it, and `ci/upstream-watch.sh` checks the four keys every Monday in seconds
+> rather than waiting for a ten-minute build to discover it. A release tag runs it too. See
+> [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) and [CI](../60-testing/ci.md).
 
 ```sh
 kitchen apply all-browsers

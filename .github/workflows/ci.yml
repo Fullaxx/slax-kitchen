@@ -18,6 +18,12 @@ on:
   push:
     branches: [master]
   pull_request:
+  # THE WEEKLY RUN IS THE FULL ONE. Two things are deliberately not on the per-push path
+  # -- the all-browsers recipe and the two bootloader screenshot boots -- and this is
+  # where they happen. Thursday so it does not collide with upstream-watch on Monday;
+  # an off-the-hour minute for the same reason GitHub recommends it, cron congestion.
+  schedule:
+    - cron: "41 5 * * 4"      # Thursdays, 05:41 UTC
   workflow_dispatch:
   # release.yml calls this rather than restating it. A release therefore runs the
   # identical gates, the identical four-target matrix and the identical boot test --
@@ -197,7 +203,25 @@ jobs:
 
       # Apply every compatible recipe individually, so one failure names one recipe.
       # Recipes that need a chroot are run under sudo; runners allow it.
+      #
+      # MATRIX_SKIP is set on push and EMPTY on schedule/dispatch, so the weekly run
+      # builds everything. What it leaves out and why is in ci/slow-recipes.txt, and every
+      # skip is printed with its reason -- a matrix that quietly ran less than it looks
+      # like would be worse than a slow one.
       - name: recipe matrix
+        env:
+          # THE NON-EMPTY VALUE MUST SIT ON THE `&&` SIDE. `cond && '' || 'file'` looks
+          # like a ternary and is not one: GitHub's && returns its right operand only if
+          # the left is truthy, and the EMPTY STRING IS FALSY, so that form falls through
+          # to 'file' in both branches and the weekly run would skip too. Written the
+          # other way round, the truthy value is the one being selected and it works.
+          #
+          # A tag push is a release (release.yml calls this workflow), and a release
+          # verifies everything -- so tags get the full matrix like the weekly run does.
+          MATRIX_SKIP: >-
+            ${{ (github.event_name == 'pull_request'
+                 || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')))
+                && 'ci/slow-recipes.txt' || '' }}
         run: ./ci/recipe-matrix.sh ${{ matrix.target }} isos/${{ matrix.iso }}
 
       - name: round-trip fidelity
@@ -281,7 +305,16 @@ jobs:
             --expect 'union: aufs' \
             --expect 'dpkg-status: 603 packages'
 
+      # NOT ON THE PER-PUSH PATH, and the reason is that they assert nothing. Their
+      # serial log is empty by construction -- no Slax menu entry sets console=ttyS0 --
+      # so the only way either can fail is a zero-byte screenshot, and nothing in this
+      # repository ever reads the PNG. Two boots, 240 s, for evidence a human looks at
+      # about once a quarter. Weekly, or on demand via the boot-test label.
       - name: boot (bootloader screenshots, BIOS and UEFI)
+        if: >-
+          github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+          || startsWith(github.ref, 'refs/tags/')
+          || contains(github.event.pull_request.labels.*.name, 'boot-test')
         run: |
           ./kitchen test out/slax-example-12.2.0.iso --bios --seconds 120
           ./kitchen test out/slax-example-12.2.0.iso --uefi --seconds 120

@@ -156,6 +156,11 @@ def test_notes_say_what_was_not_done():
     check_in("says why", "/dev/kvm", out)
     check_in("distinguishes the three unbooted targets",
              "matrix-verified, not boot-verified", out)
+    # A release must not inherit the per-push skip list. ci.yml decides that with a
+    # `startsWith(github.ref, 'refs/tags/')` guard, which nothing here can execute -- so
+    # pin the CLAIM instead, and let it fail loudly if someone ever weakens the release
+    # matrix without saying so in the notes.
+    check_in("says a release runs the full matrix", "A release runs the FULL matrix", out)
     check_in("no ISO, and it is on purpose", "deliberate rather than an oversight", out)
     check_in("source-offer obligation named", "source-offer obligation", out)
     check_in("credits upstream", "Tomáš Matějíček", out)

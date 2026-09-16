@@ -83,9 +83,41 @@ def send_keys(q: "Qmp", spec: str) -> None:
 LIVEKIT_MARKERS = ("Looking for", "Mounting bundles", "Live Kit done", "Setting up")
 
 
+def _wait(serial: str, seconds: int, expect: list) -> float:
+    """Wait for the guest, and return how long that actually took.
+
+    WHY THIS IS NOT time.sleep(seconds). It used to be, and `--seconds` was therefore not
+    a timeout but a bill: CI paid 240 + 120 + 120 = 480 s of sleeping per run whatever the
+    guest did, and the number the harness reported back was the flag it had been given
+    rather than anything it measured.
+
+    With expectations, poll the serial log and return as soon as EVERY one is present.
+    `--seconds` becomes the ceiling it always read like. Without expectations -- the
+    screenshot modes, whose serial log stays empty because no Slax menu entry sets
+    console=ttyS0 -- there is nothing to poll for, so the flat sleep stands.
+
+    Polling only on ALL expectations matters: returning on the first would stop before the
+    later stages ran, and this test's whole value is that `Live Kit done` comes last.
+    """
+    start = time.time()
+    if not expect:
+        time.sleep(seconds)
+        return time.time() - start
+    while time.time() - start < seconds:
+        time.sleep(0.5)
+        try:
+            with open(serial, errors="replace") as f:
+                txt = f.read()
+        except OSError:
+            continue
+        if all(w in txt for w in expect):
+            break
+    return time.time() - start
+
+
 def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
          keys: str | None = None, kernel: str | None = None,
-         initrd: str | None = None) -> dict:
+         initrd: str | None = None, expect: list | None = None) -> dict:
     os.makedirs(outdir, exist_ok=True)
     tag = f"{os.path.basename(iso).rsplit('.', 1)[0]}-{mode}"
     serial = os.path.join(outdir, tag + ".serial.log")
@@ -130,7 +162,7 @@ def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
         q = Qmp(qmp)
         if keys:
             send_keys(q, keys)
-        time.sleep(seconds)
+        result["waited"] = _wait(serial, seconds, expect or [])
         # QEMU writes PPM unless told otherwise -- the filename extension is NOT
         # enough, and a .png that is really a PPM silently breaks every image reader
         # downstream. The format argument exists since QEMU 7.1; older builds get a
@@ -161,7 +193,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--mode", choices=["bios", "uefi", "kernel"], default="bios")
     ap.add_argument("--kernel", help="vmlinuz for --mode kernel")
     ap.add_argument("--initrd", help="initrfs.img for --mode kernel")
-    ap.add_argument("--seconds", type=int, default=25, help="how long to let it run")
+    ap.add_argument("--seconds", type=int, default=25,
+                    help="ceiling; with --expect the run ends as soon as every "
+                         "expectation appears, so this is a timeout, not a duration")
     ap.add_argument("--out", default="out/boot-tests")
     ap.add_argument("--expect", action="append", default=[],
                     help="string that must appear in the serial log")
@@ -185,7 +219,7 @@ def main(argv: list[str]) -> int:
     # panic in the log. A boot that got into livekit and then failed is a real failure
     # and is never retried, so this cannot mask a product bug.
     r = boot(a.iso, a.mode, a.seconds, a.out, keys=a.keys,
-             kernel=a.kernel, initrd=a.initrd)
+             kernel=a.kernel, initrd=a.initrd, expect=a.expect)
     for attempt in range(a.retries):
         txt = r["serial_text"]
         reached_us = any(m in txt for m in LIVEKIT_MARKERS)
@@ -196,9 +230,13 @@ def main(argv: list[str]) -> int:
               f"init without reaching livekit -- almost certainly TCG flakiness, "
               f"retrying", file=sys.stderr)
         r = boot(a.iso, a.mode, a.seconds, a.out, keys=a.keys,
-                 kernel=a.kernel, initrd=a.initrd)
+                 kernel=a.kernel, initrd=a.initrd, expect=a.expect)
     print(f"boot {a.mode}: {os.path.basename(a.iso)}"
           f"   ({'KVM' if r['kvm'] else 'TCG -- slow'})")
+    waited = r.get("waited", 0)
+    if a.expect:
+        print(f"  waited     : {waited:.0f}s of a {a.seconds}s ceiling"
+              f"{' (all expectations seen)' if waited < a.seconds - 1 else ' -- HIT THE CEILING'}")
     print(f"  serial log : {r['serial']} ({len(r['serial_text'])} bytes)")
     print(f"  screenshot : {r['screenshot']} ({r['screenshot_bytes']} bytes)")
 

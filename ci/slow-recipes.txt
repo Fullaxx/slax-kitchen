@@ -1,0 +1,16 @@
+# Recipes left out of the PER-PUSH matrix, with the reason. Format:
+#
+#   <recipe-name><whitespace><reason, printed verbatim when it is skipped>
+#
+# Read only when MATRIX_SKIP names this file. ci.yml sets it on push and omits it on
+# schedule and workflow_dispatch, so the weekly run builds everything.
+#
+# THE BAR FOR BEING IN HERE is not "slow". It is that the recipe's failure mode is
+# EXTERNAL -- something outside this repository breaks it -- so a per-push run converts
+# someone else's change into a red master, at a cadence where we cannot act on it anyway.
+# A recipe that is merely expensive stays in: cost is not a reason to stop checking.
+#
+# Measured on debian-64bit, run ca2f71b, 2026-09-16: the matrix was 1306 s total, of which
+# all-browsers was 622 s and every one of the other 49 entries combined was 468 s.
+
+all-browsers  weekly, not per-push: four sha256-pinned vendor keys are an external dependency (622 s, and a key rotation would redden master)
