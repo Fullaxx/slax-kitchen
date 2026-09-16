@@ -5,9 +5,9 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` → `gates` | every push and PR | the thirteen commit gates, ~1 min, no ISOs |
-| `ci.yml` → `container` | every push and PR | builds the reference container on **both** `ubuntu:24.04` and `debian:12`, then `doctor --strict` and the gates *inside* each |
-| `ci.yml` → `build` | every push and PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
+| `ci.yml` → `gates` | push to master, or any PR | the thirteen commit gates, ~1 min, no ISOs |
+| `ci.yml` → `container` | push to master, or any PR | builds the reference container on **both** `ubuntu:24.04` and `debian:12`, then `doctor --strict` and the gates *inside* each |
+| `ci.yml` → `build` | push to master, or any PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
 | `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | one direct-kernel QEMU boot under TCG, asserting |
 | `ci.yml` (weekly) | Thursdays 05:41 UTC, or dispatch | the same, plus the skipped recipes and the [Tier C](tier-c.md) boot matrix |
 | `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml` — **the full matrix**, not the per-push subset — then publish |
@@ -15,7 +15,19 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 
 ## Two cadences, and what is on each
 
-Most of CI runs on every push. Two things deliberately do not, and both are on the weekly run:
+**No push outside `master` triggers anything.** `push` carries `branches: [master]`, so
+pushing a working branch runs no CI at all; `schedule` only ever fires on the default
+branch; and a `v*` tag is checked by `ci/release-guard.sh` for being an ancestor of
+`origin/master` before anything is published.
+
+`pull_request` is deliberately **not** scoped, so opening a PR runs CI whatever it targets.
+That is what makes a working branch testable on demand — push it quietly, open a PR when you
+want the matrix. It also has to stay unscoped for a PR to be mergeable at all: master's
+branch protection requires five checks from this workflow — `commit gates` and the four
+`build <target>` jobs — and `pull_request` is the only trigger that produces them for a PR.
+
+Most of CI runs on every push to master. Two things deliberately do not, and both are on the
+weekly run:
 
 | | per push | weekly / tag / dispatch |
 |---|---|---|
