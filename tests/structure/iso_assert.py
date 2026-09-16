@@ -87,7 +87,14 @@ def main(argv: list[str]) -> int:
             t.check(len(efi) == 1, "EFI El Torito entry present",
                     "the uefi-bootable recipe did not take effect" if not efi else "")
         else:
-            t.check(not efi, "no EFI entry (as expected for a stock build)")
+            # Symmetric on purpose: an ISO that GREW a UEFI entry nobody asked for is
+            # as much a surprise as one that lost the entry a recipe added. But the old
+            # wording -- "no EFI entry (as expected for a stock build)" -- described the
+            # PASS, so when it failed it read like an explanation rather than a problem.
+            # Say what went wrong, and name the flag that makes it right.
+            t.check(not efi, "no EFI El Torito entry, and none was expected",
+                    "this ISO HAS a UEFI entry -- pass --expect-uefi if that is intended "
+                    "(kitchen build derives it from the recipe list)")
 
         bit = info.boot_info_table
         t.check(bool(bit) and bit["self_consistent"],

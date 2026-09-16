@@ -224,6 +224,19 @@ def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
          disk: str | None = None, disk_size: str = "256M",
          append: str | None = None, run_tag: str | None = None,
          pidfile: str | None = None) -> dict:
+    # BEFORE anything is created, so a refusal leaks nothing. A stock Slax ISO has bytes
+    # 0..512 all zero -- no signature, no partition table -- so attaching it as a stick
+    # gives a guest that finds nothing bootable and an empty serial log, for a reason
+    # having nothing to do with what was being tested.
+    if mode == "usb":
+        with open(iso, "rb") as f:
+            if f.read(512)[510:512] != b"\x55\xaa":
+                raise RuntimeError(
+                    f"{os.path.basename(iso)} has no MBR signature, so it is not a "
+                    f"bootable USB image.\n"
+                    f"  A stock Slax ISO has none -- that is upstream issue 2. Apply the "
+                    f"isohybrid recipe:\n"
+                    f"      kitchen apply isohybrid && kitchen pack --hybrid")
     os.makedirs(outdir, exist_ok=True)
     # run_tag keeps a two-boot persistence pair from erasing its own first half: the tag
     # is otherwise just (iso, mode), and both artifacts are unlinked on entry below.
@@ -446,7 +459,13 @@ def main(argv: list[str]) -> int:
     kw = dict(keys=a.keys, kernel=a.kernel, initrd=a.initrd, expect=a.expect,
               mem=a.mem, append=a.append, disk=a.disk, disk_size=a.disk_size,
               run_tag=a.run_tag, pidfile=a.pidfile)
-    r = boot(a.iso, a.mode, a.seconds, a.out, **kw)
+    try:
+        r = boot(a.iso, a.mode, a.seconds, a.out, **kw)
+    except RuntimeError as e:
+        # A refusal is an answer, not a crash. These messages name the recipe or package
+        # that fixes them, and a traceback buries that under a stack.
+        print(f"{a.mode}: {e}", file=sys.stderr)
+        return 2
     for attempt in range(a.retries):
         txt = r["serial_text"]
         reached_us = any(m in txt for m in LIVEKIT_MARKERS)
