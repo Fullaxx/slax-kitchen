@@ -59,8 +59,13 @@ it proves the artifact is there, in the right place, with the right content.
 
 It does **not** prove the feature works. `ssh.service` being correctly symlinked is not sshd
 accepting a login; a 1020-byte `.xinitrc` is not the kiosk app appearing on screen. Those need a
-full desktop boot — the host queue's Tier C. Cookbook pages say **"artifact boot-verified"** where
-that is what was done, and the distinction is deliberate.
+person looking at a desktop — `runtime-verified`, the top rung. Cookbook pages say
+**"artifact boot-verified"** where this is what was done, and the distinction is deliberate.
+
+[Tier C](../60-testing/tier-c.md) does not close that gap either, and is worth being clear about:
+it boots every path and diffs this block against a golden, so it proves the assembled filesystem is
+identical however you booted it. That is a stronger claim than one boot, and it is still a claim
+about files rather than about a working desktop.
 
 ## `marker` — the persistence probe
 
