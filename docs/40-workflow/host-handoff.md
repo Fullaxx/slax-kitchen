@@ -82,11 +82,20 @@ Four targets — `{debian,slackware} × {32,64}bit` — times four boot paths.
 ./kitchen build example             # or: unpack / apply / pack
 ```
 
+> **There are scripts for the first two of these.** `tools/qemu/boot-bios.sh` and
+> `tools/qemu/boot-uefi.sh` wrap the commands below and handle the parts they leave to you: picking
+> a display backend that this qemu actually has, discovering OVMF, copying its variables file, and
+> refusing a UEFI run against an ISO with no EFI entry. See
+> [QEMU by hand](../60-testing/qemu.md). The forms below remain the reference.
+
 ### BIOS, optical
 
 ```sh
 qemu-system-x86_64 -enable-kvm -m 2048 -cdrom out/slax-custom.iso -serial mon:stdio
 ```
+
+Note this passes no display flag, so qemu picks a host-dependent default — on a build without GTK
+or SDL that fails outright. The scripts default to VNC for that reason.
 
 ### UEFI, optical — needs the `uefi-bootable` recipe
 

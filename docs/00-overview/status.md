@@ -145,9 +145,12 @@ it boots on every medium, what software is in it, and the upstream source of tru
 `40-workflow/` is also complete — 10 pages, every procedure written to work by hand with the
 `kitchen` verb noted alongside.
 
-Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 35 pages, one per
-shipped recipe), `60-testing/`, `70-compat/`,
-`90-reference/` (CLI + all 23 verbs + the profile format). See [the index](../README.md).
+`60-testing/` is complete as of 2026-09-16 — [CI](../60-testing/ci.md) for what runs on every push,
+and [QEMU by hand](../60-testing/qemu.md) for booting an image yourself and looking at it.
+
+Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 35
+pages, one per shipped recipe), `70-compat/`, `90-reference/` (CLI + all 23 verbs + the profile
+format). See [the index](../README.md).
 
 ---
 
