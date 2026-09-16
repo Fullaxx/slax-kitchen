@@ -215,7 +215,13 @@ PY
 # A cleanup nobody checks is the same defect as a check that cannot fail. Both numbers
 # below were real leaks before this pass: 27 stale /tmp/qb-* directories in the dev
 # container and 7 on the build host, and a 540 KB OVMF variables copy per UEFI run.
-[ "$KEEP" = 1 ] || rm -rf "$OUT/perch"
+# NOT on a failure. kitchen test deliberately keeps a failed persistence disk and prints
+# where it is, because then it IS the evidence -- and this line used to delete it two
+# seconds later, which would have made the one artifact worth having the one artifact
+# that never survived.
+if [ "$KEEP" != 1 ] && [ "$rc" = 0 ]; then
+    rm -rf "$OUT/perch"
+fi
 QB_AFTER=$(ls -d /tmp/qb-* 2>/dev/null | wc -l | tr -d ' ')
 say ""
 if [ "$QB_AFTER" -gt "$QB_BEFORE" ]; then
@@ -227,11 +233,17 @@ else
 fi
 if [ "$KEEP" = 1 ]; then
     say "${Y}kept${O}  $OUT (--keep)"
+elif [ "$rc" != 0 ]; then
+    # A failed run keeps its persistence disk on purpose, so only the firmware scratch --
+    # which is never evidence -- is a leak here.
+    leftover=$(find "$OUT" -name '*.vars.fd' 2>/dev/null | wc -l | tr -d ' ')
+    [ "$leftover" -gt 0 ] && say "${R}LEAK${O} $leftover OVMF variables copy left under $OUT"
+    [ -e "$OUT/perch" ] && say "${Y}kept${O}  $OUT/perch -- a failed persistence run's disk is the evidence"
 else
-    leftover=$(find "$OUT" -name '*.vars.fd' -o -name 'perch.img' 2>/dev/null | wc -l | tr -d ' ')
+    leftover=$(find "$OUT" \( -name '*.vars.fd' -o -name 'perch.img' \) 2>/dev/null | wc -l | tr -d ' ')
     if [ "$leftover" -gt 0 ]; then
         say "${R}LEAK${O} $leftover scratch file(s) left under $OUT"
-        find "$OUT" -name '*.vars.fd' -o -name 'perch.img' 2>/dev/null | sed 's/^/       /'
+        find "$OUT" \( -name '*.vars.fd' -o -name 'perch.img' \) 2>/dev/null | sed 's/^/       /'
         rc=1
     else
         say "${G}clean${O} no firmware or persistence scratch left behind"
