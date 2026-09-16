@@ -184,11 +184,17 @@ def make_perch_disk(path: str, size: str) -> None:
     """
     if os.path.exists(path):
         return
-    if shutil.which("mkfs.ext4") is None:
-        raise RuntimeError("mkfs.ext4 not installed (apt-get install e2fsprogs)")
+    # /usr/sbin is not always on PATH -- a non-login ssh session is the usual way to
+    # discover that, and it hides mkfs.ext4 rather than reporting it missing. Look there
+    # explicitly before believing it is absent.
+    mkfs = shutil.which("mkfs.ext4") or shutil.which(
+        "mkfs.ext4", path="/usr/sbin:/sbin:/usr/local/sbin")
+    if mkfs is None:
+        raise RuntimeError("mkfs.ext4 not found, including in /usr/sbin and /sbin "
+                           "(apt-get install e2fsprogs)")
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     subprocess.run(["truncate", "-s", size, path], check=True)
-    subprocess.run(["mkfs.ext4", "-F", "-q", "-L", "slaxperch", path],
+    subprocess.run([mkfs, "-F", "-q", "-L", "slaxperch", path],
                    check=True, stdout=subprocess.DEVNULL)
 
 

@@ -57,6 +57,10 @@ say()  { printf "%b\n" "$*"; }
 die()  { printf "%btier-c.sh: %s%b\n" "$R" "$*" "$O" >&2; exit 2; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# /usr/sbin is not always on PATH -- a non-login ssh session is the usual way to find
+# that out, and it hides mkfs.ext4 rather than reporting it missing.
+case ":$PATH:" in *:/usr/sbin:*) ;; *) PATH="$PATH:/usr/sbin:/sbin" ;; esac
+export PATH
 for t in qemu-system-x86_64 xorriso python3 mkfs.ext4; do
     have "$t" || die "$t not installed -- see docs/60-testing/qemu.md for the package list"
 done
