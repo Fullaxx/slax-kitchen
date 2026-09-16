@@ -25,6 +25,27 @@ done
 The ledger **merges by target**, so four invocations accumulate into one document; a
 re-run replaces that target's rows rather than appending to them.
 
+## A recorded run needs a clean tree
+
+`ci/tier-c.sh` refuses to start if `git describe --always --dirty` reports a modified
+tree, because the stamp it writes into the ledger is read from the **working tree**, and
+read at the moment the ledger is *written* — so a tracked file edited while a sweep is in
+flight taints every target that finishes afterwards, however unrelated the file. Nothing
+downstream catches that: the ledger gate accepts a `-dirty` stamp, so the evidence stops
+being reconstructible without anything turning red. Refusing costs a second. Noticing
+afterwards costs a re-run, which is how this guard came to exist.
+
+`--allow-dirty` is the exploratory escape hatch, and it must be paired with `--ledger`
+and `--golden-dir` pointing somewhere else. On its own it would re-open the same hole
+from the other side: the merge is by target, so a single throwaway TCG boot **replaces**
+that target's real rows and drags the document's `accel` down with it.
+
+Note what the stamp does *not* say. `ci/tier-c.sh` never builds — it refuses if the image
+is absent — so the commit names the tree when the ledger was written, not the tree the
+ISO was built from, and the ledger identifies the image by name and size with no hash.
+For evidence produced and consumed on one machine that is sufficient. It stops being
+sufficient at the first release tag, when the notes describe an artifact to somebody else.
+
 Measured, both ways, on the same image:
 
 | | KVM host | unaccelerated container, TCG |

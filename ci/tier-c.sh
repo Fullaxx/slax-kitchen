@@ -12,6 +12,7 @@
 #   --seconds N        ceiling per boot               (default: 120)
 #   --paths "a b c"    subset of: bios uefi usb persistence
 #   --keep             keep scratch artifacts instead of cleaning up
+#   --allow-dirty      run against a modified tree (the ledger is then not evidence)
 #
 # WHAT THIS IS FOR. CI has no /dev/kvm, so it can exercise this harness but can never
 # be the evidence. This runs on any KVM-capable Linux host with qemu, qemu-img, xorriso,
@@ -34,19 +35,21 @@ cd "$REPO_ROOT" || exit 2
 
 ISO="" PROFILE=boot-matrix TARGET="" OUT=out/tier-c
 LEDGER=tests/boot/tier-c.json GOLDEN_DIR=tests/boot/golden
-SECONDS_CEIL=120 PATHS="bios uefi usb persistence" KEEP=0
+SECONDS_CEIL=120 PATHS="bios uefi usb persistence" KEEP=0 ALLOW_DIRTY=0
+COMMITTED_DEST=1   # cleared as soon as --ledger or --golden-dir points elsewhere
 while [ $# -gt 0 ]; do
     case "$1" in
         --iso)        ISO=$2; shift 2 ;;
         --profile)    PROFILE=$2; shift 2 ;;
         --target)     TARGET=$2; shift 2 ;;
         --out)        OUT=$2; shift 2 ;;
-        --ledger)     LEDGER=$2; shift 2 ;;
-        --golden-dir) GOLDEN_DIR=$2; shift 2 ;;
+        --ledger)     LEDGER=$2; COMMITTED_DEST=0; shift 2 ;;
+        --golden-dir) GOLDEN_DIR=$2; COMMITTED_DEST=0; shift 2 ;;
         --seconds)    SECONDS_CEIL=$2; shift 2 ;;
         --paths)      PATHS=$2; shift 2 ;;
         --keep)       KEEP=1; shift ;;
-        -h|--help)    sed -n '2,30p' "$0"; exit 0 ;;
+        --allow-dirty) ALLOW_DIRTY=1; shift ;;
+        -h|--help)    sed -n '2,31p' "$0"; exit 0 ;;
         *) echo "tier-c.sh: unknown option $1" >&2; exit 2 ;;
     esac
 done
@@ -64,6 +67,32 @@ export PATH
 for t in qemu-system-x86_64 xorriso python3 mkfs.ext4; do
     have "$t" || die "$t not installed -- see docs/60-testing/qemu.md for the package list"
 done
+
+# A RECORDED RUN MUST NAME A TREE SOMEBODY CAN CHECK OUT AGAIN. The ledger stamp is read
+# from the working tree (see `git describe` below), and it is read when the ledger is
+# WRITTEN, not now -- so a tracked file edited while a sweep is in flight taints every
+# target that finishes afterwards, however unrelated the file. That happened twice while
+# producing the four-target evidence, and nothing caught it either time: the ledger gate
+# accepts a "-dirty" stamp, so the evidence quietly stops being reconstructible instead
+# of failing. Refusing here costs a second; noticing afterwards cost two full re-runs.
+if have git; then
+    _tree=$(git describe --always --dirty 2>/dev/null || true)
+    case "$_tree" in
+        *-dirty)
+            [ "$ALLOW_DIRTY" = 1 ] || die "the working tree is modified, so the
+  ledger would be stamped '$_tree' -- a tree nobody can check out. Commit or stash
+  first, or pass --allow-dirty for a run whose ledger you will not commit."
+            # ...and then actually keep it out of the committed ledger. Writing there is
+            # the default, so --allow-dirty on its own re-opens exactly the hole the
+            # refusal above closes: the merge is by target, so one throwaway TCG boot
+            # REPLACES that target's real rows and drags the document's accel down with
+            # it. Found by running this demo against the defaults and watching 5 KVM rows
+            # become 1 dirty TCG row.
+            [ "$COMMITTED_DEST" = 0 ] || die "--allow-dirty would merge a throwaway run
+  into the committed evidence ($LEDGER). Send it somewhere else as well:
+    --ledger /tmp/scratch.json --golden-dir /tmp/scratch-golden" ;;
+    esac
+fi
 if [ -w /dev/kvm ]; then ACCEL=KVM; else
     ACCEL=TCG
     say "${Y}no writable /dev/kvm: every boot below runs under TCG, 10-20x slower.${O}"
