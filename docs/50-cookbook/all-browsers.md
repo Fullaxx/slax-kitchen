@@ -1,7 +1,9 @@
 # `all-browsers` — six browsers in one bundle
 
-**Status: boot-verified** — built, packed, and booted to `slax login:` with all three livekit
-markers under TCG. The six browsers have **not been run**; that would be `runtime-verified`.
+**Status: runtime-verified** — built, packed, booted to `slax login:` with all three livekit
+markers, and then **all six browsers launched and used** in a desktop under QEMU on 2026-09-16.
+That last part is the rung: every other claim on this page is about files being in the right
+place, and this one is a person opening each browser and finding it works.
 
 > **CI builds this weekly, not on every push** — the only recipe treated that way. Its four vendor
 > signing keys are pinned by sha256, so a rotation fails the build *by design*, and that is someone
@@ -246,9 +248,10 @@ stands on its own. `05-chromium` was never only Chromium: it carries `libnss3`, 
 
 ## What it does *not* do
 
-- **It has not been run.** `boot-verified` means the image reached `slax login:` with all three
-  livekit markers. Nobody has opened any of the six browsers. That is `runtime-verified`, and it
-  needs a desktop boot.
+- ~~**It has not been run.**~~ It has: all six launched and worked in a QEMU desktop on
+  2026-09-16, which is what moved this page to `runtime-verified`. What that does *not* cover is
+  any particular browser version — see the next point — or real hardware, where the GPU and its
+  firmware are the things a virtual machine cannot speak for.
 - **It does not pin browser versions.** `stable main` is a moving target for all four vendors, so two
   builds a week apart produce different browsers. Only the signing *keys* are pinned — and those are
   live URLs the vendors rewrite, so a rotation fails the build with a `want`/`got` mismatch rather

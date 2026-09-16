@@ -497,12 +497,22 @@ def main(argv: list[str]) -> int:
     if a.mode == "kernel" and not r["serial_text"].strip():
         print("  FAIL: serial log is empty -- the kernel produced no output at all")
         rc = 1
-    # A menu mode WITH expectations has been pointed at a serial entry. An empty log
-    # there means the keystrokes missed it -- which is exactly how this test catches its
-    # own misconfiguration rather than passing on a boot it never observed.
-    if a.mode != "kernel" and a.expect and not r["serial_text"].strip():
-        print(f"  FAIL: serial log is empty, but --expect was given. The --keys sequence "
+    # A menu mode WITH expectations has been pointed at a serial entry. Reaching NO
+    # livekit marker means the keystrokes missed it and something else booted -- which is
+    # how this test catches its own misconfiguration rather than reporting a boot it never
+    # selected as a product failure.
+    #
+    # Emptiness is the wrong test, and it was the first one here: OVMF writes its own
+    # banner to the serial port, so a UEFI run that missed the menu entirely still leaves
+    # ~4 KB of firmware chatter and this never fired. Found by booting a 32-bit image
+    # whose GRUB timeout was shorter than the keystroke lead: three FAILs about missing
+    # markers, and a screenshot of a perfectly good Fluxbox desktop.
+    if (a.mode != "kernel" and a.expect
+            and not any(m in r["serial_text"] for m in LIVEKIT_MARKERS)):
+        print(f"  FAIL: no livekit marker reached the serial log, so the --keys sequence "
               f"({a.keys!r}) did not select an entry with console=ttyS0.")
+        print(f"        The guest may well have booted fine on a DIFFERENT entry -- check "
+              f"the screenshot before blaming the image.")
         rc = 1
     for want in a.expect:
         if want in r["serial_text"]:

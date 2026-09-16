@@ -27,6 +27,11 @@ steps:
   # the ESP. The GRUB menu is generated from isolinux.cfg, so entries added by other
   # recipes are mirrored automatically -- which is why this recipe should run last.
   #
-  # Note x86_64 only: upstream ships no bootia32.efi and neither do we.
+  # The EFI BINARY is x86_64 only -- upstream ships no bootia32.efi and neither do we --
+  # which is a statement about the FIRMWARE, not about the target. A 32-bit UEFI machine
+  # is not covered. A 64-bit one booting the 32-bit ISO is: measured 2026-09-16, OVMF
+  # loads BOOTX64.EFI, GRUB 2.12 boots the i686 kernel, and livekit reaches all three
+  # markers in six seconds. So `arch: [32bit, 64bit]` above is right, and this note used
+  # to read as if it were not.
   - verb: boot.uefi
     timeout: "{{menu_timeout}}"

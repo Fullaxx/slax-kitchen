@@ -44,18 +44,38 @@ _serial_keys() {
 
     if [ "$_sk_mode" = uefi ]; then
         _sk_n=$(awk '/^menuentry /{i++} /console=ttyS/{print i-1; exit}' "$_sk_d/cfg")
-        rm -rf "$_sk_d"
-        [ -n "$_sk_n" ] || return 1
-        # TEN SECONDS, measured, not padded. Any keypress stops GRUB's countdown -- but
+        # DERIVED FROM THE IMAGE, not assumed. Any keypress stops GRUB's countdown -- but
         # only once GRUB exists, and OVMF under TCG spends about nine seconds in firmware
         # first: a screendump at 9 s is still blank and one at 14 s already shows the EFI
-        # stub loading the kernel, so the five-second default window had opened and shut.
-        # A two-second lead worked under KVM and would have failed every weekly CI run.
+        # stub loading the kernel. So a two-second lead works under KVM and misses every
+        # time under TCG, which is what a fixed number gets you.
         #
-        # Ten lands inside the window under both, given the wider timeout that
-        # profiles/boot-matrix.yaml asks uefi-bootable for. On an image built with the
-        # default 5 s timeout this is still correct under TCG and merely slow under KVM.
-        _sk_k="10s"; _sk_i=0
+        # A fixed TEN is no better in the other direction, and I shipped it before finding
+        # out: on an image with GRUB's default 5 s timeout, a 10 s lead arrives after the
+        # menu has gone and the DEFAULT entry has booted. The comment here used to claim
+        # that case was "merely slow under KVM". It is not slow, it is wrong -- the test
+        # then asserts against a boot it never selected.
+        #
+        # So read the timeout out of the generated grub.cfg and stay inside it.
+        _sk_t=$(awk -F= '/^set timeout=/{print $2; exit}' "$_sk_d/cfg")
+        rm -rf "$_sk_d"
+        [ -n "$_sk_n" ] || return 1
+        : "${_sk_t:=5}"
+        if [ "$_sk_t" -ge 15 ]; then
+            _sk_k="10s"
+        else
+            # Too narrow to survive OVMF's firmware phase under TCG. Two seconds is right
+            # under KVM; say plainly that it is a gamble anywhere slower, and name the
+            # knob rather than leaving someone to rediscover this.
+            _sk_k="2s"
+            printf '  %snote: this image gives GRUB %ss. Under TCG, OVMF alone takes ~9 s,%s\n' \
+                "$Y" "$_sk_t" "$O" >&2
+            printf '  %s      so the menu may be missed and the DEFAULT entry booted. Raise it%s\n' \
+                "$Y" "$O" >&2
+            printf '  %s      with uefi-bootable'"'"'s menu_timeout (profiles/boot-matrix.yaml uses 30).%s\n' \
+                "$Y" "$O" >&2
+        fi
+        _sk_i=0
         while [ "$_sk_i" -lt "$_sk_n" ]; do _sk_k="$_sk_k,down"; _sk_i=$((_sk_i+1)); done
         printf '%s,ret\n' "$_sk_k"
         return 0

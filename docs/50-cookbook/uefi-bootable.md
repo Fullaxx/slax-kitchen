@@ -142,8 +142,13 @@ The 4 MB difference is GRUB's, not ours — the module list
 
 ## Limitations
 
-- **x86_64 only.** There is no `bootia32.efi`, matching upstream — a 32-bit UEFI machine is not
-  covered, even on the 32-bit ISO.
+- **x86_64 firmware only.** There is no `bootia32.efi`, matching upstream — a 32-bit UEFI machine
+  is not covered, even on the 32-bit ISO.
+
+  This is about the firmware, not the target, and the difference is worth stating because the
+  recipe's own inline comment used to blur it. **The 32-bit ISO boots fine on 64-bit UEFI**:
+  measured 2026-09-16, OVMF loads `BOOTX64.EFI`, GRUB 2.12 boots the i686 kernel, and livekit
+  reaches all three markers in six seconds. `compat: arch: [32bit, 64bit]` is correct.
 - **No Secure Boot.** Slax's kernel is unsigned and there is no shim. With Secure Boot enabled the
   firmware will refuse GRUB. Disable it, or enroll your own keys.
 - Combine with [`isohybrid`](isohybrid.md) to also get a GPT, which is what makes a `dd`'d stick
