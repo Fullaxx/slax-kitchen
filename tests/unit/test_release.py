@@ -163,7 +163,12 @@ def test_notes_say_what_was_not_done():
     #
     # What stays unconditional is the part a reader would otherwise assume: which
     # targets were not booted, and that nothing here claims a desktop came up.
-    check_in("names targets Tier C did not reach", "Tier C was not run on", out)
+    # "Tier C was not run", not "...was not run on X": this must hold whichever branch
+    # the notes took. With no ledger it is the blanket denial; with a partial one it
+    # names the targets. Pinning the longer phrase tied this test to one branch, and it
+    # went red the moment the other one was correct -- the same trap the hardcoded
+    # sentence set before it.
+    check_in("names what Tier C did not reach", "Tier C was not run", out)
     check_in("distinguishes the unbooted targets",
              "matrix-verified, not boot-verified", out)
     check_in("does not overclaim a desktop", "No release claims a desktop came up", out)

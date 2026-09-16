@@ -383,6 +383,8 @@ H
       build) cat <<'H'
 kitchen build <profile> [options]  unpack -> apply -> pack -> test
 
+  --base TARGET        build against a different base than the profile pins,
+                       e.g. slackware-64bit-15.0.4 (see compat/sources.yaml)
   --keep               keep the work tree afterwards
   --force              rebuild from scratch, overwriting the work tree and ISO
   --no-test            skip the profile's test list

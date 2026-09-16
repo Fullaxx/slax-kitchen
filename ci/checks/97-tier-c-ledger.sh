@@ -34,9 +34,9 @@ RUN_KEYS = {"accel": str, "golden": str, "iso_bytes": int, "iso_name": str,
             "markers": list, "missing": list, "path": str, "profile": str,
             "result": str, "screenshot_bytes": int, "seconds_ceiling": int,
             "target": str, "waited_s": (int, float), "run_tag": str,
-            "busybox": str}
-REQUIRED_RUN = {"accel", "iso_bytes", "iso_name", "markers", "missing", "path",
-                "profile", "result", "target"}
+            "busybox": str, "commit": str, "date": str}
+REQUIRED_RUN = {"accel", "commit", "iso_bytes", "iso_name", "markers", "missing",
+                "path", "profile", "result", "target"}
 PATHS = {"bios", "uefi", "usb", "persistence", "kernel"}
 RESULTS = {"pass", "fail"}
 ACCELS = {"kvm", "tcg"}
@@ -94,6 +94,8 @@ for i, r in enumerate(doc.get("runs", [])):
         bad.append(f"{where}.iso_name: {r['iso_name']!r} is a path, not a name")
     if r.get("iso_bytes", 1) <= 0:
         bad.append(f"{where}.iso_bytes: should be a real size")
+    if r.get("commit") in ("", "unknown"):
+        bad.append(f"{where}.commit: a run that cannot name its tree is not evidence")
 
 def walk(o, where):
     if isinstance(o, str):
@@ -112,7 +114,9 @@ if bad:
     for b in bad:
         print(f"  {b}")
     raise SystemExit(1)
-print(f"  tier-c ledger: {len(doc['runs'])} runs, commit {doc['commit']}, "
-      f"accel {doc['accel']}")
+targets = sorted({r["target"] for r in doc["runs"]})
+commits = sorted({r.get("commit", "?") for r in doc["runs"]})
+print(f"  tier-c ledger: {len(doc['runs'])} runs over {len(targets)} target(s), "
+      f"commit{'s' if len(commits) > 1 else ''} {', '.join(commits)}")
 PY
 check_result

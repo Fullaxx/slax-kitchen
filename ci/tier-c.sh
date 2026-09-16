@@ -175,7 +175,7 @@ with open(jsonl) as f:
             r = json.loads(line)
             r["target"] = target
             r["profile"] = profile
-            rows.append(r)
+            rows.append(r)   # commit/date stamped below, once we know them
 if not rows:
     print("  no runs recorded -- nothing to write", file=sys.stderr)
     raise SystemExit(1)
@@ -196,19 +196,46 @@ if not commit:
           file=sys.stderr)
     raise SystemExit(1)
 
+# MERGE BY TARGET, do not overwrite. Four targets are four invocations, and the first
+# version of this wrote the file outright -- so a four-target sweep ended with a ledger
+# describing only whichever target ran last, which is exactly the kind of quiet
+# under-reporting the ledger exists to prevent.
+#
+# Replacing a target wholesale rather than appending to it: a re-run of one target must
+# supersede its previous rows, not accumulate a history of them. The ledger says what is
+# true now, and git says what was true before.
+kept = []
+if os.path.isfile(ledger):
+    try:
+        prev = json.load(open(ledger))
+        kept = [r for r in prev.get("runs", []) if r.get("target") != target]
+    except Exception as e:                         # noqa: BLE001
+        print(f"  refusing to merge into an unreadable ledger: {e}", file=sys.stderr)
+        raise SystemExit(1)
+
+# Per row, because merging makes the top-level commit a claim about only the LAST target
+# run. Four targets done across two days at two commits is a legitimate thing to have
+# done, and a ledger that reports one commit for all of it is not describing it.
+for r in rows:
+    r["commit"] = commit
+    r["date"] = datetime.date.today().isoformat()
+
+merged = kept + rows
 doc = {
     "kitchen": sh("./kitchen", "version").replace("kitchen ", "").split()[0] or "unknown",
     "commit": commit,
     "qemu": qemu,
     "accel": accel.lower(),
     "date": datetime.date.today().isoformat(),
-    "runs": sorted(rows, key=lambda r: (r["target"], r["path"], r.get("run_tag", ""))),
+    "runs": sorted(merged, key=lambda r: (r["target"], r["path"], r.get("run_tag", ""))),
 }
 os.makedirs(os.path.dirname(ledger) or ".", exist_ok=True)
 with open(ledger, "w") as f:
     json.dump(doc, f, indent=2, sort_keys=True)
     f.write("\n")
-print(f"  ledger   {ledger} ({len(rows)} runs)")
+covered = sorted({r["target"] for r in merged})
+print(f"  ledger   {ledger} ({len(rows)} new, {len(merged)} total, "
+      f"{len(covered)} target(s): {', '.join(covered)})")
 PY
 
 # -------------------------------------------------------------- leak check ----

@@ -93,11 +93,14 @@ if [ -f "$TIERC_LEDGER" ] && command -v python3 >/dev/null 2>&1; then
 fi
 if [ -z "${TIERC:-}" ]; then
     TIERC="**Tier C was not run.** The full boot matrix -- BIOS menu, UEFI, USB image,
-persistence, boot to desktop -- needs \`/dev/kvm\`, which GitHub-hosted runners do not
-have. Nothing here claims a desktop came up.
+persistence -- needs \`/dev/kvm\`, which GitHub-hosted runners do not have.
 
-The other three targets are matrix-verified, not boot-verified. They build and their
-structure is correct; they were not booted."
+All four targets are matrix-verified, not boot-verified. They build and their structure
+is correct; they were not booted.
+
+No release claims a desktop came up. Tier C asserts that every boot path reaches
+\`Live Kit done\` and assembles the filesystem it should; a person looking at Fluxbox is
+\`runtime-verified\`, which is a different rung."
 fi
 
 cat <<EOF

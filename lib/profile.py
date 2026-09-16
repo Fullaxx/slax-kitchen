@@ -26,9 +26,36 @@ def resolve_base_iso(base: dict) -> tuple[str, str]:
     return os.path.join(ROOT, "isos", name), "derived"
 
 
+def base_override(target: str) -> dict:
+    """Turn a target name into a base dict, validating it against compat/sources.yaml.
+
+    Checked rather than split-and-hope: `debain-64bit-12.2.0` would otherwise sail
+    through, derive a plausible ISO path, and fail much later with "base ISO not found"
+    pointing at a filename nobody typed. sources.yaml is the authority on which four
+    targets exist, so ask it.
+    """
+    import yaml
+    src = os.path.join(ROOT, "compat", "sources.yaml")
+    known = list((yaml.safe_load(open(src)) or {}).get("targets", {}))
+    if target not in known:
+        raise SystemExit(f"--base: unknown target {target!r}\n"
+                         f"  known: {', '.join(sorted(known))}")
+    flavour, arch, version = target.split("-", 2)
+    return {"flavour": flavour, "arch": arch, "version": version}
+
+
 def main(argv: list[str]) -> int:
+    override = None
+    argv = list(argv)
+    if "--base" in argv:
+        i = argv.index("--base")
+        if i + 1 >= len(argv):
+            print("--base: needs a target, e.g. slackware-64bit-15.0.4", file=sys.stderr)
+            return 2
+        override = base_override(argv[i + 1])
+        del argv[i:i + 2]
     if len(argv) != 2:
-        print(f"usage: {argv[0]} <profile.yaml>", file=sys.stderr)
+        print(f"usage: {argv[0]} <profile.yaml> [--base <target>]", file=sys.stderr)
         return 2
     path = argv[1]
     if not os.path.isfile(path):
@@ -49,6 +76,10 @@ def main(argv: list[str]) -> int:
     import yaml
     doc = yaml.safe_load(open(path))
     base = doc["base"]
+    if override:
+        # Replace outright rather than merge: a profile that pins an explicit `iso:` for
+        # one target must not keep pointing at it when asked for a different one.
+        base = override
     iso, how = resolve_base_iso(base)
     out = doc.get("output", {}) or {}
     name = out.get("name") or f"slax-{doc['metadata']['name']}-{base['version']}.iso"

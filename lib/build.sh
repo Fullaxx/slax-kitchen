@@ -284,12 +284,18 @@ kitchen_build() {
     # existing ISO -- the work-tree half worked only because that check happens before
     # unpack is called -- while its help said "rebuild from scratch, overwriting the work
     # tree and ISO".
-    profile="" keep=0 skip_test=0 bld_force=0
+    profile="" keep=0 skip_test=0 bld_force=0 bld_base=""
     while [ $# -gt 0 ]; do
         case "$1" in
             --keep)      keep=1; shift ;;
             --no-test)   skip_test=1; shift ;;
             -f|--force)  bld_force=1; shift ;;
+            # Build a profile against a DIFFERENT base than the one it pins. A profile
+            # describes a recipe set; which of the four targets to apply it to is a
+            # property of the run. Without this, covering all four meant four near
+            # identical profile files to keep in sync -- and the Tier C matrix covered
+            # exactly the one target boot-matrix happened to name.
+            --base)      bld_base=$2; shift 2 ;;
             -h|--help)      usage_cmd build; return 0 ;;
             -*) die "build: unknown option $1" ;;
             *)  profile=$1; shift ;;
@@ -298,7 +304,8 @@ kitchen_build() {
     [ -n "$profile" ] || die "build: need a profile (see profiles/)"
 
     # Parse + validate the profile in one step; a bad profile must fail before any work.
-    _vars=$(python3 "$REPO_ROOT/lib/profile.py" "$profile") || exit 1
+    _vars=$(python3 "$REPO_ROOT/lib/profile.py" "$profile" ${bld_base:+--base "$bld_base"}) \
+        || exit 1
     eval "$_vars"
 
     printf '%sbuild%s %s\n' "$B" "$O" "$PROFILE_NAME"
@@ -336,7 +343,9 @@ kitchen_build() {
         exit 1
     fi
 
-    work="work/$PROFILE_NAME"
+    # Per TARGET, not per profile: building boot-matrix for all four targets in sequence
+    # would otherwise have each unpack land on the last one's tree.
+    work="work/$PROFILE_NAME-$BASE_FLAVOUR-$BASE_ARCH-$BASE_VERSION"
     if [ -e "$work" ] && [ "$bld_force" != 1 ]; then
         die "build: $work exists (use --force to rebuild from scratch)"
     fi
