@@ -1,0 +1,104 @@
+{
+  "accel": "kvm",
+  "commit": "3cd273e",
+  "date": "2026-09-16",
+  "kitchen": "0.1.0-dev",
+  "qemu": "8.2.2",
+  "runs": [
+    {
+      "accel": "kvm",
+      "golden": "created",
+      "iso_bytes": 442499072,
+      "iso_name": "slax-boot-matrix-debian-64bit-12.2.0.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "bios",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 14263,
+      "seconds_ceiling": 120,
+      "target": "debian-64bit-12.2.0",
+      "waited_s": 5.5
+    },
+    {
+      "accel": "kvm",
+      "golden": "match",
+      "iso_bytes": 442499072,
+      "iso_name": "slax-boot-matrix-debian-64bit-12.2.0.iso",
+      "markers": [
+        "Live Kit done, starting slax",
+        "perch-marker: absent"
+      ],
+      "missing": [],
+      "path": "persistence",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "run_tag": "perch1",
+      "screenshot_bytes": 8089,
+      "seconds_ceiling": 120,
+      "target": "debian-64bit-12.2.0",
+      "waited_s": 4.0
+    },
+    {
+      "accel": "kvm",
+      "golden": "match",
+      "iso_bytes": 442499072,
+      "iso_name": "slax-boot-matrix-debian-64bit-12.2.0.iso",
+      "markers": [
+        "Live Kit done, starting slax",
+        "perch-marker: present"
+      ],
+      "missing": [],
+      "path": "persistence",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "run_tag": "perch2",
+      "screenshot_bytes": 8089,
+      "seconds_ceiling": 120,
+      "target": "debian-64bit-12.2.0",
+      "waited_s": 4.0
+    },
+    {
+      "accel": "kvm",
+      "golden": "match",
+      "iso_bytes": 442499072,
+      "iso_name": "slax-boot-matrix-debian-64bit-12.2.0.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "uefi",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 34773,
+      "seconds_ceiling": 120,
+      "target": "debian-64bit-12.2.0",
+      "waited_s": 5.5
+    },
+    {
+      "accel": "kvm",
+      "golden": "match",
+      "iso_bytes": 442499072,
+      "iso_name": "slax-boot-matrix-debian-64bit-12.2.0.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "usb",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 14280,
+      "seconds_ceiling": 120,
+      "target": "debian-64bit-12.2.0",
+      "waited_s": 5.5
+    }
+  ]
+}

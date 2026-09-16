@@ -154,10 +154,19 @@ def test_notes_say_what_was_not_done():
     for section in ("## Changes", "## What was verified", "## Provenance",
                     "## Redistribution"):
         check_in("section present", section, out)
-    check_in("names the rung not reached", "Tier C was not run", out)
-    check_in("says why", "/dev/kvm", out)
-    check_in("distinguishes the three unbooted targets",
+    # These three used to assert the blanket "Tier C was not run" and the words
+    # "/dev/kvm". That sentence was a CONSTANT, and pinning a constant is what would
+    # have stopped the notes telling the truth once Tier C had actually run -- this
+    # test would have failed on the honest output. It is derived from
+    # tests/boot/tier-c.json now, and BOTH branches live in
+    # test_tier_c_claim_follows_the_evidence, with their own fixtures.
+    #
+    # What stays unconditional is the part a reader would otherwise assume: which
+    # targets were not booted, and that nothing here claims a desktop came up.
+    check_in("names targets Tier C did not reach", "Tier C was not run on", out)
+    check_in("distinguishes the unbooted targets",
              "matrix-verified, not boot-verified", out)
+    check_in("does not overclaim a desktop", "No release claims a desktop came up", out)
     # A release must not inherit the per-push skip list. ci.yml decides that with a
     # `startsWith(github.ref, 'refs/tags/')` guard, which nothing here can execute -- so
     # pin the CLAIM instead, and let it fail loudly if someone ever weakens the release

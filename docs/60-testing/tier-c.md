@@ -12,6 +12,10 @@ harness but can never be the evidence. That split is the whole design of this pa
 ./ci/tier-c.sh
 ```
 
+Measured on a KVM host: **37 seconds** for all four paths — 5.5 s each for the three
+bootloader boots and 4 s for each half of the persistence pair, plus the ISO reads
+between them. Under TCG the same four are minutes, which is why CI runs them weekly.
+
 Everything here runs on **any KVM-capable Linux host** with `qemu-system-x86_64`,
 `qemu-img`, `xorriso`, `e2fsprogs` and OVMF. Nothing is specific to a particular machine,
 and nothing about the machine ends up in the repository.

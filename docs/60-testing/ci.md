@@ -209,7 +209,7 @@ MATRIX_SKIP= ./ci/recipe-matrix.sh debian-64bit-12.2.0 isos/slax-64bit-debian-12
 ```
 
 **The Tier C boot matrix** — BIOS, UEFI, USB device and persistence across two boots.
-About 25 seconds for all four with KVM:
+About 37 seconds for all four with KVM:
 
 ```sh
 ./kitchen build boot-matrix
