@@ -148,6 +148,11 @@ produce the ledger, so it writes one to a scratch path and uploads it as an arti
 it *does* own is the golden diff: if a recipe change alters the assembled filesystem, the
 weekly run goes red against the committed block.
 
+Measured on a GitHub runner: **2 m 07 s** for the build and all five boots, inside a boot
+job of 3 m 21 s. That job was eight minutes before this work, so it now does four more
+boots in less than half the time — the screenshot modes it replaced spent 240 seconds
+asleep and could only fail on a zero-byte PNG.
+
 It is off the per-push path. Four boots is four boots, and the last trimming pass took
 this job from eight minutes to one by not paying for boots nobody reads.
 

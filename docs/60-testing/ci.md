@@ -183,10 +183,23 @@ log was 0 bytes and nothing noticed.
 
 ## Boot tests are slow, and that is a runner limitation
 
-GitHub runners have no `/dev/kvm`, so QEMU falls back to TCG and a boot to livekit takes minutes
-instead of seconds. The boot job is therefore kept to one target and off the per-PR path — add the
-`boot-test` label to a PR to opt in. `kitchen test` says which mode it is using rather than
+GitHub runners have no `/dev/kvm`, so QEMU falls back to TCG and a boot to livekit takes tens of
+seconds instead of four. The boot job is therefore kept to one target and off the per-PR path — add
+the `boot-test` label to a PR to opt in. `kitchen test` says which mode it is using rather than
 appearing to hang.
+
+Measured on a GitHub runner, the whole boot job:
+
+| step | | |
+|---|---|---|
+| build the `example` profile | 26 s | per push |
+| boot (direct kernel, asserts livekit markers) | **20 s** | per push |
+| [Tier C](tier-c.md) — build `boot-matrix`, then four paths, five boots | **2 m 07 s** | weekly |
+| | **3 m 21 s** | whole job, weekly |
+
+It was **8 minutes** before the last two passes, of which about 480 seconds was `time.sleep`. The
+job is now less than half that *and* runs four more boots, every one of which asserts — the
+screenshot modes it replaced could only fail on a zero-byte PNG that nothing ever opened.
 
 Serial logs and screenshots upload as artifacts on every boot run, pass or fail. The screenshot is
 not a nicety: **a bootloader menu never reaches the serial log**, because isolinux and GRUB draw to
