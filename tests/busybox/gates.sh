@@ -221,8 +221,21 @@ elif [ "$(id -u)" != 0 ]; then
 else
     G5=$(mktemp -d)
     mkdir -p "$G5/pristine" "$G5/work/iso/slax/boot" "$G5/after"
+    # ABSOLUTE, because both extractions below cd first. Passed `build/initrfs.img` --
+    # which is what CI passes -- the relative path resolved against $G5/pristine, cpio
+    # got an empty stream, and the failure surfaced two steps later as
+    # "stock-busybox not found". Exactly the bug this same run found in
+    # _initramfs_unpack, in a script written the same afternoon.
+    INITRFS=$(cd "$(dirname "$INITRFS")" && pwd)/$(basename "$INITRFS")
     cp "$INITRFS" "$G5/work/iso/slax/boot/initrfs.img"
-    ( cd "$G5/pristine" && xz -dc "$INITRFS" | cpio -id --quiet ) 2>/dev/null
+    # stderr NOT discarded: it was, and that is why the real error was invisible.
+    if ! ( cd "$G5/pristine" && xz -dc "$INITRFS" | cpio -id --quiet ) \
+         || [ ! -f "$G5/pristine/bin/busybox" ]; then
+        bad "gate 5: could not extract a pristine initramfs from $INITRFS"
+        rm -rf "$G5"
+        printf '\n%d passed, %d failed, %d skipped\n' "$pass" "$fail" "$skip"
+        exit 1
+    fi
 
     # The stock blob is the one inside the image we are rolling back to.
     cp "$G5/pristine/bin/busybox" "$G5/stock-busybox"
