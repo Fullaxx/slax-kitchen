@@ -16,7 +16,7 @@ not to:
 |---|---|
 | `bundle.packages` | ✅ **not blocked** — needs `CAP_SYS_CHROOT` + `CAP_MKNOD` only, not `CAP_SYS_ADMIN`. `apt-get install` completes with exit 0 inside an extracted bundle with no `/proc` mounted |
 | Busybox gates 1–3 | ✅ **not blocked** — the shipped i386 static busybox executes directly on an x86-64 host, so applet-parity and output-differential tests are milliseconds, not VM boots |
-| **Tier C boot matrix** | ✅ **done** — `ci/tier-c.sh`, four paths, ~37 s a run with KVM. See [Tier C](../60-testing/tier-c.md) |
+| **Tier C boot matrix** | ✅ **done** — `ci/tier-c.sh`, four paths, ~45 s a run with KVM. See [Tier C](../60-testing/tier-c.md) |
 | Busybox **gate 5** | ✅ **not blocked, and never was** — the rollback proof is seconds and needs no KVM. It was filed here by mislabelling; it runs in CI now |
 | Busybox **gate 4** | the boot half — rides on `ci/tier-c.sh` with `initramfs-busybox` applied |
 | **A real-hardware `mdev`/`modprobe` bench** | ⛔ genuinely wants hardware, though the PXE third of it is reachable under QEMU with user-mode networking |

@@ -28,7 +28,7 @@ candidate in the initramfs. The persistence pair is the point of it — two boot
 disk is the hardest exercise of `losetup`, `df` and `date` in the system, and those are
 exactly the applets gate 2 diffs statically.
 
-**Run on 2026-09-16 at `a61fcde`, `debian-64bit-12.2.0`, under KVM: 5 boots, 37 s, all
+**Run on 2026-09-16 at `a61fcde`, `debian-64bit-12.2.0`, under KVM: 5 boots, 37 s (before the UEFI lead widened), all
 green.** And the result worth reporting is a diff. Against the same image built with the
 stock 2017 binary, the assembled filesystem differs by **one line**:
 

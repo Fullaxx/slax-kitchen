@@ -12,9 +12,17 @@ harness but can never be the evidence. That split is the whole design of this pa
 ./ci/tier-c.sh
 ```
 
-Measured on a KVM host: **37 seconds** for all four paths — 5.5 s each for the three
-bootloader boots and 4 s for each half of the persistence pair, plus the ISO reads
-between them. Under TCG the same four are minutes, which is why CI runs them weekly.
+Measured, both ways, on the same image:
+
+| | KVM host | unaccelerated container, TCG |
+|---|---|---|
+| all four paths, wall clock | **45 s** | **128 s** |
+| time to the livekit markers, per boot | 4.0–5.5 s | 21–22 s |
+
+The per-boot figures are time to the markers *after* the menu keystrokes; the UEFI path
+additionally waits 10 s before touching the menu, for reasons measured below. The TCG
+column is the shape the weekly CI run has, and every boot in it matched the golden
+generated under KVM — which is what a golden about an artifact ought to do.
 
 Everything here runs on **any KVM-capable Linux host** with `qemu-system-x86_64`,
 `qemu-img`, `xorriso`, `e2fsprogs` and OVMF. Nothing is specific to a particular machine,

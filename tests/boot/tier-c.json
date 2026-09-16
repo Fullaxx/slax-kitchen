@@ -1,6 +1,6 @@
 {
   "accel": "kvm",
-  "commit": "3cd273e",
+  "commit": "bd6a3e6",
   "date": "2026-09-16",
   "kitchen": "0.1.0-dev",
   "qemu": "8.2.2",
@@ -19,7 +19,7 @@
       "path": "bios",
       "profile": "boot-matrix",
       "result": "pass",
-      "screenshot_bytes": 14263,
+      "screenshot_bytes": 14276,
       "seconds_ceiling": 120,
       "target": "debian-64bit-12.2.0",
       "waited_s": 5.5
@@ -76,7 +76,7 @@
       "path": "uefi",
       "profile": "boot-matrix",
       "result": "pass",
-      "screenshot_bytes": 34773,
+      "screenshot_bytes": 34803,
       "seconds_ceiling": 120,
       "target": "debian-64bit-12.2.0",
       "waited_s": 5.5
@@ -95,10 +95,10 @@
       "path": "usb",
       "profile": "boot-matrix",
       "result": "pass",
-      "screenshot_bytes": 14280,
+      "screenshot_bytes": 14291,
       "seconds_ceiling": 120,
       "target": "debian-64bit-12.2.0",
-      "waited_s": 5.5
+      "waited_s": 5.0
     }
   ]
 }
