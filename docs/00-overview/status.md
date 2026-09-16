@@ -131,10 +131,9 @@ different things.
 
 | rung | pages |
 |---|---|
-| `schema-valid` — the YAML validates; nothing has been built yet | 2 |
 | `matrix-verified` — builds and passes structure assertions on its declared targets | 16 |
 | `artifact boot-verified` — booted, and `testkit` confirms the artifact reached the union | 4 |
-| `boot-verified` — booted to `slax login:` with all three livekit markers | 10 |
+| `boot-verified` — booted to `slax login:` with all three livekit markers | 12 |
 | `runtime-verified` — the feature was watched working | 3 |
 
 ### Documentation

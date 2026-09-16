@@ -118,15 +118,25 @@ steps:
   #
   # KEEP: FALSE EVERYWHERE, AND IT DOES NOT MEAN WHAT IT SOUNDS LIKE. It keeps kitchen's
   # own source list and pinned keyring out of the bundle. It cannot keep the REPOSITORIES
-  # out, because all four vendor postinsts install their own repository and key and that
-  # is ordinary dpkg output, which no exclusion pattern reaches. Measured from the .debs:
-  # google-chrome.sources, brave-browser.sources, microsoft-edge.sources, vivaldi.sources,
-  # each with a keyring -- and brave-browser Depends on brave-keyring, whose postinst
-  # symlinks its key into /etc/apt/trusted.gpg.d/, trusted for EVERY source rather than
-  # its own. So the finished image trusts four vendors either way; that is accepted and
-  # documented, not hidden. keep: false is still right because kitchen's copy would be a
-  # DUPLICATE of what the package already installs -- apt would fetch eight indexes
-  # instead of four. `apt update && apt upgrade` works regardless.
+  # out, because the vendor postinsts install their own and that is ordinary dpkg output,
+  # which no exclusion pattern reaches. Measured by reading the BUILT bundle, not the
+  # .debs, because the two disagree:
+  #
+  #   google-chrome.sources    -> dl.google.com/linux/chrome-stable/deb/   Signed-By: scoped
+  #   microsoft-edge.sources   -> packages.microsoft.com/repos/edge-stable Signed-By: scoped
+  #   vivaldi.sources          -> repo.vivaldi.com/stable/deb/             Signed-By: scoped
+  #   brave                    -> NO SOURCE FILE AT ALL, but brave-keyring symlinks its
+  #                               key into /etc/apt/trusted.gpg.d/, trusted for EVERY
+  #                               source. None of the benefit, all of the exposure.
+  #
+  # So the image trusts three vendors and can upgrade those three in place; Brave it can
+  # neither upgrade nor scope. That is accepted and documented, not hidden. keep: false is
+  # still right, because kitchen's copy would DUPLICATE what the package already installs
+  # -- apt would fetch the same index twice. `apt update && apt upgrade` works regardless.
+  #
+  # Brave's postinst is visibly copy-pasted from Chrome's and unfinished: its REPOCONFIG
+  # and gen_sources_content both name dl.google.com. Had its source file shipped it would
+  # have pointed a Brave-labelled source at Google's repository. Their bug, not ours.
   #
   # Keys are pinned by sha256 and re-fetched 2026-09-16; byte counts are recorded so a
   # mismatch can be told apart from a truncated download. These are live URLs that

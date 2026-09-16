@@ -1,9 +1,9 @@
 # `debian-browsers` — a current Chromium and Firefox, on both arches
 
-**Status: schema-valid** — the YAML validates and every number below was read from Debian's own
-index, but **nothing has been built**. No bundle exists, no ISO has been packed, and no browser has
-been run. Raise this to `matrix-verified` after a real `ci/recipe-matrix.sh` run on both Debian
-targets, and not before.
+**Status: boot-verified** — built on both Debian targets, packed, and booted to `slax login:` with
+all three livekit markers under TCG. CI's recipe matrix builds it on `debian-64bit-12.2.0` and
+`debian-32bit-12.2.0`. The browsers themselves have **not been run**; that would be
+`runtime-verified`.
 
 ```sh
 kitchen apply debian-browsers
@@ -46,10 +46,28 @@ September 2023, so this is a large jump in a browser's worth of security fixes.
 Plus `libavcodec59` at 14.3 MiB and `libgl1-mesa-dri` at 26.2 MiB (i386) / 24.6 MiB (amd64)
 installed, both named deliberately — see below.
 
-**ISO ≈ 517 MiB — estimated, not measured.** 416 MiB stock, minus 79.1 for the removed
-`05-chromium`, plus roughly 180 MiB of bundle at the ~3.4:1 ratio this repo has measured twice
-before. Comparable to adding LibreOffice — and unlike [`all-browsers`](all-browsers.md), `toram`
-stays practical.
+### Built — measured 2026-09-16
+
+| | 64-bit | 32-bit |
+|---|---|---|
+| `05-chromium.sb` removed | −79 MiB | −81 MiB |
+| `14-browsers.sb` | **223.3 MiB**, 736 files | **226.8 MiB**, 714 files |
+| declared in the dpkg fragment | 53 packages | 52 packages |
+| delta | 861 added, 141 modified | 838 added, 140 modified |
+| merged database | 622 packages | 622 packages |
+| **ISO** | **560.0 MiB** | **561.1 MiB** |
+| boot | 3/3 livekit markers | 3/3 livekit markers |
+
+The estimate written before the build was ~517 MiB — 416 − 79 + ~180 MiB of bundle at the ~3.4:1
+ratio this repo had measured twice before. **The real figure is 560 MiB, 8% higher**, because the
+bundle came out at 223 MiB rather than 180: browser binaries hold more already-compressed data than
+the office suite that ratio was drawn from. The estimate is recorded rather than quietly replaced,
+because the direction of the error is the useful part.
+
+Two things nobody predicted, both real: the 32-bit bundle is *larger* than the 64-bit one despite
+i386 binaries usually being smaller, and it declares one package fewer.
+
+Unlike [`all-browsers`](all-browsers.md) at 1227 MiB, `toram` stays practical here.
 
 > **A gotcha, if you go looking for these versions yourself.** They are in **`bookworm-security`**,
 > not `bookworm` — main still carries chromium 150.0.7871.100 and firefox-esr 140.12.0esr. The
@@ -105,8 +123,9 @@ does not change.
 
 ## What it does *not* do
 
-- **It is not verified.** `schema-valid` is the highest rung this has reached. Nothing has been built,
-  packed or booted.
+- **It has not been run.** `boot-verified` means the image reached `slax login:` with all three
+  livekit markers, on both arches. Nobody has opened either browser. That is `runtime-verified`, and
+  it needs a desktop boot.
 - **It does not pin versions.** `bookworm-security` moves, which is the point of using it — two builds
   a month apart produce different browsers.
 - **It does not leave the base system's libraries untouched, despite nothing being "upgraded".** No
@@ -116,8 +135,12 @@ does not change.
   ships inside this bundle, and **at boot the union serves that newer copy to the whole system**,
   because the higher bundle number wins. The stock bundles stay byte-identical on the ISO —
   `kitchen probe` still recognises them — while their contents are partly shadowed at runtime. Mostly
-  benign, since bookworm-security holds ABI stable within the release, but the scale is
-  **unmeasured**.
+  benign, since bookworm-security holds ABI stable within the release. **Measured on the 64-bit
+  build: 77 regular files**, out of 666 in the bundle, exist in a stock bundle too and are now served
+  from this one. They are dominated by mesa's DRI drivers — `iris_dri.so`, `radeonsi_dri.so`,
+  `swrast_dri.so` and the rest — because `libgl1-mesa-dri` was refreshed. The build line reports
+  `141 modified`, but that counts directories too, whose mtimes change whenever anything lands
+  inside them; 77 is the file count.
 - **It does not make Chromium runnable as root.** Chromium refuses, which is why both Slax flavours
   ship a `guest` user (uid 1000) purely to run the browser. Firefox is the exception. Nothing here
   changes who the desktop runs as.

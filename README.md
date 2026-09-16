@@ -181,8 +181,8 @@ ISO identity.
 **Verification is not uniform, and every cookbook page says which rung it reached.** The ladder
 runs schema-valid → gate-clean → matrix-verified → artifact boot-verified → boot-verified →
 runtime-verified, it is defined in [CONTRIBUTING.md](CONTRIBUTING.md), and a commit gate enforces
-the vocabulary. Today: **2 schema-valid, 16 matrix-verified, 4 artifact boot-verified,
-10 boot-verified, 3 runtime-verified**. Claiming a rung you did not reach is the one thing this project treats as a
+the vocabulary. Today: **16 matrix-verified, 4 artifact boot-verified, 12 boot-verified,
+3 runtime-verified**. Claiming a rung you did not reach is the one thing this project treats as a
 real error.
 
 See [the cookbook](docs/50-cookbook/), [all 23 verbs](docs/90-reference/verbs.md), and

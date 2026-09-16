@@ -1,9 +1,8 @@
 # `all-browsers` — six browsers in one bundle
 
-**Status: schema-valid** — the YAML validates and every number below was read from a vendor index or
-out of a `.deb`, but **nothing has been built**. No bundle exists, no ISO has been packed, and no
-browser has been run. Raise this to `matrix-verified` after a real
-`ci/recipe-matrix.sh debian-64bit-12.2.0`, and not before.
+**Status: boot-verified** — built, packed, and booted to `slax login:` with all three livekit
+markers under TCG. CI's recipe matrix builds it on `debian-64bit-12.2.0` and correctly skips the
+other three targets. The six browsers have **not been run**; that would be `runtime-verified`.
 
 ```sh
 kitchen apply all-browsers
@@ -47,10 +46,17 @@ version in each — which is what apt installs.
 **Estimated, not measured.** Two compression data points exist in this repo for large Debian
 payloads — LibreOffice and `chromium-current`, both about **3.4:1**. Applying that:
 
-| | |
-|---|---|
-| bundle | **~0.77–0.89 GiB** *(unverified)* |
-| ISO | 416 MiB stock − 79.1 (`05-chromium` removed) + the above = **~1.10–1.20 GiB** *(unverified)* |
+| | estimated before the build | **measured 2026-09-16** |
+|---|---|---|
+| `13-browsers.sb` | ~0.77–0.89 GiB | **890.7 MiB**, 2,960 files |
+| ISO | ~1.10–1.20 GiB | **1227.5 MiB** |
+| declared in the dpkg fragment | — | 60 packages |
+| delta | — | 3,380 added, 153 modified |
+| merged database | — | 629 packages |
+| boot | — | 3/3 livekit markers |
+
+Both estimates landed, and both landed at the **top** of their range — which is what the reasoning
+below predicted they would do.
 
 [composing-bundles](../40-workflow/composing-bundles.md) independently predicts **1.0–1.2 GB for a
 seven-browser image**, written before this recipe existed. Two calculations with no shared inputs
@@ -110,28 +116,38 @@ pinned keyring out of the bundle. It cannot keep the *repositories* out, because
 packages install their own repository and key in their postinst, and that is ordinary dpkg output
 which no exclusion pattern can reach. Measured by reading the `control.tar` of each `.deb`:
 
-| package | writes |
-|---|---|
-| `google-chrome-stable` | `/etc/apt/sources.list.d/google-chrome.sources`, `/usr/share/keyrings/google-chrome.gpg` |
-| `brave-browser` | `brave-browser.sources`, `/usr/share/keyrings/brave-browser.gpg` |
-| `microsoft-edge-stable` | `microsoft-edge.sources`, `/usr/share/keyrings/microsoft-edge.gpg` |
-| `vivaldi-stable` | `vivaldi.sources`, `/usr/share/keyrings/vivaldi-16BD9233.gpg` |
+Read out of the built bundle with `unsquashfs -ll`, not predicted:
 
-Brave is the sharpest of the four. `brave-browser` **Depends on `brave-keyring`**, a separate package
-whose postinst ends in:
+| shipped in `13-browsers.sb` | repository | key |
+|---|---|---|
+| `google-chrome.sources` | `dl.google.com/linux/chrome-stable/deb/` | `Signed-By: …/google-chrome.gpg` |
+| `microsoft-edge.sources` | `packages.microsoft.com/repos/edge-stable` | `Signed-By: …/microsoft-edge.gpg` |
+| `vivaldi.sources` | `repo.vivaldi.com/stable/deb/` | `Signed-By: …/vivaldi-16BD9233.gpg` |
+| **`brave` — no sources file at all** | — | `trusted.gpg.d` symlink, **global** |
 
-```sh
-ln -sf /usr/share/keyrings/brave-browser-archive-keyring.gpg \
-       /etc/apt/trusted.gpg.d/brave-browser-release.gpg
+Those three are the *good* form: the repository is enabled and its key is scoped to it with
+`Signed-By:`. A booted Slax carrying this bundle will `apt-get update` against Google, Microsoft and
+Vivaldi and can upgrade those three browsers in place.
+
+**Brave is the sharp one, and it is sharp in the opposite direction to what you would guess.** It
+ships *no* source file — so `apt upgrade` will never update Brave — while `brave-browser` Depends on
+`brave-keyring`, whose postinst symlinks its key into the global trust store. Measured, in the
+bundle:
+
+```
+lrwxrwxrwx /etc/apt/trusted.gpg.d/brave-browser-release.gpg
+             -> /usr/share/keyrings/brave-browser-archive-keyring.gpg
 ```
 
 `/etc/apt/trusted.gpg.d/` is trusted for **every** source, not just Brave's — strictly weaker than
-the `signed-by=` pinning kitchen uses. Its two guard clauses test for a
-`sources.list.d/brave-browser-release.list` that kitchen never writes, and `brave-keyring` is
-configured *before* `brave-browser` writes its own list, so the guards miss and the symlink lands.
+the `Signed-By:` scoping the other three use. So Brave ends up with none of the benefit and all of
+the exposure: no upgrade path, and a globally trusted key.
 
-So a booted Slax carrying this bundle will `apt-get update` against Google, Brave, Microsoft and
-Vivaldi and holds their keys. If that is not acceptable for your image, use
+> Why no Brave source file is **unverified**, but its postinst is visibly copy-pasted from Google
+> Chrome's and not finished: `REPOCONFIG` is set to `https://dl.google.com/linux/chrome/deb/`, and
+> `gen_sources_content()` emits `URIs: https://dl.google.com/linux/chrome-stable/deb/` under the
+> name `X-Repolib-Name: Brave Web Browser`. Had that file shipped, it would have pointed a
+> Brave-labelled source at Google's repository. This is a Brave packaging bug, not a kitchen one. If that is not acceptable for your image, use
 [`debian-browsers`](debian-browsers.md), which has none of it. If you want these six browsers *and*
 the repositories disabled, mask them from the writable layer rather than fighting dpkg — rootcopy
 beats every bundle, and [`remove-chromium`](remove-chromium.md) documents the same trick for a
@@ -224,14 +240,17 @@ stands on its own. `05-chromium` was never only Chromium: it carries `libnss3`, 
 
 ## What it does *not* do
 
-- **It is not verified.** `schema-valid` is the highest rung this has reached. Nothing has been built,
-  packed or booted, and every size above is arithmetic over indexes.
+- **It has not been run.** `boot-verified` means the image reached `slax login:` with all three
+  livekit markers. Nobody has opened any of the six browsers. That is `runtime-verified`, and it
+  needs a desktop boot.
 - **It does not pin browser versions.** `stable main` is a moving target for all four vendors, so two
   builds a week apart produce different browsers. Only the signing *keys* are pinned — and those are
   live URLs the vendors rewrite, so a rotation fails the build with a `want`/`got` mismatch rather
   than trusting a new key. That is the design working, and it needs a maintenance commit when it
   happens.
-- **It does not keep the vendor repositories out of your image** — see the warning above.
+- **It does not keep the vendor repositories out of your image** — see the warning above. Measured:
+  three of the four ship an enabled source, and the fourth ships a globally trusted key with no
+  source at all.
 - **It does not make the browsers runnable as root.** Chromium and every Chromium-derived browser
   here refuse to run as root, which is why both Slax flavours ship a `guest` user (uid 1000) purely to
   run the browser. Firefox is the exception. Nothing in this recipe changes who the desktop runs as.
@@ -242,16 +261,24 @@ stands on its own. `05-chromium` was never only Chromium: it carries `libnss3`, 
   delta's `modified` set, ships inside this bundle, and **at boot the union serves that newer copy to
   the whole system**, because the higher bundle number wins. The stock bundles stay byte-identical on
   the ISO — `kitchen probe` still recognises them — while their contents are partly shadowed at
-  runtime. Mostly benign, since bookworm-security holds ABI stable within the release, but the scale
-  is **unmeasured**.
+  runtime. Mostly benign, since bookworm-security holds ABI stable within the release. **Measured:
+  77 regular files**, out of 2,872 in the bundle, exist in a stock bundle too and are now served from
+  this one — dominated by mesa's DRI drivers, because `libgl1-mesa-dri` was refreshed. Notably that
+  is the *same 77 files*, byte-for-byte the same set, that [`debian-browsers`](debian-browsers.md)
+  shadows: the four extra browsers add ~2,200 files and shadow nothing further, because they install
+  under `/opt/` and their own directories rather than over Debian's. (The build line reports
+  `153 modified`; that counts directories, whose mtimes change whenever anything lands inside them,
+  so it is an upper bound. 77 is the file count.)
 - **It does not add desktop entries beyond what the packages register.** Each installs a `.desktop`
   file and registers `x-www-browser` through `update-alternatives`, and Slax's "Web Browser" button
   routes through `fbliveapp chromium`, which still finds `/usr/bin/chromium` and works. Whether the
   other five appear in `xlunch` or `fbappselect` is **unverified**.
 - **It does not give you Tor Browser** — see above.
 - **It does not work on 32-bit or on Slackware**, and the `compat:` block says why.
-- **It does not shrink.** This is by a wide margin the largest thing in this cookbook — roughly three
-  times LibreOffice — and it turns a 416 MiB ISO into something over a gigabyte.
+- **It does not shrink.** By a wide margin the largest thing in this cookbook: an 890.7 MiB bundle,
+  roughly **seven and a half times** LibreOffice's 116 MiB, turning a 416 MiB ISO into 1227.5 MiB.
+  It also costs CI real time — the `debian-64bit` build job went from 7 minutes to 20 when this
+  recipe landed, and all of that increase is this one recipe.
 
 ## Slackware
 

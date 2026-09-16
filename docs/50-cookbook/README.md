@@ -2,12 +2,11 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Thirty-five recipes ship today.** All but the two newest are built and structurally asserted on
-all four targets by CI (or on the subset each `compat:` block declares). Each page opens with the
-rung of the [verification ladder](../../CONTRIBUTING.md) it actually reached — `schema-valid`,
-`matrix-verified`, `artifact boot-verified`, `boot-verified` or `runtime-verified` — and the
-`95-status-vocab` gate rejects any other word. `all-browsers` and `debian-browsers` are
-`schema-valid` today: written and validated, not yet built.
+**Thirty-five recipes ship today.** Every one is built and structurally asserted on all four
+targets by CI (or on the subset its `compat:` block declares). Each page opens with the rung of
+the [verification ladder](../../CONTRIBUTING.md) it actually reached — `matrix-verified`,
+`artifact boot-verified`, `boot-verified` or `runtime-verified` — and the `95-status-vocab` gate
+rejects any other word.
 
 What is left is the work that needs more than YAML — a static busybox build, the `kernel.replace`
 verb, and `boot-tools`, whose module source turned out not to be the obvious one.
@@ -59,7 +58,7 @@ to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
 | [`remove-chromium`](remove-chromium.md) | the named preset for the above: −79 MiB Debian, −115 MiB Slackware | ○ |
 | [`chromium-current`](chromium-current.md) | replace the 2023 browser — stock is chromium **117**, from September 2023 | ◐ |
 | [`debian-browsers`](debian-browsers.md) | current Chromium **and** Firefox in one bundle — both arches, no vendor repos | ◐ |
-| [`all-browsers`](all-browsers.md) | six browsers in one bundle, replacing the stock one — 64-bit, **~1.1 GiB ISO** | ◐ |
+| [`all-browsers`](all-browsers.md) | six browsers in one bundle, replacing the stock one — 64-bit, **1227 MiB ISO** | ◐ |
 | [`firefox-esr`](firefox-esr.md) | add the second browser no Slax image ships; amd64 **and** i386 | ◐ |
 | [`libreoffice`](libreoffice.md) | Writer, Calc, Impress and Draw — 116 MiB, the largest single addition here | ◐ |
 | [`branding`](branding.md) | hostname, version string and login banner, from a 4 KiB override bundle | ○ |
