@@ -1,7 +1,7 @@
 #!/bin/sh
-# Busybox replacement gates 1-3 -- millisecond checks, no VM.
+# Busybox replacement gates 1-3 and 5 -- second-scale checks, no VM.
 #
-#   tests/busybox/gates.sh <candidate-busybox> <stock-initramfs-dir>
+#   tests/busybox/gates.sh <candidate-busybox> <stock-initramfs-dir> [initrfs.img]
 #
 # The shipped i386 busybox EXECUTES DIRECTLY on an x86_64 host, so the stock binary is
 # available as a reference oracle rather than only as a description. That is what makes
@@ -15,11 +15,27 @@
 #   3  script replay      source the REAL livekitlib under the candidate's ash and
 #                         exercise its pure functions -- catches shell drift, not just
 #                         applet output
+#   5  rollback proof     re-apply the recipe with the STOCK blob and confirm the
+#                         initramfs comes back byte-for-byte -- needs initrfs.img and
+#                         CAP_MKNOD, skips without either
+#
+# GATE 5 WAS NEVER A HOST TASK. HOST_TASKS filed it under H-003 as "gates 4-5 + a
+# real-hardware bench", but INITIAL_PLAN defines it as "re-apply with the stock blob and
+# confirm the ISO returns to its committed fingerprint -- seconds". No KVM, no hardware.
+# It sat in the host queue for months because of a label.
+#
+# It runs the REAL verb rather than a restatement of its rules. A gate that reimplements
+# what it is checking tests the reimplementation; this one hands lib/apply.py the stock
+# binary and compares what comes back out.
+#
+# Gate 4 -- a real boot with the candidate in the initramfs -- is genuinely a boot test
+# and lives in ci/tier-c.sh, which needs an image and a machine that can run one.
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 CAND=${1:-}
 STOCK_DIR=${2:-}
+INITRFS=${3:-}
 pass=0; fail=0; skip=0
 
 R='\033[31m'; G='\033[32m'; Y='\033[33m'; O='\033[0m'
@@ -183,6 +199,82 @@ else
         bad "gate 3: livekitlib behaves differently under the candidate's ash"
         printf "        1.26.2:\n%s\n        cand:\n%s\n" "$sa" "$sb"
     fi
+fi
+
+# ---------------------------------------------------------- gate 5: rollback ------------
+# Reversibility is a claim INITIAL_PLAN made about this recipe and nothing ever checked:
+# "kitchen apply retains the original blob so the change is reversible". It does not
+# retain anything -- there is no backup or restore anywhere in lib/apply.py. So the
+# testable form of the claim is the one that matters anyway: applying the recipe with the
+# STOCK binary must reproduce the stock initramfs exactly. If it does, a fork can get
+# back to a pristine image by re-applying rather than re-downloading.
+#
+# The interesting failure would be a CURATED symlink set: the verb generates one link per
+# `busybox --list` applet, so if upstream shipped fewer, the rollback would leave extras
+# behind. Measured on debian-64bit: 248 applets, 245 symlinks, and the difference is
+# exactly the three applets shadowed by real files (busybox, blkid, eject). So it should
+# come back clean -- but "should" is why the gate exists.
+if [ -z "$INITRFS" ] || [ ! -f "$INITRFS" ]; then
+    note "gate 5: no initrfs.img given (pass it as the third argument)"
+elif [ "$(id -u)" != 0 ]; then
+    note "gate 5: needs CAP_MKNOD to repack the initramfs (run as root)"
+else
+    G5=$(mktemp -d)
+    mkdir -p "$G5/pristine" "$G5/work/iso/slax/boot" "$G5/after"
+    cp "$INITRFS" "$G5/work/iso/slax/boot/initrfs.img"
+    ( cd "$G5/pristine" && xz -dc "$INITRFS" | cpio -id --quiet ) 2>/dev/null
+
+    # The stock blob is the one inside the image we are rolling back to.
+    cp "$G5/pristine/bin/busybox" "$G5/stock-busybox"
+    chmod +x "$G5/stock-busybox"
+
+    cat > "$G5/rollback-probe.yaml" <<YAML
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: rollback-probe
+  summary: gate 5 -- re-apply initramfs.busybox with the stock blob
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: mknod
+steps:
+  - verb: initramfs.busybox
+    src: $G5/stock-busybox
+YAML
+
+    if "$HERE/../../kitchen" apply "$G5/rollback-probe.yaml" -w "$G5/work" >"$G5/apply.log" 2>&1; then
+        ( cd "$G5/after" && xz -dc "$G5/work/iso/slax/boot/initrfs.img" | cpio -id --quiet ) \
+            2>/dev/null
+        # Compare structure and content, not the cpio container: archive order and
+        # timestamps are not reproducible and are not what reversibility means.
+        manifest() {
+            ( cd "$1" && find . \( -type f -o -type l -o -type d \) -printf '%y %m %p ' \
+                -a \( -type l -printf '-> %l' \) -a -printf '\n' | sort )
+        }
+        sums() {
+            ( cd "$1" && find . -type f -print0 | sort -z \
+                | xargs -0 sha256sum 2>/dev/null | sort )
+        }
+        if manifest "$G5/pristine" > "$G5/m1" && manifest "$G5/after" > "$G5/m2" \
+           && diff -q "$G5/m1" "$G5/m2" >/dev/null; then
+            if sums "$G5/pristine" > "$G5/s1" && sums "$G5/after" > "$G5/s2" \
+               && diff -q "$G5/s1" "$G5/s2" >/dev/null; then
+                ok "gate 5: re-applying with the stock blob restores the initramfs exactly ($(wc -l < "$G5/m1") entries)"
+            else
+                bad "gate 5: file CONTENT differs after a stock rollback"
+                diff "$G5/s1" "$G5/s2" | head -10 | sed 's/^/        /'
+            fi
+        else
+            bad "gate 5: the initramfs TREE differs after a stock rollback"
+            diff "$G5/m1" "$G5/m2" | head -10 | sed 's/^/        /'
+        fi
+    else
+        bad "gate 5: applying the rollback recipe failed"
+        tail -5 "$G5/apply.log" | sed 's/^/        /'
+    fi
+    rm -rf "$G5"
 fi
 
 rm -rf "$CLIST" "$FIX"

@@ -99,6 +99,30 @@ if [ -n "$want" ]; then
     done
 fi
 
+# ...and the same for the GATE count, which is the identical failure with a third noun.
+# Adding ci/checks/97-tier-c-ledger.sh took the tree from twelve gates to thirteen and
+# instantly made six shipped files wrong -- CONTRIBUTING.md in four places, status.md,
+# ci.md and containers/README.md. Every one of them was accurate when written. A number
+# spelled out in words is exactly the fact nobody thinks to re-check, which is why the
+# other two counts are already gated here.
+n=$(find "$REPO_ROOT/ci/checks" -maxdepth 1 -name '*.sh' | wc -l | tr -d ' ')
+want=$(numword "$n")
+[ -n "$want" ] || note "90-doc-coverage: no word for $n gates; count check skipped"
+if [ -n "$want" ]; then
+    words='one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty'
+    # Anchored, for the same reason the upstream-issue rule anchors on a link: "gates" is
+    # an ordinary word here. The busybox replacement has its own five-gate harness, and
+    # "had only three gates written" is a true sentence about a different set. A line is
+    # claiming THIS count only if it also names the thing that runs them.
+    anchor='commit gates|selftest|ci/checks|run-checks|doctor --strict'
+    for f in $(check_files_nl | grep -E '\.md$' | grep -v '^vendor/'); do
+        [ -f "$REPO_ROOT/$f" ] || continue
+        hit=$(grep -niE "\b($words)\b[[:space:]]+(commit[[:space:]]+)?gates\b" \
+              "$REPO_ROOT/$f" | grep -iE "$anchor" | grep -ivE "\b$want\b") || true
+        [ -n "$hit" ] && fail "${f}: $(echo "$hit" | head -1) -- there are $n gates (want '$want')"
+    done
+fi
+
 # ...and the same for the upstream-issue count, which is the identical failure with a
 # different noun -- and a worse instance. Bugs 13 and 14 were appended months apart while
 # the count lived in prose in four OTHER files, so by 2026-09-16 three files said twelve,

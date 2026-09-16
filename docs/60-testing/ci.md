@@ -5,11 +5,11 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` → `gates` | every push and PR | the twelve commit gates, ~1 min, no ISOs |
+| `ci.yml` → `gates` | every push and PR | the thirteen commit gates, ~1 min, no ISOs |
 | `ci.yml` → `container` | every push and PR | builds the reference container on **both** `ubuntu:24.04` and `debian:12`, then `doctor --strict` and the gates *inside* each |
 | `ci.yml` → `build` | every push and PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
 | `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | one direct-kernel QEMU boot under TCG, asserting |
-| `ci.yml` (weekly) | Thursdays 05:41 UTC, or dispatch | the same, plus the skipped recipes and the two screenshot boots |
+| `ci.yml` (weekly) | Thursdays 05:41 UTC, or dispatch | the same, plus the skipped recipes and the [Tier C](tier-c.md) boot matrix |
 | `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml` — **the full matrix**, not the per-push subset — then publish |
 | `upstream-watch.yml` | Mondays 06:17 UTC, or dispatch | linux-live HEAD, new Slax release, mirror health, pinned signing keys |
 
@@ -119,12 +119,20 @@ They are 416–476 MiB each and are never committed. `kitchen fetch` downloads f
 hostile mirror cannot poison a build. CI caches on the content hash of that file, so each ISO is
 downloaded at most once and re-verified on every run.
 
-## Boot tests: one asserts, two are evidence
+## Boot tests: one per push, four more weekly
 
 ```sh
-kitchen test out.iso --kernel --seconds 240      # the assertion, on every push
-kitchen test out.iso --bios --uefi               # the evidence, weekly
+kitchen test out.iso --kernel --seconds 240              # every push
+ci/tier-c.sh                                             # weekly: bios, uefi, usb, persistence
 ```
+
+**All five assert.** The bootloader boots did not until recently — their serial log was
+empty by construction, so the only way either could fail was a zero-byte screenshot that
+nothing ever opened, and they reported success for four CI runs while proving nothing.
+Two fixes changed that: `kitchen test` now points the bootloader at the entry
+[`serial-console`](../50-cookbook/serial-console.md) adds, by reading the ISO's own menu;
+and that entry's `console=` order was reversed, because `/dev/console` is the *last* one
+and userspace had been writing to the screen. [Tier C](tier-c.md) has both in full.
 
 ### `--seconds` is a ceiling, not a bill
 
@@ -200,11 +208,16 @@ exactly what the weekly run does:
 MATRIX_SKIP= ./ci/recipe-matrix.sh debian-64bit-12.2.0 isos/slax-64bit-debian-12.2.0.iso
 ```
 
-**The screenshot boots**, if you want to see a bootloader rather than trust a serial log:
+**The Tier C boot matrix** — BIOS, UEFI, USB device and persistence across two boots.
+About 25 seconds for all four with KVM:
 
 ```sh
-./kitchen test out/slax-example-12.2.0.iso --bios --uefi --seconds 120
+./kitchen build boot-matrix
+./ci/tier-c.sh
 ```
+
+It writes `tests/boot/tier-c.json` and the testkit goldens, which are what a release's
+Tier C claim is derived from. See [Tier C](tier-c.md).
 
 **Boot it and actually look at it.** This is the part CI structurally cannot do, and it is where a
 local machine earns its place — the recipe matrix is apt and `mksquashfs` and gains nothing from
@@ -356,8 +369,18 @@ fetched by a movable tag and run as root on the machine that builds the ISO.
 
 [node24]: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
 
-## Not in CI yet
+## Not in CI, and why
 
-The full Tier C matrix — USB image boot and persistence across two boots — needs KVM to be practical.
-See [what is blocked on this machine](../00-overview/status.md#blocked-on-this-machine) and
+**A desktop.** Tier C asserts that every boot path reaches `Live Kit done` and assembles
+the filesystem it should. Whether Fluxbox came up is `runtime-verified`, and it needs a
+person and a window — [QEMU by hand](qemu.md).
+
+**The committed Tier C evidence.** GitHub-hosted runners have no `/dev/kvm`, so CI runs
+the four paths under TCG to prove the harness still works, and writes its ledger to a
+scratch path. `tests/boot/tier-c.json` comes from a KVM host. What CI *does* own is the
+golden diff — a recipe change that alters the assembled filesystem turns the weekly run
+red against the committed block.
+
+**Real hardware, and Secure Boot enrolment.** See
+[what is blocked on this machine](../00-overview/status.md#blocked-on-this-machine) and
 [container vs host](../40-workflow/container-vs-host.md).

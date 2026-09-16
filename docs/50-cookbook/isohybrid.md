@@ -1,6 +1,8 @@
 # `isohybrid` — make the ISO `dd`-able to a USB stick
 
-**Status: matrix-verified** — MBR, GPT and an EFI System Partition entry confirmed in the built image.
+**Status: boot-verified** — MBR, GPT and an EFI System Partition entry confirmed in the built image,
+and the image booted as a `usb-storage` device on `debian-64bit-12.2.0`, reaching all three livekit
+markers.
 
 ```sh
 kitchen apply isohybrid
@@ -59,6 +61,26 @@ the case where you want a single file you can write anywhere, quickly, and treat
 
 Needs `/usr/lib/ISOLINUX/isohdpfx.bin` — the SYSLINUX hybrid MBR template, from the `isolinux`
 package. Preflight checks for it before doing any work, and names the package if it is missing.
+
+## Proving it boots as a stick, without a stick
+
+The structural assertion says an MBR is there. Booting it says the MBR works:
+
+```sh
+kitchen test out/slax-custom.iso --usb
+```
+
+QEMU attaches the ISO as a real USB mass-storage device, so what boots is byte-for-byte
+what a `dd`'d stick would be — **no copy to a `usb.img` first**, which is what the runbook
+used to say and was 440 MiB of litter per run. Two details the obvious command line gets
+wrong: `-device usb-storage` needs a controller (`-device qemu-xhci`) or it dies with
+`No 'usb-bus' bus found`, and `-drive` opens read-write by default, so without
+`readonly=on` the guest holds a writable handle on the artifact under test.
+
+This runs weekly in CI and on any KVM host via [`ci/tier-c.sh`](../60-testing/tier-c.md).
+It is still not a real stick — that needs
+[H-004](../40-workflow/host-handoff.md), a physical device and two physical machines.
+
 
 ## Combine with `uefi-bootable`
 

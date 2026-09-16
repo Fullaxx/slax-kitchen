@@ -81,7 +81,7 @@ Run these four, in this order. They are fast and they answer most questions outr
 ./kitchen probe out/my.iso             # is the output what I think it is?
 ```
 
-**`selftest ci`** runs the same twelve gates CI runs. If it fails, fix that first — you are not
+**`selftest ci`** runs the same thirteen gates CI runs. If it fails, fix that first — you are not
 looking at the bug you think you are.
 
 **`doctor`** is the single most useful thing to paste into a report. It reports every tool it needs,
@@ -138,8 +138,15 @@ markers: `Looking for slax data`, `Mounting bundles`, `Live Kit done, starting s
 marker is missing tells you the stage.** The serial log and a screenshot land in a
 `boot-tests/` directory beside the ISO.
 
-The other modes prove less than they look: `--structure` parses the ISO and never boots anything;
-`--bios` and `--uefi` capture a screenshot of the boot menu and are **evidence, not assertions**.
+`--structure` parses the ISO and never boots anything.
+
+`--bios`, `--uefi` and `--usb` go through a real bootloader, and `--persistence` boots twice onto
+one disk. They **assert** on an ISO carrying [`serial-console`](docs/50-cookbook/serial-console.md):
+`kitchen test` reads the ISO's own menu, points the loader at that entry, and checks the same three
+markers. On an ISO without such an entry they fall back to screenshot evidence *and say so* — "I
+could not check" and "I checked and it is fine" are different claims, and for four CI runs these
+modes reported the second while meaning the first. All four together are
+[Tier C](docs/60-testing/tier-c.md).
 
 **Use `debug`.** Adding `debug` to the kernel command line drops you to a shell at six points inside
 `/init`. It is the fastest way to answer "how far did it get".
@@ -321,7 +328,7 @@ cause, or one would change the other's fix, say so in the issue.
 ### The bar
 
 ```sh
-./kitchen selftest ci        # all twelve gates, or it will not merge
+./kitchen selftest ci        # all thirteen gates, or it will not merge
 ```
 
 The gates enforce, among other things: no binaries in the repository, no gitignored working files,
@@ -356,7 +363,7 @@ something specific:
 | Rung | Means | How |
 |---|---|---|
 | **schema-valid** | the YAML is well-formed, and every key is one a verb reads | `kitchen validate` |
-| **gate-clean** | the tree passes the twelve gates | `kitchen selftest ci` |
+| **gate-clean** | the tree passes the thirteen gates | `kitchen selftest ci` |
 | **matrix-verified** | it builds and passes structure assertions on all four targets | `ci/recipe-matrix.sh` |
 | **artifact boot-verified** | it booted, and `testkit` confirmed the artifact reached the union | `testkit` + `kitchen test --kernel` |
 | **boot-verified** | it booted to `slax login:` with all three livekit markers | `kitchen test --kernel` |
@@ -418,7 +425,7 @@ A new verb needs: the implementation, the `schema/recipe.schema.json` enum entry
 [the verb reference](docs/90-reference/verbs.md), and a recipe that exercises it.
 
 Pure logic — anything that does not need an ISO — belongs in `tests/unit/test_apply.py`, which runs
-in milliseconds as one of the twelve gates. Every case in that file is a bug that actually shipped.
+in milliseconds as one of the thirteen gates. Every case in that file is a bug that actually shipped.
 
 **A check that cannot fail is worse than no check.** This has bitten this project at least four
 times — a workflow that never opened an issue because `$?` after a pipeline is `tee`'s status; a

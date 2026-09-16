@@ -17,6 +17,17 @@ vars:
     /etc/hostname /etc/slax-version /etc/timezone /etc/localtime /root/.xinitrc
     /etc/ssl/cert.pem /var/lib/connman/kitchen.config
     /etc/systemd/system/multi-user.target.wants/ssh.service /etc/rc.d/rc.local
+  # A persistence probe, off unless a profile sets it. On the first boot of a pair the
+  # file is absent and gets created; on the second it must still be there. That is the
+  # whole of the two-boot persistence assertion -- and it lives here rather than in a
+  # recipe of its own because testkit is already the "print facts a boot test can assert"
+  # recipe, and a new recipe would cost a cookbook page, an index entry and two prose
+  # counts for one `if`.
+  #
+  # It writes into the UNION, which is the point: with `perch` on, the union's writable
+  # branch is the perch session, so the file survives a reboot. Without perch the branch
+  # is tmpfs and it cannot -- which is the negative case the test needs.
+  marker: ""
 steps:
   # WHY A ROOTCOPY PREINIT AND NOT A BUNDLE. Instrumenting a boot normally means building
   # a bundle, which means mksquashfs and a repack of the ISO for every change to the
@@ -64,6 +75,31 @@ steps:
               echo "dpkg-status: $(grep -c '^Package: ' "$UNION/var/lib/dpkg/status") packages"
           else
               echo "dpkg-status: none (Slackware packs one file per package)"
+          fi
+
+          # Empty unless a profile sets `marker`, and then deliberately noisy: a boot
+          # test asserts on `absent` for run 1 and `present` for run 2. The line is
+          # excluded from golden comparison (GOLDEN_VOLATILE in qemu_boot.py) precisely
+          # because it is SUPPOSED to differ between the two.
+          if [ -n "{{marker}}" ]; then
+              if [ -f "$UNION{{marker}}" ]; then
+                  echo "perch-marker: present, written $(cat "$UNION{{marker}}" 2>/dev/null)"
+              else
+                  echo "perch-marker: absent, creating"
+                  mkdir -p "$(dirname "$UNION{{marker}}")" 2>/dev/null
+                  date -u '+%Y-%m-%dT%H:%M:%SZ' > "$UNION{{marker}}" 2>/dev/null \
+                      || echo "perch-marker: WRITE FAILED"
+                  # SYNC, AND IT IS NOT DEFENSIVE. Measured 2026-09-16: without it the
+                  # two-boot persistence test failed with the marker absent on BOTH
+                  # boots, while the serial log showed "Activating native persistent
+                  # changes for session #1" on each -- the mount and the session were
+                  # right all along, and the write was sitting in page cache when the
+                  # harness stopped the guest. The harness stops as soon as its
+                  # expectations appear, which here was four seconds in, so nothing
+                  # unflushed can ever be observed by the next boot.
+                  sync 2>/dev/null
+                  echo "perch-marker: synced"
+              fi
           fi
 
           for f in {{report}}; do

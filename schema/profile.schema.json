@@ -124,6 +124,7 @@
       "items": {
         "enum": [
           "structure",
+          "kernel-boot",
           "bios-boot",
           "uefi-boot",
           "usb",

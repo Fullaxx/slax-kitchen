@@ -1200,10 +1200,22 @@ def v_initramfs_busybox(ctx: Ctx, step: dict) -> None:
                 os.unlink(link)
                 removed += 1
 
-        # Upstream deletes bin/init after generating; reproduce that unconditionally.
+        # bin/init, and upstream does TWO things here, not one.
+        #
+        # initramfs_create:68 is `rm -f $INITRAMFS/{s,}bin/init` -- dropping the symlink
+        # busybox's own --install would have made, because `init` IS an applet and a
+        # busybox init in PATH shadows the real /init script. This code reproduced that
+        # and stopped there. But initramfs_create:155 then puts a DIFFERENT link back:
+        # `ln -s ../init $INITRAMFS/bin/init`, pointing at the real script.
+        #
+        # So every shipped Slax initramfs has `bin/init -> ../init`, and applying this
+        # recipe was deleting it. Found by busybox gate 5 on its first run: the rollback
+        # tree differed from pristine by exactly this one entry.
         init_link = os.path.join(bindir, "init")
         if os.path.islink(init_link):
             os.unlink(init_link)
+        if os.path.isfile(os.path.join(tree, "init")):
+            os.symlink("../init", init_link)
 
         ctx.say(f"symlinks: +{added} new, -{removed} stale, {kept} real files left alone")
         for shadow in ("blkid", "eject"):

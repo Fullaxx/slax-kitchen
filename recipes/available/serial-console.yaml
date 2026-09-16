@@ -16,6 +16,24 @@ steps:
   # A serial entry is the prerequisite for every automated boot test: QEMU can capture
   # ttyS0 with -nographic, so the livekit init messages become machine-readable. The
   # stock menu has no such entry, which is why boot testing needs this first.
+  #
+  # ORDER OF THE TWO console= CLAUSES, and it is the whole recipe.
+  #
+  # Linux sends KERNEL messages to every console= it is given, but /dev/console -- where
+  # USERSPACE writes -- is the LAST one only. This entry used to end
+  # `console=ttyS0,115200n8 console=tty0`, putting /dev/console on video. Measured on
+  # 2026-09-16: booting this entry through isolinux and capturing ttyS0 produced 21 KB
+  # of kernel log and ZERO livekit markers -- `Looking for slax data`, `Mounting
+  # bundles`, `Live Kit done` and the entire testkit block went to the screen, because
+  # livekitlib writes them to stderr. The same image in direct-kernel mode, whose
+  # cmdline names ttyS0 alone, produced all four.
+  #
+  # So the summary above -- "logs the whole boot to the serial port" -- was false for
+  # every line worth capturing, and so was the claim that this is "the prerequisite for
+  # every automated boot test": nothing could assert on an entry that carried no
+  # userspace output. tty0 now comes first and the serial port last, which makes the
+  # entry do what its name says. The screen still shows kernel messages; what moves is
+  # /dev/console, and therefore login and everything init prints.
   - verb: boot.menu
     targets: [isolinux.cfg, syslinux.cfg]
     add:
@@ -25,4 +43,4 @@ steps:
       append: >-
         vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw
         printk.time=0 consoleblank=0 automount
-        console={{port}},{{speed}}n8 console=tty0
+        console=tty0 console={{port}},{{speed}}n8

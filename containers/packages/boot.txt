@@ -8,7 +8,14 @@
 qemu-system-x86
 qemu-utils
 
-# OVMF firmware for the UEFI boot test. tests/boot/qemu_boot.py reads
-# /usr/share/OVMF/OVMF_CODE_4M.fd and OVMF_VARS_4M.fd by absolute path, and copies
-# VARS to a private writable file first -- the packaged one is read-only.
+# OVMF firmware for the UEFI boot test. tests/boot/qemu_boot.py searches
+# /usr/share/OVMF, /usr/share/ovmf, /usr/share/edk2/ovmf and /usr/share/qemu (and
+# honours $OVMF_CODE / $OVMF_VARS), copying VARS to a private writable file per run --
+# the packaged one is read-only and shared.
 ovmf
+
+# mkfs.ext4, for the persistence test's writable disk. ext4 on a plain file, no loop
+# device and no root: livekitlib picks its storage strategy with a live POSIX test, and
+# a filesystem that passes gets a plain bind mount instead of the DynFileFS + 16 GB XFS
+# container FAT32 would force.
+e2fsprogs

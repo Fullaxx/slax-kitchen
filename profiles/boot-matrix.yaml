@@ -1,0 +1,40 @@
+apiVersion: slax-kitchen/v1
+kind: Profile
+metadata:
+  name: boot-matrix
+  summary: The image the Tier C boot matrix is run against -- every boot path, all four targets
+# DELIBERATELY NOT THE `example` PROFILE. That one carries `add-packages`, and
+# `bundle.packages` is unsupported on Slackware (H-006: no dependency resolution, and
+# the stock mirror has drifted years past the base) -- so `example` can only ever build
+# one of the four targets. This profile carries nothing flavour-specific, which is what
+# makes widening the matrix to the other three a change of `base:` rather than a rewrite.
+base:
+  flavour: debian
+  arch: 64bit
+  version: "12.2.0"
+recipes:
+  # serial-console FIRST, because everything downstream depends on it: it adds the only
+  # menu entry with console=ttyS0, and without that entry the BIOS, UEFI and USB paths
+  # produce an empty serial log and can assert nothing. It is also why the harness needs
+  # --keys at all -- the entry is added last in the menu, never made the default, so the
+  # stock boot is untouched for anyone who does not ask for it.
+  - serial-console
+  # testkit prints facts about the ASSEMBLED filesystem just before change_root. Two
+  # jobs here: it is the payload every boot path is golden-diffed against, and `marker`
+  # turns it into the persistence probe -- absent on the first boot of a pair, present
+  # on the second.
+  - name: testkit
+    vars:
+      marker: /var/lib/kitchen-perch-marker
+  # isohybrid makes the ISO dd-able, which is what lets the same file be attached as a
+  # usb-storage device. Without it `--mode usb` has no MBR to boot and refuses.
+  - isohybrid
+  # uefi-bootable LAST: it generates the GRUB menu by parsing isolinux.cfg, so it has to
+  # run after anything that adds an entry -- serial-console above, specifically.
+  - uefi-bootable
+output:
+  name: "slax-boot-matrix-{{flavour}}-{{arch}}-{{version}}.iso"
+  hybrid: true
+test:
+  - structure
+  - kernel-boot

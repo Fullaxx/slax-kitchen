@@ -79,6 +79,27 @@ fi
 RECIPES=$(find recipes -name '*.yaml' 2>/dev/null | wc -l | tr -d ' ')
 GATES=$(find ci/checks -name '*.sh' 2>/dev/null | wc -l | tr -d ' ')
 
+# TIER C: DERIVED, NOT ASSERTED. This paragraph used to be a constant -- "Tier C was not
+# run" printed into every release whether or not that was still true -- and a unit test
+# pinned the constant, so the notes could never start telling the truth about a Tier C
+# run that HAD happened. tests/boot/tier-c.json is written by a KVM host (CI has no
+# /dev/kvm and never can), validated by ci/checks/97-tier-c-ledger.sh, and read here.
+#
+# Same shape as SHALLOW above: a condition that is usually one way, stated either way,
+# with the negative case spelled out rather than assumed.
+TIERC_LEDGER=${TIERC_LEDGER:-tests/boot/tier-c.json}
+if [ -f "$TIERC_LEDGER" ] && command -v python3 >/dev/null 2>&1; then
+    TIERC=$(python3 "$REPO_ROOT/ci/tier-c-claim.py" "$TIERC_LEDGER") || TIERC=""
+fi
+if [ -z "${TIERC:-}" ]; then
+    TIERC="**Tier C was not run.** The full boot matrix -- BIOS menu, UEFI, USB image,
+persistence, boot to desktop -- needs \`/dev/kvm\`, which GitHub-hosted runners do not
+have. Nothing here claims a desktop came up.
+
+The other three targets are matrix-verified, not boot-verified. They build and their
+structure is correct; they were not booted."
+fi
+
 cat <<EOF
 \`kitchen\` $VERSION — \`$(echo "$SHA" | cut -c1-7)\`
 
@@ -99,12 +120,7 @@ and mean exactly what they say there.
 | **matrix-verified** | every compatible recipe applied individually to all four targets, then structure-asserted — \`debian-{32,64}bit-12.2.0\`, \`slackware-{32,64}bit-15.0.4\`. A release runs the FULL matrix: the per-push path skips \`ci/slow-recipes.txt\`, a tag does not. |
 | **boot-verified** | \`debian-64bit-12.2.0\` only: direct-kernel QEMU boot under TCG, all three livekit markers, plus \`union: aufs\` and the dpkg package count |
 
-**Tier C was not run.** The full boot matrix — BIOS menu, UEFI, USB image, persistence,
-boot to desktop — needs \`/dev/kvm\`, which GitHub-hosted runners do not have. Nothing
-here claims a desktop came up.
-
-The other three targets are matrix-verified, not boot-verified. They build and their
-structure is correct; they were not booted.
+$TIERC
 $([ -n "$RUN_URL" ] && printf '\nCI run: %s' "$RUN_URL")
 
 ## Provenance

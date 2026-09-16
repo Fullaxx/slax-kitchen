@@ -9,7 +9,9 @@ deleted by hand. So the parts that can be tested without pushing a tag, are.
 The guard runs against throwaway repos rather than this one, so the cases stay true
 after KITCHEN_VERSION is bumped.
 """
+import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -177,6 +179,57 @@ def test_notes_publish_only_verifiable_hashes():
     for h in wanted:
         check_in("base ISO hash carried into the notes", h, out)
     check_in("and says why there is no ISO checksum", "not byte-reproducible", out)
+
+
+def test_tier_c_claim_follows_the_evidence():
+    """The Tier C sentence must be DERIVED, and the derivation must go both ways.
+
+    It was a constant -- "Tier C was not run" printed into every release -- pinned by a
+    unit test, which meant the notes could not start telling the truth once Tier C HAD
+    run: the test would have failed on the honest output. Both branches are asserted
+    here so neither can rot into the other.
+
+    The negative branch is what this checkout produces, because tests/boot/tier-c.json
+    is written by a KVM host and CI has none.
+    """
+    ledger = {
+        "kitchen": "0.1.0-dev", "commit": "abc1234", "qemu": "8.2.2",
+        "accel": "kvm", "date": "2026-09-16",
+        "runs": [{
+            "accel": "kvm", "golden": "match", "iso_bytes": 442499072,
+            "iso_name": "slax.iso", "markers": ["Live Kit done"], "missing": [],
+            "path": path, "profile": "boot-matrix", "result": "pass",
+            "screenshot_bytes": 1, "seconds_ceiling": 120,
+            "target": "debian-64bit-12.2.0", "waited_s": 5.0,
+        } for path in ("bios", "uefi", "usb", "persistence")],
+    }
+    tmp = tempfile.mkdtemp(prefix="tierc-")
+    path = os.path.join(tmp, "tier-c.json")
+    with open(path, "w") as fh:
+        json.dump(ledger, fh)
+
+    out = notes("v9.9.9", env={"TIERC_LEDGER": path})
+    check_in("says Tier C ran", "Tier C ran on `debian-64bit-12.2.0`", out)
+    check_in("names the commit it ran against", "abc1234", out)
+    check_in("names the paths", "bios, persistence, uefi, usb", out)
+    check_in("still names the targets it did NOT reach",
+             "Tier C was not run on `debian-32bit-12.2.0`", out)
+    check_in("does not overclaim a desktop", "No release claims a desktop came up", out)
+    check("a Tier C run does not resurrect the blanket denial",
+          "**Tier C was not run.**" in out, False)
+
+    # A failed boot must be stated, not averaged away by the ones that passed.
+    ledger["runs"][2]["result"] = "fail"
+    with open(path, "w") as fh:
+        json.dump(ledger, fh)
+    out = notes("v9.9.9", env={"TIERC_LEDGER": path})
+    check_in("a failed boot is named", "of those boots FAILED", out)
+    check_in("and says which one", "`debian-64bit-12.2.0`/usb", out)
+
+    # No ledger at all: the blanket denial comes back.
+    out = notes("v9.9.9", env={"TIERC_LEDGER": os.path.join(tmp, "absent.json")})
+    check_in("no evidence means the negative claim", "**Tier C was not run.**", out)
+    shutil.rmtree(tmp, ignore_errors=True)
 
 
 def test_notes_never_truncate_silently():

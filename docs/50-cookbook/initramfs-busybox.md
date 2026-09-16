@@ -18,6 +18,43 @@ kitchen pack -s work/iso -o out/bb.iso --force
 kitchen test out/bb.iso --kernel --seconds 300
 ```
 
+## Gate 5, and the bug it found
+
+The five-gate harness this recipe is gated on had only three gates written. Gate 4 is a
+real boot and lives in [Tier C](../60-testing/tier-c.md). **Gate 5 — the rollback proof —
+was never a host task at all**: it was filed in the deferred queue as part of "busybox
+gates 4-5 + a real-hardware bench", while its actual definition is *re-apply with the
+stock blob and confirm the initramfs comes back, seconds*. No KVM, no hardware. It runs
+in CI now, per target:
+
+```sh
+sudo tests/busybox/gates.sh build/busybox-1.37.0-i386-static build/irfs build/initrfs.img
+```
+
+It hands `lib/apply.py` the **stock** binary extracted from the image it is rolling back
+to, and compares the repacked tree against pristine — every path, mode, symlink target
+and file hash. Not the cpio container: archive order and timestamps are not reproducible
+and are not what reversibility means.
+
+**It failed on its first run, by one entry.** The stock initramfs ships
+`bin/init -> ../init`, and applying this recipe deleted it. Upstream's `initramfs_create`
+does two things and the verb had copied only the first:
+
+```sh
+:68   rm -f $INITRAMFS/{s,}bin/init      # drop the symlink busybox --install would make
+:155  ln -s ../init $INITRAMFS/bin/init  # then point one at the REAL /init script
+```
+
+`init` is a busybox applet, so a generated `bin/init` would shadow the real `/init`
+script — hence line 68. Line 155 puts a different link back. The verb now does both, and
+gate 5 reports 248 entries restored exactly.
+
+The failure worth worrying about was the other one: if upstream shipped a **curated**
+symlink set, the verb would generate one link per `busybox --list` applet and leave
+extras behind. Measured on `debian-64bit`: 248 applets, 245 symlinks, and the difference
+is exactly the three applets shadowed by real files (`busybox`, `blkid`, `eject`). Not
+curated, so a rollback is clean.
+
 ## Why
 
 `BusyBox v1.26.2 (2017-12-14)`, byte-identical on all four ISOs. Among what that means in practice:

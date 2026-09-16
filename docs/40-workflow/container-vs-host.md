@@ -85,14 +85,15 @@ a privilege above `none` under `sudo`.
 
 ## The one real exception
 
-**The Tier C boot matrix** (BIOS + UEFI + USB + persistence, booting all the way to a desktop)
-wants KVM to be practical. Note this is a speed problem, not a capability one:
+**The Tier C boot matrix** (BIOS + UEFI + USB + persistence) wants KVM to be practical. Note this is
+a speed problem, not a capability one — and the matrix now exists rather than being
+described: see [Tier C](../60-testing/tier-c.md).
 
 | Tier | What it does | Here |
 |---|---|---|
 | A — structure | parse the built ISO and assert on it | **fast**, every push |
 | B — direct kernel | `qemu -kernel … -initrd …`, exercises the whole livekit init | **works**, ~1–3 min under TCG |
-| C — full boot matrix | bootloader → desktop, persistence, USB | works but ~5–15 min/run; belongs on a KVM host |
+| C — full boot matrix | bootloader, USB device, persistence across two boots | **implemented**: `ci/tier-c.sh`. ~25 s for four paths with KVM, minutes under TCG |
 
 ## Relaxing the container
 

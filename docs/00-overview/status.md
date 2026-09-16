@@ -51,14 +51,14 @@ cannot do at all.
 
 ### Quality
 
-Eleven commit gates, shared by hooks and CI so they cannot drift. Unit tests for the recipe engine's pure
+Thirteen commit gates, shared by hooks and CI so they cannot drift. Unit tests for the recipe engine's pure
 logic run in milliseconds with no ISO. The gates have caught real bugs in their own authors' code
 repeatedly — including a `$'\r'` that silently degraded to matching `$r` under `dash`, and a link
 checker that only examined one link per line.
 
 The toolchain is one list — [`containers/packages/`](../../containers/README.md) — read by both the
 workflows and the reference container, and CI builds that container on every push and runs
-`kitchen doctor --strict` plus all twelve gates *inside* it. A `v*` tag runs the same CI and then
+`kitchen doctor --strict` plus all thirteen gates *inside* it. A `v*` tag runs the same CI and then
 publishes a Release; it attaches no ISO, for the reasons in [NOTICE.md](../../NOTICE.md), and its
 notes name the rung each target reached. See [CI](../60-testing/ci.md).
 
@@ -161,15 +161,21 @@ The dev container has no `CAP_SYS_ADMIN`, no user namespaces and no `/dev/kvm`. 
 
 | Blocked | Note |
 |---|---|
-| Tier C boot matrix (BIOS + UEFI + USB + persistence, to desktop) | QEMU works under TCG at ~5–15 min/run; wants KVM to be practical |
 | Writing to a real USB device | no block devices |
-| Secure Boot / MOK enrolment | needs real firmware |
+| Secure Boot / MOK enrolment | needs real firmware (OVMF's `secboot` variants make the *negative* proof reachable; enrolment needs a person) |
+| A real-hardware `mdev`/`modprobe` bench | wants diverse physical hardware; the PXE third of it is reachable under QEMU |
+
+**No longer blocked.** The Tier C boot matrix — BIOS, UEFI, USB image and persistence —
+runs as [`ci/tier-c.sh`](../60-testing/tier-c.md) on any KVM-capable host, about 25
+seconds for four paths. Busybox gate 5 turned out never to have been blocked at all: it is
+the rollback proof, takes seconds, needs no KVM, and had been filed in the host queue by
+mislabelling. It runs in CI.
 
 **Not blocked, contrary to the original plan:** `bundle.packages` needs only `CAP_SYS_CHROOT` and
 `CAP_MKNOD`, both of which are present, and does not need `/proc` mounted. `kitchen doctor` now
 reports it as available and no longer offers `proot`, which was rejected as unsafe.
 
-So the only genuinely blocked item is the boot matrix, and `--device /dev/kvm` alone fixes it —
+`--device /dev/kvm` alone would let this container run Tier C in place —
 `--cap-add SYS_ADMIN` and `--security-opt seccomp=unconfined` are not needed for anything.
 → [host handoff](../40-workflow/host-handoff.md)
 

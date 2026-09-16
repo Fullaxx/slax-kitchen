@@ -3,8 +3,9 @@
 Booting an image you built and **looking at it**. This is the interactive counterpart to
 [CI](ci.md), and the two answer different questions.
 
-`tests/` proves an image did not regress. It boots headless, asserts three livekit markers on a
-serial log, captures a PNG, and exits. That is the right shape for something that runs on every
+`tests/` proves an image did not regress. It boots headless through four paths — BIOS, UEFI, a USB
+device and twice onto one disk for persistence — asserts three livekit markers on each serial log,
+diffs the testkit block against a committed golden, and exits. See [Tier C](tier-c.md). That is the right shape for something that runs on every
 push — and it cannot tell you the desktop came up, the browser launches, the fonts are readable, or
 the thing is pleasant to use. Those need a person and a window.
 
@@ -167,6 +168,7 @@ So: with KVM this is an interactive tool. Without it, it is something you start 
 - **They do not replace real hardware.** QEMU tells you the image boots and the desktop works. It
   says nothing about the firmware, GPU or wireless chip in the machine you actually care about — and
   the GPU firmware question in particular is one stock Slax gets wrong.
-- **They do not test the USB route.** `dd`ing a hybrid image and booting it as a USB device is its
-  own path, with its own QEMU form (`-device usb-storage`); see
-  [host-handoff](../40-workflow/host-handoff.md).
+- **They do not assert on the USB route or persistence** — but something does.
+  `ci/tier-c.sh` boots the image as a `usb-storage` device and runs the two-boot
+  persistence test, with assertions; see [Tier C](tier-c.md). These scripts are still the
+  place to *look* at either.

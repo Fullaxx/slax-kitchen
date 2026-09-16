@@ -201,6 +201,27 @@ jobs:
               | cpio -id --quiet bin/busybox bin/blkid bin/eject lib/livekitlib )
           ./tests/busybox/gates.sh build/busybox-1.37.0-i386-static build/irfs
 
+      # GATE 5, the rollback proof, and it was never a host task. HOST_TASKS had it
+      # filed under "busybox gates 4-5 + a real-hardware bench"; INITIAL_PLAN defines it
+      # as "re-apply with the stock blob and confirm the ISO returns to its committed
+      # fingerprint -- seconds". No KVM, no hardware. It sat in the host queue for
+      # months because of a label.
+      #
+      # sudo because it repacks the initramfs, and cpio needs CAP_MKNOD for the seven
+      # device nodes -- which is also why it is a separate step from the gates above,
+      # whose whole point is that they need no privilege. It skips rather than fails
+      # without root, so a fork running this unprivileged still gets gates 1-3.
+      #
+      # It earned its place on the first run: it found that initramfs.busybox was
+      # DELETING bin/init -> ../init, a symlink upstream's initramfs_create:155 puts
+      # back after line 68 removes the busybox-generated one. The verb copied line 68
+      # and missed line 155.
+      - name: busybox gate 5 (rollback proof)
+        run: |
+          sudo ./tests/busybox/gates.sh build/busybox-1.37.0-i386-static \
+               build/irfs build/initrfs.img
+          sudo chown -R "$(id -u):$(id -g)" build
+
       # Apply every compatible recipe individually, so one failure names one recipe.
       # Recipes that need a chroot are run under sudo; runners allow it.
       #
@@ -305,22 +326,41 @@ jobs:
             --expect 'union: aufs' \
             --expect 'dpkg-status: 603 packages'
 
-      # NOT ON THE PER-PUSH PATH, and the reason is that they assert nothing. Their
-      # serial log is empty by construction -- no Slax menu entry sets console=ttyS0 --
-      # so the only way either can fail is a zero-byte screenshot, and nothing in this
-      # repository ever reads the PNG. Two boots, 240 s, for evidence a human looks at
-      # about once a quarter. Weekly, or on demand via the boot-test label.
-      - name: boot (bootloader screenshots, BIOS and UEFI)
+      # TIER C, WEEKLY. Not on the per-push path: these are four more boots, and the
+      # last pass cut this job from 8 minutes to 1 by not paying for boots nobody reads.
+      #
+      # These used to be two screenshot boots that asserted nothing -- their serial log
+      # was empty because the bootloader's DEFAULT entry sets no console=ttyS0, so the
+      # only way either could fail was a zero-byte PNG that nothing ever opened. They
+      # assert now, for two reasons that had to be found rather than assumed:
+      #
+      #   * `kitchen test` points the bootloader at the entry `serial-console` adds, by
+      #     reading the ISO's own menu. Not by counting arrow keys: the Slax isolinux
+      #     menu sets MENU ROWS 5 so the serial entry is off-screen, and two entries are
+      #     MENU DISABLED so navigation skips them. Esc twice drops to the `boot:`
+      #     prompt and the entry is typed by NAME.
+      #   * `serial-console` used to end `console=ttyS0 console=tty0`, and /dev/console
+      #     is the LAST console= -- so everything livekit printed went to the screen and
+      #     the serial log held kernel messages only. Measured: 21 KB of log, zero
+      #     livekit markers. Reversed, the entry does what its name says.
+      #
+      # CI can exercise this harness but can never BE the evidence: tests/boot/tier-c.json
+      # is written by a KVM host, and the ledger here goes to a scratch path so a TCG run
+      # cannot overwrite it. What CI does own is the golden diff -- every path must
+      # assemble a filesystem identical to the committed testkit block.
+      - name: Tier C boot matrix (weekly)
         if: >-
           github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
           || startsWith(github.ref, 'refs/tags/')
           || contains(github.event.pull_request.labels.*.name, 'boot-test')
         run: |
-          ./kitchen test out/slax-example-12.2.0.iso --bios --seconds 120
-          ./kitchen test out/slax-example-12.2.0.iso --uefi --seconds 120
+          ./kitchen build boot-matrix --no-test
+          ./ci/tier-c.sh --seconds 300 --ledger out/tier-c/ci-ledger.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: boot-evidence
-          path: out/boot-tests/
+          path: |
+            out/boot-tests/
+            out/tier-c/
           if-no-files-found: warn

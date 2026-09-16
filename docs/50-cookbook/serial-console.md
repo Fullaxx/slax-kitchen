@@ -1,6 +1,6 @@
 # `serial-console` — capture the whole boot on a serial port
 
-**Status: matrix-verified** — entry present in both menus on all four targets.
+**Status: boot-verified** — entry present in both menus on all four targets, and booted through it on `debian-64bit-12.2.0` via isolinux, GRUB/OVMF and usb-storage, reaching all three livekit markers each time.
 
 ```sh
 kitchen apply serial-console
@@ -35,23 +35,44 @@ LABEL serial
   MENU LABEL Slax (serial console on ttyS0)
   KERNEL /slax/boot/vmlinuz
   APPEND vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw
-         printk.time=0 consoleblank=0 automount console=ttyS0,115200n8 console=tty0
+         printk.time=0 consoleblank=0 automount console=tty0 console=ttyS0,115200n8
 ```
 
 Into **both** `isolinux.cfg` (CD) and `syslinux.cfg` (USB/HDD/UEFI). Since
 `EFI/Boot/syslinux.cfg` is one line — `INCLUDE /slax/boot/syslinux.cfg` — the UEFI menu picks it up
 for free.
 
-### `console=` twice, and the order matters
+### `console=` twice, and the order is the whole recipe
 
 ```
-console=ttyS0,115200n8 console=tty0
+console=tty0 console=ttyS0,115200n8
 ```
 
 Linux sends kernel messages to **every** `console=` given, but `/dev/console` — where userspace
-lands — is the **last** one. So this puts the boot log on the serial port *and* keeps an interactive
-console on the screen. Reverse them and the serial port becomes the login terminal, which is what
-you want for a truly headless box but not for a test you also want to watch.
+lands — is the **last** one.
+
+**This used to be the other way round, and it made the recipe useless for its stated purpose.**
+With `console=ttyS0 console=tty0`, `/dev/console` was the screen, so only the *kernel* wrote to
+the serial port. Everything livekit prints — it writes to stderr — went to video. Measured on
+2026-09-16, booting this entry through isolinux and capturing ttyS0:
+
+| | through the serial menu entry | direct kernel boot |
+|---|---|---|
+| bytes of serial log | 21,174 | 21,458 |
+| `Looking for slax data` | **0** | 1 |
+| `Mounting bundles` | **0** | 1 |
+| `Live Kit done` | **0** | 1 |
+| `### TESTKIT BEGIN` | **0** | 1 |
+
+Twenty-one kilobytes of kernel log and not one line from the thing being tested. The page said
+"logs the whole boot to the serial port"; it logged the kernel's half.
+
+Serial now comes last, so `/dev/console` is the serial port and a capture sees what init prints.
+The screen still shows kernel messages — what moved is login and userspace output. If you want the
+old arrangement, [`boot-cmdline`](boot-cmdline.md) rewrites an `APPEND` line in place.
+
+This is why [`kitchen test --bios`](../60-testing/ci.md) can assert anything at all: it points the
+bootloader at this entry, and before the reversal there was nothing on the wire to assert.
 
 `115200n8` is 115200 baud, no parity, 8 data bits. Match whatever is reading the other end.
 

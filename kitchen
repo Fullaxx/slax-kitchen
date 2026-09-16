@@ -56,7 +56,7 @@ ${B}COMMANDS${O}
   validate <file.yaml>...    check a recipe or profile against its schema
   pack [-o FILE|DIR]         rebuild an ISO from a work tree      (default: ./out/<name>-custom.iso)
   build <profile>            unpack -> apply -> pack -> test, from one profile
-  test <iso> [--structure] [--kernel] [--bios] [--uefi]
+  test <iso> [--structure] [--kernel] [--bios] [--uefi] [--usb] [--persistence]
   shell <bundle|work>        chroot into a bundle for exploration
   diff <isoA> <isoB>         structural + per-file diff
   upstream-diff              regenerate docs/15-upstream/drift-report.md
@@ -395,16 +395,29 @@ kitchen test <iso> [options]      assert things about a built ISO
 
   --structure          structural assertions -- fast, no boot, no mounting
   --kernel             direct kernel boot in QEMU; asserts the livekit markers
-  --bios               boot the BIOS bootloader (screenshot evidence)
-  --uefi               boot under OVMF (screenshot evidence)
+  --bios               boot through the BIOS bootloader
+  --uefi               boot through GRUB under OVMF
+  --usb                boot the image as a usb-storage device (needs isohybrid)
+  --persistence        two boots on one disk; a marker written by the first
+                       must survive into the second (needs testkit's `marker`)
   --expect STRING      also require STRING in the serial log (repeatable)
-  --seconds N          how long to let the guest run (default: 32)
+  --seconds N          ceiling per boot; with expectations a boot ends as soon
+                       as they all appear, so this is a timeout (default: 32)
+  --mem MiB            guest memory; a toram run needs at least the image size
+  --keys SPEC          menu keystrokes, overriding the derived ones
+  --no-keys            do not touch the menu; screenshot evidence only
+  --golden FILE        diff the testkit block against FILE
+  --record FILE        append one JSON line per boot, for the Tier C ledger
+  --perch-device DEV   where perchdir= points, default /dev/sda
+  --out DIR            where evidence lands (default: <dir of iso>/boot-tests)
   --expect-uefi        --structure: require an EFI El Torito entry
   --expect-hybrid      --structure: require an isohybrid MBR
 
---kernel is the one that can fail on its own: it puts the kernel on ttyS0 by
-construction. The menu modes have no console=ttyS0 on their default entry, so their
-serial log stays empty and they prove nothing without --expect.
+--kernel needs no help to assert: it builds its own cmdline with ttyS0 as the only
+console. The bootloader modes are pointed at a boot entry that names ttyS0 LAST --
+found by reading the ISO's own menu -- because /dev/console is the last console= and
+everything init prints goes there. Apply `serial-console` to get such an entry. On an
+ISO without one these modes fall back to screenshot evidence and say so.
 
 Logs and screenshots land in <dir of iso>/boot-tests/.
 H

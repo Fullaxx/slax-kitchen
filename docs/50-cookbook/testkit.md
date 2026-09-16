@@ -62,6 +62,39 @@ accepting a login; a 1020-byte `.xinitrc` is not the kiosk app appearing on scre
 full desktop boot — the host queue's Tier C. Cookbook pages say **"artifact boot-verified"** where
 that is what was done, and the distinction is deliberate.
 
+## `marker` — the persistence probe
+
+Empty by default, and the whole of the two-boot persistence test when it is not:
+
+```yaml
+recipes:
+  - name: testkit
+    vars:
+      marker: /var/lib/kitchen-perch-marker
+```
+
+On the first boot of a pair the file is absent, so testkit creates it and prints
+`perch-marker: absent, creating`. On the second it must still be there:
+`perch-marker: present`. Both are ordinary `--expect` strings, which is what
+`kitchen test --persistence` asserts on.
+
+It writes into the **union**, which is the point. With `perch` on the cmdline the union's
+writable branch is the perch session on a real device, so the file survives a reboot;
+without it the branch is tmpfs and cannot. That asymmetry is the test — and it was checked
+both ways: booting the same disk a second time *without* `perchdir=` leaves the marker
+invisible, so what the test observes is persistence and not some accident of the image.
+
+### It calls `sync`, and that is not defensive
+
+The first version did not, and the test failed with the marker absent on **both** boots —
+while the serial log said `Activating native persistent changes for session #1` each time.
+The mount was right, the session was right, and the write was sitting in page cache when
+the harness stopped the guest. The harness stops as soon as its expectations appear, which
+here is four seconds in, so anything unflushed is never seen by the next boot.
+
+Anything you write from a preinit hook that has to outlive the boot needs the same
+treatment.
+
 ## Configuring it
 
 `report` is a space-separated list of paths. Defaults cover what the branding, locale, ssh, TLS,

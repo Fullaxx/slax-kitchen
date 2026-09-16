@@ -16,8 +16,10 @@ not to:
 |---|---|
 | `bundle.packages` | ✅ **not blocked** — needs `CAP_SYS_CHROOT` + `CAP_MKNOD` only, not `CAP_SYS_ADMIN`. `apt-get install` completes with exit 0 inside an extracted bundle with no `/proc` mounted |
 | Busybox gates 1–3 | ✅ **not blocked** — the shipped i386 static busybox executes directly on an x86-64 host, so applet-parity and output-differential tests are milliseconds, not VM boots |
-| **Tier C boot matrix** | ⛔ wants KVM. Works under TCG at ~5–15 min/run, which is too slow to iterate on |
-| **Busybox gates 4–5** | ⛔ the boot half of the busybox harness, plus a real-hardware `mdev`/`modprobe` bench |
+| **Tier C boot matrix** | ✅ **done** — `ci/tier-c.sh`, four paths, ~25 s a run with KVM. See [Tier C](../60-testing/tier-c.md) |
+| Busybox **gate 5** | ✅ **not blocked, and never was** — the rollback proof is seconds and needs no KVM. It was filed here by mislabelling; it runs in CI now |
+| Busybox **gate 4** | the boot half — rides on `ci/tier-c.sh` with `initramfs-busybox` applied |
+| **A real-hardware `mdev`/`modprobe` bench** | ⛔ genuinely wants hardware, though the PXE third of it is reachable under QEMU with user-mode networking |
 | **Writing to a real USB stick** | ⛔ no block devices in a container |
 | **Secure Boot / MOK** | ⛔ needs real UEFI firmware; partly manual by nature |
 
@@ -112,20 +114,36 @@ qemu-system-x86_64 -enable-kvm -m 2048 \
 ### USB image — needs the `isohybrid` recipe
 
 ```sh
-cp out/slax-custom.iso /tmp/usb.img
-qemu-system-x86_64 -enable-kvm -m 2048 \
-  -drive if=none,format=raw,id=u,file=/tmp/usb.img -device usb-storage,drive=u
+qemu-system-x86_64 -enable-kvm -m 2048 -device qemu-xhci,id=xhci \
+  -drive if=none,format=raw,readonly=on,id=u,file=out/slax-custom.iso \
+  -device usb-storage,bus=xhci.0,drive=u
 ```
+
+Three corrections to what this page used to show, all measured:
+
+- **No copy.** It said `cp out/slax-custom.iso /tmp/usb.img` first. An isohybrid ISO *is*
+  the USB image, byte for byte — the copy was 440 MiB of litter per run.
+- **A controller is required.** Without `-device qemu-xhci` the old line dies with
+  `No 'usb-bus' bus found for device 'usb-storage'`. A machine type with no USB
+  controller has nothing to plug a stick into.
+- **`readonly=on`.** `-drive` opens read-write by default, so the guest held a writable
+  handle on the artifact under test. A test that can alter its own input is not a test.
+
+`kitchen test --usb` does all of this for you.
 
 ### Persistence
 
-Boot the **same** `usb.img` twice and assert a marker written in run 1 survives into run 2. This is
-the hardest exercise of `losetup`, `df` and `date` in the whole system, which is why it is also
-busybox gate 4.
+```sh
+kitchen test out/slax-custom.iso --persistence
+```
 
-Note a `dd`'d hybrid image carries an ISO9660 filesystem, so it is read-only and has **no
-persistence of its own** — point `perchdir=` at a second writable device, or test persistence via the
-`bootinst` route instead. See [write-to-usb](write-to-usb.md).
+Two boots on one disk, asserting that a marker written by the first is there for the
+second. This is the hardest exercise of `losetup`, `df` and `date` in the whole system,
+which is why it is also busybox gate 4.
+
+A `dd`'d hybrid image carries an ISO9660 filesystem, so it is read-only and has **no
+persistence of its own** — the harness attaches a second writable device and points
+`perchdir=` at it. Full mechanism in [Tier C](../60-testing/tier-c.md).
 
 ### What to assert
 
@@ -146,17 +164,25 @@ KVM. So commit the artifacts, not just a verdict:
 
 | produce | commit to |
 |---|---|
-| TAP output from the in-guest self-test | `tests/boot/golden/` |
-| busybox applet list and differential output | `tests/busybox/*.golden` |
-| the pinned busybox `.config` | `tests/busybox/` |
+| the Tier C ledger — one row per boot | `tests/boot/tier-c.json`, written by `ci/tier-c.sh` |
+| the testkit block each image produces | `tests/boot/golden/`, one file per image |
 | regenerated fingerprints for a new release | `compat/` |
 | regenerated manifests | `docs/30-inventory/manifests/` — `ci/gen-manifests.sh isos/slax-*.iso` |
 
-Then push, pull back on the container side, and the structure tier can assert against them for free.
+Then push and pull back on the container side. The goldens are not inert: CI's weekly run
+diffs against them, so a recipe change that alters the assembled filesystem goes red
+without anyone needing KVM.
 
 ```sh
-git add tests/boot/golden && git commit && git push
+git add tests/boot/golden tests/boot/tier-c.json && git commit && git push
 ```
+
+> **This table used to say "TAP output".** Nothing in this repository has ever produced or
+> consumed TAP — the in-guest self-test emits `key: value` lines — and
+> `tests/boot/golden/` did not exist. It does now, and so does a gate on what may go in
+> it: `ci/checks/97-tier-c-ledger.sh` rejects any string in the ledger that looks like a
+> path or a home directory, because results are facts about the artifact and the machine
+> that produced them is nobody's business.
 
 Remember to copy the `*.DNC.md` files back too if you ticked anything off on the host — they are the
 only state git will not carry for you.
@@ -173,5 +199,15 @@ ssh <host> 'qemu-system-x86_64 -enable-kvm -m 2048 -cdrom /tmp/slax-custom.iso \
 scp <host>:/tmp/boot.log .
 ```
 
-This keeps one context and one copy of the task state, which is worth something. It is **untested**
-as of this writing — the first connection will need host-key acceptance.
+This keeps one context and one copy of the task state, which is worth something. **It works**:
+exercised non-interactively on 2026-09-16 (`ssh -o BatchMode=yes`), driving a full Tier C
+run on a remote KVM host from an unprivileged container. The first connection still needs
+host-key acceptance.
+
+Two things that pass for free and should not:
+
+- **`git` refuses a repository owned by another user.** If the host account reads a clone
+  owned by root, `git describe` fails and anything deriving a version from it silently
+  gets an empty string. `ci/tier-c.sh` treats that as fatal now; it did not at first, and
+  wrote a ledger whose commit was `"unknown"`.
+- **`/usr/sbin` may not be on a non-login ssh `PATH`**, which hides `mkfs.ext4`.
