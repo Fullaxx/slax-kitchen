@@ -5,18 +5,45 @@ tools/build-busybox.sh --check-parity     # ~30 s, needs docker
 kitchen apply initramfs-busybox
 ```
 
-**Status: boot-verified** — once, by hand. Built, applied, packed and booted to `slax login:` under
-QEMU with all three livekit markers — so early boot's `find_data`, `mount_bundles`, `init_union`,
-`union_append_bundles` and `change_root` all ran on the new binary.
+**Status: boot-verified** — all four [Tier C](../60-testing/tier-c.md) paths, including persistence
+across two boots, with all three livekit markers each time. Early boot's `find_data`,
+`mount_bundles`, `init_union`, `union_append_bundles`, `persistent_changes` and `change_root` all
+ran on the new binary. Gates 1-3 and 5 run in CI on every push.
 
 CI builds and structurally asserts it on all four targets every run, but **does not boot it** — the
-boot job builds only the `example` profile. If you change the busybox version or the config, redo
-the boot test:
+boot job builds only the `example` and `boot-matrix` profiles. If you change the busybox version or
+the config, redo the boot test.
+
+## Gate 4 — the boot half
 
 ```sh
-kitchen pack -s work/iso -o out/bb.iso --force
-kitchen test out/bb.iso --kernel --seconds 300
+kitchen build boot-matrix --keep --force
+kitchen apply recipes/available/initramfs-busybox.yaml -w work/boot-matrix
+kitchen pack -s work/boot-matrix/iso -o out/bb.iso --hybrid --uefi --force
+ci/tier-c.sh --iso out/bb.iso --profile boot-matrix-busybox --target debian-64bit-12.2.0
 ```
+
+That is the whole of gate 4: all four [Tier C](../60-testing/tier-c.md) paths with the
+candidate in the initramfs. The persistence pair is the point of it — two boots on one
+disk is the hardest exercise of `losetup`, `df` and `date` in the system, and those are
+exactly the applets gate 2 diffs statically.
+
+**Run on 2026-09-16 at `a61fcde`, `debian-64bit-12.2.0`, under KVM: 5 boots, 37 s, all
+green.** And the result worth reporting is a diff. Against the same image built with the
+stock 2017 binary, the assembled filesystem differs by **one line**:
+
+```diff
+- busybox: BusyBox v1.26.2
++ busybox: BusyBox v1.37.0
+```
+
+Union type, bundle list, kernel, package count and every reported file are identical.
+Replacing the initramfs busybox changes the binary and nothing else about what the
+machine assembles — which is the claim this recipe needs and could not previously make.
+
+Getting there found three unrelated bugs, all in code paths nothing had run: relative
+`-w` broke every initramfs verb, `kitchen build --force` could not overwrite an ISO, and
+a passing test erased a failing one in the same build.
 
 ## Gate 5, and the bug it found
 
