@@ -31,7 +31,7 @@ resolves to a path under `/run/initramfs/memory/`. Then
 [bundles-squashfs](10-anatomy/bundles-squashfs.md) for why higher numbers win.
 
 **I want to know why something surprised me.**
-[known upstream issues](30-inventory/known-upstream-bugs.md) — twelve of them, each one a thing that
+[known upstream issues](30-inventory/known-upstream-bugs.md) — fourteen of them, each one a thing that
 will otherwise cost you an afternoon.
 
 **I want a claim's source.**
