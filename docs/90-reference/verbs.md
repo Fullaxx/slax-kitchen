@@ -391,13 +391,28 @@ Refuses to finish if `blkid` or `eject` has stopped being a real binary. Build t
 
 ### `iso.files` ○
 
-Place a file anywhere in the ISO tree, outside `/slax/`.
+Place a file anywhere in the ISO tree, outside `/slax/`. This is the verb for things a
+user sees when they mount the disc rather than boot it — a README, a licence, a folder of
+documents.
+
+Each entry needs `dest` plus exactly one source: `content` for inline text, or `src` for a
+path on disk, resolved relative to the recipe's own directory unless it is absolute.
 
 ```yaml
 - verb: iso.files
   files:
     - {dest: /README.txt, content: "…"}
+    - {dest: /LICENSE, src: files/gpl-2.0.txt}
+    - {dest: /autorun.sh, content: "#!/bin/sh\n", mode: "0755"}
+    - {dest: /docs, src: files/manual}
 ```
+
+`dest` is resolved inside the ISO tree and `..` is refused, symlinks included — a recipe is
+meant to be shared, so a `dest` that walks out to the host is not the author's to choose.
+
+If `src` names a **directory** it is copied recursively. `mode` applies to a single file
+only; on a directory copy it is silently ignored, and the tree keeps the modes it had.
+Under `--dry-run` nothing is written and nothing is created.
 
 ### `iso.metadata` ○
 

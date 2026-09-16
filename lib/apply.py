@@ -455,11 +455,11 @@ def v_boot_payload(ctx: Ctx, step: dict) -> None:
     src = step.get("src")
     want = step.get("sha256")
     member = step.get("extract")
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
     if ctx.dry:
         via = f" (extract {member})" if member else ""
         ctx.say(f"would install {step['dest']} from {src}{via}")
         return
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
     if src and re.match(r"^https?://", src):
         tmp = dest + ".part"
         with urllib.request.urlopen(src, timeout=120) as r, open(tmp, "wb") as f:
@@ -494,14 +494,19 @@ def v_boot_payload(ctx: Ctx, step: dict) -> None:
 def v_iso_files(ctx: Ctx, step: dict) -> None:
     for spec in step["files"]:
         dest = _under(ctx.tree, spec["dest"], "iso.files")
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
         if ctx.dry:
             ctx.say(f"would write {spec['dest']}")
             continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
         if "content" in spec:
             with open(dest, "w") as f:
                 f.write(spec["content"])
         else:
+            # The schema requires only `dest`, so a spec with neither key validates and
+            # reaches here. It used to be a bare KeyError traceback at the recipe author.
+            if "src" not in spec:
+                raise RuntimeError(
+                    f"iso.files: {spec['dest']} needs `src` or `content`")
             src = spec["src"]
             local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
             if os.path.isdir(local):
@@ -1241,14 +1246,17 @@ def v_rootcopy_files(ctx: Ctx, step: dict) -> None:
     """
     for spec in step["files"]:
         dest = _under(ctx.p("slax", "rootcopy"), spec["dest"], "rootcopy.files")
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
         if ctx.dry:
             ctx.say(f"would place rootcopy/{spec['dest']}")
             continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
         if "content" in spec:
             with open(dest, "w") as f:
                 f.write(spec["content"])
         else:
+            if "src" not in spec:
+                raise RuntimeError(
+                    f"rootcopy.files: {spec['dest']} needs `src` or `content`")
             src = spec["src"]
             local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
             shutil.copy2(local, dest)

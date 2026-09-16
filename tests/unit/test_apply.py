@@ -1244,6 +1244,120 @@ def test_bundle_files_refuses_a_setuid_mode():
             os.unlink(sb)
 
 
+def test_iso_files_actually_writes_into_the_iso_tree():
+    """`iso.files` was implemented, documented, listed as shipped -- and run by nothing.
+
+    Measured 2026-09-16: no recipe used it, no test touched it, so no matrix leg ever
+    executed it. Its only existence outside lib/apply.py was a YAML snippet in
+    docs/90-reference/verbs.md, and 45-doc-yaml validates that against the SCHEMA --
+    which proves the shape and says nothing about the behaviour. The verb could have
+    been broken outright with every gate green.
+
+    It was not broken outright. It was broken quietly: see the dry-run case below.
+    """
+    import tempfile
+
+    work = tempfile.mkdtemp()
+    os.makedirs(os.path.join(work, "iso"))
+    payload = os.path.join(work, "payload")
+    os.makedirs(os.path.join(payload, "sub"))
+    open(os.path.join(payload, "one.txt"), "w").write("one")
+    open(os.path.join(payload, "sub", "two.txt"), "w").write("two")
+    open(os.path.join(work, "single.bin"), "wb").write(b"\x00\x01")
+
+    ctx = apply.Ctx(work, work, "t")
+    apply.v_iso_files(ctx, {"verb": "iso.files", "files": [
+        # content -> a new file, parent directories created on the way
+        {"dest": "/docs/deep/README.txt", "content": "hello"},
+        # src -> a single file, resolved relative to the recipe directory
+        {"dest": "/firmware/blob.bin", "src": "single.bin"},
+        # src -> a DIRECTORY, which copytree's into place
+        {"dest": "/extra", "src": "payload"},
+        # mode, applied after the write
+        {"dest": "/autorun.sh", "content": "#!/bin/sh\n", "mode": "0755"},
+    ]})
+
+    iso = os.path.join(work, "iso")
+    r = lambda *p: os.path.join(iso, *p)
+
+    # read() rather than open().read(): a verb that wrote NOTHING must show up as a
+    # failed check, not as a FileNotFoundError traceback. A traceback aborts main()
+    # before the remaining tests run, and this repo has already been bitten once by a
+    # harness that counted FAIL lines and read a crash as zero failures.
+    def read(*p, binary=False):
+        try:
+            return open(r(*p), "rb" if binary else "r").read()
+        except OSError as e:
+            return f"<unreadable: {e.__class__.__name__}>"
+
+    check("iso.files content", read("docs", "deep", "README.txt"), "hello")
+    check("iso.files src file", read("firmware", "blob.bin", binary=True), b"\x00\x01")
+    check("iso.files src dir", read("extra", "sub", "two.txt"), "two")
+    check("iso.files mode",
+          oct(os.stat(r("autorun.sh")).st_mode & 0o777) if os.path.exists(r("autorun.sh"))
+          else "<no file>", "0o755")
+
+    # Everything it wrote is in the journal, under the recipe's own spelling of the path.
+    check("iso.files journal", sorted(ctx.changes),
+          ["/autorun.sh", "/docs/deep/README.txt", "/extra", "/firmware/blob.bin"])
+
+    # It writes OUTSIDE /slax/, which is the whole point of the verb -- that is what
+    # separates it from iso.metadata and from the bundle verbs.
+    check("iso.files stays out of /slax", os.path.exists(r("slax")), False)
+
+    # Containment. dest is recipe-supplied, and a recipe is meant to be shared.
+    for bad in ("../../etc/cron.d/x", "/../../etc/passwd"):
+        try:
+            apply.v_iso_files(ctx, {"verb": "iso.files",
+                                    "files": [{"dest": bad, "content": "x"}]})
+            refused = False
+        except RuntimeError as e:
+            refused = "outside the tree" in str(e)
+        check(f"iso.files refuses {bad}", refused, True)
+
+    # A dry run must not touch the tree. It DID: os.makedirs ran before the ctx.dry
+    # check, so `kitchen build --dry-run` left empty directories behind in the work
+    # tree, which a later real build would then master into the ISO. Same ordering bug
+    # in boot.payload and rootcopy.files -- all three fixed together, all three asserted
+    # here, because one verb's test is what found the other two.
+    dry_work = tempfile.mkdtemp()
+    os.makedirs(os.path.join(dry_work, "iso"))
+    dry = apply.Ctx(dry_work, dry_work, "t", dry=True)
+    apply.v_iso_files(dry, {"verb": "iso.files",
+                            "files": [{"dest": "/a/b/c.txt", "content": "x"}]})
+    apply.v_rootcopy_files(dry, {"verb": "rootcopy.files",
+                                 "files": [{"dest": "/etc/d/e.conf", "content": "x"}]})
+    try:
+        apply.v_boot_payload(dry, {"verb": "boot.payload", "dest": "/slax/boot/f/g.bin",
+                                   "src": "https://example.invalid/g.bin",
+                                   "sha256": "0" * 64})
+    except Exception:
+        pass
+    di = os.path.join(dry_work, "iso")
+    check("iso.files dry writes nothing", os.path.exists(os.path.join(di, "a")), False)
+    check("rootcopy.files dry writes nothing",
+          os.path.exists(os.path.join(di, "slax", "rootcopy", "etc")), False)
+    check("boot.payload dry writes nothing",
+          os.path.exists(os.path.join(di, "slax", "boot", "f")), False)
+    check("iso.files dry journals nothing", dry.changes, [])
+
+    # The schema requires only `dest`, so {dest: /x} with neither src nor content is a
+    # VALID recipe that reaches the verb. Both file-placing verbs answered with a bare
+    # KeyError traceback aimed at the engine, not at the recipe author who caused it.
+    # rootcopy.preinit already got this right ("need `script` or `src`"); these two did
+    # not, because nothing ever ran them with an incomplete spec.
+    for verb_fn, label in ((apply.v_iso_files, "iso.files"),
+                           (apply.v_rootcopy_files, "rootcopy.files")):
+        try:
+            verb_fn(ctx, {"verb": label, "files": [{"dest": "/nosource.txt"}]})
+            got = "<no error>"
+        except KeyError as e:
+            got = f"<KeyError {e}>"
+        except RuntimeError as e:
+            got = "clear" if "needs `src` or `content`" in str(e) else str(e)
+        check(f"{label} missing source is a clear error", got, "clear")
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -1269,7 +1383,8 @@ def main():
                test_both_chroot_verbs_use_one_staging_loop,
                test_fromtarball_refuses_privileged_members,
                test_all_root_is_per_verb,
-               test_bundle_files_refuses_a_setuid_mode]:
+               test_bundle_files_refuses_a_setuid_mode,
+               test_iso_files_actually_writes_into_the_iso_tree]:
         fn()
     if FAILURES:
         for f in FAILURES:
