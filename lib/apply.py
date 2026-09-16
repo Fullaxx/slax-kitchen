@@ -542,7 +542,13 @@ INITRAMFS_REL = os.path.join("slax", "boot", "initrfs.img")
 
 def _initramfs_unpack(ctx: "Ctx", workdir: str) -> str:
     """Extract initrfs.img into workdir/tree and return that path."""
-    img = ctx.p("slax", "boot", "initrfs.img")
+    # ABSOLUTE, because the shell below runs with cwd=tree. `kitchen apply -w
+    # work/boot-matrix` gives a RELATIVE work path, so `xz -dc` resolved it against the
+    # extraction directory and died with "No such file or directory" -- naming the path
+    # it was given, which looked correct in the message and was not correct there. Every
+    # initramfs verb was unusable through a relative -w; only `kitchen build`, which
+    # happens to hand over an absolute path, worked.
+    img = os.path.abspath(ctx.p("slax", "boot", "initrfs.img"))
     if not os.path.isfile(img):
         raise RuntimeError(f"initramfs: {img} missing -- is this a Slax tree?")
     tree = os.path.join(workdir, "tree")
@@ -587,7 +593,9 @@ def _initramfs_module_dir(tree: str) -> str:
 
 def _initramfs_pack(ctx: "Ctx", tree: str) -> None:
     """Repack tree over slax/boot/initrfs.img, with upstream's exact parameters."""
-    img = ctx.p("slax", "boot", "initrfs.img")
+    # Absolute for the same reason as _initramfs_unpack: cpio below runs with cwd=tree,
+    # and `tmp` is derived from this path.
+    img = os.path.abspath(ctx.p("slax", "boot", "initrfs.img"))
     before = os.path.getsize(img)
     tmp = img + ".new"
     cmd = ("find . -print | LC_ALL=C sort | cpio -o -H newc --quiet "

@@ -249,12 +249,19 @@ warn_no_qemu() {
 }
 
 kitchen_build() {
-    profile="" keep=0 skip_test=0 force=0
+    # bld_ PREFIXED, and that is not style. These are POSIX sh functions with no
+    # `local`, so every variable is global: kitchen_unpack (lib/unpack.sh:10) opens with
+    # `iso="" dest="work" force=0`, which silently reset THIS function's `force` to 0 on
+    # the way past. The result was that `kitchen build --force` could never overwrite an
+    # existing ISO -- the work-tree half worked only because that check happens before
+    # unpack is called -- while its help said "rebuild from scratch, overwriting the work
+    # tree and ISO".
+    profile="" keep=0 skip_test=0 bld_force=0
     while [ $# -gt 0 ]; do
         case "$1" in
             --keep)      keep=1; shift ;;
             --no-test)   skip_test=1; shift ;;
-            -f|--force)  force=1; shift ;;
+            -f|--force)  bld_force=1; shift ;;
             -h|--help)      usage_cmd build; return 0 ;;
             -*) die "build: unknown option $1" ;;
             *)  profile=$1; shift ;;
@@ -302,7 +309,7 @@ kitchen_build() {
     fi
 
     work="work/$PROFILE_NAME"
-    if [ -e "$work" ] && [ "$force" != 1 ]; then
+    if [ -e "$work" ] && [ "$bld_force" != 1 ]; then
         die "build: $work exists (use --force to rebuild from scratch)"
     fi
     rm -rf "$work"
@@ -315,7 +322,7 @@ kitchen_build() {
     fi
 
     set -- -s "$work/iso" -o "out/$OUTPUT_NAME"
-    [ "$force" = 1 ] && set -- "$@" --force
+    [ "$bld_force" = 1 ] && set -- "$@" --force
     [ -n "$OUTPUT_BACKEND" ] && set -- "$@" --backend "$OUTPUT_BACKEND"
     [ -n "$OUTPUT_HYBRID" ] && set -- "$@" --hybrid
     kitchen_pack "$@" || exit 1
@@ -329,18 +336,24 @@ kitchen_build() {
         case " $RECIPES " in *" uefi-bootable "*) _eu=1 ;; esac
         case " $RECIPES " in *" isohybrid "*) _eh=1 ;; esac
         [ -n "$OUTPUT_HYBRID" ] && _eh=1
+        # bld_rc, for the same reason and with a worse symptom: kitchen_test opens with
+        # `rc=0`, so a PASSING test reset the accumulator and erased a FAILING one before
+        # it. A profile with `test: [structure, kernel-boot]` whose structure assertion
+        # failed reported "build ok" as long as the boot passed.
+        bld_rc=$rc
         for t in $TESTS; do
             case "$t" in
                 structure) kitchen_test "out/$OUTPUT_NAME" --structure \
-                             ${_eu:+--expect-uefi} ${_eh:+--expect-hybrid} || rc=1 ;;
-                kernel-boot) kitchen_test "out/$OUTPUT_NAME" --kernel || rc=1 ;;
-                bios-boot) kitchen_test "out/$OUTPUT_NAME" --bios || rc=1 ;;
-                uefi-boot) kitchen_test "out/$OUTPUT_NAME" --uefi || rc=1 ;;
-                usb)       kitchen_test "out/$OUTPUT_NAME" --usb || rc=1 ;;
-                persistence) kitchen_test "out/$OUTPUT_NAME" --persistence || rc=1 ;;
+                             ${_eu:+--expect-uefi} ${_eh:+--expect-hybrid} || bld_rc=1 ;;
+                kernel-boot) kitchen_test "out/$OUTPUT_NAME" --kernel || bld_rc=1 ;;
+                bios-boot) kitchen_test "out/$OUTPUT_NAME" --bios || bld_rc=1 ;;
+                uefi-boot) kitchen_test "out/$OUTPUT_NAME" --uefi || bld_rc=1 ;;
+                usb)       kitchen_test "out/$OUTPUT_NAME" --usb || bld_rc=1 ;;
+                persistence) kitchen_test "out/$OUTPUT_NAME" --persistence || bld_rc=1 ;;
                 *) printf '  %sskip%s unknown test %s\n' "$Y" "$O" "$t" ;;
             esac
         done
+        rc=$bld_rc
     fi
 
     [ "$keep" = 1 ] || rm -rf "$work"
