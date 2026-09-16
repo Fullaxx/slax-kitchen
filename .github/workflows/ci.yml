@@ -94,8 +94,12 @@ jobs:
         # that followed -- verified, this step reported success with mcopy deleted.
         #
         # safe.directory because the runner checks out as uid 1001 and the container
-        # is root: without it `git rev-parse` refuses and every gate that scopes to
-        # the work tree dies with git's dubious-ownership message instead of its own.
+        # is root. This line is load-bearing, and for a worse reason than first written
+        # here: the original comment claimed the gates "die with git's dubious-ownership
+        # message". Measured 2026-09-16 -- they did not die. check_files() returned the
+        # EMPTY SET, so five gates looped over nothing and reported SUCCESS on a tree
+        # with a planted violation in it. ci/lib.sh now refuses to run when git will not
+        # answer, so dropping this line fails the job loudly instead of silently.
         run: |
           docker run --rm -v "$PWD:/work" -w /work slax-kitchen:ci sh -c '
             set -e
