@@ -151,9 +151,14 @@ A disk install is also the honest way to exercise persistence, which a `dd`'d hy
 | `--force` | UEFI only: boot an ISO with no EFI entry |
 | `-h`, `--help` | |
 
-KVM is used automatically when `/dev/kvm` is writable, and the banner says which you got. Without it
-QEMU falls back to TCG, roughly 10–20× slower — a desktop in about 30 seconds becomes two or three
-minutes, which is tolerable for a look and tedious for real use.
+KVM is used automatically when `/dev/kvm` is writable, and the banner says which you got. The
+difference is large. Measured on the build host with the 1227 MiB `all-browsers` ISO, direct kernel
+boot, bisecting the harness budget: **all three livekit markers appear inside 5 seconds** with KVM.
+The same image under TCG in an unaccelerated container wants the harness's 150-second budget. Add
+the bootloader's own 4-second menu timeout to either figure when booting through the menu, as these
+scripts do.
+
+So: with KVM this is an interactive tool. Without it, it is something you start and come back to.
 
 ## What these scripts do not do
 
