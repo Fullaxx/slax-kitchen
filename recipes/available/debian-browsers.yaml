@@ -1,0 +1,95 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: debian-browsers
+  summary: Replace the stock Chromium bundle with a current Chromium and Firefox
+  tags: [browser, bundle, packages]
+compat:
+  # Debian only, like every bundle.packages recipe here: Slax's Slackware base is frozen
+  # while its slackpkg points at a mirror years ahead of it, so packages installed from
+  # it may not run. The supported Slackware route is a pinned .txz via bundle-from-txz.
+  flavours: [debian]
+  # BOTH ARCHES, and that is the point of this recipe existing beside all-browsers.
+  # chromium and firefox-esr are the only two browsers in play that Debian builds for
+  # i386 as well as amd64 -- measured in bookworm-security on 2026-09-16, both arches
+  # carrying the identical current versions. Brave, Chrome, Edge and Vivaldi publish no
+  # i386 package at all, which is what confines all-browsers to 64-bit.
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: chroot
+vars:
+  # 14: beside all-browsers at 13, both in 10-89 which is a FORK's range rather than
+  # slax-kitchen's. They are alternatives and cannot both be applied -- see the ordering
+  # note on the first step. `bundle` is a var so a profile can move it.
+  bundle: "14-browsers"
+steps:
+  # DROP FIRST, THEN ADD -- the ordering chromium-current exists to demonstrate.
+  # Overriding would leave both copies on the ISO, paying 79.1 MiB for a Chromium nobody
+  # can reach, and files the 2023 build had that the current one does not would still be
+  # visible in the union, because a bundle can add and replace but cannot delete.
+  #
+  # check_plan_order refuses the other order before anything is modified, across recipes
+  # AND across invocations. It also means this recipe and all-browsers cannot both be
+  # applied: both match literal 05, so the second compares 05 against an already-built
+  # 13 or 14 and is refused. Correct -- they are alternatives, not companions.
+  - verb: bundle.remove
+    match: "^05-chromium\\.sb$"
+
+  # WHY THIS EXISTS BESIDE all-browsers, and it is not only about architecture.
+  #
+  #   1. It is the 32-bit answer. Four of all-browsers' six have no i386 build.
+  #   2. It adds NOTHING to what the image trusts. There is no `apt:` block here: both
+  #      packages come from Debian proper, so there is no vendor repository and no
+  #      signing key. all-browsers necessarily ships four vendor repositories and their
+  #      keys -- the packages install those themselves, and keep: false cannot prevent
+  #      it. Someone on 64-bit who wants two current browsers without four third-party
+  #      trust roots wants THIS recipe.
+  #
+  # NO APT SOURCE CHANGES ARE NEEDED. The stock /etc/apt/sources.list already carries
+  # bookworm-security, which is where the current builds live. Measured 2026-09-16, both
+  # arches, from bookworm-security:
+  #
+  #   chromium + -common + -sandbox  152.0.7977.82-1~deb12u1   i386 323.3 MiB installed
+  #   firefox-esr                    140.16.0esr-1~deb12u1     i386 290.9 MiB installed
+  #
+  # ~614 MiB installed, ~184 MiB of .debs, for an ISO near 517 MiB -- comparable to
+  # adding LibreOffice, and toram stays practical, which it does not with all-browsers.
+  #
+  # A GOTCHA WORTH KNOWING if you go looking for these versions yourself. They are in
+  # bookworm-SECURITY, not bookworm -- main still carries chromium 150.0.7871.100 and
+  # firefox-esr 140.12.0esr. The security archive publishes its index as .xz under
+  # main/, despite its Release advertising `Components: updates/main`. Fetching
+  # main/.../Packages.gz returns an EMPTY BODY with HTTP 200, which reads exactly like
+  # "no package for this architecture" -- which is how this recipe was briefly, and
+  # wrongly, believed to be 64-bit only.
+  #
+  # `from:` IS UNSET ON PURPOSE, and that is why the removal has to come first. With
+  # 05-chromium gone the default resolves to 01-core .. 04-apps, so the shared browser
+  # runtime that left with it comes back INSIDE this bundle and it stands on its own.
+  # The bundle's contents are a measured filesystem delta, not this package list, so
+  # every transitive dependency lands here automatically and anything the stack below
+  # already provides does not.
+  #
+  # THREE RECOMMENDS ARE NAMED. bundle.packages installs with --no-install-recommends,
+  # which is what cost libreoffice a working Base:
+  #
+  #   chromium-sandbox   Recommends of chromium; its entire content is the setuid sandbox
+  #                      helper, and without it Chromium runs with no sandbox.
+  #   libavcodec59       Recommends of firefox-esr and its only route to H.264/AAC, 14.3
+  #                      MiB. Chromium carries its own codecs, so this is for Firefox.
+  #                      The Recommends is a 20-way alternation; 59 is what bookworm has.
+  #   libgl1-mesa-dri    Recommends of chromium-common, 26.2 MiB on i386. Without it
+  #                      Chromium falls back to llvmpipe. Whether 02-xorg already carries
+  #                      it is UNVERIFIED; if it does, apt no-ops and this costs nothing.
+  #
+  # chromium-common is named explicitly rather than left to the dependency solver so the
+  # declared set matches what the page documents; apt would pull it in regardless.
+  - verb: bundle.packages
+    bundle: "{{bundle}}"
+    packages:
+      - chromium
+      - chromium-common
+      - chromium-sandbox
+      - firefox-esr
+      - libavcodec59
+      - libgl1-mesa-dri

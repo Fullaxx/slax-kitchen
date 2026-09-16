@@ -1,0 +1,34 @@
+apiVersion: slax-kitchen/v1
+kind: Profile
+metadata:
+  name: browsers
+  summary: Every browser with a 64-bit Debian package, on a UEFI-bootable hybrid ISO
+base:
+  flavour: debian
+  arch: 64bit
+  version: "12.2.0"
+recipes:
+  # all-browsers removes 05-chromium itself, so nothing here needs ordering around it --
+  # and remove-chromium must NOT be listed as well. It would be a harmless no-op on the
+  # second pass, but saying it twice invites someone to reorder the two and then wonder
+  # why check_plan_order refused the build.
+  #
+  # Do NOT add chromium-current, firefox-esr or debian-browsers. The first two are
+  # superseded by this bundle, the third is its alternative, and all of them remove
+  # literal 05 -- so a plan containing any pair is refused before anything is modified.
+  - all-browsers
+  # testkit prints facts about the ASSEMBLED filesystem to the serial console just before
+  # change_root, which is what lets the boot test assert on more than "it booted". With
+  # nine declared packages plus their whole dependency closure, the merged dpkg count is
+  # the single number here most likely to be wrong.
+  - testkit
+  - serial-console
+  - isohybrid
+  # uefi-bootable builds the GRUB menu by parsing isolinux.cfg, so it runs after anything
+  # that adds a menu entry. Keep it last.
+  - uefi-bootable
+output:
+  name: "slax-browsers-{{version}}.iso"
+  hybrid: true
+test:
+  - structure

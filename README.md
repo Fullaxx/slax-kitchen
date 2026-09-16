@@ -156,7 +156,7 @@ steps:
 ./kitchen pack                     # -> out/slax-...-custom.iso
 ```
 
-**Thirty-three recipes ship today.** The ones most people want first:
+**Thirty-five recipes ship today.** The ones most people want first:
 
 | | |
 |---|---|
@@ -165,6 +165,8 @@ steps:
 | `firmware-refresh` | the GPU firmware stock Slax ships **none** of — no amdgpu, i915 or radeon at all |
 | `add-packages` | install distro packages into a new bundle |
 | `chromium-current` | replace the 2023 browser — stock is chromium **117**, from September 2023 |
+| `debian-browsers` | current Chromium **and** Firefox in one bundle, 32- and 64-bit |
+| `all-browsers` | six browsers in one bundle — Brave, Chrome, Chromium, Edge, Firefox, Vivaldi |
 | `remove-chromium` | or drop it entirely (−79 to −115 MiB) |
 | `enable-ssh` | switch on the sshd both flavours already ship but never enable |
 | `users-and-auth` | replace the published `root`/`toor` password |
@@ -179,8 +181,8 @@ ISO identity.
 **Verification is not uniform, and every cookbook page says which rung it reached.** The ladder
 runs schema-valid → gate-clean → matrix-verified → artifact boot-verified → boot-verified →
 runtime-verified, it is defined in [CONTRIBUTING.md](CONTRIBUTING.md), and a commit gate enforces
-the vocabulary. Today: **15 matrix-verified, 4 artifact boot-verified, 10 boot-verified, 3
-runtime-verified**. Claiming a rung you did not reach is the one thing this project treats as a
+the vocabulary. Today: **2 schema-valid, 16 matrix-verified, 4 artifact boot-verified,
+10 boot-verified, 3 runtime-verified**. Claiming a rung you did not reach is the one thing this project treats as a
 real error.
 
 See [the cookbook](docs/50-cookbook/), [all 23 verbs](docs/90-reference/verbs.md), and
@@ -207,7 +209,7 @@ differences it recognises to the recipes that cause them. A weekly CI job watche
 
 See **[docs/00-overview/status.md](docs/00-overview/status.md)** for what is verified, what is
 written but unsupported, and what does not exist yet. Short version: the core loop
-(unpack → apply → pack → test) works and is boot-tested in CI, thirty-three recipes ship across
+(unpack → apply → pack → test) works and is boot-tested in CI, thirty-five recipes ship across
 23 verbs, and the documentation of Slax itself is complete. `kernel.replace` is the one verb still
 unwritten.
 

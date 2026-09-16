@@ -119,8 +119,8 @@ in your profile rather than editing the recipe:
     vars: {bundle: 30-mytools}
 ```
 
-The three application recipes — `chromium-current`, `firefox-esr`, `libreoffice` — sit at `10`–`12`,
-inside your range. That is deliberate: installing an application is downstream work, and they are
+The five application recipes — `chromium-current`, `firefox-esr`, `libreoffice`, `all-browsers`
+and `debian-browsers` — sit at `10`–`14`, inside your range. That is deliberate: installing an application is downstream work, and they are
 examples of it. Renumber them the same way if you want that space.
 
 See [composing bundles](composing-bundles.md) for what a number actually decides.

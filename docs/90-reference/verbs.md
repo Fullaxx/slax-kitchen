@@ -191,9 +191,21 @@ party decide what your image trusts, and a bundle is where that becomes permanen
 armour format is detected from the content, because apt reads it from the *extension* under
 `signed-by=` and reports `NO_PUBKEY` for a key it is holding if the two disagree.
 
-`keep: false` means the source list and key exist only in the build chroot. `keep: true` ships
-them, so the booted system trusts that repository and can upgrade from it — say it deliberately.
-`/var/lib/dpkg/arch` always ships, so a foreign architecture survives into the image.
+`keep:` governs **only the two files kitchen writes** — `etc/apt/sources.list.d/<name>.list` and
+`usr/share/keyrings/<name>-archive-keyring.{asc,gpg}`. `false` excludes them from the bundle once
+they have done their job in the chroot; `true` ships them, so the booted system trusts that
+repository through `signed-by=` and can upgrade from it. `/var/lib/dpkg/arch` always ships, so a
+foreign architecture survives into the image.
+
+> **`keep: false` does not mean the image will not trust the repository.** A package's own
+> postinst output is ordinary dpkg output, and no exclusion pattern can reach it — so a package
+> that installs its own source list and key ships them regardless of this setting, and
+> `apt update && apt upgrade` may work against that vendor either way. Measured on all four of
+> Brave, Chrome, Edge and Vivaldi, one of which additionally symlinks its key into
+> `/etc/apt/trusted.gpg.d/`, where it is trusted for *every* source. See
+> [`all-browsers`](../50-cookbook/all-browsers.md) for the worked case. Where `keep:` is genuinely
+> decisive is a repository whose package does *not* configure itself — a private mirror, or
+> backports.
 
 > **Every step is schema-closed.** `$defs/step` uses `unevaluatedProperties: false`, so an
 > unknown key is a validation error rather than something silently ignored — `frm:` for `from:`,

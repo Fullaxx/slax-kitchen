@@ -1,0 +1,195 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: all-browsers
+  summary: Replace the stock Chromium bundle with one carrying six browsers
+  tags: [browser, bundle, packages, apt-sources]
+compat:
+  # Debian only, for the reason every bundle.packages recipe here is Debian only: Slax's
+  # Slackware base is frozen while its slackpkg points at a mirror years ahead of it, so
+  # packages installed from it may not run. Here there is not even an unsupported route
+  # -- none of these four vendors publishes a Slackware package at all.
+  flavours: [debian]
+  # 64-BIT ONLY, AND THIS IS A FACT ABOUT THE VENDORS rather than a limit of the verb.
+  # Read off each repository's own dists/stable/Release on 2026-09-16:
+  #
+  #   dl.google.com/linux/chrome/deb           Architectures: amd64 arm64
+  #   brave-browser-apt-release.s3.brave.com   Architectures: amd64 arm64
+  #   packages.microsoft.com/repos/edge        Architectures: amd64 arm64 armhf all
+  #   repo.vivaldi.com/stable/deb              Architectures: amd64
+  #
+  # Four of the six have NO i386 package to install, so there is nothing to declare and
+  # nothing a `when:` guard could rescue. chromium and firefox-esr DO have one -- which
+  # is what `debian-browsers` is: the same idea, two browsers, both arches. On a 32-bit
+  # target the matrix reports this recipe as a skip rather than a failure, the same way
+  # bundle-from-tarball handles fzf being amd64-only.
+  arch: [64bit]
+  slax: ">=12.0.0"
+  privilege: chroot
+vars:
+  # 13: the next free number above 12-libreoffice, which keeps the browser bundles
+  # together at 10-13. That is inside 10-89, a FORK's range rather than slax-kitchen's
+  # -- deliberately, because installing applications is downstream work and this recipe
+  # is an example of it. In use above 09 today: 10-chromium, 10-slackpkg, 11-firefox,
+  # 12-libreoffice, and 95 where renumber-bundles parks a stock bundle. 98 and 99 are
+  # refused outright; see docs/10-anatomy/bundles-squashfs.md for why those two are not
+  # merely ordering. `bundle` is a var so a profile can move it.
+  bundle: "13-browsers"
+steps:
+  # DROP FIRST, THEN ADD -- the ordering chromium-current exists to demonstrate, for the
+  # same two reasons. Overriding would leave both copies on the ISO, paying 79.1 MiB for
+  # a Chromium nobody can reach, and files the 2023 build had that the current one does
+  # not would still be visible in the union, because a bundle can add and replace but
+  # cannot delete. See docs/40-workflow/composing-bundles.md.
+  #
+  # check_plan_order refuses the other order before anything is modified, across recipes
+  # AND across invocations -- which is why this recipe does the removal itself rather
+  # than leaning on remove-chromium. It also means all-browsers and debian-browsers
+  # cannot both be applied: both match literal 05, so the second one compares 05 against
+  # an already-built 13 and is refused. That refusal is correct; they are alternatives.
+  - verb: bundle.remove
+    match: "^05-chromium\\.sb$"
+
+  # SIX BROWSERS, ONE BUNDLE, ONE APT TRANSACTION -- so one dependency closure is solved
+  # and a library three of them share is installed once rather than three times. The
+  # bundle's contents are a measured filesystem delta, not this package list: _manifest()
+  # snapshots every path before and after, and added+modified is what gets squashed. So
+  # every transitive dependency lands here automatically, and anything 01-core .. 04-apps
+  # already provides does not, because it does not change.
+  #
+  # Installed sizes read from the vendors' own indexes on 2026-09-16, amd64:
+  #
+  #   microsoft-edge-stable 153.0.4234.32-1  640.5 MiB   vivaldi-stable  8.2.4133.55-1  454.6 MiB
+  #   brave-browser         1.95.101         462.5 MiB   chromium (3 pkgs)              338.9 MiB
+  #   google-chrome-stable  153.0.8010.47-1  433.9 MiB   firefox-esr     140.16.0esr    272.2 MiB
+  #
+  # ~2,600 MiB installed, ~770 MiB of .debs, for an ISO somewhere near 1.1 GiB. Note that
+  # toram then wants 1.1 GiB of RAM before the running system gets any, and boot-cmdline
+  # bakes toram into every entry by default.
+  #
+  # READ THE INDEX, NOT THE FIRST STANZA IN IT. Brave ships 183 versions of brave-browser
+  # in one Packages file and Edge 189; the first is from 2021 and is not what apt picks.
+  # Sorting by version and taking the last is the only way to quote these honestly. The
+  # first draft of this recipe had Brave at 1.51.118 and Edge at 128.x for exactly that
+  # reason -- years stale, and it looked like a measurement.
+  #
+  # TOR BROWSER IS NOT HERE, and not because it was forgotten. No Tor Browser .deb exists
+  # anywhere: deb.torproject.org ships tor, tor-geoipdb and a keyring -- the daemon, not
+  # the browser. torbrowser-launcher (bookworm contrib) is a DOWNLOADER, so the browser
+  # arrives on first run, over the network, into the live overlay, every boot without
+  # persistence. An offline boot gets a launcher that cannot launch, and an offline boot
+  # is most of what a USB stick is for. The tarball route -- bundle.fromTarball against a
+  # pinned tor-browser-linux-*.tar.xz -- is real and is a different recipe.
+  #
+  # `from:` IS UNSET ON PURPOSE, and that is why the removal has to come first. With
+  # 05-chromium gone the default resolves to 01-core .. 04-apps, so the shared browser
+  # runtime that left with it (libnss3, libnspr4, libopus0, libflac12, libwebpmux3 and
+  # the rest) comes back INSIDE this bundle and it stands on its own. Remove afterwards
+  # instead and this bundle would silently depend on a bundle that is gone. Naming a
+  # shorter stack would make apt reinstall libraries 02-xorg provides, and this bundle
+  # outranks 02-xorg, so its copies would win -- a version skew nobody asked for.
+  #
+  # THREE RECOMMENDS ARE NAMED, and the interesting part is how few. bundle.packages
+  # installs with --no-install-recommends, which is what cost libreoffice a working Base.
+  # Measured here: brave-browser, google-chrome-stable, microsoft-edge-stable and
+  # vivaldi-stable declare NO Recommends whatsoever, and fonts-liberation, libvulkan1,
+  # xdg-utils, wget and ca-certificates are hard Depends on all four -- so nothing is
+  # silently dropped. Every real gap is on the Debian side:
+  #
+  #   chromium-sandbox   Recommends of chromium; its entire content is the setuid sandbox
+  #                      helper, and without it Chromium runs with no sandbox. _stage_delta
+  #                      chmods AFTER chown, so the setuid bit survives the pack.
+  #   libavcodec59       Recommends of firefox-esr and its only route to H.264/AAC, 14.3
+  #                      MiB. The five Chromium-family browsers carry their own codecs, so
+  #                      this buys playback for Firefox alone -- worth it, because a
+  #                      browser that silently cannot play video is the libreoffice-Base
+  #                      failure again. The Recommends is a 20-way alternation; 59 is the
+  #                      one bookworm actually has. -extra59 adds encoders nobody needs to
+  #                      browse.
+  #   libgl1-mesa-dri    Recommends of chromium-common, 24.6 MiB. Without it every
+  #                      Chromium-family browser here falls back to llvmpipe. Whether
+  #                      02-xorg already carries it is UNVERIFIED -- if it does, apt sees
+  #                      it installed and this line costs nothing, which is why naming it
+  #                      is safe either way.
+  #
+  # Deliberately NOT named: libu2f-udev (in none of the six Depends lines today), and
+  # pulseaudio/pipewire-pulse (neither a Depends nor a Recommends of anything here).
+  # Adding a package no dependency asks for is how an image gains weight for nothing.
+  #
+  # KEEP: FALSE EVERYWHERE, AND IT DOES NOT MEAN WHAT IT SOUNDS LIKE. It keeps kitchen's
+  # own source list and pinned keyring out of the bundle. It cannot keep the REPOSITORIES
+  # out, because all four vendor postinsts install their own repository and key and that
+  # is ordinary dpkg output, which no exclusion pattern reaches. Measured from the .debs:
+  # google-chrome.sources, brave-browser.sources, microsoft-edge.sources, vivaldi.sources,
+  # each with a keyring -- and brave-browser Depends on brave-keyring, whose postinst
+  # symlinks its key into /etc/apt/trusted.gpg.d/, trusted for EVERY source rather than
+  # its own. So the finished image trusts four vendors either way; that is accepted and
+  # documented, not hidden. keep: false is still right because kitchen's copy would be a
+  # DUPLICATE of what the package already installs -- apt would fetch eight indexes
+  # instead of four. `apt update && apt upgrade` works regardless.
+  #
+  # Keys are pinned by sha256 and re-fetched 2026-09-16; byte counts are recorded so a
+  # mismatch can be told apart from a truncated download. These are live URLs that
+  # vendors rewrite, so a rotation will fail the build with a want/got mismatch rather
+  # than trusting a new key -- that is the design working, and it needs a maintenance
+  # commit when it happens. Armour format is detected from content, so .asc vs .gpg is
+  # not a decision to get wrong here.
+  - verb: bundle.packages
+    bundle: "{{bundle}}"
+    packages:
+      - chromium
+      - chromium-sandbox
+      - firefox-esr
+      - libavcodec59
+      - libgl1-mesa-dri
+      - brave-browser
+      - google-chrome-stable
+      - microsoft-edge-stable
+      - vivaldi-stable
+    apt:
+      sources:
+        # Named `brave`, not `brave-browser`: kitchen derives the keyring path from this
+        # name as usr/share/keyrings/<name>-archive-keyring.gpg, and `brave-browser`
+        # would collide with the file the brave-keyring PACKAGE owns. keep: false would
+        # then exclude a dpkg-owned file and the bundle would ship a package missing its
+        # own content. 3724 bytes, binary.
+        - name: brave
+          uri: https://brave-browser-apt-release.s3.brave.com/
+          suite: stable
+          components: [main]
+          key_url: https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+          key_sha256: "c85e85aa3d1783ffaa649ee8dbbc22af7f87192d304602d37e3018226b394788"
+          keep: false
+        # 19640 bytes, ASCII-armoured. It carries subkeys expiring in 2027, 2028 and
+        # 2029, so this hash has a shelf life.
+        - name: google
+          uri: https://dl.google.com/linux/chrome/deb/
+          suite: stable
+          components: [main]
+          key_url: https://dl.google.com/linux/linux_signing_key.pub
+          key_sha256: "54dea5f6c2a26091578cf52a999cebc6b64df478d37ad4dce96376b711e3b27c"
+          keep: false
+        # 975 bytes, ASCII-armoured.
+        - name: microsoft
+          uri: https://packages.microsoft.com/repos/edge
+          suite: stable
+          components: [main]
+          key_url: https://packages.microsoft.com/keys/microsoft.asc
+          key_sha256: "2fa9c05d591a1582a9aba276272478c262e95ad00acf60eaee1644d93941e3c6"
+          keep: false
+        # stable/deb, NOT archive/deb. Measured identical -- five stanzas, same newest
+        # version -- but stable/deb is what Vivaldi's own postinst configures, so the
+        # build-time and run-time sources agree instead of being two URLs for one thing.
+        #
+        # Kitchen writes sources.list.d/vivaldi.list, which is the exact path Vivaldi's
+        # remove_legacy_list() manages. It leaves ours alone: our line carries signed-by=
+        # and fails its strict `[arch=...amd64...] .../stable/deb/` regex, so the "other
+        # sources exist" branch wins and the sed that would comment it out matches
+        # nothing. 3175 bytes, ASCII-armoured.
+        - name: vivaldi
+          uri: https://repo.vivaldi.com/stable/deb/
+          suite: stable
+          components: [main]
+          key_url: https://repo.vivaldi.com/archive/linux_signing_key.pub
+          key_sha256: "5c67d85c0aca9c0d166edb5bc5e6ebc21d67bce4e67c645e7bd76d299fd337ef"
+          keep: false

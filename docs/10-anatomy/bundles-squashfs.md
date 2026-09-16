@@ -122,9 +122,10 @@ increments correctly from there.
 
 ### If a shipped recipe's number collides with yours
 
-Every recipe here is an example you are meant to copy and edit. The three application recipes sit
-at `10`–`12` — `chromium-current`, `firefox-esr`, `libreoffice` — which is inside *your* range on
-purpose, because installing an application is the kind of thing a fork does. Override the number
+Every recipe here is an example you are meant to copy and edit. The five application recipes sit
+at `10`–`14` — `chromium-current`, `firefox-esr`, `libreoffice`, `all-browsers`, `debian-browsers` —
+which is inside *your* range on purpose, because installing an application is the kind of thing a
+fork does. Override the number
 from your profile rather than editing the recipe:
 
 ```yaml
