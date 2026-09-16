@@ -33,6 +33,26 @@ def check_in(name, needle, haystack):
         FAILURES.append(f"{name}: {needle!r} not found in output")
 
 
+def sources_targets():
+    """The target names compat/sources.yaml defines, in file order.
+
+    Parsed with string handling rather than a YAML library because these tests run on a
+    stock python3 with no PyYAML -- the same reason lib/ ships its own reader.
+    """
+    found, in_targets = [], False
+    with open(os.path.join(ROOT, "compat", "sources.yaml")) as fh:
+        for ln in fh:
+            if ln.startswith("targets:"):
+                in_targets = True
+            elif in_targets:
+                if ln[:1].strip():                       # dedented to a new top-level key
+                    break
+                if (ln.startswith("  ") and not ln.startswith("   ")
+                        and ln.rstrip().endswith(":")):
+                    found.append(ln.strip().rstrip(":"))
+    return found
+
+
 def fake_repo(tmp, version, on_master=True):
     """A repo just real enough for the guard: a kitchen file and one commit.
 
@@ -154,24 +174,38 @@ def test_notes_say_what_was_not_done():
     for section in ("## Changes", "## What was verified", "## Provenance",
                     "## Redistribution"):
         check_in("section present", section, out)
-    # These three used to assert the blanket "Tier C was not run" and the words
-    # "/dev/kvm". That sentence was a CONSTANT, and pinning a constant is what would
-    # have stopped the notes telling the truth once Tier C had actually run -- this
-    # test would have failed on the honest output. It is derived from
-    # tests/boot/tier-c.json now, and BOTH branches live in
-    # test_tier_c_claim_follows_the_evidence, with their own fixtures.
+    # The Tier C sentence is DERIVED from tests/boot/tier-c.json, and all three of its
+    # shapes -- no ledger, a partial one, a complete one -- are asserted against their
+    # own fixtures in test_tier_c_claim_follows_the_evidence. Nothing branch-specific
+    # belongs HERE, because this test reads whatever the checkout happens to contain.
     #
-    # What stays unconditional is the part a reader would otherwise assume: which
-    # targets were not booted, and that nothing here claims a desktop came up.
-    # "Tier C was not run", not "...was not run on X": this must hold whichever branch
-    # the notes took. With no ledger it is the blanket denial; with a partial one it
-    # names the targets. Pinning the longer phrase tied this test to one branch, and it
-    # went red the moment the other one was correct -- the same trap the hardcoded
-    # sentence set before it.
-    check_in("names what Tier C did not reach", "Tier C was not run", out)
-    check_in("distinguishes the unbooted targets",
-             "matrix-verified, not boot-verified", out)
-    check_in("does not overclaim a desktop", "No release claims a desktop came up", out)
+    # That lesson has now cost three rounds. First the hardcoded "Tier C was not run",
+    # which would have failed on the honest output once Tier C ran. Then "...was not run
+    # on X", which went red the moment the no-ledger branch was the correct one. Then
+    # plain "Tier C was not run", which survived both of those and still would have
+    # broken the day all four targets were booted -- because then nothing was not run.
+    #
+    # So pin the INVARIANT rather than any sentence: every target in compat/sources.yaml
+    # is either claimed as booted or named as not booted. Nothing may be silently left
+    # out. The single shape that names no targets is the blanket denial, which says so
+    # in as many words. This also catches ci/tier-c-claim.py's ALL_TARGETS -- a
+    # hardcoded second copy of compat/sources.yaml -- drifting from it, which would
+    # quietly under-report which targets were never booted.
+    # Scoped to the section the claim lives in, NOT the whole document. ## Provenance
+    # lists every target in the base-ISO hash table, so searching all of `out` finds all
+    # four names whatever the Tier C claim says. The first version of this check did
+    # that, and making ci/tier-c-claim.py's target list drift left it green -- an
+    # unfalsifiable check, which is worse than none.
+    a, b = out.find("## What was verified"), out.find("## Provenance")
+    check("the verified section is present and bounded", a != -1 and b > a, True)
+    verified = out[a:b] if a != -1 and b > a else ""
+    targets = sources_targets()
+    check("four targets in compat/sources.yaml", len(targets), 4)
+    if "**Tier C was not run.**" not in verified:
+        for t in targets:
+            check_in(f"the Tier C claim accounts for {t}", f"`{t}`", verified)
+    check_in("does not overclaim a desktop",
+             "No release claims a desktop came up", verified)
     # A release must not inherit the per-push skip list. ci.yml decides that with a
     # `startsWith(github.ref, 'refs/tags/')` guard, which nothing here can execute -- so
     # pin the CLAIM instead, and let it fail loudly if someone ever weakens the release
@@ -239,6 +273,18 @@ def test_tier_c_claim_follows_the_evidence():
     out = notes("v9.9.9", env={"TIERC_LEDGER": path})
     check_in("a failed boot is named", "of those boots FAILED", out)
     check_in("and says which one", "`debian-64bit-12.2.0`/usb", out)
+
+    # A boot that wedges emits no testkit block at all, so its golden is "absent" rather
+    # than a mismatch -- the shape both real failures have had. That must not be counted
+    # as matching, and must not silence the claim for the runs that DID match: going
+    # quiet reads as "none of them were checked", which is its own false statement.
+    ledger["runs"][2]["golden"] = "absent"
+    with open(path, "w") as fh:
+        json.dump(ledger, fh)
+    out = notes("v9.9.9", env={"TIERC_LEDGER": path})
+    check_in("an unchecked golden is counted out", "3 of the 4 were diffed", out)
+    check("and does not resurrect the blanket invariant",
+          "all of them assembled an identical filesystem" in out, False)
 
     # No ledger at all: the blanket denial comes back.
     out = notes("v9.9.9", env={"TIERC_LEDGER": os.path.join(tmp, "absent.json")})

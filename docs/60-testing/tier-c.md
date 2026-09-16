@@ -8,9 +8,22 @@ It needs `/dev/kvm`, which GitHub-hosted runners do not have, so CI can exercise
 harness but can never be the evidence. That split is the whole design of this page.
 
 ```sh
-./kitchen build boot-matrix
+./kitchen build boot-matrix                       # or --base <target>
 ./ci/tier-c.sh
 ```
+
+All four targets, which is one loop because a profile's base is now overridable:
+
+```sh
+for t in debian-64bit-12.2.0 debian-32bit-12.2.0 \
+         slackware-64bit-15.0.4 slackware-32bit-15.0.4; do
+    ./kitchen build boot-matrix --base "$t" --no-test --force
+    ./ci/tier-c.sh --target "$t" --iso "out/slax-boot-matrix-$t.iso"
+done
+```
+
+The ledger **merges by target**, so four invocations accumulate into one document; a
+re-run replaces that target's rows rather than appending to them.
 
 Measured, both ways, on the same image:
 
@@ -102,6 +115,40 @@ one worth testing and it needs no room.
 
 A `dd`'d hybrid image **cannot** be the persistence target — it carries ISO9660 and is
 read-only. That is why this attaches a second device rather than writing to the stick.
+
+## What the four-target sweep found
+
+20 boots, 4 targets, **18 green**. The two that are not are the point of having run it:
+
+| | bios | uefi | usb | persistence |
+|---|---|---|---|---|
+| `debian-64bit-12.2.0` | ok | ok | ok | ok |
+| `debian-32bit-12.2.0` | ok | ok | ok | ok |
+| `slackware-64bit-15.0.4` | ok | ok | ok | **FAIL** |
+| `slackware-32bit-15.0.4` | ok | ok | ok | **FAIL** |
+
+**296 s wall clock for all four**, measured, with KVM and a 60 s ceiling: about 45 s for a
+target whose four paths all pass, and about 100 s for one where persistence boot 2 burns
+the ceiling. The hang is the expensive case, which is the right way round.
+
+**Persistence boot 2 wedges on both Slackware targets and passes on both Debian ones** —
+[issue #15](https://github.com/Fullaxx/slax-kitchen/issues/15). Boot 1 mounts the device,
+creates session #1 and writes the marker everywhere; on Slackware boot 2 stops at
+`* Waiting for persistent changes on /dev/sda ...` after three retry dots and never
+continues. The kept disk rules out the easy explanations: it is 87% empty, structurally
+identical to Debian's, and `dumpe2fs` says it was mounted twice — so the mount succeeded
+and something after it hung. The two initramfs userlands are byte-identical outside
+`lib/modules/`, so "Slackware is different" is not an explanation either.
+
+Two results that were open questions before the sweep and are not now:
+
+- **`uefi-bootable` works on 32-bit.** It ships `arch: [32bit, 64bit]` and a comment that
+  read as if it did not. A 64-bit UEFI machine boots the 32-bit ISO: OVMF loads
+  `BOOTX64.EFI`, GRUB boots the i686 kernel. A 32-bit UEFI *machine* is still not covered
+  — there is no `bootia32.efi` — and that is a statement about firmware.
+- **The goldens differ per flavour, correctly.** Slackware carries `06-devel.sb`, no dpkg
+  database, `/etc/rc.d/rc.local`, and a different `.xinitrc`. One golden per target is
+  what makes each of those a pinned fact rather than noise.
 
 ## What lands in the repository, and what does not
 

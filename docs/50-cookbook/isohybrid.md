@@ -1,8 +1,8 @@
 # `isohybrid` — make the ISO `dd`-able to a USB stick
 
 **Status: boot-verified** — MBR, GPT and an EFI System Partition entry confirmed in the built image,
-and the image booted as a `usb-storage` device on `debian-64bit-12.2.0`, reaching all three livekit
-markers.
+and the image booted as a `usb-storage` device on **all four targets**, reaching all three livekit
+markers each time.
 
 ```sh
 kitchen apply isohybrid

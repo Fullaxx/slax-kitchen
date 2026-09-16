@@ -167,7 +167,9 @@ The dev container has no `CAP_SYS_ADMIN`, no user namespaces and no `/dev/kvm`. 
 
 **No longer blocked.** The Tier C boot matrix — BIOS, UEFI, USB image and persistence —
 runs as [`ci/tier-c.sh`](../60-testing/tier-c.md) on any KVM-capable host, about 45 seconds
-for four paths. Busybox gate 5 turned out never to have been blocked at all: it is
+for four paths, and has been run on **all four targets**: 20 boots, 18 green. The two
+failures are persistence boot 2 on both Slackware targets,
+[issue #15](https://github.com/Fullaxx/slax-kitchen/issues/15). Busybox gate 5 turned out never to have been blocked at all: it is
 the rollback proof, takes seconds, needs no KVM, and had been filed in the host queue by
 mislabelling. It runs in CI.
 

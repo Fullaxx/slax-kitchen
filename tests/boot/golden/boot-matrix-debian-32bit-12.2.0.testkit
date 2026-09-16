@@ -1,0 +1,14 @@
+union: aufs
+bundles: 01-core.sb 01-firmware.sb 02-xorg.sb 03-desktop.sb 04-apps.sb 05-chromium.sb
+kernel: 6.1.38-smp
+busybox: BusyBox v1.26.2
+dpkg-status: 600 packages
+file /etc/hostname: slax
+file /etc/slax-version: Slax 12.2.0 64bit
+file /etc/timezone: Etc/UTC
+file /etc/localtime: symlink -> /usr/share/zoneinfo/Etc/UTC
+file /root/.xinitrc: startfluxbox
+file /etc/ssl/cert.pem: absent
+file /var/lib/connman/kitchen.config: absent
+file /etc/systemd/system/multi-user.target.wants/ssh.service: absent
+file /etc/rc.d/rc.local: absent

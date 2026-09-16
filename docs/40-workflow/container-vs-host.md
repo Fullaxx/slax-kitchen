@@ -93,7 +93,7 @@ described: see [Tier C](../60-testing/tier-c.md).
 |---|---|---|
 | A — structure | parse the built ISO and assert on it | **fast**, every push |
 | B — direct kernel | `qemu -kernel … -initrd …`, exercises the whole livekit init | **works**, ~1–3 min under TCG |
-| C — full boot matrix | bootloader, USB device, persistence across two boots | **implemented**: `ci/tier-c.sh`. ~45 s for four paths with KVM, 128 s under TCG |
+| C — full boot matrix | bootloader, USB device, persistence across two boots | **implemented**: `ci/tier-c.sh`, run on all four targets. ~45 s per target with KVM, 128 s under TCG |
 
 ## Relaxing the container
 

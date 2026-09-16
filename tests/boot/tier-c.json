@@ -1,0 +1,429 @@
+{
+  "accel": "kvm",
+  "commit": "ec34b05",
+  "date": "2026-09-16",
+  "kitchen": "0.1.0-dev",
+  "qemu": "8.2.2",
+  "runs": [
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "created",
+      "iso_bytes": 443547648,
+      "iso_name": "slax-boot-matrix-debian-32bit-12.2.0.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "bios",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 13828,
+      "seconds_ceiling": 60,
+      "target": "debian-32bit-12.2.0",
+      "waited_s": 5.5
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 443547648,
+      "iso_name": "slax-boot-matrix-debian-32bit-12.2.0.iso",
+      "markers": [
+        "Live Kit done, starting slax",
+        "perch-marker: absent"
+      ],
+      "missing": [],
+      "path": "persistence",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "run_tag": "perch1",
+      "screenshot_bytes": 7193,
+      "seconds_ceiling": 60,
+      "target": "debian-32bit-12.2.0",
+      "waited_s": 4.5
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 443547648,
+      "iso_name": "slax-boot-matrix-debian-32bit-12.2.0.iso",
+      "markers": [
+        "Live Kit done, starting slax",
+        "perch-marker: present"
+      ],
+      "missing": [],
+      "path": "persistence",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "run_tag": "perch2",
+      "screenshot_bytes": 7193,
+      "seconds_ceiling": 60,
+      "target": "debian-32bit-12.2.0",
+      "waited_s": 4.5
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 443547648,
+      "iso_name": "slax-boot-matrix-debian-32bit-12.2.0.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "uefi",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 24740,
+      "seconds_ceiling": 60,
+      "target": "debian-32bit-12.2.0",
+      "waited_s": 6.0
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 443547648,
+      "iso_name": "slax-boot-matrix-debian-32bit-12.2.0.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "usb",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 13862,
+      "seconds_ceiling": 60,
+      "target": "debian-32bit-12.2.0",
+      "waited_s": 5.5
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "created",
+      "iso_bytes": 442499072,
+      "iso_name": "slax-boot-matrix-debian-64bit-12.2.0.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "bios",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 14305,
+      "seconds_ceiling": 60,
+      "target": "debian-64bit-12.2.0",
+      "waited_s": 5.5
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 442499072,
+      "iso_name": "slax-boot-matrix-debian-64bit-12.2.0.iso",
+      "markers": [
+        "Live Kit done, starting slax",
+        "perch-marker: absent"
+      ],
+      "missing": [],
+      "path": "persistence",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "run_tag": "perch1",
+      "screenshot_bytes": 8089,
+      "seconds_ceiling": 60,
+      "target": "debian-64bit-12.2.0",
+      "waited_s": 4.0
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 442499072,
+      "iso_name": "slax-boot-matrix-debian-64bit-12.2.0.iso",
+      "markers": [
+        "Live Kit done, starting slax",
+        "perch-marker: present"
+      ],
+      "missing": [],
+      "path": "persistence",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "run_tag": "perch2",
+      "screenshot_bytes": 8089,
+      "seconds_ceiling": 60,
+      "target": "debian-64bit-12.2.0",
+      "waited_s": 4.0
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 442499072,
+      "iso_name": "slax-boot-matrix-debian-64bit-12.2.0.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "uefi",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 34773,
+      "seconds_ceiling": 60,
+      "target": "debian-64bit-12.2.0",
+      "waited_s": 5.5
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 442499072,
+      "iso_name": "slax-boot-matrix-debian-64bit-12.2.0.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "usb",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 14277,
+      "seconds_ceiling": 60,
+      "target": "debian-64bit-12.2.0",
+      "waited_s": 5.5
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "created",
+      "iso_bytes": 477102080,
+      "iso_name": "slax-boot-matrix-slackware-32bit-15.0.4.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "bios",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 13824,
+      "seconds_ceiling": 60,
+      "target": "slackware-32bit-15.0.4",
+      "waited_s": 5.5
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 477102080,
+      "iso_name": "slax-boot-matrix-slackware-32bit-15.0.4.iso",
+      "markers": [
+        "Live Kit done, starting slax",
+        "perch-marker: absent"
+      ],
+      "missing": [],
+      "path": "persistence",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "run_tag": "perch1",
+      "screenshot_bytes": 7193,
+      "seconds_ceiling": 60,
+      "target": "slackware-32bit-15.0.4",
+      "waited_s": 4.5
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "absent",
+      "iso_bytes": 477102080,
+      "iso_name": "slax-boot-matrix-slackware-32bit-15.0.4.iso",
+      "markers": [],
+      "missing": [
+        "Live Kit done, starting slax",
+        "perch-marker: present"
+      ],
+      "path": "persistence",
+      "profile": "boot-matrix",
+      "result": "fail",
+      "run_tag": "perch2",
+      "screenshot_bytes": 2421,
+      "seconds_ceiling": 60,
+      "target": "slackware-32bit-15.0.4",
+      "waited_s": 60.1
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 477102080,
+      "iso_name": "slax-boot-matrix-slackware-32bit-15.0.4.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "uefi",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 24714,
+      "seconds_ceiling": 60,
+      "target": "slackware-32bit-15.0.4",
+      "waited_s": 6.0
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 477102080,
+      "iso_name": "slax-boot-matrix-slackware-32bit-15.0.4.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "usb",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 13857,
+      "seconds_ceiling": 60,
+      "target": "slackware-32bit-15.0.4",
+      "waited_s": 5.5
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 483393536,
+      "iso_name": "slax-boot-matrix-slackware-64bit-15.0.4.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "bios",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 14290,
+      "seconds_ceiling": 60,
+      "target": "slackware-64bit-15.0.4",
+      "waited_s": 5.5
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 483393536,
+      "iso_name": "slax-boot-matrix-slackware-64bit-15.0.4.iso",
+      "markers": [
+        "Live Kit done, starting slax",
+        "perch-marker: absent"
+      ],
+      "missing": [],
+      "path": "persistence",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "run_tag": "perch1",
+      "screenshot_bytes": 8089,
+      "seconds_ceiling": 60,
+      "target": "slackware-64bit-15.0.4",
+      "waited_s": 4.0
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "absent",
+      "iso_bytes": 483393536,
+      "iso_name": "slax-boot-matrix-slackware-64bit-15.0.4.iso",
+      "markers": [],
+      "missing": [
+        "Live Kit done, starting slax",
+        "perch-marker: present"
+      ],
+      "path": "persistence",
+      "profile": "boot-matrix",
+      "result": "fail",
+      "run_tag": "perch2",
+      "screenshot_bytes": 2425,
+      "seconds_ceiling": 60,
+      "target": "slackware-64bit-15.0.4",
+      "waited_s": 60.1
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 483393536,
+      "iso_name": "slax-boot-matrix-slackware-64bit-15.0.4.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "uefi",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 34823,
+      "seconds_ceiling": 60,
+      "target": "slackware-64bit-15.0.4",
+      "waited_s": 5.5
+    },
+    {
+      "accel": "kvm",
+      "commit": "ec34b05",
+      "date": "2026-09-16",
+      "golden": "match",
+      "iso_bytes": 483393536,
+      "iso_name": "slax-boot-matrix-slackware-64bit-15.0.4.iso",
+      "markers": [
+        "Looking for slax data",
+        "Mounting bundles",
+        "Live Kit done, starting slax"
+      ],
+      "missing": [],
+      "path": "usb",
+      "profile": "boot-matrix",
+      "result": "pass",
+      "screenshot_bytes": 14257,
+      "seconds_ceiling": 60,
+      "target": "slackware-64bit-15.0.4",
+      "waited_s": 5.5
+    }
+  ]
+}

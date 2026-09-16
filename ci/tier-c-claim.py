@@ -35,11 +35,20 @@ def claim(doc: dict) -> str:
             ", ".join(f"`{t}`" for t in targets), doc["commit"], doc["date"],
             doc["accel"].upper(), doc["qemu"], len(runs), ", ".join(paths))
     ]
-    # Only claim the cross-path invariant when every run actually checked it.
+    # Only claim the cross-path invariant when every run actually checked it. When some
+    # did not -- a boot that wedges emits no testkit block at all -- say how many did
+    # rather than going silent, because silence reads as "none of them were checked",
+    # which is a weaker claim than the evidence supports and equally untrue.
+    matched = sum(1 for r in runs if r.get("golden") in ("match", "created"))
     if goldens and goldens <= {"match", "created"}:
         out.append(
             "Every path was asserted on the livekit markers and diffed against one "
             "testkit golden, so all of them assembled an identical filesystem.")
+    elif matched:
+        out.append(
+            "{} of the {} were diffed against one testkit golden and matched; the "
+            "identical-filesystem claim covers those and not the rest.".format(
+                matched, len(runs)))
     if failed:
         out.append("\n\n**{} of those boots FAILED**: {}.".format(
             len(failed), ", ".join(f"`{r['target']}`/{r['path']}" for r in failed)))

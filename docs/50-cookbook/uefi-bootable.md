@@ -1,6 +1,8 @@
 # `uefi-bootable` — make the ISO boot on UEFI firmware
 
-**Status: boot-verified** — booted under OVMF, all the way to livekit mounting bundles.
+**Status: boot-verified** — booted under OVMF on **all four targets**, all the way to livekit
+mounting bundles and `Live Kit done`. That includes both 32-bit images: a 64-bit UEFI machine boots
+them, which the recipe claimed in `compat:` and had never been shown.
 
 ```sh
 kitchen apply memtest86plus serial-console uefi-bootable   # LAST in the list

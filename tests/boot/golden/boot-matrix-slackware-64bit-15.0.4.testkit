@@ -1,0 +1,14 @@
+union: aufs
+bundles: 01-core.sb 01-firmware.sb 02-xorg.sb 03-desktop.sb 04-apps.sb 05-chromium.sb 06-devel.sb
+kernel: 6.1.38
+busybox: BusyBox v1.26.2
+dpkg-status: none (Slackware packs one file per package)
+file /etc/hostname: absent
+file /etc/slax-version: Slax 15.0.4 64bit
+file /etc/timezone: absent
+file /etc/localtime: TZif2GMTTZif2GMT
+file /root/.xinitrc: xhost +
+file /etc/ssl/cert.pem: absent
+file /var/lib/connman/kitchen.config: absent
+file /etc/systemd/system/multi-user.target.wants/ssh.service: absent
+file /etc/rc.d/rc.local: present 274 bytes

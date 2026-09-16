@@ -1,6 +1,8 @@
 # `serial-console` — capture the whole boot on a serial port
 
-**Status: boot-verified** — entry present in both menus on all four targets, and booted through it on `debian-64bit-12.2.0` via isolinux, GRUB/OVMF and usb-storage, reaching all three livekit markers each time.
+**Status: boot-verified** — entry present in both menus on all four targets, and booted through it
+on **all four** via isolinux, GRUB/OVMF and usb-storage: twelve boots, all three livekit markers
+every time.
 
 ```sh
 kitchen apply serial-console
