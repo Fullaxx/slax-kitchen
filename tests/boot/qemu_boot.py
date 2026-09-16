@@ -196,7 +196,12 @@ def testkit_block(text: str) -> list[str]:
     """The lines between the testkit fences, minus the ones meant to vary."""
     out, inside = [], False
     for ln in text.splitlines():
-        ln = ln.rstrip("\r")
+        # rstrip everything, not just \r. A golden is a normalised record, not a
+        # transcript: `bundles:` ends in a space because testkit builds it with
+        # `tr '\n' ' '`, and a committed file with trailing whitespace is rejected by
+        # ci/checks/70-whitespace.sh -- correctly. Both the write and the comparison go
+        # through here, so they cannot disagree.
+        ln = ln.rstrip()
         if TESTKIT_BEGIN in ln:
             inside = True
             continue
