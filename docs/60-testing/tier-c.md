@@ -57,6 +57,15 @@ What works is simpler. **Esc** reveals Slax's hidden menu; **Esc again** drops t
 which already fails. GRUB has no such prompt, but its menu has neither problem, so there
 the entry is counted.
 
+**The timing is a measurement, not a guess, and it caught a bug that would only ever have
+appeared weekly.** isolinux draws its menu about a second in under either accelerator, so
+a short lead is fine. OVMF does not: under TCG it spends about **nine seconds** in
+firmware before GRUB draws anything, and GRUB's five-second default window had opened and
+shut by fourteen. A two-second lead worked on the KVM host and would have failed every CI
+run. So `uefi-bootable` gained a `menu_timeout` variable, `boot-matrix` asks for 30
+seconds of it, and the harness waits 10 — one lead that is correct under both. Verified
+under TCG in an unaccelerated container: 22 s to all three markers.
+
 **The console order.** `serial-console` used to end `console=ttyS0 console=tty0`.
 `/dev/console` is the *last* `console=`, so userspace wrote to the screen and the serial
 port carried kernel messages only: 21 KB of log and zero livekit markers. Reversing them

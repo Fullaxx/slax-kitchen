@@ -46,8 +46,16 @@ _serial_keys() {
         _sk_n=$(awk '/^menuentry /{i++} /console=ttyS/{print i-1; exit}' "$_sk_d/cfg")
         rm -rf "$_sk_d"
         [ -n "$_sk_n" ] || return 1
-        # GRUB draws its menu immediately and any keypress stops the countdown.
-        _sk_k="2s"; _sk_i=0
+        # TEN SECONDS, measured, not padded. Any keypress stops GRUB's countdown -- but
+        # only once GRUB exists, and OVMF under TCG spends about nine seconds in firmware
+        # first: a screendump at 9 s is still blank and one at 14 s already shows the EFI
+        # stub loading the kernel, so the five-second default window had opened and shut.
+        # A two-second lead worked under KVM and would have failed every weekly CI run.
+        #
+        # Ten lands inside the window under both, given the wider timeout that
+        # profiles/boot-matrix.yaml asks uefi-bootable for. On an image built with the
+        # default 5 s timeout this is still correct under TCG and merely slow under KVM.
+        _sk_k="10s"; _sk_i=0
         while [ "$_sk_i" -lt "$_sk_n" ]; do _sk_k="$_sk_k,down"; _sk_i=$((_sk_i+1)); done
         printf '%s,ret\n' "$_sk_k"
         return 0

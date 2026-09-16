@@ -52,6 +52,38 @@ BIOS booting is untouched — the same ISO boots both ways.
 **It needs no privileges.** The ESP is built with `mkfs.vfat -C` plus `mtools`, which write into an
 image file without ever mounting it. That is what makes this work in an unprivileged container.
 
+## `menu_timeout` — how long GRUB waits
+
+```yaml
+recipes:
+  - name: uefi-bootable
+    vars:
+      menu_timeout: "30"        # default is "5"
+```
+
+Five seconds is fine for a person sitting in front of the machine. It is a poor fit for
+anything driving the menu automatically, because the window only opens once GRUB is
+running — and getting there is a property of the machine, not of the image.
+
+Measured on 2026-09-16, the same ISO under TCG with no `/dev/kvm`, screendumping at
+intervals:
+
+| at | what is on screen |
+|---|---|
+| 2 s | nothing — OVMF is still in its DXE phase |
+| 9 s | still blank |
+| 14 s | `EFI stub: Loaded initrd…` — GRUB's menu has already come and gone |
+
+So OVMF spends about nine seconds in firmware, and the five-second window had opened and
+shut before 14. A keystroke lead tuned on a KVM host — where the same menu appears in
+about one second — lands in dead air on a slower one. That is the worst shape a test can
+have: green on the fast machine, red on the slow one, for reasons having nothing to do
+with the thing under test.
+
+[`profiles/boot-matrix.yaml`](../60-testing/tier-c.md) sets 30 for exactly this reason,
+and `kitchen test --uefi` waits 10 seconds before touching the menu. An unattended boot
+sits through the extra seconds it was going to sit through anyway.
+
 ## ⚠️ Apply it last
 
 `boot.uefi` generates the GRUB menu by **parsing `isolinux.cfg`**, so it mirrors whatever entries

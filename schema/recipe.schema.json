@@ -915,7 +915,15 @@
             ]
           },
           "then": {
-            "properties": {}
+            "properties": {
+              "timeout": {
+                "description": "seconds GRUB waits before the default entry; default 5",
+                "type": [
+                  "integer",
+                  "string"
+                ]
+              }
+            }
           }
         },
         {

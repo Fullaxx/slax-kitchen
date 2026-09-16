@@ -9,6 +9,12 @@ compat:
   arch: [32bit, 64bit]
   slax: ">=12.0.0"
   privilege: none
+vars:
+  # Seconds GRUB waits before booting the default entry. Five is upstream-ish and fine
+  # for a person; an automated boot has to REACH this menu before it expires, and under
+  # TCG OVMF spends about nine seconds in firmware before GRUB draws anything. Raise it
+  # for an image a test harness drives -- profiles/boot-matrix.yaml does.
+  menu_timeout: "5"
 steps:
   # The stock El Torito catalog has exactly ONE entry, platform 0x00 (x86 BIOS). There
   # is no 0xEF section header and no EFI System Partition, so UEFI firmware has nothing
@@ -23,3 +29,4 @@ steps:
   #
   # Note x86_64 only: upstream ships no bootia32.efi and neither do we.
   - verb: boot.uefi
+    timeout: "{{menu_timeout}}"

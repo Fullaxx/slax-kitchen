@@ -31,7 +31,16 @@ recipes:
   - isohybrid
   # uefi-bootable LAST: it generates the GRUB menu by parsing isolinux.cfg, so it has to
   # run after anything that adds an entry -- serial-console above, specifically.
-  - uefi-bootable
+  #
+  # menu_timeout 30, not the default 5, and it is measured rather than padded. OVMF under
+  # TCG spends about NINE seconds in firmware before GRUB draws its menu -- by fourteen
+  # the default entry has already been chosen and the kernel is loading. A five-second
+  # window is one a test harness misses on a slow machine and hits on a fast one, which
+  # is the worst kind of test. Thirty makes one keystroke lead correct under both KVM and
+  # TCG, and costs an unattended boot nothing it was not going to sit through anyway.
+  - name: uefi-bootable
+    vars:
+      menu_timeout: "30"
 output:
   name: "slax-boot-matrix-{{flavour}}-{{arch}}-{{version}}.iso"
   hybrid: true
