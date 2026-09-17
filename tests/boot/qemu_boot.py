@@ -40,9 +40,10 @@ import tempfile
 import time
 
 # Searched in order, and overridable, because these were two hardcoded absolute paths
-# that died with a traceback on any distribution that lays firmware out differently --
-# a hardcoding tools/qemu/common.sh:86-88 already calls out as the reason it grew its
-# own discovery. Same list, same order, so the two agree.
+# that died with a traceback on any distribution that lays firmware out differently.
+# tools/qemu/boot.py searches the same list in the same order, so the harness and the
+# interactive launcher find the same firmware -- tests/unit/test_tools_qemu.py fails if
+# the two drift apart.
 OVMF_DIRS = ("/usr/share/OVMF", "/usr/share/ovmf", "/usr/share/edk2/ovmf", "/usr/share/qemu")
 OVMF_CODE_NAMES = ("OVMF_CODE_4M.fd", "OVMF_CODE.fd", "OVMF.fd")
 OVMF_VARS_NAMES = ("OVMF_VARS_4M.fd", "OVMF_VARS.fd")

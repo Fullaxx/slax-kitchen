@@ -250,10 +250,11 @@ virtualisation, but a boot gains everything. Measured: all three livekit markers
 with KVM, against a 150-second budget under TCG.
 
 ```sh
-tools/qemu/boot-bios.sh out/slax-custom.iso
+tools/qemu/boot.py out/slax-custom.iso --bios
 ```
 
-See [QEMU by hand](qemu.md) for the display, the ssh tunnel, and installing to a virtual disk.
+See [QEMU by hand](qemu.md) for the display, the ssh tunnel, other hardware, disks and
+persistence, and `--print` for booting the same image on another machine.
 
 **What is worth committing from such a run** is the *result* — an ISO size, a package count, a boot
 marker — because those are facts about the artifact. Facts about the machine that produced them are

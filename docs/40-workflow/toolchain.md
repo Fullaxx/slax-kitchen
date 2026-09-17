@@ -93,7 +93,7 @@ it cannot read the ISO9660 filesystem the kernel lives on. See
 | | package | |
 |---|---|---|
 | `qemu-system-x86_64` | `qemu-system-x86` | boot tests. Works without KVM, 10–20× slower |
-| `qemu-img` | `qemu-utils` | build USB test images |
+| `qemu-img` | `qemu-utils` | qcow2 disks for [`tools/qemu/boot.py`](../60-testing/qemu.md) |
 | — | `ovmf` | UEFI firmware. Copy `OVMF_VARS` to a **private writable** file first; the packaged one is read-only |
 
 ### Gates and plumbing

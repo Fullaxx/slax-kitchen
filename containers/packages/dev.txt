@@ -5,7 +5,7 @@
 # the environment the documentation describes.
 
 # doctor's tool table. 7z reads ISO9660 and squashfs without mounting; do NOT
-# unpack with it, it drops Rock Ridge modes. qemu-img builds USB test images.
+# unpack with it, it drops Rock Ridge modes.
 p7zip-full
 
 git

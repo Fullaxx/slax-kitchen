@@ -154,16 +154,18 @@ This is the least invasive option available.
 
 ## Verifying without hardware
 
-The `dd` route is fully testable under QEMU — an isohybrid image is a valid disk image:
+The `dd` route is fully testable under QEMU — an isohybrid image *is* the disk image, byte for byte,
+so there is nothing to copy first:
 
 ```sh
-cp out/slax-usb.iso /tmp/usb.img
-qemu-system-x86_64 -enable-kvm -m 2048 \
-  -drive if=none,format=raw,id=u,file=/tmp/usb.img -device usb-storage,drive=u
+tools/qemu/boot.py out/slax-usb.iso --bios --iso-bus usb
+tools/qemu/boot.py out/slax-usb.iso --uefi --iso-bus usb     # also needs uefi-bootable
 ```
 
-Attaching it as `usb-storage` rather than `-hda` exercises the USB path in the initramfs, which is
-where a missing driver would actually bite.
+`--iso-bus usb` attaches the image read-only as a `usb-storage` stick on an xhci controller, not as
+a CD or `-hda`, which exercises the USB path in the initramfs — where a missing driver would actually
+bite. It refuses an image with no MBR, which is what a stock ISO is. For the raw qemu line, add
+`--print`, or see [host-handoff](host-handoff.md).
 
 **Real-hardware verification is still worth doing**, because firmware varies in ways QEMU does not
 reproduce — particularly which partition a UEFI implementation examines first. That, plus the actual

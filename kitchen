@@ -90,7 +90,7 @@ mkfs.vfat|dosfstools|build the EFI System Partition image
 mcopy|mtools|write into the ESP image WITHOUT mounting it
 grub-mkstandalone|grub-efi-amd64-bin|build BOOTX64.EFI for UEFI boot
 qemu-system-x86_64|qemu-system-x86|boot tests
-qemu-img|qemu-utils|build USB test images
+qemu-img|qemu-utils|qcow2 disks for tools/qemu/boot.py
 shellcheck|shellcheck|commit gate
 yamllint|yamllint|commit gate
 jq|jq|JSON handling

@@ -85,11 +85,12 @@ Four targets — `{debian,slackware} × {32,64}bit` — times four boot paths.
 ./kitchen build boot-matrix --base slackware-64bit-15.0.4   # any of the four
 ```
 
-> **There are scripts for the first two of these.** `tools/qemu/boot-bios.sh` and
-> `tools/qemu/boot-uefi.sh` wrap the commands below and handle the parts they leave to you: picking
-> a display backend that this qemu actually has, discovering OVMF, copying its variables file, and
-> refusing a UEFI run against an ISO with no EFI entry. See
-> [QEMU by hand](../60-testing/qemu.md). The forms below remain the reference.
+> **One launcher does these by hand.** `tools/qemu/boot.py` boots all four — `--bios`, `--uefi`,
+> `--iso-bus usb`, and a persistence disk under `--kernel-boot` — and handles the parts the commands
+> below leave to you: a display this qemu actually has, discovering OVMF, a private copy of its
+> variables file, and refusing an ISO that cannot boot the way you asked. Add `--print` and it writes
+> the commands out instead, for a machine you are not on. See [QEMU by hand](../60-testing/qemu.md).
+> The forms below remain the reference.
 
 ### BIOS, optical
 
@@ -98,7 +99,7 @@ qemu-system-x86_64 -enable-kvm -m 2048 -cdrom out/slax-custom.iso -serial mon:st
 ```
 
 Note this passes no display flag, so qemu picks a host-dependent default — on a build without GTK
-or SDL that fails outright. The scripts default to VNC for that reason.
+or SDL that fails outright. The launcher defaults to VNC for that reason.
 
 ### UEFI, optical — needs the `uefi-bootable` recipe
 

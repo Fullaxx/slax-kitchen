@@ -1,6 +1,10 @@
 # Boot tests. Used by: ci.yml `boot`, and the reference container.
 # Additive to build.txt -- install both.
 #
+# Also everything tools/qemu/boot.py needs to boot an image by hand, with xorriso from
+# build.txt for --kernel-boot. The one thing it can use that no list here installs is
+# ovmf-ia32, for --arch x86 --uefi.
+#
 # No /dev/kvm on a GitHub runner or in an unprivileged container, so QEMU falls
 # back to TCG. That is a speed problem, not a capability one: the direct-kernel
 # boot still reaches the livekit markers, it just takes minutes instead of seconds.

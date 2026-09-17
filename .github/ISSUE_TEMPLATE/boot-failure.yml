@@ -42,7 +42,8 @@ body:
         beside the ISO. Attach the file, or paste the last ~100 lines. Boot with
         `console=ttyS0,115200n8` (or apply the `serial-console` recipe) if you are
         booting by hand — without it the interesting output goes to a screen nobody
-        is capturing.
+        is capturing. In QEMU, `tools/qemu/boot.py out/my.iso --bios --kernel-boot
+        --serial file:serial.log` does both.
       render: text
     validations: {required: true}
   - type: textarea
