@@ -45,6 +45,8 @@ kitchen test out/x.iso --kernel --expect 'dpkg-status: 600 packages'
 
 `--structure` runs `tests/structure/iso_assert.py`: El Torito shape, Rock Ridge, Joliet,
 boot-info-table consistency, squashfs parameters on every bundle, and required files. About a second.
+It expects the volume id `slax` unless `--volid` says otherwise; `kitchen build` passes whatever the
+profile's recipes asked `pack` for, read through the same hint reader `pack` uses.
 
 `--bios` / `--uefi` boot the ISO in QEMU and capture a serial log plus a screenshot into
 `<iso-dir>/boot-tests/`. Without `/dev/kvm` these run under TCG and are slow; the command says so
@@ -121,6 +123,7 @@ Rebuilds an ISO from a work tree. Default output is `./out/<source>-custom.iso`,
 |---|---|
 | `--backend genisoimage\|xorriso` | default: genisoimage, or xorriso if `--uefi`/`--hybrid` |
 | `--uefi`, `--hybrid` | normally set by recipes via pack hints, not by hand |
+| `--volid`, `--appid`, `--sysid`, `--publisher`, `--preparer` | volume descriptor fields; [`iso-identity`](../50-cookbook/iso-identity.md) sets them as hints, and a flag given here wins |
 | `--date YYYYMMDDhhmmsscc` | pin timestamps (xorriso only) |
 
 See [repack-iso.md](../40-workflow/repack-iso.md) for why there are two backends.

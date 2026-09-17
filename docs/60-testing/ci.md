@@ -10,6 +10,7 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 | `ci.yml` → `build` | push to master, or any PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
 | `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | one direct-kernel QEMU boot under TCG, asserting |
 | `ci.yml` (weekly) | Thursdays 05:41 UTC, or dispatch | the same, plus the skipped recipes and the [Tier C](tier-c.md) boot matrix |
+| `ci.yml` → `tor-assets` | weekly, dispatch, or a tag | builds `tor`, assembles and verifies what would travel with it, uploads the records and source — [never the image](#tor-assets-the-pipeline-proven-weekly) |
 | `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml` — **the full matrix**, not the per-push subset — then publish |
 | `upstream-watch.yml` | Mondays 06:17 UTC, or dispatch | linux-live HEAD, new Slax release, mirror health, pinned signing keys |
 
@@ -26,7 +27,7 @@ want the matrix. It also has to stay unscoped for a PR to be mergeable at all: m
 branch protection requires five checks from this workflow — `commit gates` and the four
 `build <target>` jobs — and `pull_request` is the only trigger that produces them for a PR.
 
-Most of CI runs on every push to master. Two things deliberately do not, and both are on the
+Most of CI runs on every push to master. Three things deliberately do not, and all are on the
 weekly run:
 
 | | per push | weekly / tag / dispatch |
@@ -35,12 +36,15 @@ weekly run:
 | the recipes in [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) | ❌ | ✅ |
 | direct-kernel boot, asserting markers | ✅ | ✅ |
 | BIOS + UEFI screenshot boots | ❌ | ✅ |
+| `tor-assets`: the publishing procedure on a real image, never uploading it | ❌ | ✅ |
 
 **The bar for `ci/slow-recipes.txt` is not "slow".** It is that the recipe's failure mode is
 *external* — something outside this repository breaks it — so running it per-push converts someone
 else's change into a red master at a cadence nobody can act on. Being merely expensive is not
-enough; cost is not a reason to stop checking. Today the file holds one entry: `all-browsers`,
-whose four vendor signing keys are pinned by sha256 and will rotate.
+enough; cost is not a reason to stop checking. Today the file holds three entries, each an
+external dependency: `all-browsers`, whose four vendor signing keys are pinned by sha256 and will
+rotate; `tor-browser`, a version-pinned 138 MB download; and `firmware-refresh`, 65 sha256-pinned
+files fetched from linux-firmware mirrors.
 
 Each skip is printed with its reason. A matrix that quietly ran less than it looks like would be
 worse than a slow one:
@@ -312,6 +316,32 @@ regenerate the fingerprint, `kitchen selftest ci`, then fix what breaks. See
 > It does **not** watch busybox or CVEs. The busybox replacement is pinned and tested by
 > [`tests/busybox/gates.sh`](../../tests/busybox/gates.sh), not by this.
 
+## Tor assets: the pipeline, proven weekly
+
+The `tor-assets` job runs the [publishing procedure](../40-workflow/publishing-images.md) on a real
+profile, so the scripts a project uses to publish are exercised against a real image rather than
+fixtures alone:
+
+```sh
+sudo ./kitchen build tor
+./ci/release-assets.sh out/slax-tor-12.2.0.iso out/tor-assets --no-image
+./ci/release-verify.py out/tor-assets --assert-no-images
+```
+
+`tor` has what makes the procedure worth testing: a 138 MB prebuilt download with its own
+`upstream_source`, Debian packages, and a GRUB EFI image built from the runner's own GRUB, whose
+source package is fetched and attached.
+
+**The image is never uploaded.** The Tor Project's trademark policy does not allow "Tor" in the name
+of another product without written permission, so this image is built, checked and discarded.
+`--no-image` leaves it out of the set; `--assert-no-images` then fails the job if any asset is an
+ISO 9660 image, squashfs, ELF, PE or FAT filesystem, judged by content, so a renamed ISO would not
+pass either. The upload is a workflow artifact of `out/tor-assets/` only, not a release asset.
+
+Weekly rather than per push for the same reason `tor-browser` is on the slow list: the download is
+an external dependency. The verify gate's own logic is unit-tested on every push by
+`tests/unit/test_release_assets.py`, which breaks a fixture directory one way at a time.
+
 ## Releases
 
 `release.yml` runs on a `v*` tag. Three jobs:
@@ -333,6 +363,11 @@ This section used to be titled *No ISO is attached, on purpose*, and gave a reas
 written for forks as a rule for this repository. `tests/unit/test_release.py` now checks the notes'
 attachment claim against what `release.yml` actually uploads, instead of pinning the sentence: the
 day the workflow attaches a file, the notes have to change with it.
+
+A project that does publish an image sets `RELEASE_ASSETS` to the directory
+`ci/release-assets.sh` wrote, and the section is generated from that directory by
+`ci/redistribution-claim.py` instead, naming what is attached. See
+[publishing an image](../40-workflow/publishing-images.md).
 
 There is no checksum for a built image in the notes because none is attached. Where an image *is*
 published, its `SHA256SUMS` checks the download — not a rebuild, since the ISO container is not

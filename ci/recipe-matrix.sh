@@ -18,6 +18,8 @@
 # works on 64-bit Debian.
 set -u
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck source=lib/hints.sh
+. "$REPO_ROOT/lib/hints.sh"
 TARGET=${1:?usage: recipe-matrix.sh <target> <iso> [recipe-dir]}
 ISO=${2:?usage: recipe-matrix.sh <target> <iso> [recipe-dir]}
 RECIPE_DIR=${3:-recipes/available}
@@ -139,9 +141,9 @@ PY
     [ "$name" = isohybrid ] && set -- "$@" --expect-hybrid
     # A recipe may legitimately change the volume id. Read what it asked for from its
     # own pack hints rather than special-casing the recipe name here -- any future
-    # recipe that sets volid then gets the right expectation for free.
-    _volid=$(sed -n 's/^volid: *//p' "$tree/.kitchen/pack.yaml" 2>/dev/null \
-             | head -1 | sed "s/^[\"']//;s/[\"']$//")
+    # recipe that sets volid then gets the right expectation for free. pack_hint is the
+    # reader pack and `kitchen build` use too.
+    _volid=$(pack_hint "$tree/.kitchen/pack.yaml" volid)
     [ -n "$_volid" ] && set -- "$@" --volid "$_volid"
     if ! python3 "$@" >>"$log" 2>&1; then
         printf '  %sFAIL%s %-18s structure assertions failed\n' "$R" "$O" "$name"

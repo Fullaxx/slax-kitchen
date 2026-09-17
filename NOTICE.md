@@ -101,6 +101,9 @@ works out that list for a built image from the record `kitchen pack` writes besi
 matched by sha256 to the stock image or to the step that produced it, and anything it cannot match
 is named, with exit status 1. It also says whether the image's firmware has its license texts with
 it. `--fetch` gathers the source of what the build compiled, together with the project tree.
+[Publishing an image](docs/40-workflow/publishing-images.md) is the procedure:
+`ci/release-assets.sh` assembles the set and `ci/release-verify.py` checks it before anything is
+uploaded.
 
 ## This repository's releases
 

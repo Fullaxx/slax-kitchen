@@ -731,13 +731,13 @@ def fetch_built(doc: dict, prov: dict, dest: str) -> list[dict]:
     if kitchen.get("commit"):
         out = project_tarball(REPO, kitchen, "slax-kitchen", dest)
         assets.append({"what": "slax-kitchen at the recorded commit, with submodules",
-                       "file": os.path.basename(out), "sha256": _sha256(out)})
+                       "for": "(kitchen)", "file": os.path.basename(out), "sha256": _sha256(out)})
     project = prov.get("project")
     root = provenance.project_root()
     if project and project.get("commit") and root:
         out = project_tarball(root, project, os.path.basename(os.path.abspath(root)), dest)
         assets.append({"what": "the project at the recorded commit, with submodules",
-                       "file": os.path.basename(out), "sha256": _sha256(out)})
+                       "for": "(project)", "file": os.path.basename(out), "sha256": _sha256(out)})
     builder = doc.get("builder") or {}
     for comp in doc["components"]:
         if comp["class"] == "built" and comp.get("source_package"):
@@ -745,7 +745,7 @@ def fetch_built(doc: dict, prov: dict, dest: str) -> list[dict]:
             sub = os.path.join(dest, f"{sp['source']}_{sp['version'].split(':', 1)[-1]}")
             for name in fetch_debian_style_source(sp["source"], sp["version"], builder, sub):
                 p = os.path.join(sub, name)
-                assets.append({"what": f"source of {comp['what']}",
+                assets.append({"what": f"source of {comp['what']}", "for": comp["path"],
                                "file": os.path.relpath(p, dest), "sha256": _sha256(p)})
         for part in comp.get("parts") or []:
             if part.get("class") != "built":
@@ -757,7 +757,7 @@ def fetch_built(doc: dict, prov: dict, dest: str) -> list[dict]:
                 if _sha256(p) != src["sha256"]:
                     raise RuntimeError(f"{name}: sha256 does not match the build claim")
                 assets.append({"what": f"source of {part['member']}", "file": name,
-                               "sha256": src["sha256"]})
+                               "for": f"{comp['path']}:{part['member']}", "sha256": src["sha256"]})
             cfg = part.get("config") or {}
             if cfg.get("file"):
                 # Beside the binary the build used, found from its recorded location; the
@@ -775,6 +775,7 @@ def fetch_built(doc: dict, prov: dict, dest: str) -> list[dict]:
                                        "not the config the build claim names")
                 shutil.copy2(local, os.path.join(dest, cfg["file"]))
                 assets.append({"what": f"build configuration of {part['member']}",
+                               "for": f"{comp['path']}:{part['member']}",
                                "file": cfg["file"], "sha256": cfg["sha256"]})
     return assets
 

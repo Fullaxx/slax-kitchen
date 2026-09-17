@@ -289,9 +289,19 @@ def finalize(work: str, iso: str, backend: str, mbr: str | None) -> str:
     if os.path.isfile(opath):
         origin = yaml.safe_load(open(opath)) or {}
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    kitchen = git_state(repo)
+    if kitchen is None and os.path.exists(os.path.join(repo, ".git")):
+        # Measured: git refuses a checkout another user owns when run as root without
+        # sudo (sudo sets SUDO_UID, which git 2.36+ accepts) -- a root container on a
+        # bind-mounted checkout. Overriding safe.directory here would switch off the check
+        # for everyone; saying so is enough, because `kitchen sources` refuses the result.
+        print("provenance: warning: git could not read this kitchen checkout, so the image "
+              "records no commit and `kitchen sources` will not accept it. Running as root "
+              "in a checkout another user owns? See `git config safe.directory`.",
+              file=sys.stderr)
     out = {
         "schema": SCHEMA,
-        "kitchen": git_state(repo),
+        "kitchen": kitchen,
         "base": {
             "name": os.path.basename(str(origin.get("source_iso", ""))) or None,
             "sha256": origin.get("source_sha256"),

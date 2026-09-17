@@ -104,7 +104,15 @@ $ kitchen pack --volid OVERRIDE
   hint volid=SLAX-CUSTOM overridden on the command line
 ```
 
-That ordering matters for CI, where one recipe set is packed several ways.
+That ordering matters for CI, where one recipe set is packed several ways. It holds for all five
+fields. Until the publishing work tried to use them, `--sysid`, `--publisher` and `--preparer`
+were listed by `kitchen help pack` and refused as unknown options, and a publisher hint beat the
+flag.
+
+`kitchen build` asserts the volume id the recipe asked for. It used to assert the stock `slax`, so a
+profile with this recipe and `test: [structure]` packed `SLAX-CUSTOM` and then failed its own
+structure test. `pack`, `kitchen build` and `ci/recipe-matrix.sh` now read the hints through one
+function, `pack_hint` in `lib/hints.sh`.
 
 ## A note on the xorriso backend
 

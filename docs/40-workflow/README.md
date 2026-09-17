@@ -43,6 +43,7 @@ Or `kitchen build <profile>` for all four in one step.
 | [`repack-iso.md`](repack-iso.md) | rebuilding, the two backends, and where the output goes |
 | [`write-to-usb.md`](write-to-usb.md) | three routes, and why `dd` is usually the wrong one |
 | [`reproducibility.md`](reproducibility.md) | what is deterministic, what is not, and which you need |
+| [`publishing-images.md`](publishing-images.md) | what travels with a published image, and the scripts that assemble and check it |
 
 ## Two things to know before the first edit
 

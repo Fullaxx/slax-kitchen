@@ -6,10 +6,11 @@
 # profile that requests `hybrid: true` also gets asserted on -- a recipe that silently did
 # not take effect is exactly what this is meant to catch.
 _test_structure() {
-    _iso=$1; _uefi=$2; _hybrid=$3
+    _iso=$1; _uefi=$2; _hybrid=$3; _volid=$4
     set -- "$REPO_ROOT/tests/structure/iso_assert.py" "$_iso"
     [ -n "$_uefi" ] && set -- "$@" --expect-uefi
     [ -n "$_hybrid" ] && set -- "$@" --expect-hybrid
+    [ -n "$_volid" ] && set -- "$@" --volid "$_volid"
     python3 "$@"
 }
 
@@ -97,7 +98,7 @@ _serial_keys() {
 kitchen_test() {
     iso="" want_structure=0 want_bios=0 want_uefi=0 want_kernel=0
     want_usb=0 want_perch=0
-    expect_uefi="" expect_hybrid="" secs=32 expects=""
+    expect_uefi="" expect_hybrid="" expect_volid="" secs=32 expects=""
     keys="" auto_keys=1 mem="" golden="" record="" perchdev="/dev/sda"
     outdir_opt=""
     while [ $# -gt 0 ]; do
@@ -110,6 +111,7 @@ kitchen_test() {
             --persistence)  want_perch=1; shift ;;
             --expect-uefi)  expect_uefi=1; shift ;;
             --expect-hybrid) expect_hybrid=1; shift ;;
+            --volid)        expect_volid=$2; shift 2 ;;
             --seconds)      secs=$2; shift 2 ;;
             --keys)         keys=$2; auto_keys=0; shift 2 ;;
             --no-keys)      keys=""; auto_keys=0; shift ;;
@@ -140,7 +142,7 @@ kitchen_test() {
     rc=0
     if [ "$want_structure" = 1 ]; then
         printf '%s* structure%s\n' "$B" "$O"
-        _test_structure "$iso" "$expect_uefi" "$expect_hybrid" || rc=1
+        _test_structure "$iso" "$expect_uefi" "$expect_hybrid" "$expect_volid" || rc=1
     fi
 
     if [ "$want_kernel$want_bios$want_uefi$want_usb$want_perch" != "00000" ]; then
@@ -373,6 +375,9 @@ kitchen_build() {
         case " $RECIPES " in *" uefi-bootable "*) _eu=1 ;; esac
         case " $RECIPES " in *" isohybrid "*) _eh=1 ;; esac
         [ -n "$OUTPUT_HYBRID" ] && _eh=1
+        # ...and the volume id is whatever the recipes asked pack for (iso-identity), read
+        # through the same pack_hint pack used, before the work tree is removed below.
+        _ev=$(pack_hint "$work/.kitchen/pack.yaml" volid)
         # bld_rc, for the same reason and with a worse symptom: kitchen_test opens with
         # `rc=0`, so a PASSING test reset the accumulator and erased a FAILING one before
         # it. A profile with `test: [structure, kernel-boot]` whose structure assertion
@@ -381,7 +386,8 @@ kitchen_build() {
         for t in $TESTS; do
             case "$t" in
                 structure) kitchen_test "out/$OUTPUT_NAME" --structure \
-                             ${_eu:+--expect-uefi} ${_eh:+--expect-hybrid} || bld_rc=1 ;;
+                             ${_eu:+--expect-uefi} ${_eh:+--expect-hybrid} \
+                             ${_ev:+--volid "$_ev"} || bld_rc=1 ;;
                 kernel-boot) kitchen_test "out/$OUTPUT_NAME" --kernel || bld_rc=1 ;;
                 bios-boot) kitchen_test "out/$OUTPUT_NAME" --bios || bld_rc=1 ;;
                 uefi-boot) kitchen_test "out/$OUTPUT_NAME" --uefi || bld_rc=1 ;;

@@ -39,6 +39,28 @@ if [ -z "$SLUG" ]; then
 fi
 BLOB="https://github.com/${SLUG:-Fullaxx/slax-kitchen}/blob/$TAG"
 
+# THE REDISTRIBUTION SECTION. A release of this repository attaches no image, and says
+# so. A project that publishes an image assembles its assets with ci/release-assets.sh and
+# sets RELEASE_ASSETS to that directory; the section is then generated from the directory
+# by ci/redistribution-claim.py, so it names what is attached rather than promising it.
+if [ -n "${RELEASE_ASSETS:-}" ]; then
+    REDISTRIBUTION=$(python3 "$REPO_ROOT/ci/redistribution-claim.py" "$RELEASE_ASSETS") || exit 1
+else
+    REDISTRIBUTION="## Redistribution
+
+No image is attached to this release: a release of slax-kitchen is the toolkit.
+
+A Slax ISO is an aggregate — Debian or Slackware packages, non-free firmware, and Slax's
+own kernel and initramfs, each under its own terms. What travels with an image built with
+this toolkit when one is published — the source of what the build compiled or modified,
+where each upstream publishes its own, the firmware terms, and an identity that is not an
+official Slax release — is set out in [NOTICE.md]($BLOB/NOTICE.md).
+
+Slax and Linux Live Kit are the work of **Tomáš Matějíček** — <https://www.slax.org>.
+This project customizes his work; it is not the project's home. If you find it useful,
+support Slax upstream."
+fi
+
 # The tag being released is usually not yet an object (the workflow runs on the ref,
 # but a dry run has no tag at all), so walk back from the previous tag if there is
 # one and from the root commit if there is not. --sort=-creatordate rather than
@@ -147,17 +169,5 @@ volume timestamps and the extent order, and an identical tree rebuilt elsewhere 
 measured differing in 99.9% of its sectors. See
 [reproducibility]($BLOB/docs/40-workflow/reproducibility.md).
 
-## Redistribution
-
-No image is attached to this release: a release of slax-kitchen is the toolkit.
-
-A Slax ISO is an aggregate — Debian or Slackware packages, non-free firmware, and Slax's
-own kernel and initramfs, each under its own terms. What travels with an image built with
-this toolkit when one is published — the source of what the build compiled or modified,
-where each upstream publishes its own, the firmware terms, and an identity that is not an
-official Slax release — is set out in [NOTICE.md]($BLOB/NOTICE.md).
-
-Slax and Linux Live Kit are the work of **Tomáš Matějíček** — <https://www.slax.org>.
-This project customizes his work; it is not the project's home. If you find it useful,
-support Slax upstream.
+$REDISTRIBUTION
 EOF
