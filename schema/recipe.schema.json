@@ -658,6 +658,9 @@
               },
               "prefix": {
                 "type": "string"
+              },
+              "world_readable": {
+                "type": "boolean"
               }
             }
           }

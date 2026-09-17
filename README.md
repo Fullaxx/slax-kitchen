@@ -156,7 +156,7 @@ steps:
 ./kitchen pack                     # -> out/slax-...-custom.iso
 ```
 
-**Thirty-five recipes ship today.** The ones most people want first:
+**Thirty-six recipes ship today.** The ones most people want first:
 
 | | |
 |---|---|
@@ -209,7 +209,7 @@ differences it recognises to the recipes that cause them. A weekly CI job watche
 
 See **[docs/00-overview/status.md](docs/00-overview/status.md)** for what is verified, what is
 written but unsupported, and what does not exist yet. Short version: the core loop
-(unpack → apply → pack → test) works and is boot-tested in CI, thirty-five recipes ship across
+(unpack → apply → pack → test) works and is boot-tested in CI, thirty-six recipes ship across
 23 verbs, and the documentation of Slax itself is complete. `kernel.replace` is the one verb still
 unwritten.
 

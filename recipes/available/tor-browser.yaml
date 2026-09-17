@@ -1,0 +1,127 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: tor-browser
+  summary: Replace Chromium with Tor Browser and the system tor daemon
+  tags: [browser, bundle, packages, tarball, privacy]
+compat:
+  # Debian only, for the reason every bundle.packages recipe here is Debian only: Slax's
+  # Slackware base is frozen while its slackpkg points at a mirror years ahead of it.
+  flavours: [debian]
+  # 64-BIT ONLY, AND THIS IS A FACT ABOUT UPSTREAM rather than a limit of the verbs.
+  # Tor Browser 15.0.x ships BOTH linux-x86_64 and linux-i686 today -- so a 32-bit build
+  # would work right now, which is exactly the trap. The Tor Project has announced that
+  # 15.0 is the LAST major release to support 32-bit Linux; 16.0 drops i686 and is
+  # already at 16.0a9 (read 2026-09-17). Declaring [32bit, 64bit] would go green today
+  # and break at the next version bump, with nothing to say why. Same shape as
+  # bundle-from-tarball, where fzf publishes no i386 at all.
+  arch: [64bit]
+  slax: ">=12.0.0"
+  privilege: chroot
+vars:
+  # 14/15/16: the next free run above 13-browsers. In use above 09 today: 10-chromium,
+  # 10-slackpkg, 11-firefox, 12-libreoffice, 13-browsers, and 95 where renumber-bundles
+  # parks a stock bundle. Inside 10-89, a FORK's range rather than slax-kitchen's,
+  # because installing applications is downstream work. 98 and 99 are refused outright.
+  tor_bundle: "14-tor"
+  browser_bundle: "15-tor-browser"
+  desktop_bundle: "16-tor-desktop"
+  version: "15.0.23"
+  # From sha256sums-signed-build.txt, the file the Tor Project signs -- not from the
+  # download page. Re-fetched and verified against the tarball 2026-09-17.
+  sha256: "0f62f8d65c7fc34dd4b86cbab7fcaaec7381573dda346ac7b17e568e22b4bf39"
+steps:
+  # DROP FIRST, THEN ADD. check_plan_order refuses the other order before anything is
+  # modified, across recipes AND across invocations. Done here rather than by leaning on
+  # remove-chromium because both would match literal 05: the second one to run would
+  # compare 05 against an already-built 14 and be refused. They are alternatives.
+  #
+  # WHAT LEAVES WITH IT, and why nothing has to be put back. 05-chromium.sb is not just
+  # Chromium: its status file carries 24 more packages than 04-apps, and they are the
+  # shared browser runtime -- libnss3, libnspr4, libevent-2.1-7, libopus0, libflac12,
+  # libvorbis, libpulse0 and the rest. The obvious worry is that Tor Browser loses them.
+  # Measured instead of assumed, by reading DT_NEEDED out of firefox.real, libxul.so and
+  # Tor/tor against the 15.0.23 tarball (2026-09-17):
+  #
+  #   47 sonames needed. 17 of them Tor Browser SHIPS ITSELF, and they are precisely the
+  #   ones at risk: libnss3, libnspr4, libnssutil3, libssl3, libsmime3, libplc4, libplds4,
+  #   libcrypto.so.3, libssl.so.3, libevent-2.1.so.7, libstdc++.so.6.
+  #   The other 30 resolve inside 01-core, 02-xorg and 03-desktop, every one of which
+  #   survives this removal -- checked entry by entry against the bundles' own listings.
+  #
+  # So removing 05-chromium costs Tor Browser nothing, and this recipe installs no
+  # replacement libraries. The first draft named libpulse0 "for audio"; the measurement
+  # says Tor Browser links libasound.so.2 (already in 01-core) and never names libpulse.
+  - verb: bundle.remove
+    match: "^05-chromium\\.sb$"
+
+  # THE DAEMON, WHICH IS NOT THE BROWSER. Tor Browser carries its own tor and works with
+  # nothing installed; these three are for the rest of the system -- torsocks for
+  # wrapping a shell command, tor-geoipdb for by-country circuit selection.
+  #
+  # No `apt:` block and no third-party source. deb.torproject.org ships a NEWER tor than
+  # bookworm's, and taking it would add a fourth party to what the image trusts forever,
+  # for a daemon the browser does not use. bookworm's is enough. This is the position
+  # debian-browsers.yaml states: it adds NOTHING to what the image trusts.
+  - verb: bundle.packages
+    bundle: "{{tor_bundle}}"
+    packages:
+      - tor
+      - tor-geoipdb
+      - torsocks
+
+  # THE BROWSER, AS A PINNED TARBALL, BECAUSE THERE IS NO OTHER WAY.
+  #
+  # No Tor Browser .deb exists anywhere. deb.torproject.org ships tor, tor-geoipdb and a
+  # keyring -- the daemon. torbrowser-launcher (bookworm contrib) is a DOWNLOADER: the
+  # browser arrives on first run, over the network, into the live overlay, every boot
+  # without persistence. An offline boot would get a launcher that cannot launch, and an
+  # offline boot is most of what a USB stick is for.
+  #
+  # `world_readable: true` IS LOAD-BEARING HERE, not tidiness. The archive is 0700 on all
+  # 27 of its directories and 0600 on 185 of its 220 files -- not one group or world bit
+  # anywhere -- and -all-root rewrites ownership to root while leaving mode bits exactly
+  # as the archive set them. Without this the bundle is root-only and `guest` cannot even
+  # traverse /opt/tor-browser, let alone run the browser. Measured: 247 paths widened,
+  # dirs 0700 -> 0755, executables 0700 -> 0755, data 0600 -> 0644, and the executable
+  # count stays at 35, so no data file becomes runnable.
+  #
+  # strip: 1 because the archive is wrapped in a single `tor-browser/` directory.
+  # 137,935,600 bytes compressed, 333 MiB extracted.
+  - verb: bundle.fromTarball
+    bundle: "{{browser_bundle}}"
+    src: "https://dist.torproject.org/torbrowser/{{version}}/tor-browser-linux-x86_64-{{version}}.tar.xz"
+    sha256: "{{sha256}}"
+    strip: 1
+    prefix: /opt/tor-browser
+    world_readable: true
+
+  # DESKTOP INTEGRATION, AND THE ONE FILE THAT MAKES A READ-ONLY INSTALL WORK.
+  #
+  # opt/tor-browser/Browser/is-packaged-app is empty and is the whole trick.
+  # start-tor-browser:214-222 reads it:
+  #
+  #     if test -f "$browser_dir/is-packaged-app"; then
+  #       system_install=1
+  #       browser_home="$HOME/.tor-browser"
+  #
+  # …so every writable thing -- the Firefox profile, tor's state and cached consensus,
+  # caches, Downloads -- goes to ~guest/.tor-browser instead of into the squashfs branch
+  # it was started from. This is upstream's own mechanism for a packaged install, so no
+  # bind mount, no copy of the tree, and no patching of upstream's script. Verified by
+  # running start-tor-browser as uid 1000 with the marker present: $HOME/.tor-browser
+  # appeared with `.tor project/firefox` and `.tor project/Tor` inside it, and not one
+  # file under the install tree was written.
+  #
+  # BUDGET THE RAM. That state reached 39 MiB in one launch, and without persistence it
+  # lives in the union's writable branch, which is RAM. See the cookbook page.
+  #
+  # 5chromium.desktop keeps its filename ON PURPOSE: a bundle can add and replace but
+  # cannot delete, so replacing the stock entry in place is what removes the "Web
+  # Browser" button that would otherwise run `fbliveapp chromium` and offer to
+  # apt-install Chromium on a privacy image. root/.fluxbox/menu is the stock file with
+  # exactly ONE line changed (verified by diff) -- it is a copy, so a Slax update needs
+  # it refreshed; the cookbook page says so.
+  - verb: bundle.fromDir
+    bundle: "{{desktop_bundle}}"
+    src: ./tor-browser.files

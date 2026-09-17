@@ -6,6 +6,7 @@ and was caught by inspecting a built bundle rather than by a test. They run in
 milliseconds and need no ISO.
 """
 import os
+import shutil
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
@@ -1358,6 +1359,76 @@ def test_iso_files_actually_writes_into_the_iso_tree():
         check(f"{label} missing source is a clear error", got, "clear")
 
 
+def test_relax_modes_widens_without_granting():
+    """`world_readable: true` must make a bundle usable by a non-root account, and must
+    not turn data into code or hand out anything else on the way.
+
+    The case is real: Tor Browser's tarball is 0700 on every one of its 27 directories
+    and 0600 on 185 of its 220 files -- not one group or world bit in the archive. Since
+    bundle.fromTarball packs with -all-root, which rewrites ownership and leaves mode
+    bits alone, the bundle would be root-only and Slax's `guest` account could not even
+    traverse /opt/tor-browser.
+
+    Four properties, each of which was broken on purpose while writing this:
+      read is mirrored;
+      execute is mirrored ONLY where the owner already had it, so a data file does not
+        become runnable;
+      setuid/setgid are never added -- only the low 0o055 bits are ever OR-ed in;
+      a symlink is skipped, because chmod would follow it to the target.
+    """
+    import stat as _s
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="relax-")
+    d = os.path.join(tmp, "sub")
+    os.makedirs(d)
+    os.chmod(d, 0o700)
+    data = os.path.join(d, "data.bin")
+    prog = os.path.join(d, "prog")
+    already = os.path.join(d, "already")
+    with open(data, "w") as f:
+        f.write("x")
+    with open(prog, "w") as f:
+        f.write("x")
+    with open(already, "w") as f:
+        f.write("x")
+    os.chmod(data, 0o600)
+    os.chmod(prog, 0o700)
+    os.chmod(already, 0o644)
+    # The link's target must live OUTSIDE the walked tree, or this proves nothing: a
+    # target inside it is widened on its own account, so following the link and not
+    # following it end in the same state. Written the weak way first, and `os.stat` for
+    # `os.lstat` was then a mutation the test could not see -- 0 failures.
+    outside_dir = tempfile.mkdtemp(prefix="relax-outside-")
+    outside = os.path.join(outside_dir, "secret")
+    with open(outside, "w") as f:
+        f.write("x")
+    os.chmod(outside, 0o600)
+    link = os.path.join(d, "link")
+    os.symlink(outside, link)
+
+    touched = apply._relax_modes(tmp)
+
+    mode = lambda p: _s.S_IMODE(os.lstat(p).st_mode)      # noqa: E731
+    check("a 0700 directory becomes traversable", oct(mode(d)), oct(0o755))
+    check("a 0600 data file becomes readable, not executable",
+          oct(mode(data)), oct(0o644))
+    check("a 0700 executable stays executable for everyone", oct(mode(prog)), oct(0o755))
+    check("an already-open file is left alone", oct(mode(already)), oct(0o644))
+    # The symlink itself must not be chmod'ed. On Linux chmod() follows a symlink, so a
+    # link pointing out of the tree would widen a file the caller never asked about --
+    # which is why the walk uses lstat and skips links.
+    check("chmod did not follow the symlink out of the tree",
+          oct(mode(outside)), oct(0o600))
+    check("every changed path is counted", touched >= 4, True)
+
+    for p2 in (d, data, prog, already):
+        if mode(p2) & (_s.S_ISUID | _s.S_ISGID):
+            FAILURES.append(f"_relax_modes granted setuid/setgid on {p2}")
+
+    shutil.rmtree(tmp, ignore_errors=True)
+    shutil.rmtree(outside_dir, ignore_errors=True)
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -1384,7 +1455,8 @@ def main():
                test_fromtarball_refuses_privileged_members,
                test_all_root_is_per_verb,
                test_bundle_files_refuses_a_setuid_mode,
-               test_iso_files_actually_writes_into_the_iso_tree]:
+               test_iso_files_actually_writes_into_the_iso_tree,
+               test_relax_modes_widens_without_granting]:
         fn()
     if FAILURES:
         for f in FAILURES:

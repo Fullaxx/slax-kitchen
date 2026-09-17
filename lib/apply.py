@@ -1590,6 +1590,7 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
     want = step.get("sha256")
     strip = int(step.get("strip", 0))
     prefix = (step.get("prefix") or "").strip("/")
+    world_readable = bool(step.get("world_readable", False))
     if ctx.dry:
         ctx.say(f"would unpack {src} -> slax/modules/{name}"
                 + (f" under /{prefix}" if prefix else ""))
@@ -1646,9 +1647,55 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
             _extract_members(t, dest, members, kw)
         ctx.say(f"unpacked {len(members)} entries from {os.path.basename(src)}"
                 + (f" under /{prefix}" if prefix else ""))
+        if world_readable:
+            n = _relax_modes(dest)
+            ctx.say(f"world_readable: widened {n} path(s) so a non-root user can read them")
         _make_bundle(ctx, root, name, "bundle.fromTarball", all_root=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _relax_modes(top: str) -> int:
+    """Mirror the owner's read/execute bits to group and other, under `top`.
+
+    A bundle is mounted read-only into a union that several uids share, and `-all-root`
+    rewrites ownership to root while leaving mode bits exactly as the archive set them
+    (see _make_bundle). An archive that ships owner-only modes therefore produces a
+    bundle that only root can use -- measured on Tor Browser, whose tarball is 0700 on
+    all 27 directories and 0600 on 185 of its 220 files, so `guest` cannot even traverse
+    /opt/tor-browser, let alone run the browser.
+
+    Opt-in per step, never default: silently widening permissions on somebody else's
+    archive is the kind of quiet behaviour this project refuses. The recipe has to say
+    `world_readable: true`, and the verb says how many paths it touched.
+
+    Read is mirrored unconditionally; EXECUTE only where the owner already has it, so a
+    data file does not become executable. setuid/setgid are never added -- and cannot be
+    reached from here, because only the low 0o055 bits are ever OR-ed in.
+
+    `os.lstat` is what makes symlinks safe, and it is the line to not "simplify": chmod()
+    FOLLOWS a symlink on Linux, so reading the target's mode here would widen a file
+    outside the tree entirely. The explicit S_ISLNK skip below is belt-and-braces and
+    deliberately does nothing on its own -- a symlink's own mode is 0777, so the OR is a
+    no-op and removing the skip changes no output. Only the lstat is load-bearing, which
+    is what tests/unit/test_apply.py pins, with a link pointing out of the walked tree.
+    """
+    touched = 0
+    for dirpath, _dirnames, filenames in os.walk(top):
+        for path in [dirpath] + [os.path.join(dirpath, f) for f in filenames]:
+            st = os.lstat(path)
+            if stat.S_ISLNK(st.st_mode):
+                continue
+            mode = stat.S_IMODE(st.st_mode)
+            new = mode
+            if mode & 0o400:
+                new |= 0o044
+            if mode & 0o100:
+                new |= 0o011
+            if new != mode:
+                os.chmod(path, new)
+                touched += 1
+    return touched
 
 
 def _refuse_privileged_member(m, verb: str) -> None:

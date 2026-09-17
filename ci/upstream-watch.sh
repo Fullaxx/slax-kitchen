@@ -150,6 +150,67 @@ for recipe, name, url, want in pins:
 sys.exit(1 if bad else 0)
 PY
 
+# --- pinned Tor Browser tarball --------------------------------------------
+# tor-browser pins a version and a sha256, so a Tor Browser release fails the build by
+# design. That is right -- an unpinned tarball is a remote party choosing what runs on
+# every image -- but a browser people use for anonymity is the LAST thing that should
+# sit on a stale pin because nobody noticed. A release should reach a human as a ticket,
+# not as a red build a week later.
+#
+# Version only. The sha256 is checked by the build, and re-downloading 138 MB weekly to
+# confirm a hash we would only use on a version we already have is not worth it.
+#
+# Parsed out of the recipe, like the keys above, so this keeps working if the pin moves.
+python3 - "$REPO_ROOT/recipes" <<'PY' || changed=1
+import json, pathlib, re, subprocess, sys, yaml
+
+JSON_URL = "https://aus1.torproject.org/torbrowser/update_3/release/download-linux-x86_64.json"
+pins, bad = [], 0
+for f in sorted(pathlib.Path(sys.argv[1]).rglob("*.yaml")):
+    try:
+        doc = yaml.safe_load(f.read_text()) or {}
+    except yaml.YAMLError:
+        continue
+    if not isinstance(doc, dict):
+        continue
+    for step in doc.get("steps") or []:
+        src = str(step.get("src") or "")
+        if "dist.torproject.org/torbrowser" in src:
+            v = (doc.get("vars") or {}).get("version")
+            if v:
+                pins.append((f.stem, str(v)))
+
+if not pins:
+    print("  no pinned Tor Browser to check")
+    sys.exit(0)
+
+r = subprocess.run(["curl", "-sSL", "--max-time", "30", JSON_URL], capture_output=True)
+if r.returncode != 0 or not r.stdout:
+    print(f"  CHANGED: Tor Browser release feed unreachable -> {JSON_URL}")
+    sys.exit(1)
+try:
+    latest = json.loads(r.stdout).get("version") or ""
+except json.JSONDecodeError:
+    print("  CHANGED: Tor Browser release feed is not JSON any more")
+    sys.exit(1)
+
+for recipe, pinned in pins:
+    if pinned == latest:
+        print(f"  ok       {recipe} pins Tor Browser {pinned}, which is current")
+    else:
+        print(f"  CHANGED: Tor Browser {latest} released; {recipe} still pins {pinned}")
+        print(f"           bump vars.version and vars.sha256 from"
+              f" https://dist.torproject.org/torbrowser/{latest}/sha256sums-signed-build.txt")
+        # A major bump is not a routine bump: 16.0 drops 32-bit Linux, which the
+        # recipe's compat: block already says. Say so here rather than let someone
+        # discover it by widening arch: and watching a build fail.
+        if pinned.split(".")[0] != latest.split(".")[0]:
+            print(f"           NOTE: major version change {pinned.split('.')[0]}"
+                  f" -> {latest.split('.')[0]} -- re-read the recipe's compat: block")
+        bad += 1
+sys.exit(1 if bad else 0)
+PY
+
 echo
 if [ "$changed" -eq 0 ]; then
     echo "nothing changed"

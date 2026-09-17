@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Name=Tor Browser
+GenericName=Web Browser
+Comment=Browse the web over the Tor network
+Exec=tor-browser %U
+Terminal=false
+X-MultipleArgs=false
+Type=Application
+Icon=/opt/tor-browser/Browser/browser/chrome/icons/default/default128.png
+Categories=Network;WebBrowser;
+MimeType=text/html;text/xml;application/xhtml_xml;x-scheme-handler/http;x-scheme-handler/https;
+StartupWMClass=Tor Browser
+StartupNotify=true

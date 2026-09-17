@@ -1,0 +1,33 @@
+apiVersion: slax-kitchen/v1
+kind: Profile
+metadata:
+  name: tor
+  summary: Tor Browser instead of Chromium, on a UEFI-bootable hybrid ISO
+base:
+  flavour: debian
+  arch: 64bit
+  version: "12.2.0"
+recipes:
+  # tor-browser removes 05-chromium itself, so nothing here needs ordering around it --
+  # and remove-chromium must NOT be listed as well. Both match literal 05, so the second
+  # to run would compare it against an already-built 14 and be refused. For the same
+  # reason this profile cannot also carry all-browsers, debian-browsers, chromium-current
+  # or firefox-esr: every one of them is an alternative to this, not an addition.
+  - tor-browser
+  # testkit prints facts about the ASSEMBLED filesystem to the serial console just before
+  # change_root. Here it is carrying a specific claim: that `bundles:` no longer lists
+  # 05-chromium.sb and that the merged dpkg count moved with it.
+  #
+  # It is instrumentation, not a feature. A profile meant to be HANDED to somebody would
+  # drop this line -- nothing is published today, so it stays.
+  - testkit
+  - serial-console
+  - isohybrid
+  # uefi-bootable builds the GRUB menu by parsing isolinux.cfg, so it runs after anything
+  # that adds a menu entry. Keep it last.
+  - uefi-bootable
+output:
+  name: "slax-tor-{{version}}.iso"
+  hybrid: true
+test:
+  - structure

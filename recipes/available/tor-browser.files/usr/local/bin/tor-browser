@@ -1,0 +1,26 @@
+#!/bin/sh
+# Launch Tor Browser as the unprivileged `guest` account.
+#
+# Slax runs its desktop as root and Tor Browser refuses to start as root -- a hard
+# `exit 1` at start-tor-browser:85, not a warning. Slax already solved this for Chromium,
+# which refuses for the same reason: /usr/bin/fbliveapp drops to uid 1000 `guest`, an
+# account baked into 01-core on both flavours precisely for this. These are the same
+# three lines, so that a desktop entry can point straight here without going through
+# fbliveapp's install-prompt machinery.
+#
+# NOT `xhost +`, which is what fbliveapp does. That opens the display to every local and
+# remote client for the rest of the session; +SI:localuser:guest opens it to one account.
+# The fallback exists because SI: needs the SECURITY extension, and a stripped Xorg can
+# refuse it -- in which case we are no worse off than stock Slax.
+set -eu
+TB=/opt/tor-browser/Browser/start-tor-browser
+[ -x "$TB" ] || { echo "tor-browser: not installed at $TB" >&2; exit 1; }
+
+if [ "$(id -u)" -eq 0 ]; then
+    xhost +SI:localuser:guest >/dev/null 2>&1 || xhost + >/dev/null 2>&1
+    # Writable state goes to ~guest/.tor-browser, because the bundle ships an
+    # `is-packaged-app` marker beside start-tor-browser. Without it the browser writes
+    # into its own tree, which is a read-only squashfs branch.
+    exec su -s /bin/sh guest -c 'exec "$0" "$@"' "$TB" "$@"
+fi
+exec "$TB" "$@"

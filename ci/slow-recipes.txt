@@ -14,3 +14,4 @@
 # all-browsers was 622 s and every one of the other 49 entries combined was 468 s.
 
 all-browsers  weekly, not per-push: four sha256-pinned vendor keys are an external dependency (622 s, and a key rotation would redden master)
+tor-browser   weekly, not per-push: a version-pinned 138 MB tarball from dist.torproject.org is an external dependency, and a Tor Browser release would redden master
