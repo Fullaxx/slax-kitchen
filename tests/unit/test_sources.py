@@ -192,6 +192,28 @@ def test_a_broken_archive_is_reported_as_unreadable_not_as_a_traceback():
     check("and a sound one still reads", sorted(sources.cpio_members(good)), ["init"])
 
 
+def test_an_initramfs_that_decompresses_to_more_than_the_cap_is_refused():
+    """`kitchen sources` reads images the operator did not build. xz packs zeroes about
+    1000:1, so an initrfs.img of a few MiB can ask for tens of GiB and the tool is killed
+    by the OOM killer instead of reporting what it found."""
+    import lzma
+    bomb = lzma.compress(b"\0" * (2 << 20))
+    check("a small bomb, with the cap lowered to catch it in a test",
+          with_cap(1 << 20, sources.initramfs_from_bytes, bomb), None)
+    good = lzma.compress(newc([("init", 0o100755, b"hi\n", 1, 1)]))
+    check("and an ordinary initramfs still reads",
+          sorted(sources.initramfs_from_bytes(good) or {}), ["init"])
+
+
+def with_cap(cap, fn, *a):
+    old = sources.INITRAMFS_MAX
+    sources.INITRAMFS_MAX = cap
+    try:
+        return fn(*a)
+    finally:
+        sources.INITRAMFS_MAX = old
+
+
 def test_an_image_with_no_manifest_is_not_called_unreadable():
     """`initramfs_delta` collapsed "could not be read" and "this target has no manifest"
     into one answer, and the note said the initramfs could not be unpacked -- about an
@@ -621,6 +643,7 @@ def main():
                test_a_download_without_upstream_source_warns_or_fails_under_strict,
                test_the_cpio_reader_reads_what_cpio_would,
                test_a_broken_archive_is_reported_as_unreadable_not_as_a_traceback,
+               test_an_initramfs_that_decompresses_to_more_than_the_cap_is_refused,
                test_an_image_with_no_manifest_is_not_called_unreadable,
                test_a_script_that_had_network_says_so,
                test_the_initramfs_note_counts_members_instead_of_asserting_them,

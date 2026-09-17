@@ -199,12 +199,22 @@ def cpio_members(blob: bytes) -> dict:
     return out
 
 
+# Slax's initramfs unpacks to about 40 MiB. The cap is for an image from somewhere else:
+# xz compresses zeroes about 1000:1, so a 20 MiB initrfs.img can ask for 20 GiB, and
+# `kitchen sources` would be killed by the OOM killer rather than say what it found.
+INITRAMFS_MAX = 512 << 20
+
+
 def initramfs_from_bytes(blob: bytes) -> dict | None:
     """{member: sha256} for an xz-compressed newc initramfs, or None when the bytes are
     not one. Malformed input is an answer, not a traceback: this runs on images from
     elsewhere, and `kitchen sources` says what it could not read rather than dying."""
     try:
-        return cpio_members(lzma.decompress(blob)) or None
+        d = lzma.LZMADecompressor()
+        raw = d.decompress(blob, max_length=INITRAMFS_MAX)
+        if not d.eof:
+            return None                     # more than the cap, or a truncated stream
+        return cpio_members(raw) or None
     except (lzma.LZMAError, ValueError, EOFError, MemoryError):
         return None
 
