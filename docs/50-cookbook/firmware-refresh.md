@@ -226,7 +226,7 @@ on its own: ten packages, **64 KiB, 32 files** — copyright files, changelogs a
 and each copyright byte-identical to the md5 dpkg had recorded for it in the stock image.
 
 Stock `01-firmware.sb` is left in place, so the Broadcom b43 firmware Slax's build extracted stays
-too, as Slax shipped it: 156 files and the installer's catalog, with no license text. This recipe
+too, as Slax shipped it: 155 files and the installer's catalog, with no license text. This recipe
 does not add one, and `kitchen sources` and the release notes say so. If this project ever produces
 the b43 files itself instead of keeping Slax's, the rule for everything it adds applies to them: the
 license text travels with the firmware.

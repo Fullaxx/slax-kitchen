@@ -704,11 +704,12 @@ def markdown(doc: dict) -> str:
             lines += [f"- `{STOCK_FIRMWARE}` is Slax's firmware bundle, whose license texts Slax's "
                       f"own build removed (`{d}ipw2x00.LICENSE` remains)."]
         if fw.get("stock_bundle"):
-            # Counted in all four stock bundles: 156 regular files, no license text, and
-            # the same set on Debian and Slackware (which spells the directory lib/firmware).
+            # Counted in all four stock bundles: 155 .fw files, plus the installer's
+            # catalog, which is the 156th entry in that directory and not firmware. The
+            # same set on Debian and Slackware (which spells the directory lib/firmware).
             lines += [f"- `{STOCK_FIRMWARE}` also holds the Broadcom b43 firmware Slax's build extracted "
-                      f"from Broadcom's driver: 156 files in `{d}b43/`, and no license "
-                      "text came with them."]
+                      f"from Broadcom's driver: 155 files in `{d}b43/`, beside the installer's "
+                      "catalog, and no license text came with them."]
         lines.append("")
     lines += ["| | components |", "|---|---|"]
     for c in CLASSES:
