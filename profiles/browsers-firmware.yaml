@@ -1,0 +1,45 @@
+apiVersion: slax-kitchen/v1
+kind: Profile
+metadata:
+  name: browsers-firmware
+  summary: Every 64-bit Debian browser plus firmware for more hardware, on a UEFI-bootable hybrid ISO
+base:
+  flavour: debian
+  # all-browsers is 64-bit only: Chrome, Edge, Brave and Vivaldi publish no i386 package.
+  arch: 64bit
+  version: "12.2.0"
+recipes:
+  # NOT PUBLISHABLE AS IT STANDS. all-browsers declares redistribution: allowed: false --
+  # Chrome, Edge and Vivaldi do not permit redistribution -- so ci/release-verify.py refuses
+  # any image built from this profile. A publishable variant swaps it for debian-browsers.
+  #
+  # THE ORDER BELOW IS FORCED, NOT TASTE. all-browsers removes 05-chromium as its first
+  # step, and check_plan_order refuses a bundle.remove that runs after any bundle has been
+  # built -- so it must come before firmware-refresh, or the build is refused before
+  # anything is modified. Listed this way, 13-browsers is built before the two 09-firmware
+  # bundles exist, which is harmless: firmware packages provide no libraries a browser
+  # needs, and each bundle's package records merge into 98-dpkg-db.sb wherever it sits.
+  #
+  # all-browsers removes 05-chromium itself, so remove-chromium must NOT be listed as well.
+  # Do NOT add chromium-current, firefox-esr or debian-browsers either: the first two are
+  # superseded by all-browsers, the third is its alternative, and all of them remove literal
+  # 05 -- a plan containing any pair is refused before anything is modified.
+  - all-browsers
+  # Two bundles on top of Slax's own 01-firmware.sb, which stays: 09-firmware-debian (Debian's
+  # firmware, and the copyright files Slax's build deleted) and 09-firmware-linux (what no
+  # Debian package ships, with its license files). See docs/50-cookbook/firmware-refresh.md.
+  - firmware-refresh
+  # testkit prints facts about the ASSEMBLED filesystem to the serial console just before
+  # change_root: the bundle list is how a boot test sees both firmware bundles and the
+  # browsers mounted, and the dpkg count is the number most likely to be wrong.
+  - testkit
+  - serial-console
+  - isohybrid
+  # uefi-bootable builds the GRUB menu by parsing isolinux.cfg, so it runs after anything
+  # that adds a menu entry. Keep it last.
+  - uefi-bootable
+output:
+  name: "slax-browsers-firmware-{{version}}.iso"
+  hybrid: true
+test:
+  - structure

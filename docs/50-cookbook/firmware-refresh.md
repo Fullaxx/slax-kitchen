@@ -11,6 +11,11 @@ kitchen apply firmware-refresh
 
 **Debian only.** The Slackware route is at the bottom of this page.
 
+**In a profile, list it after any recipe that removes a bundle.** `check_plan_order` refuses a
+`bundle.remove` that runs after a bundle has been built, before anything is modified.
+[`profiles/browsers-firmware.yaml`](../../profiles/browsers-firmware.yaml) combines it with
+[`all-browsers`](all-browsers.md) in that order: `all-browsers` drops `05-chromium` first.
+
 > **CI builds this weekly, not on every push.** 65 files come from linux-firmware's mirrors, pinned by
 > sha256, so an outage or a moved tag fails the build *by design* — which on every push would turn
 > someone else's server into a red master. See [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt).
