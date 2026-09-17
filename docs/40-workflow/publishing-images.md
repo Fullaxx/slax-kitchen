@@ -68,6 +68,13 @@ upstream published it — Slax's own parts, Debian packages, a vendor's tarball 
 names, `snapshot.debian.org` for each Debian source version, the recipe's `upstream_source` for a
 download.
 
+**What weakens a pointer is said, not smoothed over.** A download with no `upstream_source`, and one
+the recipe pinned no sha256 for — what it fetched is what that server served that day — are
+warnings, and `kitchen sources --strict` makes them unresolved instead. A bundle a script wrote with
+network access carries that fact, because what came over the connection is the script's own account.
+A repacked initramfs is opened and its members counted against the stock manifest, so "the parts
+that are Slax's are Slax's" is a count rather than a claim.
+
 ## Before the first publish
 
 **Identity.** An image must not present itself as an official Slax release. Set the volume id and
