@@ -2,7 +2,7 @@ apiVersion: slax-kitchen/v1
 kind: Recipe
 metadata:
   name: firmware-refresh
-  summary: Add the GPU firmware the stock image lacks entirely, plus current network firmware
+  summary: Firmware so the ISO works on more hardware -- Debian's, plus what only linux-firmware has
   tags: [firmware, hardware, bundle]
 compat:
   # Debian only, for the reasons add-packages documents: Slackware has no
@@ -14,33 +14,49 @@ compat:
   slax: ">=12.0.0"
   privilege: chroot
 vars:
-  bundle: 09-firmware
+  # Two bundles, and the names are chosen for their ORDER. sortmod sorts by number, then
+  # by full name, and "09-firmware-debian.sb" < "09-firmware-linux.sb": the linux-firmware
+  # step therefore builds on top of the Debian one, so its refusal to shadow an existing
+  # file (below) can see everything Debian just installed. "09-firmware-extra" would have
+  # sorted BEFORE "09-firmware.sb" ('-' < '.') and seen none of it.
+  bundle: 09-firmware-debian
+  linux_bundle: 09-firmware-linux
+  linux_firmware_tag: "20260916"
 steps:
-  # THE GAP THIS FILLS IS REAL AND TOTAL. Every bundle of both flavours was searched:
-  # there is NO GPU firmware anywhere in a stock Slax. No amdgpu, no i915, no radeon, no
-  # nvidia, no nouveau. The 108 firmware subdirectories on Debian (129 on Slackware) are
-  # all networking -- `intel/` is iwlwifi, alongside rtl_nic and ath10k.
+  # WHAT THIS IS FOR: an ISO that works on more hardware. A kernel driver without its
+  # firmware is a device that does not work -- a black screen on a modern AMD card,
+  # silent speakers on a SOF laptop, Wi-Fi that never associates -- and it looks like a
+  # Slax bug when it is not one. The kernel's own driver set decides which firmware can
+  # matter at all, so the lists below are MEASURED from it, not guessed:
   #
-  # The consequence is not cosmetic. A modern AMD card does not initialise at all without
-  # amdgpu firmware, and recent Intel graphics lose GuC/HuC and display power management
-  # without the i915 blobs. On the affected machines the symptom is a black screen or a
-  # fallback to a software framebuffer, which looks like a Slax bug and is not one.
+  #   tools/firmware-coverage.py <freshly unpacked stock debian-64bit>/iso [--recipe]
   #
-  # NO APT SOURCE CHANGES ARE NEEDED. The stock /etc/apt/sources.list already carries
-  # `non-free non-free-firmware` on all three lines (bookworm, -security, -updates), so
-  # everything below is reachable from the image as shipped.
+  # reads every `firmware=` the 6.1.38 modules declare (1,959 names), what the stock image
+  # already has (295), what bookworm's packages ship (1,534), and what linux-firmware
+  # carries at the tag. Measured 2026-09-17; rerun it when the base or the tag moves.
   #
-  # 09 so it sits above a 08-* system-config bundle and well above the stock 01-firmware
-  # it supplements. It does not REPLACE 01-firmware -- both are mounted, and for the
-  # paths that exist in both, the higher number wins, which is what you want since these
-  # packages are newer than the 2023 base.
+  # DEBIAN FIRST, AS DEBIAN SHIPS IT. A package is here if it ships at least one requested
+  # file the image lacks, or is a runtime family (SOF and Intel SST audio, and
+  # wireless-regdb, whose files drivers ask for by name at runtime). The tool's EXCLUDE
+  # table says why each other firmware package in the suite is not: ARM-only and
+  # Raspberry Pi firmware, NVIDIA GSP (for a proprietary driver Slax lacks), CPU microcode
+  # (must load from the initramfs), and firmware-ivtv, whose debconf licence prompt
+  # would stop an unattended install.
   #
-  # SIZE, measured rather than estimated: the bundle is 89 MiB and the ISO goes from
-  # 415 MiB to 505 MiB, so +90 MiB. Less than it sounds, because firmware compresses
-  # well under xz. That buys 158 firmware subdirectories where stock has 108 --
-  # including amdgpu (531 files), nvidia (482), radeon (248) and i915 (120), all of
-  # which were completely absent. If you know your target hardware, cut the list:
-  # firmware-linux alone fixes the GPU case.
+  # THE STOCK FIRMWARE IS REINSTALLED, which needs `reinstall: true`. The stock image
+  # already carries firmware-atheros, -iwlwifi, -realtek and seven more at the version
+  # bookworm still has (20230210-5; bookworm-updates has nothing newer), so a plain
+  # install of them does nothing -- this recipe used to list four of them, and measured,
+  # none reached its bundle. What the stock copies lack is their /usr/share/doc: Slax's
+  # cleanup deleted every copyright file. A reinstall brings Debian's back and nothing
+  # else, because unchanged files stay out of the delta: ten packages, 64 KiB, 32 files,
+  # and each copyright byte-identical to the md5 dpkg recorded in the stock image.
+  # firmware-ipw2x00 is left alone -- its licence prompt would stop the install, and its
+  # ipw2x00.LICENSE is still in the stock image -- and so is firmware-b43-installer, a
+  # downloader whose host (www.lwfinger.com) no longer resolves; stock already carries
+  # the firmware it extracted.
+  #
+  # Nothing here replaces 01-firmware.sb. It stays, b43 blobs included.
   - verb: bundle.packages
     bundle: "{{bundle}}"
     apt:
@@ -49,18 +65,173 @@ steps:
       # far larger than the list below and much of it is for hardware that cannot be in
       # a machine that also has the rest.
       no_recommends: true
+      reinstall: true
     packages:
-      # firmware-linux pulls in firmware-linux-free and firmware-linux-nonfree, and the
-      # latter is what brings firmware-amd-graphics and firmware-misc-nonfree -- between
-      # them the amdgpu, radeon and i915 blobs that are the actual gap.
-      - firmware-linux
-      # Wireless and wired NIC firmware. The stock 01-firmware has older copies of some
-      # of these; a higher-numbered bundle wins, so these are the ones that get used.
-      - firmware-realtek
-      - firmware-atheros
-      - firmware-iwlwifi
-      - firmware-brcm80211
-      # Audio DSP firmware for anything recent enough to use SOF, which is most laptops
-      # since about 2019. Without it the internal speakers are silent and nothing says
-      # why.
-      - firmware-sof-signed
+      - atmel-firmware                 # 20 requested files the image lacks
+      - bluez-firmware                 # 2
+      - firmware-amd-graphics          # 751 -- amdgpu/radeon; stock has no GPU firmware at all
+      - firmware-ast                   # 1
+      - firmware-ath9k-htc             # 2
+      - firmware-bnx2x                 # 6
+      - firmware-intel-sound           # runtime family: Intel SST/SOF audio DSP
+      - firmware-misc-nonfree          # 429 -- i915, nvidia (nouveau), mediatek, and more
+      - firmware-myricom               # 4
+      - firmware-netronome             # 8
+      - firmware-netxen                # 1
+      - firmware-qlogic                # 10
+      - firmware-realtek-rtl8723cs-bt  # 2
+      - firmware-siano                 # 13
+      - firmware-sof-signed            # runtime family: Sound Open Firmware, most laptops since ~2019
+      - wireless-regdb                 # runtime family: regulatory.db for every Wi-Fi device
+      - firmware-atheros               # stock; reinstalled for its copyright file
+      - firmware-bnx2                  # stock; reinstalled
+      - firmware-brcm80211             # stock; reinstalled
+      - firmware-cavium                # stock; reinstalled
+      - firmware-iwlwifi               # stock; reinstalled
+      - firmware-libertas              # stock; reinstalled
+      - firmware-linux-free            # stock (in 01-core); reinstalled
+      - firmware-realtek               # stock; reinstalled
+      - firmware-ti-connectivity       # stock; reinstalled
+      - firmware-zd1211                # stock; reinstalled
+
+  # WHAT NO DEBIAN PACKAGE SHIPS, FROM LINUX-FIRMWARE -- 425 requested names, of which the
+  # tag carries 71. Taken: the 59 whose WHENCE entry names a license file, and that file
+  # travels with the copy (under LICENSES/, where the tag keeps them, with WHENCE beside
+  # it saying which entry each covers). Left out: the 12 whose entry says only "Allegedly
+  # GPL ... but no source visible", because there is no license file to bring. Most of
+  # the rest were never published anywhere.
+  #
+  # NEVER A REPLACEMENT FOR A DEBIAN FILE. The list is computed against every file every
+  # bookworm package ships, and the script refuses any path that already exists below
+  # this bundle -- so Debian's copy, when there is one, is the only copy.
+  #
+  # FETCHED PER FILE, PINNED PER FILE. The release tarball is 662 MB for these 65 files.
+  # GitLab is linux-firmware's own home and git.kernel.org carries the same tag; mirrors
+  # are tried in order and sha256 is the authority, the rule lib/fetch.py follows.
+  # git.kernel.org answered 503 to a burst of sequential requests while this list was
+  # measured, which is why neither is trusted to be up on its own. A file that no
+  # mirror serves, or that fails its hash, fails the build: a partial firmware set that
+  # says it is complete is worse than a red build.
+  - verb: bundle.script
+    bundle: "{{linux_bundle}}"
+    network: true
+    script: |
+      #!/bin/sh
+      set -eu
+      TAG="{{linux_firmware_tag}}"
+      DEST=/usr/lib/firmware
+      TMP=$(mktemp -d)
+
+      fetch() {
+          for url in "https://gitlab.com/kernel-firmware/linux-firmware/-/raw/$TAG/$1" \
+                     "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/$1?h=$TAG"; do
+              if wget -q --tries=3 --waitretry=5 --timeout=60 -O "$TMP/f" "$url"; then
+                  return 0
+              fi
+          done
+          return 1
+      }
+
+      n=0
+      while read -r kind path arg; do
+          if [ -e "$DEST/$path" ] || [ -L "$DEST/$path" ]; then
+              echo "firmware-refresh: $path already exists below this bundle; refusing to shadow it" >&2
+              exit 1
+          fi
+          mkdir -p "$DEST/$(dirname "$path")"
+          case "$kind" in
+              file)
+                  fetch "$path" || { echo "firmware-refresh: no mirror served $path" >&2; exit 1; }
+                  got=$(sha256sum "$TMP/f" | cut -d' ' -f1)
+                  if [ "$got" != "$arg" ]; then
+                      echo "firmware-refresh: $path has sha256 $got, pinned $arg" >&2
+                      exit 1
+                  fi
+                  install -m 0644 "$TMP/f" "$DEST/$path"
+                  ;;
+              link)
+                  ln -s "$arg" "$DEST/$path"
+                  ;;
+              *)
+                  echo "firmware-refresh: bad manifest line: $kind $path" >&2
+                  exit 1
+                  ;;
+          esac
+          n=$((n + 1))
+      done <<'MANIFEST'
+      file amdgpu/gc_11_0_0_mes_2.bin 6e1926d197d9e5f17830c1bba661ac170e2c9e7aba1da56ef26c6f6978b3b79e
+      file amdgpu/gc_11_0_1_mes_2.bin 061f8820d6a06e80fe0def43cafb5d0a201810463ec86f38b99b6f63ad7b5cbb
+      file amdgpu/gc_11_0_2_mes_2.bin 719f446830ec8766f47b9cfcf1dc606b77dbf720a9e868c4cfcdc60e0767d1a7
+      file amdgpu/gc_11_0_3_imu.bin beaf704d5acdf4623456b0d0cbcea8b8e428058340cd922a259a9045f5c457a3
+      file amdgpu/gc_11_0_3_me.bin d02c25070e5bdf0ec0146f5c9d6d2f8b86de43bd2a318a0b67eb5201963bafdc
+      file amdgpu/gc_11_0_3_mec.bin a37bc1a4e245300a5c3e26da34ea213842447d7df6c5c81e9fc78887a2fde26f
+      file amdgpu/gc_11_0_3_mes1.bin 26441f08db0babb4660f1278e92796754f1e8375a6fb1db13a132bd79932f550
+      file amdgpu/gc_11_0_3_mes_2.bin d3e08b7f6b54210c288bb2ce35f0a6f5bca00cbef74a2d121aa0a309292635f2
+      file amdgpu/gc_11_0_3_pfp.bin 362db904fa16c1fea2af7ad1295532434df7f85662b4a69332f51ae6c7290b61
+      file amdgpu/gc_11_0_3_rlc.bin 890d8e0123efb40c0179dd8ac3e9af073a0b87cbbccfec1db54e5ed2315a8d39
+      file amdgpu/gc_11_0_4_me.bin f075220f75ffe43eacc5986ff8448946c27405e632764fda83323e7ec8d55566
+      file amdgpu/gc_11_0_4_mec.bin 850d5302b4fee6022f42f706c2de103531b45b7794a45f2d6dce6015767a1ad6
+      file amdgpu/gc_11_0_4_mes.bin 4844bb3873ba1c141aa4f1374ab7ceca0c832f769e58efae82e25380bebfd5b9
+      file amdgpu/gc_11_0_4_mes1.bin a213a350546abaab3c76fa79271d5e551dc3df56cf8e2cb3d28754bacf508347
+      file amdgpu/gc_11_0_4_mes_2.bin 9f3d7a8c5c8c4e7f8209e58f328c1fe1c73312d0b0adcbbea85df509518ce6c7
+      file amdgpu/gc_11_0_4_pfp.bin aad22ca342c47d857bc1107a9aa9127e5e4ba7f7fd42d432213b1850bda1f4e1
+      file amdgpu/gc_11_0_4_rlc.bin 257ced82d7bec41249b06592ee0c44fb8f9262de2c6af9c52dc6f6a8a702063e
+      file amdgpu/psp_13_0_10_sos.bin 0bcaaad9cd8578d3841ae69155a6bd4fc3ceae8f4fb5a6ba4f576e7ace94d1d9
+      file amdgpu/psp_13_0_10_ta.bin 4a8c32aad88e028b70fcc220a859a1603684949782ac2cd09e8fa1cc5e46ff7a
+      file amdgpu/psp_13_0_11_ta.bin d54846f099aaa5f4f93c024cc64ce476ff569a2eacc033bee022f25391f9b19c
+      file amdgpu/psp_13_0_11_toc.bin 11e3529d748e2b6b204681183360a6ead80665b8deda996dfcf35973f789fc3d
+      file amdgpu/sdma_6_0_3.bin d47ac4db523aa35d77b27d57c35d4c04f431229dec6c0d667c36d98b985a6933
+      file amdgpu/smu_13_0_10.bin d1c59c86d7d2b021218fa6a5c24a64057d39a86e115c8be4b99938499baae28e
+      file emi26/bitstream.fw 90ce10d3c3844dbd3ce67626ccc7c406985c10f07b87cae13fcf1a78c9c5f004
+      file emi26/firmware.fw 7e68ec767ba7bf56635ba2d4cb77698a59ef983245f2cd1fe31822bf5399242a
+      file emi26/loader.fw 1a66b64c201f9b3e3cb3e63e292dca0f104c449b0286e5ec66935157a84692c5
+      file inside-secure/eip197_minifw/ifpp.bin 960cc0b964bb0dc76deb9132d6a087c3c1005552dcf726323a64c9f08bf46f8c
+      file inside-secure/eip197_minifw/ipue.bin 3d5bdc2ed1ce3e2b776039222ed94cec1aeb791e86f1cafd3b5208d5004bea9b
+      file keyspan/mpr.fw 55791d149414aee6f5f9a60af16cf0ac3546f9bdd8803f8bac911d7602d0a0d8
+      file keyspan/usa18x.fw aab2cde2402827fb148d64068ad645a6243cb9848bc71f589ad507e851c93b39
+      file keyspan/usa19.fw 193c4a49c94f9d5c50a8c3c524783927b74412ce68b3ec9839382a72e79ce1b0
+      file keyspan/usa19qi.fw d6f99cb1988680a7fb1ce6158d1abbd18d86c3e4dfd7fdda306fa33dc56c481b
+      file keyspan/usa19qw.fw 1e4ac98fc163ac0c24f6b6a5c91035b49912b2fc05f61128464e6f28f8c500f7
+      file keyspan/usa19w.fw 43b1928fdf7b11306f1c69a7cf2d93d7451930443967d1fd820b9249bb3bf597
+      file keyspan/usa28.fw 893361e8e47ea6a11824793e3186b462d3ff2f12b2d66d67139837ee4088ecbb
+      file keyspan/usa28x.fw 947fbe18c3c83d82baaeb2541c02c2164821abe1b93339bd9cb3f999f9d14ddf
+      file keyspan/usa28xa.fw d6200db6cc3afe528340ed2af42a3b1ccbb46e7ff7d521a9d63b53ab9bc38811
+      file keyspan/usa28xb.fw d4ab6d0f1c16736f04b06351ad49749d872c01e8f252770215c6ec8355c4a699
+      file keyspan/usa49w.fw b8f593620e5abe505be98278ebec2a7ee260db3bc788d4f7551ffbf20954a10e
+      file keyspan/usa49wlc.fw 8b42ee3fb63c1e136a2c491716eabcb7d1862194789fef2ccb44da4bfad29dbb
+      file mediatek/mt7916_rom_patch.bin d74eda13fc1dbd49f5bbe46738f5a24fbfb270c97f76623a0b21e8a08a883fd4
+      file mediatek/mt7916_wa.bin abeeb31611d3faed6178357988fc54858ddf7f7a5eb742d41fb55e9bb6da3fdc
+      file mediatek/mt7916_wm.bin 64d86cfa4f00f9452b4706389d648d4ce0e563ddd512cc9845ba4e4442e99cb0
+      file mellanox/lc_ini_bundle_2010_1006.bin f96874767e7184df3d1001ec90c7faf549e9861a315f38e096d5976df640f4bb
+      file mellanox/mlxsw_spectrum-13.2010.1006.mfa2 ac38f95627d1bc6aab1d3fef58afd95234c6188fb426e1312b8082e7b607a8f6
+      file mellanox/mlxsw_spectrum2-29.2010.1006.mfa2 43064fc72fbb83d13dbf2166c0ce9da56553b0af29ab1a884add7492cfbdee8d
+      file mellanox/mlxsw_spectrum3-30.2010.1006.mfa2 871a92eda111c9f130828eefa432709a1d70771515d8e2cf1d8b3faab8aa3081
+      file microchip/mscc_vsc8574_revb_int8051_29e8.bin 8a22ab51ec4d00b7e10795f4c1b5e1c860bf8ad6245a2dab599d6104694acd16
+      file microchip/mscc_vsc8584_revb_int8051_fb48.bin 01a0eb6e4293cec50de6d3a74ac8b9b4311a22eae16f9db420ddbc5dd66e2440
+      link netronome/nic_AMDA0058-0011_2x40.nffw nic/nic_AMDA0058-0011_2x40.nffw
+      link netronome/nic_AMDA0058-0012_2x40.nffw nic/nic_AMDA0058-0012_2x40.nffw
+      link netronome/nic_AMDA0099-0001_1x10_1x25.nffw nic/nic_AMDA0099-0001_1x10_1x25.nffw
+      file intel/qat/qat_4xxx.bin 7dd16649b3e687d6d909b3c2cbbd44241b04dac4b1398645810e1cdc0137eb46
+      link qat_4xxx.bin intel/qat/qat_4xxx.bin
+      file intel/qat/qat_4xxx_mmp.bin df9d88b8b453a228076ddd2eb1332045eca654854b3e1bf6cce0edac24854c7c
+      link qat_4xxx_mmp.bin intel/qat/qat_4xxx_mmp.bin
+      file rtl_bt/rtl8723bs_config.bin a6319ce368257b45820fcf11f8821b6eea7ddcc649f59a282498bf7a33210103
+      link rtl_bt/rtl8723b_config.bin rtl8723bs_config.bin
+      link rtl_bt/rtl8761a_config.bin rtl8761bu_config.bin
+      link rtl_bt/rtl8851bu_config.bin rtl8761bu_config.bin
+      file rtl_bt/rtl8851bu_fw.bin 7fcf88c00b2548a5ff157102a35722db5e4be655dab1ce8d9bddb6df85f88f24
+      file LICENSES/LICENCE.Netronome 1421dcae0ac1b16c1e6f06c63bef76cf62a9c51d010f8d736c419b344d9b4d85
+      file LICENSES/LICENCE.emi26 05d7e10b175312880c82b060a4ca3fa4002129f52fce3a713468960bd2ef0a56
+      file LICENSES/LICENCE.ibt_firmware 5181b0b51efc79d5acb2c9bb92042878fdbad97a92114d4ab5e32e2b5b52fce4
+      file LICENSES/LICENCE.inside-secure 604804e48065a246e071052e810f2d307570100d195aea2ec6c2c8c9b058b185
+      file LICENSES/LICENCE.keyspan 00ebe9218187da27b271169525c169cad997dc8cff2b443a6574deb6a32c4867
+      file LICENSES/LICENCE.mediatek a90d3f66704d85889945fec5525ea77622549da83aced1aac99828383f8f1805
+      file LICENSES/LICENCE.microchip 0fc67bd715b3395f3f2af464781910e9e69c4ba23da304352229b42dc9e986c3
+      file LICENSES/LICENCE.qat_firmware 0bd9f7cae3cf72b12a63359a725ccbb76ddbd6831372695a9162144329800dd0
+      file LICENSES/LICENCE.rtlwifi_firmware.txt a61351665b4f264f6c631364f85b907d8f8f41f8b369533ef4021765f9f3b62e
+      file LICENSES/LICENSE.amdgpu 572872598565dc3513470de971a32bf9db301f47afeef3636345eadae33b2eee
+      file LICENSES/LICENSE.mellanox 1bb7b321ef95a298d4005c81a772f55ec22985ede4e7d0af8ec99f5457d326a3
+      file WHENCE 9350832c1e9afc35df50fa8b9793b31d60d78ef963152eec903fc0dbc6b4a559
+      MANIFEST
+      rm -rf "$TMP"
+      echo "linux-firmware $TAG: $n entries added, every file sha256-verified"

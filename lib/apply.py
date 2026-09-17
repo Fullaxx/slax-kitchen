@@ -2640,6 +2640,25 @@ def _detect_flavour(tree: str) -> str:
     return "debian"
 
 
+def apt_install_argv(apt: dict) -> list[str]:
+    """The apt-get command bundle.packages runs, from the step's `apt:` block.
+
+    REINSTALL is for packages a stock bundle already has at the same version. `apt-get
+    install` of those is a silent no-op -- firmware-refresh listed four of them and none
+    reached its bundle -- and the stock copy is missing its /usr/share/doc, because
+    upstream's cleanup deleted it. --reinstall re-unpacks the archive. dpkg restores each
+    file's archive mtime and the delta compares size+mtime+mode (_manifest), so files that
+    come back unchanged stay out of the bundle and what lands is what differs: the docs.
+    Measured: ten stock firmware packages reinstalled into a 64 KiB bundle of 32 files.
+    """
+    argv = ["apt-get", "install", "-y", "-qq"]
+    if apt.get("no_recommends", True):
+        argv.append("--no-install-recommends")
+    if apt.get("reinstall", False):
+        argv.append("--reinstall")
+    return argv
+
+
 @verb("bundle.packages")
 def v_bundle_packages(ctx: Ctx, step: dict) -> None:
     """Install distro packages into a NEW bundle, built from the ISO's own bundles.
@@ -2712,10 +2731,7 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
                 r = _in_chroot(root, ["apt-get", "update", "-qq"])
                 if r.returncode != 0:
                     raise RuntimeError("apt-get update failed:\n" + r.stderr.strip()[-1500:])
-            argv = ["apt-get", "install", "-y", "-qq"]
-            if step.get("apt", {}).get("no_recommends", True):
-                argv.append("--no-install-recommends")
-            r = _in_chroot(root, argv + list(packages))
+            r = _in_chroot(root, apt_install_argv(step.get("apt") or {}) + list(packages))
         elif flavour == "slackware":
             # slackpkg + slackpkg+ are preconfigured in Slax's 01-core, but -batch=on
             # does NOT cover slackpkg's "you picked a -current mirror but 15.0+ is

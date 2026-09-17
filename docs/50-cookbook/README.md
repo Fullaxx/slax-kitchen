@@ -35,7 +35,7 @@ kitchen build <profile>             # fetch -> unpack -> apply* -> pack -> test
 | [`boot-cmdline`](boot-cmdline.md) | bake `toram` and friends into every entry; drop the broken `automount` | ○ |
 | [`host-grub-entry`](host-grub-entry.md) | a GRUB entry for booting Slax from a bootloader you already have | ○ |
 | [`iso-identity`](iso-identity.md) | label the image as yours, and write a verifiable checksum | ○ |
-| [`firmware-refresh`](firmware-refresh.md) | the GPU firmware stock Slax ships **none** of; +90 MiB | ◐ |
+| [`firmware-refresh`](firmware-refresh.md) | firmware so the ISO works on more hardware — Debian's plus what only linux-firmware has; +53 MiB | ◐ |
 
 The first two fix real gaps in every stock image, and together produce one file that boots four
 ways: BIOS optical, UEFI optical, BIOS `dd`'d stick, UEFI `dd`'d stick.

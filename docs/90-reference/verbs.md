@@ -159,6 +159,13 @@ Two real examples, both from [`libreoffice`](../50-cookbook/libreoffice.md): wit
 `libreoffice-base` installs happily without the JRE it needs, so it starts and then cannot open a
 database. An application that looks installed and fails when clicked is worse than one you left out.
 
+**`apt.reinstall` defaults to `false`.** Set it for packages the stock image already has at the same
+version: `apt-get install` of those does nothing, and the stock copy has lost its `/usr/share/doc`,
+because Slax's build deletes it. With `reinstall: true` apt unpacks them again; files that come back
+unchanged in size, mtime and mode stay out of the bundle, so what ships is what differs — the
+copyright files. Measured on ten stock firmware packages: a 64 KiB bundle of 32 files. See
+[`firmware-refresh`](../50-cookbook/firmware-refresh.md).
+
 **`from:` defaults to every bundle that will sit below this one**, which is almost always what
 you want. Name a shorter stack and apt reinstalls libraries the image already has, and those
 copies then shadow the originals from a higher bundle. It is a size-versus-independence dial:

@@ -65,8 +65,13 @@ click through them.
   build removed; `/usr/lib/firmware/ipw2x00.LICENSE` is the one license file left beside them. It
   also holds Broadcom b43 firmware that `firmware-b43-installer` extracted during Slax's build. That
   is not the content of any Debian package, and it was published with no license text.
+- [`firmware-refresh`](docs/50-cookbook/firmware-refresh.md) reinstalls those Debian packages, which
+  brings their `copyright` files back, and adds more of Debian's firmware the same way. The firmware
+  it copies from linux-firmware travels with the license file linux-firmware's `WHENCE` names for
+  it, under `/usr/lib/firmware/LICENSES/`.
 - If you would rather not accept those terms, build without the firmware:
-  [`remove-bundle`](docs/50-cookbook/remove-bundle.md) with `drop: 01-firmware`.
+  [`remove-bundle`](docs/50-cookbook/remove-bundle.md#building-without-firmware) with
+  `drop: 01-firmware`.
 
 ## Publishing an image built with slax-kitchen
 

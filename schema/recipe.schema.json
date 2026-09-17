@@ -409,6 +409,11 @@
                     "type": "boolean",
                     "default": true
                   },
+                  "reinstall": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "pass --reinstall, so packages a stock bundle already has at the same version are unpacked again (their stripped docs come back); files unchanged in size, mtime and mode stay out of the bundle"
+                  },
                   "architectures": {
                     "type": "array",
                     "description": "foreign architectures to enable, e.g. [i386] for wine or a 32-bit browser",

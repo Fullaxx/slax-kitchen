@@ -162,7 +162,7 @@ steps:
 |---|---|
 | `uefi-bootable` | make the ISO boot on UEFI firmware |
 | `isohybrid` | make it `dd`-able to a USB stick |
-| `firmware-refresh` | the GPU firmware stock Slax ships **none** of — no amdgpu, i915 or radeon at all |
+| `firmware-refresh` | firmware so the ISO works on more hardware — GPU, audio, Wi-Fi; Debian's, plus what only linux-firmware has |
 | `add-packages` | install distro packages into a new bundle |
 | `chromium-current` | replace the 2023 browser — stock is chromium **117**, from September 2023 |
 | `debian-browsers` | current Chromium **and** Firefox in one bundle, 32- and 64-bit |

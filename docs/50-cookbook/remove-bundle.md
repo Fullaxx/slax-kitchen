@@ -32,6 +32,30 @@ Booted afterwards: livekit mounts five bundles instead of six and reaches
 
 **Never remove `01-core`** — it is the root filesystem.
 
+## Building without firmware
+
+Using an image that contains firmware implies acceptance of each firmware's license terms — see
+[NOTICE.md](../../NOTICE.md). If you would rather not, build without it. In a profile:
+
+```yaml
+recipes:
+  - name: remove-bundle
+    vars:
+      drop: "01-firmware"
+```
+
+and do not apply [`firmware-refresh`](firmware-refresh.md). What that leaves out, and what it leaves
+behind:
+
+- **All of stock Slax's non-free firmware goes**: Wi-Fi, wired NIC and Bluetooth for atheros, iwlwifi,
+  realtek, brcm80211, bnx2, cavium, libertas, ti-connectivity, zd1211, Intel ipw2x00, and the Broadcom
+  b43 blobs. Many laptops lose Wi-Fi.
+- **`firmware-linux-free` stays** — it lives in `01-core`, and it is free firmware.
+- **The package database still lists the removed packages as installed.** Each stock bundle carries a
+  complete `var/lib/dpkg/status`, and the ones above `01-firmware` still record them. That is
+  documented rather than changed. A recipe that installs one of those packages again afterwards has
+  to set `apt: {reinstall: true}`, or apt will believe it is already there and do nothing.
+
 ## Why numbering still matters
 
 Removing a bundle leaves a gap in the numeric sequence (`01,01,02,03,04` after dropping `05`) and

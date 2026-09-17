@@ -1429,6 +1429,22 @@ def test_relax_modes_widens_without_granting():
     shutil.rmtree(outside_dir, ignore_errors=True)
 
 
+def test_apt_reinstall_is_opt_in():
+    """`apt-get install` of a package the stock image already has at the same version does
+    nothing. firmware-refresh listed firmware-realtek, -atheros, -iwlwifi and -brcm80211 and
+    measured: its bundle's dpkg fragment declared five packages, none of those four. The
+    flag is what makes a reinstall reach the bundle -- and it must stay opt-in, because on
+    by default every recipe would re-unpack whatever it names that is already installed.
+    """
+    base = ["apt-get", "install", "-y", "-qq", "--no-install-recommends"]
+    check("default: no --reinstall", apply.apt_install_argv({}), base)
+    check("reinstall: true adds it", apply.apt_install_argv({"reinstall": True}),
+          base + ["--reinstall"])
+    check("reinstall: false is the default", apply.apt_install_argv({"reinstall": False}), base)
+    check("no_recommends still honoured", apply.apt_install_argv({"no_recommends": False}),
+          ["apt-get", "install", "-y", "-qq"])
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -1456,7 +1472,8 @@ def main():
                test_all_root_is_per_verb,
                test_bundle_files_refuses_a_setuid_mode,
                test_iso_files_actually_writes_into_the_iso_tree,
-               test_relax_modes_widens_without_granting]:
+               test_relax_modes_widens_without_granting,
+               test_apt_reinstall_is_opt_in]:
         fn()
     if FAILURES:
         for f in FAILURES:
