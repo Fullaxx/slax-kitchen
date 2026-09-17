@@ -339,7 +339,9 @@ sha256 is not the one its provenance records.
 **`slax/boot/initrfs.img`, when a recipe has repacked it, is counted rather than asserted.** Its
 members are read straight out of the image (the cpio is parsed here, so no privilege and no `cpio`
 binary are needed) and compared with the committed initramfs manifest, and the note says how many
-of them are still Slax's and which are not.
+of them are still Slax's and which are not. An initramfs this cannot read — a corrupt or truncated
+archive, or one that decompresses to more than 512 MiB — is reported as not compared, with the
+reason, and so is a target with no committed manifest. Neither is guessed at.
 
 **A download nobody pinned is said out loud.** `bundle.fromTarball` and `boot.payload` record
 whether the recipe gave a `sha256:`; without one, what the build fetched is whatever that server
