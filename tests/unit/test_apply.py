@@ -913,8 +913,54 @@ def test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package():
             f.write(b"\x7fELF" + b"replaced\n")
         got = apply._unowned_elf(root, ["usr/bin/ssh"])
         check("the replaced one is", [e["path"] for e in got], ["usr/bin/ssh"])
+
+        # TWO PACKAGES, ONE PATH. A diversion or a Replaces: takeover records the same
+        # path twice with different digests; keeping whichever .md5sums os.listdir read
+        # last made this answer depend on a directory listing's order. The file matches
+        # one of them, so it is vouched for.
+        other = hashlib.md5(open(elf, "rb").read()).hexdigest()
+        with open(os.path.join(info, "ssh-replacement.md5sums"), "w") as f:
+            f.write(f"{other}  usr/bin/ssh\n")
+        with open(os.path.join(info, "ssh-replacement.list"), "w") as f:
+            f.write("/usr/bin/ssh\n")
+        check("a path two packages record",
+              apply._unowned_elf(root, ["usr/bin/ssh"]), [])
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def test_boot_payload_copies_a_local_file_and_records_it():
+    """RUN the verb, do not read it. The static check above asks only whether the function
+    MENTIONS ctx.local; the call added to satisfy it passed two arguments to a method that
+    takes one, so every recipe with a recipe-local `src:` died with a TypeError -- after
+    the file had been copied and chmodded, leaving the tree half-written.
+
+    A local file is not a download: it is recorded as a local input, and `pinned` (which
+    means "the recipe named the sha256 of a file some server served") does not apply."""
+    import shutil
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    try:
+        recipe_dir = os.path.join(tmp, "recipe")
+        os.makedirs(recipe_dir)
+        payload = os.path.join(recipe_dir, "memtest.bin")
+        with open(payload, "wb") as f:
+            f.write(b"\x7fELF payload\n")
+        ctx = apply.Ctx(os.path.join(tmp, "work"), recipe_dir, "local-payload")
+        os.makedirs(ctx.tree)
+        ctx.say = lambda *_a, **_k: None
+        ctx.begin_step("boot.payload")          # as apply_recipe does around every verb
+        apply.v_boot_payload(ctx, {"verb": "boot.payload", "dest": "/slax/boot/memtest.bin",
+                                   "src": "memtest.bin", "mode": "0644"})
+        ctx.end_step()
+        landed = os.path.join(ctx.tree, "slax", "boot", "memtest.bin")
+        check("the payload is in the tree", os.path.isfile(landed), True)
+        step = ctx.prov_steps[-1]
+        check("recorded as a local input", bool(step.get("local_inputs")), True)
+        check("and not as an unpinned download", step.get("pinned"), None)
+        check("with the file's own name", step.get("source"), "memtest.bin")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def test_a_long_pack_hint_survives_the_round_trip():
@@ -1674,6 +1720,7 @@ def main():
                test_network_is_declared_where_it_is_used,
                test_fetches_and_bundles_record_provenance,
                test_recipe_relative_paths_go_through_ctx_local,
+               test_boot_payload_copies_a_local_file_and_records_it,
                test_a_long_pack_hint_survives_the_round_trip,
                test_a_recipe_listed_twice_is_refused,
                test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package,

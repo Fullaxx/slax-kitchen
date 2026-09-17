@@ -186,6 +186,15 @@ def test_a_source_tar_is_named_the_way_every_other_asset_is():
     check("under a safe name", "grub2_2.12-1ubuntu7.3.source.tar" in os.listdir(dest), True)
 
 
+def test_nothing_may_take_the_name_of_a_file_this_script_writes():
+    """SHA256SUMS and release-index.json are written last, from what the other assets are.
+    A fetched file with one of those names was copied in, hashed into the index, and then
+    overwritten -- leaving an index whose record of itself was of a file that is gone."""
+    rc, out, _ = assemble({"SHA256SUMS": "not really sums"}, [])
+    check("refused", rc, 1)
+    check("and says whose name it is", "written by this script" in out, True)
+
+
 def test_a_fetched_file_the_sources_document_says_nothing_about():
     """The set comprehension asked `fetched[c]["what"]` for every record it found. A
     record without that key -- the document does not require one -- was a KeyError in the
@@ -360,6 +369,7 @@ def test_release_notes_use_the_claim_when_given_assets():
 
 def main():
     for fn in [test_a_source_tar_is_named_the_way_every_other_asset_is,
+               test_nothing_may_take_the_name_of_a_file_this_script_writes,
                test_a_fetched_file_the_sources_document_says_nothing_about,
                test_a_complete_directory_passes,
                test_sha256sums_must_be_exact,

@@ -87,12 +87,21 @@ def sha256(path):
     return h.hexdigest()
 
 
+# Written at the end from what the other assets are, so nothing else may take these two
+# names: a fetched file called SHA256SUMS would be placed, hashed into the index, and then
+# overwritten by the index's own sums file.
+RESERVED = {"SHA256SUMS", "release-index.json"}
+
+
 def asset_path(name):
     """Where an asset goes, once its name is one GitHub will keep and nothing else claims
     it. Both the files copied here and the tars built here go through this: a name GitHub
     rewrites leaves SHA256SUMS naming a file that is not in the release."""
     if not SAFE.match(name):
         sys.exit(f"release-assets: {name!r} is not a name GitHub keeps as it is")
+    if name in RESERVED:
+        sys.exit(f"release-assets: {name} is written by this script; an asset cannot take "
+                 "that name")
     dest = os.path.join(out, name)
     if os.path.exists(dest):
         sys.exit(f"release-assets: two assets would be named {name}")

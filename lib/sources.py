@@ -147,22 +147,34 @@ def cpio_members(blob: bytes) -> dict:
     costs nothing and answers for any user.
     """
     def field(at: int, i: int) -> int:
-        """Header field `i`: newc writes each as eight ASCII hex digits, after the magic."""
-        return int(blob[at + 6 + i * 8: at + 14 + i * 8], 16)
+        """Header field `i`: newc writes each as eight ASCII hex digits, after the magic.
 
+        STRICTLY eight hex digits. int() accepts a sign and surrounding space, so a field
+        written `-000006e` parsed as a negative length, the next offset landed back on the
+        current one, and the loop never ended -- on an image the operator did not build."""
+        raw = blob[at + 6 + i * 8: at + 14 + i * 8]
+        if not HEX8.fullmatch(raw):
+            raise ValueError(f"cpio: header field {i} at {at} is not eight hex digits")
+        return int(raw, 16)
+
+    # Stops at the first TRAILER!!!, so a concatenated initramfs (several archives one
+    # after another, which the kernel accepts) reads as its first segment. Slax builds one.
     out: dict[str, str] = {}
     linked: dict[tuple, list[str]] = {}       # inode -> the names sharing it
     content: dict[tuple, str] = {}            # inode -> the hash of the one copy of its data
-    off = 0
+    off, trailer = 0, False
     while off + 110 <= len(blob):
         if blob[off:off + 6] != b"070701":
             break
         mode, nlink, filesize = field(off, 1), field(off, 4), field(off, 6)
         namesize = field(off, 11)
         name_at = off + 110
-        name = blob[name_at: name_at + namesize - 1].decode("utf-8", "replace")
         data_at = (name_at + namesize + 3) & ~3
+        if namesize < 1 or data_at + filesize > len(blob):
+            raise ValueError("cpio: the archive ends in the middle of a member")
+        name = blob[name_at: name_at + namesize - 1].decode("utf-8", "replace")
         if name == "TRAILER!!!":
+            trailer = True
             break
         if stat.S_ISREG(mode):
             digest = hashlib.sha256(blob[data_at:data_at + filesize]).hexdigest()
@@ -176,11 +188,25 @@ def cpio_members(blob: bytes) -> dict:
                 if filesize:
                     content[ino] = digest
         off = (data_at + filesize + 3) & ~3
+    if not trailer:
+        # Every newc archive ends with one. Running off the end without seeing it means
+        # the tail was cut off, and the members read so far are not the whole story.
+        raise ValueError("cpio: no TRAILER!!! -- the archive is truncated")
     for ino, names in linked.items():
         if ino in content:
             for n in names:
                 out[n] = content[ino]
     return out
+
+
+def initramfs_from_bytes(blob: bytes) -> dict | None:
+    """{member: sha256} for an xz-compressed newc initramfs, or None when the bytes are
+    not one. Malformed input is an answer, not a traceback: this runs on images from
+    elsewhere, and `kitchen sources` says what it could not read rather than dying."""
+    try:
+        return cpio_members(lzma.decompress(blob)) or None
+    except (lzma.LZMAError, ValueError, EOFError, MemoryError):
+        return None
 
 
 def initramfs_members(iso: str) -> dict | None:
@@ -197,11 +223,7 @@ def initramfs_members(iso: str) -> dict | None:
     with open(iso, "rb") as fh:
         fh.seek(e["lba"] * diff.SECTOR)
         blob = fh.read(e["size"])
-    try:
-        raw = lzma.decompress(blob)
-    except lzma.LZMAError:
-        return None
-    return cpio_members(raw) or None
+    return initramfs_from_bytes(blob)
 
 
 def initramfs_delta(members: dict | None, stock: dict) -> dict:
@@ -210,8 +232,14 @@ def initramfs_delta(members: dict | None, stock: dict) -> dict:
     Pure. `members` is None when the initramfs could not be unpacked, and then nothing is
     claimed about it -- the point of this is to stop asserting that the parts that match
     Slax match Slax."""
-    if members is None or not stock:
-        return {"compared": False}
+    # The manifest first: with nothing to compare against, that is the reason whether or
+    # not the image's initramfs could be read, and saying "could not be read" about an
+    # image that read perfectly sends the reader after the wrong problem.
+    if not stock:
+        return {"compared": False,
+                "why": "this target has no committed initramfs manifest to compare against"}
+    if members is None:
+        return {"compared": False, "why": "the initramfs in the image could not be read"}
     same = [p for p, h in members.items() if stock.get(p) == h]
     return {"compared": True, "members": len(members), "stock_members": len(same),
             "changed": sorted(p for p, h in members.items() if stock.get(p) != h),
@@ -258,6 +286,10 @@ def from_debian(origin: str) -> bool:
     anywhere in that path -- `mirror.example.com_debian.org_pub_dists_...` -- so only the
     host is tested, and a package from someone else's mirror stays undeclared."""
     host = (origin or "").split("_", 1)[0].split(":", 1)[0]
+    # Any debian.org host counts, `people.debian.org` included, so a personal repository
+    # there is taken for an archive Debian runs. It is still Debian's infrastructure and
+    # the alternative is a hand-kept list of archive hostnames; the recipe declaring the
+    # repository is what makes the pointer right, and this is the fallback.
     return host == "debian.org" or host.endswith(".debian.org")
 APT_QUOTED = set('\\|{}[]<>"^~_=!@#$%^&*')
 
@@ -435,8 +467,8 @@ def classify(files: dict, stock: dict, prov: dict, target: str | None, target_in
                     if delta["removed"]:
                         note += f"; removed: {len(delta['removed'])}"
                 else:
-                    note = ("initramfs repacked by recipes; its members were not compared "
-                            "against the stock manifest (it could not be unpacked here)")
+                    note = ("initramfs repacked by recipes; its members were not compared: "
+                            + delta["why"])
                 add(path, sha, "ours", by=rn, note=note, parts=parts, stock_members=delta)
                 continue
             if verb == "bundle.packages":
@@ -626,6 +658,7 @@ def classify(files: dict, stock: dict, prov: dict, target: str | None, target_in
     }
 
 
+HEX8 = re.compile(rb"[0-9A-Fa-f]{8}")
 STOCK_FIRMWARE = "slax/modules/01-firmware.sb"
 LICENSE_NAME = re.compile(r"(^|/)(LICENSES/|LICEN[CS]E)")
 
@@ -1000,11 +1033,13 @@ def main(argv: list[str]) -> int:
     stock = stock_index(target, os.path.join(REPO, "docs", "30-inventory", "manifests"))
     files = iso_files(a.iso)
     check_local_inputs(prov)
-    # Only unpack the initramfs when the image's is not the stock one: an untouched
-    # initrfs.img is answered by its own sha256, and this saves the xz on every run.
+    # Unpack the initramfs only when there is something to learn: it is not the stock one
+    # (an untouched initrfs.img is answered by its own sha256) and this target has a
+    # manifest to compare it against. Otherwise the xz is work whose result is unusable.
     irfs = files.get("slax/boot/initrfs.img")
     members = (initramfs_members(a.iso)
-               if irfs and stock["files"].get("slax/boot/initrfs.img") != irfs else None)
+               if irfs and stock["initramfs"]
+               and stock["files"].get("slax/boot/initrfs.img") != irfs else None)
     doc = classify(files, stock, prov, target, info, a.allow_dirty, a.strict,
                    initramfs=members)
     if ((prov.get("pack") or {}).get("iso") or {}).get("sha256") not in (None, _sha256(a.iso)):

@@ -165,7 +165,7 @@ mv "$UNPACK/busybox" "$OUTPUT" && mv "$UNPACK/.config" "$OUTPUT.config" && chmod
 # THE BUILD CLAIM. `initramfs.busybox` records it in the image's provenance, and `kitchen
 # sources` uses it to name what this binary was built from. `artifact.sha256` is what ties
 # the claim to THIS binary; a claim whose hash does not match is reported as unverified.
-if ! python3 - "$OUTPUT" "$VERSION" "$SHA" "$IMAGE" "$UNPACK" "$(git -C "$(dirname "$0")/.." \
+python3 - "$OUTPUT" "$VERSION" "$SHA" "$IMAGE" "$UNPACK" "$(git -C "$(dirname "$0")/.." \
         hash-object tools/build-busybox.sh 2>/dev/null || echo)" <<'PY'
 import hashlib, json, os, sys
 out, ver, sha, image, unpack, blob = sys.argv[1:7]
@@ -193,16 +193,20 @@ with open(out + ".provenance.json", "w") as f:
     json.dump(claim, f, indent=1, sort_keys=True)
     f.write("\n")
 PY
-then :; else
-    # Without the claim, `kitchen sources` reports this binary as built here with nothing
-    # to show for it, and the initramfs it goes into is unresolved. That is a failed
-    # build, not a warning -- and the half-written file must not be left to be believed.
-    echo "build-busybox: the build claim could not be written (python3 exited $?)" >&2
+claim_rc=$?
+rm -rf "$UNPACK"
+# Without the claim, `kitchen sources` reports this binary as built here with nothing to
+# show for it, and the initramfs it goes into is unresolved. That is a failed build, not a
+# warning -- and a half-written file must not be left behind to be believed.
+#
+# READ THE STATUS INTO A VARIABLE rather than testing `if ! python3 …`: written that way,
+# the error branch is the one that runs when python3 SUCCEEDS. It was, and it deleted the
+# claim it had just written correctly while a real failure fell through in silence.
+if [ "$claim_rc" -ne 0 ] || [ ! -s "$OUTPUT.provenance.json" ]; then
+    echo "build-busybox: the build claim could not be written (python3 exited $claim_rc)" >&2
     rm -f "$OUTPUT.provenance.json"
-    rm -rf "$UNPACK"
     exit 1
 fi
-rm -rf "$UNPACK"
 
 # Assert what the initramfs actually requires, rather than trusting the toolchain.
 desc=$(file -b "$OUTPUT" 2>/dev/null || echo "")

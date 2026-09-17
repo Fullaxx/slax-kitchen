@@ -541,9 +541,16 @@ def v_boot_payload(ctx: Ctx, step: dict) -> None:
     if src:
         remote = bool(re.match(r"^https?://", src))
         if not remote:
-            ctx.local(local, "boot.payload")
+            # A file from beside the recipe is recorded the way every other local input
+            # is, so `kitchen sources` can check it against the recorded commit. Ctx.local
+            # takes the path and nothing else; it resolves relative to the recipe itself.
+            ctx.local(src)
         ctx.prov(source=src if remote else os.path.basename(src),
-                 source_sha256=got, pinned=bool(want), member=member,
+                 source_sha256=got, member=member,
+                 # `pinned` says whether a DOWNLOAD was named by sha256. A checked-in file
+                 # is answered by its commit, not by a hash of what a server served, and
+                 # recording pinned=False for one would warn about the wrong thing.
+                 pinned=bool(want) if remote else None,
                  upstream_source=step.get("upstream_source"),
                  output=provenance.in_image(step["dest"]), output_sha256=sha256(dest))
     ctx.record(step['dest'], f"installed {step['dest']} ({os.path.getsize(dest)} bytes)")
@@ -1048,10 +1055,12 @@ def _unowned_elf(root: str, keep: list[str]) -> list[dict]:
     ships, in the .md5sums beside the .list, so the question can be asked properly.
 
     Slackware's package database lists files and no checksums, so under `flavour:
-    slackware` ownership remains all there is; that is why `declares:` exists.
+    slackware` ownership remains all there is; that is why `declares:` exists. Two more
+    paths fall back to ownership alone, and neither is announced: dpkg leaves CONFFILES
+    out of .md5sums, and a few packages ship no .md5sums at all.
     """
     owned: set[str] = set()
-    recorded: dict[str, str] = {}
+    recorded: dict[str, set] = {}
     info = os.path.join(root, "var", "lib", "dpkg", "info")
     if os.path.isdir(info):
         for n in os.listdir(info):
@@ -1063,7 +1072,12 @@ def _unowned_elf(root: str, keep: list[str]) -> list[dict]:
                     for ln in f:
                         digest, _, rel = ln.strip().partition("  ")
                         if rel and len(digest) == 32:
-                            recorded[rel.lstrip("/")] = digest
+                            # EVERY package that records this path, not the last one read.
+                            # A diversion or a Replaces: takeover has two packages naming
+                            # one path with different digests, and keeping whichever
+                            # os.listdir returned last made the answer depend on the order
+                            # of a directory listing.
+                            recorded.setdefault(rel.lstrip("/"), set()).add(digest)
     pkgtools = os.path.join(root, "var", "lib", "pkgtools", "packages")
     if os.path.isdir(pkgtools):
         for n in os.listdir(pkgtools):
@@ -1085,9 +1099,13 @@ def _unowned_elf(root: str, keep: list[str]) -> list[dict]:
             out.append({"path": rel, "sha256": sha256(full), "why": "no package owns it"})
             continue
         want = recorded.get(rel) or recorded.get(alt)
-        if want and want != _md5(full):
-            out.append({"path": rel, "sha256": sha256(full),
-                        "why": "its package recorded different bytes for this path"})
+        try:
+            if want and _md5(full) not in want:
+                out.append({"path": rel, "sha256": sha256(full),
+                            "why": "its package recorded different bytes for this path"})
+        except OSError:
+            out.append({"path": rel, "sha256": "",
+                        "why": "it could not be read to check against its package"})
     return out
 
 

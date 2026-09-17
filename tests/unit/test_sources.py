@@ -144,7 +144,65 @@ def test_the_cpio_reader_reads_what_cpio_would():
     check("every regular file is", sorted(got), ["bin/ln1", "bin/ln2", "etc/passwd", "init"])
     check("content read correctly", got["init"], h)
     check("and both names of a hard link carry it", (got["bin/ln1"], got["bin/ln2"]), (h, h))
-    check("a truncated archive stops rather than looping", sources.cpio_members(arc[:60]), {})
+    try:                                        # a cut-off archive is refused, not summarised
+        sources.cpio_members(arc[:60])
+        check("a truncated archive is refused", "returned", "raised ValueError")
+    except ValueError:
+        pass
+
+
+def test_a_broken_archive_is_reported_as_unreadable_not_as_a_traceback():
+    """`kitchen sources` runs against images the operator did not build, so the parser is
+    fed hostile bytes by definition. Three ways it went wrong: a header whose fields are
+    not hex raised ValueError out of the tool (and out of ci/release-assets.sh with it);
+    int() accepts a sign, so a negative namesize made the offset stand still and the loop
+    never ended; and a truncated tail hashed short data, which reported a real member as
+    changed -- a wrong claim, which is worse than an unreadable one."""
+    import signal
+
+    def within(seconds, fn, *a):
+        """Run fn, failing the test rather than hanging the suite."""
+        def boom(_s, _f):
+            raise AssertionError("cpio_members did not finish")
+        old_handler = signal.signal(signal.SIGALRM, boom)
+        signal.alarm(seconds)
+        try:
+            return fn(*a)
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
+
+    def refused(blob, what):
+        try:
+            within(5, sources.cpio_members, blob)
+        except ValueError:
+            return True
+        except AssertionError as e:
+            check(what, str(e), "(finished)")
+            return False
+        return False
+
+    check("fields that are not hex", refused(b"070701" + b"Z" * 104 + b"x\0", "hex"), True)
+    # A negative namesize: int() would take it, and data_at would land back on off.
+    neg = b"070701" + b"%08X" % 1 + b"%08X" % 0o100644 + b"%08X" % 0 * 9 + b"-000006e" + b"%08X" % 0
+    check("a signed field", refused(neg, "signed"), True)
+    good = newc([("init", 0o100755, b"hello\n", 1, 1)])
+    check("a truncated archive", refused(good[:len(good) - 40], "truncated"), True)
+    check("one with no trailer", refused(good[:len(good) - 120], "no trailer"), True)
+    check("and a sound one still reads", sorted(sources.cpio_members(good)), ["init"])
+
+
+def test_an_image_with_no_manifest_is_not_called_unreadable():
+    """`initramfs_delta` collapsed "could not be read" and "this target has no manifest"
+    into one answer, and the note said the initramfs could not be unpacked -- about an
+    image that unpacked perfectly, when what was missing was the kitchen's own inventory."""
+    unreadable = sources.initramfs_delta(None, {"init": H["1"]})
+    nothing_to_compare = sources.initramfs_delta({"init": H["1"]}, {})
+    check("both say nothing was compared",
+          (unreadable["compared"], nothing_to_compare["compared"]), (False, False))
+    check("but for different reasons", unreadable["why"] == nothing_to_compare["why"], False)
+    check("the first is about the image", "could not be read" in unreadable["why"], True)
+    check("the second about the manifest", "manifest" in nothing_to_compare["why"], True)
 
 
 def test_a_script_that_had_network_says_so():
@@ -178,7 +236,7 @@ def test_the_initramfs_note_counts_members_instead_of_asserting_them():
     gone = sources.initramfs_delta({"init": H["2"]}, stock)
     check("a dropped member", gone["removed"], ["bin/blkid", "bin/busybox"])
     quiet = sources.initramfs_delta(None, stock)
-    check("unreadable initramfs claims nothing", quiet, {"compared": False})
+    check("unreadable initramfs claims nothing", quiet["compared"], False)
 
 
 def test_an_unpinned_download_is_said_out_loud():
@@ -562,6 +620,8 @@ def main():
                test_a_recorded_download_is_prebuilt_only_when_the_bytes_match,
                test_a_download_without_upstream_source_warns_or_fails_under_strict,
                test_the_cpio_reader_reads_what_cpio_would,
+               test_a_broken_archive_is_reported_as_unreadable_not_as_a_traceback,
+               test_an_image_with_no_manifest_is_not_called_unreadable,
                test_a_script_that_had_network_says_so,
                test_the_initramfs_note_counts_members_instead_of_asserting_them,
                test_an_unpinned_download_is_said_out_loud,
