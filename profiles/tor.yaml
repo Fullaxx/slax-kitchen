@@ -8,11 +8,16 @@ base:
   arch: 64bit
   version: "12.2.0"
 recipes:
-  # tor-browser removes 05-chromium itself, so nothing here needs ordering around it --
-  # and remove-chromium must NOT be listed as well. Both match literal 05, so the second
-  # to run would compare it against an already-built 14 and be refused. For the same
-  # reason this profile cannot also carry all-browsers, debian-browsers, chromium-current
-  # or firefox-esr: every one of them is an alternative to this, not an addition.
+  # REMOVAL IS ITS OWN RECIPE, AND GOES FIRST. A bundle is built against everything below
+  # it, so removing one afterwards can strand it; check_plan_order refuses that order
+  # before anything is modified. Nothing else here removes anything, so the rest of this
+  # list composes in any order.
+  - name: remove-bundle
+    vars: {drop: "^05-chromium\\.sb$"}
+  # Chromium goes because this image is Tor Browser's: shipping a browser that leaks
+  # beside one that does not would defeat the point. Do not add all-browsers,
+  # debian-browsers, chromium-current or firefox-esr either -- each is an alternative to
+  # this, not an addition.
   - tor-browser
   # testkit prints facts about the ASSEMBLED filesystem to the serial console just before
   # change_root. Here it is carrying a specific claim: that `bundles:` no longer lists

@@ -117,6 +117,21 @@ def validate_file(path: str, overrides: dict | None = None) -> list[str]:
                 problems.append(f"target {name} has no {', '.join(sorted(missing))} "
                                 "but a mirror layout references it")
     if kind == "Recipe":
+        # A recipe that removes or renumbers a bundle does nothing else. Mixing the two
+        # hides a deletion inside an addition, and the deletion then dictates where the
+        # recipe may sit: all-browsers removed 05-chromium as its first step, so
+        # check_plan_order refused any plan that listed it after another bundle had been
+        # built -- a constraint that read as being about browsers and was about removal.
+        # Kept apart, the removal recipe goes first and the additive ones compose freely.
+        verbs = [st.get("verb") for st in doc.get("steps") or [] if isinstance(st, dict)]
+        cuts = [v for v in verbs if v in ("bundle.remove", "bundle.renumber")]
+        if cuts and len(cuts) != len(verbs):
+            others = sorted({v for v in verbs if v not in ("bundle.remove", "bundle.renumber")})
+            problems.append(
+                f"{cuts[0]} shares this recipe with {', '.join(others)}: a recipe that removes "
+                f"or renumbers a bundle does nothing else. Put the removal in its own recipe -- "
+                f"remove-bundle takes a `drop:` pattern -- and list that first; every other "
+                f"recipe then composes in any order. See docs/40-workflow/composing-bundles.md.")
         stem = os.path.basename(path).rsplit(".", 1)[0]
         name = doc.get("metadata", {}).get("name")
         if name and name != stem:

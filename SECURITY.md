@@ -74,7 +74,7 @@ because a user of a 2023 image is better served by knowing than by not:
   now offers **152.0.7977.82**. A live system is mostly used for browsing, so this is the largest
   attack surface in the image and the one with the shortest security half-life. The
   `chromium-current` recipe replaces it on Debian; on Slackware there is no supported route, and
-  `remove-chromium` is the honest fallback.
+  `remove-bundle` is the honest fallback.
 - **The shipped busybox is from 2017** (`v1.26.2`), carrying CVE-2017-16544 — a terminal-escape RCE
   via `ash` tab completion, reachable because `/init` calls `debug_shell` six times — and
   CVE-2022-48174. The `initramfs-busybox` recipe replaces it with a current build.

@@ -649,14 +649,16 @@ def test_removes_come_first():
     missing libraries, so the fragment does not declare them and the merged database
     stays self-consistent. The build succeeds and passes every gate.
 
-    chromium-current is the discriminating case and must keep passing: it removes
-    05-chromium FIRST and then builds, deliberately (d0f48e8). The cross-recipe case is
-    the one that prompted this -- firefox-esr and remove-chromium are each fine alone.
+    A profile that removes first and then builds must keep passing: that is what every
+    profile here does, with remove-bundle listed ahead of the additive recipes. The
+    cross-recipe case is the one that prompted this -- firefox-esr and remove-bundle are
+    each fine alone. No recipe mixes the two jobs any more; lib/validate.py refuses one
+    that tries, and tests/unit/test_validate.py covers that.
     """
     remove = {"verb": "bundle.remove", "match": "^05-chromium\\.sb$"}
     cases = [
-        ("remove then build, one recipe",
-         [("chromium-current", remove),
+        ("remove then build, two recipes",
+         [("remove-bundle", remove),
           ("chromium-current", {"verb": "bundle.packages", "bundle": "10-chromium"})],
          False),
         ("build then remove, one recipe",
@@ -664,7 +666,7 @@ def test_removes_come_first():
          True),
         ("build then remove, across recipes",
          [("firefox-esr", {"verb": "bundle.packages", "bundle": "11-firefox"}),
-          ("remove-chromium", remove)],
+          ("remove-bundle", remove)],
          True),
         ("bundle.script counts as building",
          [("r", {"verb": "bundle.script", "bundle": "07-x"}), ("r", remove)],
@@ -731,7 +733,7 @@ def test_removes_come_first():
 
     # Across invocations. The rule held inside one plan and nowhere else, so running the
     # two one-liners every cookbook page documents -- `kitchen apply firefox-esr` then
-    # `kitchen apply remove-chromium` -- produced exactly the state the single-plan
+    # `kitchen apply remove-bundle` -- produced exactly the state the single-plan
     # refusal exists to prevent. The journal is what makes the second run see the first.
     import tempfile
     work = tempfile.mkdtemp()
@@ -744,7 +746,7 @@ def test_removes_come_first():
     with open(journal, "w") as f:
         f.write("applied:\n  - recipe: firefox-esr\n    verbs: [bundle.packages]\n"
                 "    artifacts: [slax/modules/11-firefox.sb]\n")
-    later = [("remove-chromium", {"verb": "bundle.remove", "match": "^05-chromium\\.sb$"})]
+    later = [("remove-bundle", {"verb": "bundle.remove", "match": "^05-chromium\\.sb$"})]
 
     check("a later invocation sees the earlier build",
           bool(apply.check_plan_order(later, work)), True)
@@ -761,7 +763,7 @@ def test_removes_come_first():
     check("work=None falls back to plan-only",
           apply.check_plan_order(later, None), [])
 
-    # And the real shipped recipes must all pass, chromium-current above all.
+    # And the real shipped recipes must all pass.
     import glob
 
     import yaml
@@ -879,6 +881,44 @@ def test_fetches_and_bundles_record_provenance():
     # The verb that BUILDS a binary from the host's toolchain -- no urlopen, still the
     # one place the answer to "which GRUB is this" exists.
     check("boot.uefi records the host's GRUB", calls_prov(by_verb["boot.uefi"]), True)
+
+
+def test_a_recipe_listed_twice_is_refused():
+    """Naming one recipe twice applied it ONCE, silently: resolve() deduplicates by path,
+    and a profile's per-recipe vars are keyed by recipe name, so the second entry's vars
+    overwrote the first and then vanished with it.
+
+    That was harmless while every removal had its own preset recipe. With one generic
+    remove-bundle, "drop chromium and the firmware bundle" is the obvious two-entry
+    mistake, and the answer is one entry with one pattern.
+    """
+    import tempfile
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "twice.yaml")
+
+    def profile(lines):
+        with open(path, "w") as f:
+            f.write("apiVersion: slax-kitchen/v1\nkind: Profile\nmetadata:\n"
+                    "  name: twice\n  summary: A profile written for this test\n"
+                    "base: {flavour: debian, arch: 64bit, version: \"12.2.0\"}\n"
+                    "recipes:\n" + lines + "output:\n  name: \"x-{{version}}.iso\"\n")
+        return path
+
+    try:
+        names, _ov = apply.read_profile_recipes(profile("  - remove-bundle\n  - add-packages\n"))
+        check("a profile that names each recipe once is fine", names, ["remove-bundle", "add-packages"])
+
+        twice = profile('  - name: remove-bundle\n    vars: {drop: "^05-chromium\\\\.sb$"}\n'
+                        '  - name: remove-bundle\n    vars: {drop: "^01-firmware\\\\.sb$"}\n')
+        try:
+            apply.read_profile_recipes(twice)
+            check("listing a recipe twice is refused", "accepted", "refused")
+        except RuntimeError as e:
+            check("the refusal names the recipe", "remove-bundle" in str(e), True)
+            check("and says what to do instead", "one entry" in str(e).lower(), True)
+    finally:
+        os.unlink(path)
+        os.rmdir(d)
 
 
 def test_recipe_relative_paths_go_through_ctx_local():
@@ -1564,6 +1604,7 @@ def main():
                test_network_is_declared_where_it_is_used,
                test_fetches_and_bundles_record_provenance,
                test_recipe_relative_paths_go_through_ctx_local,
+               test_a_recipe_listed_twice_is_refused,
                test_symlink_chain_cannot_escape,
                test_fromtarball_wires_both_guards_in,
                test_extract_members_matches_extractall_on_a_clean_archive,

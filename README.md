@@ -156,7 +156,7 @@ steps:
 ./kitchen pack                     # -> out/slax-...-custom.iso
 ```
 
-**Thirty-six recipes ship today.** The ones most people want first:
+**Thirty-five recipes ship today.** The ones most people want first:
 
 | | |
 |---|---|
@@ -167,7 +167,7 @@ steps:
 | `chromium-current` | replace the 2023 browser — stock is chromium **117**, from September 2023 |
 | `debian-browsers` | current Chromium **and** Firefox in one bundle, 32- and 64-bit |
 | `all-browsers` | six browsers in one bundle — Brave, Chrome, Chromium, Edge, Firefox, Vivaldi |
-| `remove-chromium` | or drop it entirely (−79 to −115 MiB) |
+| `remove-bundle` | drop bundles by pattern — the stock browser is −79 to −115 MiB |
 | `enable-ssh` | switch on the sshd both flavours already ship but never enable |
 | `users-and-auth` | replace the published `root`/`toor` password |
 | `rootcopy-overlay` | drop files onto the live system with no rebuild |
@@ -209,7 +209,7 @@ differences it recognises to the recipes that cause them. A weekly CI job watche
 
 See **[docs/00-overview/status.md](docs/00-overview/status.md)** for what is verified, what is
 written but unsupported, and what does not exist yet. Short version: the core loop
-(unpack → apply → pack → test) works and is boot-tested in CI, thirty-six recipes ship across
+(unpack → apply → pack → test) works and is boot-tested in CI, thirty-five recipes ship across
 23 verbs, and the documentation of Slax itself is complete. `kernel.replace` is the one verb still
 unwritten.
 

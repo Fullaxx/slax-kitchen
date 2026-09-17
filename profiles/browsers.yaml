@@ -8,14 +8,15 @@ base:
   arch: 64bit
   version: "12.2.0"
 recipes:
-  # all-browsers removes 05-chromium itself, so nothing here needs ordering around it --
-  # and remove-chromium must NOT be listed as well. It would be a harmless no-op on the
-  # second pass, but saying it twice invites someone to reorder the two and then wonder
-  # why check_plan_order refused the build.
-  #
-  # Do NOT add chromium-current, firefox-esr or debian-browsers. The first two are
-  # superseded by this bundle, the third is its alternative, and all of them remove
-  # literal 05 -- so a plan containing any pair is refused before anything is modified.
+  # REMOVAL IS ITS OWN RECIPE, AND GOES FIRST. A bundle is built against everything below
+  # it, so removing one afterwards can strand it; check_plan_order refuses that order
+  # before anything is modified. Nothing else here removes anything, so the rest of this
+  # list composes in any order.
+  - name: remove-bundle
+    vars: {drop: "^05-chromium\\.sb$"}
+  # Do NOT add chromium-current, firefox-esr or debian-browsers: the first two are
+  # superseded by this bundle and the third is its alternative, so a second browser bundle
+  # would reinstall what this one already carries.
   - all-browsers
   # testkit prints facts about the ASSEMBLED filesystem to the serial console just before
   # change_root, which is what lets the boot test assert on more than "it booted". With

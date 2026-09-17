@@ -11,8 +11,19 @@ kitchen apply tor-browser
 kitchen build tor
 ```
 
-Removes `05-chromium.sb`, installs the system `tor` daemon, unpacks a **pinned** Tor Browser
+Installs the system `tor` daemon, unpacks a **pinned** Tor Browser
 tarball to `/opt/tor-browser`, and points the desktop at it.
+
+Slax's own Chromium stays unless something removes it, and for this image you almost certainly want
+it gone — a browser that leaks beside one that does not is a strange image. That is a separate
+recipe, listed first, which is what [`profiles/tor.yaml`](../../profiles/tor.yaml) does:
+
+```yaml
+recipes:
+  - name: remove-bundle
+    vars: {drop: "^05-chromium\\.sb$"}
+  - tor-browser
+```
 
 > **CI builds this weekly, not on every push.** The tarball is an external dependency with a pinned
 > sha256, so a Tor Browser release fails the build *by design*. Running it per-push would turn the
@@ -44,7 +55,8 @@ support 32-bit Linux; 16.0 drops i686 and is already at `16.0a9` (read 2026-09-1
 
 ## Removing Chromium costs the browser nothing — measured
 
-`05-chromium.sb` is not just Chromium. Its package database carries **24 more packages** than
+The removal is [`remove-bundle`](remove-bundle.md)'s job, not this recipe's, but the question it
+raises belongs here. `05-chromium.sb` is not just Chromium. Its package database carries **24 more packages** than
 `04-apps`, and they are the shared browser runtime: `libnss3`, `libnspr4`, `libevent-2.1-7`,
 `libopus0`, `libflac12`, `libvorbis`, `libpulse0` and the rest. The obvious worry is that taking
 the bundle away breaks Tor Browser.

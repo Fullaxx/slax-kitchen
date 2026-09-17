@@ -2,7 +2,7 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Thirty-six recipes ship today.** Every one is built and structurally asserted on all four
+**Thirty-five recipes ship today.** Every one is built and structurally asserted on all four
 targets by CI (or on the subset its `compat:` block declares) — with two exceptions:
 [`all-browsers`](all-browsers.md) and [`tor-browser`](tor-browser.md) are built weekly rather than
 on every push, because four sha256-pinned vendor keys and a version-pinned Tor Browser tarball are
@@ -58,12 +58,11 @@ to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
 |---|---|---|
 | [`add-packages`](add-packages.md) | install distro packages into a new `07-*.sb`. The template recipe | ◐ |
 | [`rootcopy-overlay`](rootcopy-overlay.md) | drop files straight onto the live filesystem — **no squashfs rebuild at all** | ○ |
-| [`remove-bundle`](remove-bundle.md) | drop bundles by regex to slim the image | ○ |
-| [`remove-chromium`](remove-chromium.md) | the named preset for the above: −79 MiB Debian, −115 MiB Slackware | ○ |
+| [`remove-bundle`](remove-bundle.md) | drop bundles by pattern — the only recipe that removes anything; the stock browser is −79 MiB Debian, −115 MiB Slackware | ○ |
 | [`chromium-current`](chromium-current.md) | replace the 2023 browser — stock is chromium **117**, from September 2023 | ◐ |
 | [`debian-browsers`](debian-browsers.md) | current Chromium **and** Firefox in one bundle — both arches, no vendor repos | ◐ |
-| [`all-browsers`](all-browsers.md) | six browsers in one bundle, replacing the stock one — 64-bit, **1227 MiB ISO** | ◐ |
-| [`tor-browser`](tor-browser.md) | Tor Browser from a pinned tarball, replacing Chromium — 64-bit, runs as `guest` | ◐ |
+| [`all-browsers`](all-browsers.md) | six browsers in one bundle — 64-bit; pair it with `remove-bundle` | ◐ |
+| [`tor-browser`](tor-browser.md) | Tor Browser from a pinned tarball — 64-bit, runs as `guest`; pair it with `remove-bundle` | ◐ |
 | [`firefox-esr`](firefox-esr.md) | add the second browser no Slax image ships; amd64 **and** i386 | ◐ |
 | [`libreoffice`](libreoffice.md) | Writer, Calc, Impress and Draw — 116 MiB, the largest single addition here | ◐ |
 | [`branding`](branding.md) | hostname, version string and login banner, from a 4 KiB override bundle | ○ |
@@ -100,7 +99,7 @@ Cheapest first. Prefer the first one that solves your problem:
 | Slax to see a disk it currently cannot find | [`initramfs-add-modules`](initramfs-add-modules.md) | one repack, ~10 KiB |
 | a config file, a script, an ssh key on the live system | [`rootcopy-overlay`](rootcopy-overlay.md) | **nothing** — copied in at boot |
 | extra software | [`add-packages`](add-packages.md) | one `mksquashfs`, ~450 KiB |
-| a smaller image | [`remove-chromium`](remove-chromium.md) | one bundle deleted |
+| a smaller image | [`remove-bundle`](remove-bundle.md) | one bundle deleted |
 | it to boot on a modern laptop | [`uefi-bootable`](uefi-bootable.md) | rebuild |
 | it on a USB stick via `dd` | [`isohybrid`](isohybrid.md) + `uefi-bootable` | rebuild |
 

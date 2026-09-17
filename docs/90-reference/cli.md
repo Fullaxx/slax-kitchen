@@ -209,7 +209,7 @@ work tree  /home/you/slax-kitchen/work
        boot.cmdline x2
        + slax/boot/isolinux.cfg
        + slax/boot/syslinux.cfg
-    4. remove-chromium  2026-09-14T21:28:56Z
+    4. remove-bundle    2026-09-14T21:28:56Z
        bundle.remove
        - slax/modules/05-chromium.sb
 

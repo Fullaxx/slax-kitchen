@@ -13,17 +13,19 @@ recipes:
   # Chrome, Edge and Vivaldi do not permit redistribution -- so ci/release-verify.py refuses
   # any image built from this profile. A publishable variant swaps it for debian-browsers.
   #
-  # THE ORDER BELOW IS FORCED, NOT TASTE. all-browsers removes 05-chromium as its first
-  # step, and check_plan_order refuses a bundle.remove that runs after any bundle has been
-  # built -- so it must come before firmware-refresh, or the build is refused before
-  # anything is modified. Listed this way, 13-browsers is built before the two 09-firmware
-  # bundles exist, which is harmless: firmware packages provide no libraries a browser
-  # needs, and each bundle's package records merge into 98-dpkg-db.sb wherever it sits.
+  # REMOVAL IS ITS OWN RECIPE, AND GOES FIRST. A bundle is built against everything below
+  # it, so removing one afterwards can strand it; check_plan_order refuses that order
+  # before anything is modified. Nothing else here removes anything, so the rest of this
+  # list composes in any order.
+  - name: remove-bundle
+    vars: {drop: "^05-chromium\\.sb$"}
+  # After the removal the order is free: neither recipe below removes anything, so either
+  # may come first. 13-browsers is built before the two 09-firmware bundles exist, which is
+  # harmless -- firmware packages provide no libraries a browser needs, and each bundle's
+  # package records merge into 98-dpkg-db.sb wherever it sits.
   #
-  # all-browsers removes 05-chromium itself, so remove-chromium must NOT be listed as well.
-  # Do NOT add chromium-current, firefox-esr or debian-browsers either: the first two are
-  # superseded by all-browsers, the third is its alternative, and all of them remove literal
-  # 05 -- a plan containing any pair is refused before anything is modified.
+  # Do NOT add chromium-current, firefox-esr or debian-browsers: the first two are
+  # superseded by all-browsers and the third is its alternative.
   - all-browsers
   # Two bundles on top of Slax's own 01-firmware.sb, which stays: 09-firmware-debian (Debian's
   # firmware, and the copyright files Slax's build deleted) and 09-firmware-linux (what no

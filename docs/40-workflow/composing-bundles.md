@@ -75,10 +75,28 @@ is empty for the missing libraries, so the status fragment does not declare them
 merged `98-dpkg-db.sb` stays perfectly self-consistent. The image builds, passes every gate, and
 fails when someone runs the program.
 
-[`chromium-current`](../50-cookbook/chromium-current.md) already works this way on purpose — it
-drops `05-chromium` and *then* builds, which is also what makes its `from:` come out right on its
-own. The rule is plan-wide rather than per-recipe, because the case that motivated it spans two:
-a profile listing `firefox-esr` and then `remove-chromium`, where each recipe is fine alone.
+**So removal is its own recipe, and does nothing else.** `kitchen validate` refuses a recipe that
+removes or renumbers a bundle and also builds one, because such a recipe decides where it may sit in
+a plan — and that constraint then applies to every recipe listed beside it. `all-browsers` used to
+drop `05-chromium` as its first step, which is why a profile had to list it before anything that
+built a bundle, for a reason that had nothing to do with browsers.
+
+[`remove-bundle`](../50-cookbook/remove-bundle.md) is that recipe: a `drop:` pattern, several
+bundles in one entry if you need them, listed first in the profile. Everything else only adds, so
+the rest of the list composes in any order:
+
+```yaml
+recipes:
+  - name: remove-bundle
+    vars: {drop: "^05-chromium\\.sb$"}
+  - firmware-refresh
+  - debian-browsers
+```
+
+The rule is plan-wide rather than per-recipe, because the case that motivated it spans two:
+a profile listing `firefox-esr` and then a removal, where each recipe is fine alone.
+[`firefox-esr`](../50-cookbook/firefox-esr.md) is the additive model — its comments record that it
+is correct with or without `05-chromium` beneath it, and only the size of its bundle changes.
 
 It is stricter than strictly necessary in one case — removing `98-dpkg-db.sb` or a `99-changes-N`,
 which are never part of a default stack and so cannot strand anything. Reorder, and it costs
@@ -141,8 +159,8 @@ image and wrong the moment you add a second browser.
 
 ### Removing it
 
-Already a first-class operation — [`remove-chromium`](../50-cookbook/remove-chromium.md), or
-[`remove-bundle`](../50-cookbook/remove-bundle.md) with a pattern. Removing from the top of the
+Already a first-class operation — [`remove-bundle`](../50-cookbook/remove-bundle.md) with a
+pattern, which is the one recipe that removes anything. Removing from the top of the
 stack is consistent by construction: `04-apps`' database correctly does not list Chromium.
 
 Removing from the *middle* of upstream's chain is not. `noload=01-firmware` leaves `02-xorg`'s

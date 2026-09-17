@@ -8,7 +8,10 @@ base:
   arch: 64bit
   version: "12.2.0"
 recipes:
-  - remove-bundle
+  # The pattern is spelled out rather than left to the recipe's default: a profile line
+  # that deletes something should say what.
+  - name: remove-bundle
+    vars: {drop: "^05-chromium\\.sb$"}
   - rootcopy-overlay
 output:
   name: "slax-minimal-{{version}}.iso"

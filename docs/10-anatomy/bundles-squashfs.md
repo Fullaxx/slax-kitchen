@@ -227,4 +227,4 @@ deleting one file.
 
 Removing a bundle is the one case where deletion beats override: dropping `05-chromium.sb` saves
 79 MiB on Debian and 115 MiB on Slackware, and no amount of overriding reclaims that space. See
-[`remove-chromium`](../50-cookbook/remove-chromium.md).
+[`remove-bundle`](../50-cookbook/remove-bundle.md).

@@ -411,6 +411,10 @@ A recipe we can take needs:
   it changes, what it costs, and what it does *not* do
 - an honest **`compat:` block** — flavours, arches, and `privilege:` (`none`, `mknod`, `chroot`,
   `kvm`), which is what lets `doctor` tell a user whether their machine can run it
+- **only additions.** A recipe that removes or renumbers a bundle does nothing else, and
+  `kitchen validate` refuses one that does: a removal dictates where its recipe may sit in a plan,
+  and that constraint then applies to every recipe beside it. `remove-bundle` is the one recipe that
+  removes; list it first and the rest compose in any order
 - **matrix-verified on all four targets**, or a `compat:` block that explains the skip
 - **where the source is**, for anything it downloads: `upstream_source:` on the step or the apt
   repository, `declares:` for anything a `bundle.script` compiles, and `redistribution: {allowed:

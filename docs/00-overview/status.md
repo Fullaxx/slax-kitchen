@@ -37,8 +37,7 @@ the resulting ISO in QEMU and reading the console.
 | `isohybrid` | ✅ MBR + GPT + type-`0xEF` partition verified in the image |
 | `serial-console` | ✅ entry present in both configs |
 | `memtest86plus` | ✅ **booted on BIOS and UEFI** — Memtest86+ 8.10 selected from each menu and running |
-| `remove-bundle` | ✅ **booted** — ISO 416 → 336 MiB, five bundles instead of six |
-| `remove-chromium` | ✅ named preset for the above; 416 → 336 MiB (Debian), 455 → 340 MiB (Slackware) |
+| `remove-bundle` | ✅ **booted** — ISO 416 → 336 MiB, five bundles instead of six. The only recipe that removes anything; 455 → 340 MiB on Slackware |
 | `rootcopy-overlay` | ✅ **booted** — file copy and preinit hook both confirmed firing |
 | `add-packages` | ✅ **booted** on Debian — bundle mounts last, `Live Kit done, starting slax` |
 | `initramfs-add-binary` | ✅ **booted** — file survives the repack, image still reaches `slax login:` |

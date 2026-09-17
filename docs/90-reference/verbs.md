@@ -157,7 +157,11 @@ archive's publisher would be choosing what runs privileged on your image. Use `b
 ```
 
 The only case where deleting beats overriding: a whiteout hides a file but does not reclaim its
-space. See [remove-chromium](../50-cookbook/remove-chromium.md).
+space. See [remove-bundle](../50-cookbook/remove-bundle.md), which is the recipe that does this.
+
+**A recipe that removes or renumbers a bundle may contain nothing else**, and `kitchen validate`
+refuses one that does. A removal decides where its recipe may sit in a plan, so mixing it into a
+recipe that also builds makes that recipe's position a constraint on every other one.
 
 **This must run before every `bundle.packages` and `bundle.script` in the plan**, across all
 recipes, and the run is refused otherwise. A bundle built against the default `from:` stack takes

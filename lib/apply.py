@@ -190,7 +190,7 @@ def _built_before(work: str | None) -> list[tuple[str, str]]:
 
     Without this the rule holds inside one invocation and nowhere else: the two
     one-liners every cookbook page documents -- `kitchen apply firefox-esr` then
-    `kitchen apply remove-chromium` -- both exit 0 and produce exactly the state the
+    `kitchen apply remove-bundle` -- both exit 0 and produce exactly the state the
     single-invocation refusal exists to prevent.
 
     The journal is the right source and the filesystem is not: it records what earlier
@@ -238,7 +238,7 @@ def check_plan_order(plan: list[tuple[str, dict]], work: str | None = None) -> l
 
     * Within one plan, it is decidable from the step list alone.
     * Across invocations it is not, and plan-only was not enough -- `kitchen apply
-      firefox-esr` then `kitchen apply remove-chromium` is what every cookbook page
+      firefox-esr` then `kitchen apply remove-bundle` is what every cookbook page
       documents, and both exited 0. `work` seeds the prior bundles from the journal.
     * Under --preflight-only there is no tree yet, because `kitchen build` preflights
       before it unpacks (lib/build.sh). `work` is None there and the rule is plan-only,
@@ -273,9 +273,9 @@ def check_plan_order(plan: list[tuple[str, dict]], work: str | None = None) -> l
                 f"{bundle} was built{by}. A bundle takes everything below it as given, so "
                 f"disturbing one afterwards can leave an unresolvable NEEDED that no gate "
                 f"can see. Put every bundle.remove and bundle.renumber before every "
-                f"bundle.packages / bundle.script -- chromium-current does, deliberately, "
-                f"and removing first also makes the remaining from: stacks come out right "
-                f"on their own.")
+                f"bundle.packages / bundle.script -- that is what the removal recipe "
+                f"(remove-bundle) is for, listed first, and removing first also makes the "
+                f"remaining from: stacks come out right on their own.")
     return problems
 
 
@@ -3300,6 +3300,26 @@ def recipe_search_path() -> list[str]:
     return [os.path.join(base, d) for d in first + [d for d in dirs if d != "available"]]
 
 
+def duplicate_recipes(names: list[str]) -> str | None:
+    """A refusal for any recipe named more than once, or None.
+
+    Applying one twice was never possible and never said so: resolve() deduplicates by
+    path, and per-recipe vars are keyed by recipe name, so a second entry was dropped and
+    took its vars with it. Harmless while each removal had its own preset recipe; with one
+    generic remove-bundle, "drop chromium and the firmware bundle" is the obvious mistake.
+    """
+    counts: dict[str, int] = {}
+    for n in names:
+        counts[n] = counts.get(n, 0) + 1
+    dups = sorted(n for n, c in counts.items() if c > 1)
+    if not dups:
+        return None
+    return (f"{', '.join(dups)} listed more than once. Each recipe is applied once, so the "
+            f"second entry is dropped and its vars with it. Say it in one entry instead: "
+            f"remove-bundle takes one pattern for several bundles, as in "
+            f'drop: "^(05-chromium|01-firmware)\\.sb$".')
+
+
 def read_profile_recipes(path: str) -> tuple[list[str], dict[str, dict]]:
     """Recipe names and per-recipe var overrides from a profile.
 
@@ -3328,6 +3348,9 @@ def read_profile_recipes(path: str) -> tuple[list[str], dict[str, dict]]:
         names.append(entry["name"])
         if entry.get("vars"):
             overrides[entry["name"]] = dict(entry["vars"])
+    dup = duplicate_recipes(names)
+    if dup:
+        raise RuntimeError(f"invalid profile {path}: {dup}")
     return names, overrides
 
 
@@ -3373,6 +3396,11 @@ def main(argv: list[str]) -> int:
             return 2
         if not names:
             print(f"error: {a.profile} lists no recipes", file=sys.stderr)
+            return 2
+    else:
+        dup = duplicate_recipes(names)
+        if dup:
+            print(f"error: {dup}", file=sys.stderr)
             return 2
     if not a.preflight_only and not os.path.isdir(os.path.join(a.work, "iso")):
         print(f"no work tree at {a.work}/iso (run 'kitchen unpack' first)", file=sys.stderr)

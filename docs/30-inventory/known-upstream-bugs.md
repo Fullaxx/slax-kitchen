@@ -233,5 +233,5 @@ base (issue 12 in spirit, and issue 13's companion), so a pinned `.txz` through
 [`bundle-from-txz`](../50-cookbook/bundle-from-txz.md) is the only option, and no current AlienBOB
 build targets a 2023 Slackware 15.0 userland.
 
-If you cannot update it, [`remove-chromium`](../50-cookbook/remove-chromium.md) at least stops the
+If you cannot update it, [`remove-bundle`](../50-cookbook/remove-bundle.md) at least stops the
 image shipping a browser that looks current and is not.
