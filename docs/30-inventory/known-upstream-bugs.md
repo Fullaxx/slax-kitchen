@@ -225,8 +225,10 @@ Thirty-five major versions.
 
 **Fix:** [`chromium-current`](../50-cookbook/chromium-current.md) on Debian. Nothing exotic is
 needed — the stock `/etc/apt/sources.list` already carries `bookworm-security`, so this is an
-ordinary package install; the recipe drops `05-chromium.sb` first so the replacement is not
-shadowed by the original.
+ordinary package install. The recipe only adds: its bundle sorts at `10`, which outranks `05`, so
+the browser you get is the current one either way. Pairing it with
+[`remove-bundle`](../50-cookbook/remove-bundle.md) listed first also reclaims the 79 MiB the
+shadowed 2023 bundle occupies.
 
 On Slackware there is no supported route: `slackpkg` points at a mirror years ahead of the frozen
 base (issue 12 in spirit, and issue 13's companion), so a pinned `.txz` through
