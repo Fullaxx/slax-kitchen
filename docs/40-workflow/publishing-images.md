@@ -41,7 +41,8 @@ alongside the kitchen's.
 - a project archive is missing a submodule, or holds different pins than the build recorded
 - an asset is 2 GiB or more, or there are more than 1000 (GitHub's limits)
 - any record names a path on the build machine
-- an attached image carries Slax's firmware bundle without the firmware's license texts
+- an attached image carries Slax's firmware bundle without the copyright files of its Debian
+  firmware packages
 
 With `--assert-no-images` it also fails if any asset *is* an ISO 9660 image, a squashfs, an ELF
 or PE executable, or a FAT filesystem, judged by its bytes rather than its name. CI uses that for an
@@ -82,7 +83,9 @@ terms. Slax's own build removed the license texts from its firmware bundle, exce
 `ipw2x00.LICENSE`. [`firmware-refresh`](../50-cookbook/firmware-refresh.md) reinstalls Debian's, and
 brings a license file with every file it copies from linux-firmware. To leave firmware out instead,
 see [building without firmware](../50-cookbook/remove-bundle.md#building-without-firmware).
-`release-verify.py` refuses an attached image that has the firmware without the texts.
+`release-verify.py` refuses an attached image whose Debian firmware packages lack their copyright
+files. The Broadcom b43 files in Slax's bundle stay either way: no license text came with them, and
+`SOURCES.md` and the release notes say so.
 
 **Where the notes come from.** `ci/redistribution-claim.py` writes the notes' Redistribution section
 from the verified directory, so it names what is attached and cannot promise anything that is not.

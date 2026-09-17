@@ -64,7 +64,8 @@ click through them.
 - Stock Slax's `01-firmware.sb` holds ten Debian firmware packages whose `copyright` files the
   build removed; `/usr/lib/firmware/ipw2x00.LICENSE` is the one license file left beside them. It
   also holds Broadcom b43 firmware that `firmware-b43-installer` extracted during Slax's build. That
-  is not the content of any Debian package, and it was published with no license text.
+  is not the content of any Debian package, and it was published with no license text. Images built
+  with `firmware-refresh` keep it as Slax shipped it.
 - [`firmware-refresh`](docs/50-cookbook/firmware-refresh.md) reinstalls those Debian packages, which
   brings their `copyright` files back, and adds more of Debian's firmware the same way. The firmware
   it copies from linux-firmware travels with the license file linux-firmware's `WHENCE` names for

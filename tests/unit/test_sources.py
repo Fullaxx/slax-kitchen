@@ -305,6 +305,7 @@ def test_stock_firmware_without_license_texts_is_said_plainly():
     check("warned", any("removed the license texts" in w for w in doc["warnings"]), True)
     check("not unresolved: it is Slax as published", doc["unresolved"], [])
     check("said in the manifest", "Slax's own build removed" in sources.markdown(doc), True)
+    check("and b43, which never had one", "no license text came with them" in sources.markdown(doc), True)
 
 
 def test_firmware_refresh_puts_the_license_texts_back():

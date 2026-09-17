@@ -17,7 +17,9 @@ What it refuses:
   - an asset of 2 GiB or more, more than 1000 assets (GitHub's limits), or a name GitHub
     would rename
   - a path on the build machine in any of the three records
-  - with an image attached: firmware whose license texts the image does not carry
+  - with an image attached: Slax's firmware bundle without the copyright files of its Debian
+    firmware packages, which firmware-refresh reinstalls (the b43 files in that bundle never
+    had a license text, and are kept)
   - with --assert-no-images: an image attached, or any asset whose CONTENT is an ISO 9660
     image, a squashfs, an ELF or PE executable, or a FAT filesystem -- checked by magic
     bytes, not by name
@@ -218,8 +220,9 @@ def verify(outdir: str, assert_no_images: bool = False) -> list[str]:
 
     fw = src.get("firmware") or {}
     if image.get("attached") and fw.get("stock_bundle") and not fw.get("license_texts"):
-        bad("the image carries Slax's firmware bundle without the firmware's license texts; "
-            "add firmware-refresh, or leave the firmware out with remove-bundle")
+        bad("the image carries Slax's firmware bundle without the copyright files of its Debian "
+            "firmware packages; add firmware-refresh, which reinstalls them, or leave the firmware "
+            "out with remove-bundle")
 
     # --- nothing that is an image, when none may be ---------------------------------
     if assert_no_images:

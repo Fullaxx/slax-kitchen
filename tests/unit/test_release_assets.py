@@ -214,7 +214,8 @@ def test_no_host_paths_and_no_renamed_names():
 def test_an_attached_image_carries_its_firmware_licenses():
     fw = {"stock_bundle": True, "license_texts": []}
     with Fixture(attached=True, firmware=fw) as d:
-        check("stock firmware alone", mentions(verify_mod.verify(d), "without the firmware's license"), True)
+        check("stock firmware alone", mentions(verify_mod.verify(d),
+                                               "without the copyright files of its Debian firmware"), True)
     with Fixture(attached=False, firmware=fw) as d:
         check("not a question without an image", mentions(verify_mod.verify(d), "firmware"), False)
 
@@ -239,14 +240,20 @@ def test_the_claim_says_only_what_the_directory_shows():
     stock = {"stock_bundle": True, "license_texts": []}
     with Fixture(firmware=stock) as d:
         text = claim_mod.claim(d)
-        check("no license-text claim without the texts", "license texts are inside" in text, False)
+        check("no license-text claim without the texts", "copyright files for its firmware packages are"
+              in text, False)
         check("says what is true instead", "removed the license texts" in text, True)
         check("no identity claim it cannot check", "official Slax release" in text, False)
     restored = {"stock_bundle": True, "license_texts": [{"recipe": "firmware-refresh",
                                                          "bundle": "slax/modules/09-firmware-debian.sb",
                                                          "packages": ["firmware-iwlwifi"]}]}
     with Fixture(firmware=restored) as d:
-        check("the texts, when they are there", "license texts are inside" in claim_mod.claim(d), True)
+        text = claim_mod.claim(d)
+        check("the texts, when they are there", "copyright files for its firmware packages are inside"
+              in text, True)
+        # Kept by the owner's decision, as Slax shipped them: the b43 files are in the image,
+        # and no license text came with them. The notes say so rather than implying otherwise.
+        check("b43 said plainly", "b43" in text and "no license text" in text, True)
 
 
 def test_release_notes_use_the_claim_when_given_assets():
