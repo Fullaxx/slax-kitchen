@@ -467,7 +467,10 @@ whole stack below you, and is a size-versus-removability dial rather than a corr
 reasoning is in [composing bundles](docs/40-workflow/composing-bundles.md).
 
 `tests/structure/bundle_assert.py` walks the assembled stack and fails if any bundle's database is
-less complete than the one it shadows; `ci/recipe-matrix.sh` runs it for every recipe — except
+less complete than the one it shadows, or if a bundle carries a setuid or setgid **file that no
+package owns** — dpkg's file lists are the authority, so packaged content passes whoever owns it,
+and a privilege bit that arrived with a tarball or a script does not. `ci/recipe-matrix.sh` runs it
+for every recipe — except
 those listed in `ci/slow-recipes.txt`, which are built weekly and on every release tag rather than
 on every push. Each such skip is printed with its reason.
 
