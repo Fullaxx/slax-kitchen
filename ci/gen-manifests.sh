@@ -87,8 +87,12 @@ for line in sys.stdin:
     h = hashlib.sha256()
     iso.seek(lba * 2048)
     left = size
-    while left:
+    while left > 0:
         chunk = iso.read(min(left, 1 << 22))
+        if not chunk:
+            # A recorded extent running past EOF -- a truncated or half-written image.
+            # Without this the loop never ends, because read() keeps returning b"".
+            raise SystemExit(f"gen-manifests: {path}: extent runs past the end of the image")
         h.update(chunk)
         left -= len(chunk)
     rows.append((path, h.hexdigest()))

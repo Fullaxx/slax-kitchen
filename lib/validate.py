@@ -126,14 +126,17 @@ def validate_file(path: str, overrides: dict | None = None) -> list[str]:
         verbs = [st.get("verb") for st in doc.get("steps") or [] if isinstance(st, dict)]
         cuts = [v for v in verbs if v in ("bundle.remove", "bundle.renumber")]
         if cuts and len(cuts) != len(verbs):
-            others = sorted({v for v in verbs if v not in ("bundle.remove", "bundle.renumber")})
+            # A step with no `verb` at all is a schema error, already reported above -- but
+            # this cross-check still runs, and None must not reach sorted()/join().
+            others = sorted({v or "a step with no verb" for v in verbs
+                             if v not in ("bundle.remove", "bundle.renumber")})
             problems.append(
                 f"{cuts[0]} shares this recipe with {', '.join(others)}: a recipe that removes "
                 f"or renumbers a bundle does nothing else. Put the removal in its own recipe -- "
                 f"remove-bundle takes a `drop:` pattern -- and list that first; every other "
                 f"recipe then composes in any order. See docs/40-workflow/composing-bundles.md.")
         stem = os.path.basename(path).rsplit(".", 1)[0]
-        name = doc.get("metadata", {}).get("name")
+        name = (doc.get("metadata") or {}).get("name")
         if name and name != stem:
             problems.append(
                 f"metadata.name {name!r} does not match filename stem {stem!r} "

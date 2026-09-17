@@ -426,7 +426,11 @@ class Ctx:
         cur[key] = value
         if not self.dry:
             with open(path, "w") as f:
-                yaml.safe_dump(cur, f, sort_keys=True)
+                # ONE LINE PER HINT. lib/hints.sh reads this file with sed, and safe_dump
+                # folds a scalar longer than 80 columns onto a continuation line: a
+                # publisher near the ISO field's 128-character limit was mastered, and
+                # then tested, truncated at the last space before column 80.
+                yaml.safe_dump(cur, f, sort_keys=True, width=4096)
         self.say(f"pack hint: {key}={value}")
 
 
@@ -535,8 +539,12 @@ def v_boot_payload(ctx: Ctx, step: dict) -> None:
     if "mode" in step:
         os.chmod(dest, int(step["mode"], 8))
     if src:
-        ctx.prov(source=src if re.match(r"^https?://", src) else os.path.basename(src),
-                 source_sha256=got, member=member, upstream_source=step.get("upstream_source"),
+        remote = bool(re.match(r"^https?://", src))
+        if not remote:
+            ctx.local(local, "boot.payload")
+        ctx.prov(source=src if remote else os.path.basename(src),
+                 source_sha256=got, pinned=bool(want), member=member,
+                 upstream_source=step.get("upstream_source"),
                  output=provenance.in_image(step["dest"]), output_sha256=sha256(dest))
     ctx.record(step['dest'], f"installed {step['dest']} ({os.path.getsize(dest)} bytes)")
 
@@ -1030,16 +1038,32 @@ def _fetched_lines(stdout: str) -> list[dict]:
 
 
 def _unowned_elf(root: str, keep: list[str]) -> list[dict]:
-    """ELF files in a delta that no package database owns: something was compiled or
-    dropped in by hand, and provenance should say so rather than let it pass as a
-    package's file."""
+    """ELF files in a delta that no package vouches for, either because no package owns
+    the path, or because the bytes are no longer the ones the package installed.
+
+    OWNERSHIP IS NOT INTEGRITY. A script that writes over a packaged binary --
+    `curl -o /usr/bin/ssh …`, or a `make install` that lands in /usr/bin -- leaves a path
+    dpkg still lists, so the first version of this passed it and `kitchen sources` went on
+    naming openssh-client as its source. dpkg records an md5 for nearly every file it
+    ships, in the .md5sums beside the .list, so the question can be asked properly.
+
+    Slackware's package database lists files and no checksums, so under `flavour:
+    slackware` ownership remains all there is; that is why `declares:` exists.
+    """
     owned: set[str] = set()
+    recorded: dict[str, str] = {}
     info = os.path.join(root, "var", "lib", "dpkg", "info")
     if os.path.isdir(info):
         for n in os.listdir(info):
             if n.endswith(".list"):
                 with open(os.path.join(info, n), errors="replace") as f:
                     owned.update(ln.strip().lstrip("/") for ln in f)
+            elif n.endswith(".md5sums"):
+                with open(os.path.join(info, n), errors="replace") as f:
+                    for ln in f:
+                        digest, _, rel = ln.strip().partition("  ")
+                        if rel and len(digest) == 32:
+                            recorded[rel.lstrip("/")] = digest
     pkgtools = os.path.join(root, "var", "lib", "pkgtools", "packages")
     if os.path.isdir(pkgtools):
         for n in os.listdir(pkgtools):
@@ -1058,8 +1082,21 @@ def _unowned_elf(root: str, keep: list[str]) -> list[dict]:
             continue
         alt = rel[4:] if rel.startswith("usr/") else "usr/" + rel     # merged /usr
         if rel not in owned and alt not in owned:
-            out.append({"path": rel, "sha256": sha256(full)})
+            out.append({"path": rel, "sha256": sha256(full), "why": "no package owns it"})
+            continue
+        want = recorded.get(rel) or recorded.get(alt)
+        if want and want != _md5(full):
+            out.append({"path": rel, "sha256": sha256(full),
+                        "why": "its package recorded different bytes for this path"})
     return out
+
+
+def _md5(path: str) -> str:
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _stage_delta(root: str, keep: list[str], stage: str) -> None:
@@ -2964,7 +3001,7 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
             # Foreign architectures and third-party repos must be in place BEFORE the
             # index refresh, or apt-get update will not see them.
             step_excludes = _apt_sources(ctx, root, step.get("apt") or {})
-            if step.get("apt", {}).get("update", True):
+            if (step.get("apt") or {}).get("update", True):
                 r = _in_chroot(root, ["apt-get", "update", "-qq"])
                 if r.returncode != 0:
                     raise RuntimeError("apt-get update failed:\n" + r.stderr.strip()[-1500:])

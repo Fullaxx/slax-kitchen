@@ -213,6 +213,12 @@ written but unsupported, and what does not exist yet. Short version: the core lo
 23 verbs, and the documentation of Slax itself is complete. `kernel.replace` is the one verb still
 unwritten.
 
+Every image carries a record of what went into it: `kitchen pack` writes `<iso>.provenance.json`
+beside the ISO, and `kitchen sources` matches every file in the image to the stock release or to the
+step that produced it, gathering the source of whatever was built. If you publish an image,
+[publishing an image](docs/40-workflow/publishing-images.md) is the procedure and
+[NOTICE.md](NOTICE.md) is what travels with it.
+
 ## Contributing
 
 This project is meant to be forked. [CONTRIBUTING.md](CONTRIBUTING.md) covers how to diagnose a

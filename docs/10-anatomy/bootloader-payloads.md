@@ -1,7 +1,7 @@
 # Bootloader payloads
 
 Slax uses **SYSLINUX and nothing else**: 6.03 for BIOS, a 6.04 pre-release for UEFI. No GRUB, no
-shim, no Secure Boot. Nine of the files in
+shim, no Secure Boot. Eighteen of the 31 files in
 `/slax/boot/` are part of that family, and they split into three groups that are easy to confuse:
 loaders that the firmware runs, COM32 modules that a loader then runs, and **installers that run on
 your own machine.**

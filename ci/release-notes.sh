@@ -24,6 +24,9 @@ RUN_URL=""
 [ "${2:-}" = "--run-url" ] && RUN_URL=${3:-}
 [ -n "$TAG" ] || { echo "usage: ci/release-notes.sh <tag> [--run-url URL]" >&2; exit 2; }
 
+# Before the cd: a relative RELEASE_ASSETS is relative to where the CALLER stands.
+case "${RELEASE_ASSETS:-}" in "" | /*) ;; *) RELEASE_ASSETS="$PWD/$RELEASE_ASSETS" ;; esac
+
 cd "$REPO_ROOT" || exit 2
 
 VERSION=$(sed -n 's/^KITCHEN_VERSION="\(.*\)"$/\1/p' kitchen | head -1)
@@ -45,6 +48,9 @@ BLOB="https://github.com/${SLUG:-Fullaxx/slax-kitchen}/blob/$TAG"
 # by ci/redistribution-claim.py, so it names what is attached rather than promising it.
 if [ -n "${RELEASE_ASSETS:-}" ]; then
     REDISTRIBUTION=$(python3 "$REPO_ROOT/ci/redistribution-claim.py" "$RELEASE_ASSETS") || exit 1
+    ATTACHED=$(python3 -c 'import json,sys
+print("yes" if ((json.load(open(sys.argv[1])).get("image") or {}).get("attached")) else "no")' \
+        "$RELEASE_ASSETS/release-index.json") || exit 1
 else
     REDISTRIBUTION="## Redistribution
 
@@ -59,6 +65,21 @@ official Slax release — is set out in [NOTICE.md]($BLOB/NOTICE.md).
 Slax and Linux Live Kit are the work of **Tomáš Matějíček** — <https://www.slax.org>.
 This project customizes his work; it is not the project's home. If you find it useful,
 support Slax upstream."
+fi
+
+if [ "${ATTACHED:-no}" = yes ]; then
+    IMAGE_CHECKSUM_NOTE="The attached image's checksum is in \`SHA256SUMS\`, which checks the download. It does
+not promise that a rebuild matches, because **images are not byte-reproducible**:
+\`genisoimage\` varies both the volume timestamps and the extent order, and an identical
+tree rebuilt elsewhere has been measured differing in 99.9% of its sectors. See
+[reproducibility]($BLOB/docs/40-workflow/reproducibility.md)."
+else
+    IMAGE_CHECKSUM_NOTE="No image is attached to this release, so there is no image checksum here. Where an image
+*is* published, its \`SHA256SUMS\` checks the download. It does not promise that a rebuild
+matches, because **images are not byte-reproducible**: \`genisoimage\` varies both the
+volume timestamps and the extent order, and an identical tree rebuilt elsewhere has been
+measured differing in 99.9% of its sectors. See
+[reproducibility]($BLOB/docs/40-workflow/reproducibility.md)."
 fi
 
 # The tag being released is usually not yet an object (the workflow runs on the ref,
@@ -162,12 +183,7 @@ $(sed -n '/^targets:/,$p' compat/sources.yaml \
 $RECIPES recipes, $GATES gates. \`kitchen doctor --report\` on the build machine records the
 tool versions.
 
-No image is attached to this release, so there is no image checksum here. Where an image
-*is* published, its \`SHA256SUMS\` checks the download. It does not promise that a rebuild
-matches, because **images are not byte-reproducible**: \`genisoimage\` varies both the
-volume timestamps and the extent order, and an identical tree rebuilt elsewhere has been
-measured differing in 99.9% of its sectors. See
-[reproducibility]($BLOB/docs/40-workflow/reproducibility.md).
+$IMAGE_CHECKSUM_NOTE
 
 $REDISTRIBUTION
 EOF

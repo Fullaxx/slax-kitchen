@@ -3,10 +3,12 @@
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
 **Thirty-five recipes ship today.** Every one is built and structurally asserted on all four
-targets by CI (or on the subset its `compat:` block declares) — with two exceptions:
-[`all-browsers`](all-browsers.md) and [`tor-browser`](tor-browser.md) are built weekly rather than
-on every push, because four sha256-pinned vendor keys and a version-pinned Tor Browser tarball are
-external dependencies — someone else's release should not redden master. See
+targets by CI (or on the subset its `compat:` block declares) — with three exceptions:
+[`all-browsers`](all-browsers.md), [`tor-browser`](tor-browser.md) and
+[`firmware-refresh`](firmware-refresh.md) are built weekly rather than on every push, because four
+sha256-pinned vendor keys, a version-pinned Tor Browser tarball and 65 files fetched from
+linux-firmware mirrors are external dependencies — someone else's release should not redden
+master. See
 [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) and [CI](../60-testing/ci.md). Each page opens with the rung of
 the [verification ladder](../../CONTRIBUTING.md) it actually reached — `matrix-verified`,
 `artifact boot-verified`, `boot-verified` or `runtime-verified` — and the `95-status-vocab` gate
@@ -111,7 +113,13 @@ shipped bundle is for **removal only**; nothing else needs it.
 
 ## Flavour coverage
 
-Seven of the eight work on both flavours and both word sizes. The exception:
+**Twenty-four of the thirty-five work on all four targets.** Counted from the `compat:` blocks:
+eight are Debian-only (`add-packages`, `all-browsers`, `chromium-current`, `debian-browsers`,
+`firefox-esr`, `firmware-refresh`, `libreoffice`, `tor-browser`), two are Slackware-only
+(`bundle-from-txz`, `fix-slackware-bugs`), and three ship 64-bit vendor builds only
+(`all-browsers`, `bundle-from-tarball`, `tor-browser`). So a target's matrix runs 33 recipes on
+debian-64bit, 30 on debian-32bit, 27 on slackware-64bit and 26 on slackware-32bit. The one that
+most often surprises people:
 
 | | |
 |---|---|

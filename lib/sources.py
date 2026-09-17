@@ -22,7 +22,13 @@ from a list someone keeps:
 
 The evidence is the image's provenance sidecar (<iso>.provenance.json, written by `kitchen
 pack`). A file matches a recorded step only if its sha256 is the one recorded, so a bundle
-altered after the build is unresolved rather than silently attributed.
+altered after the build is unresolved rather than silently attributed. A repacked
+initramfs is opened and its members compared with the stock manifest one by one, because
+"the parts that match Slax are Slax" is a claim, and a claim has to be counted.
+
+WHAT WEAKENS A POINTER IS SAID. A download with no upstream_source, and a download the
+recipe pinned no sha256 for (what it fetched is what that server served that day), are
+warnings here and unresolved under --strict.
 
 OFFLINE unless --fetch. With --fetch DIR it gathers the source of everything classed
 `built`, plus the project tree at the recorded commit WITH its submodules (GitHub's
@@ -35,9 +41,11 @@ import argparse
 import gzip
 import hashlib
 import json
+import lzma
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -129,6 +137,71 @@ def iso_files(iso: str) -> dict:
     return out
 
 
+def cpio_members(blob: bytes) -> dict:
+    """{path: sha256} for the regular files in a `newc` cpio archive.
+
+    Parsed here rather than shelled out to cpio, because unpacking needs privilege to get
+    the answer right: Slax's initramfs holds seven device nodes, and a non-root cpio
+    writes them as empty regular files (docs/30-inventory/manifests/README.md), which
+    would then read as seven members the stock manifest does not have. Reading the headers
+    costs nothing and answers for any user.
+    """
+    def field(at: int, i: int) -> int:
+        """Header field `i`: newc writes each as eight ASCII hex digits, after the magic."""
+        return int(blob[at + 6 + i * 8: at + 14 + i * 8], 16)
+
+    out: dict[str, str] = {}
+    off = 0
+    while off + 110 <= len(blob):
+        if blob[off:off + 6] != b"070701":
+            break
+        mode, filesize, namesize = field(off, 1), field(off, 6), field(off, 11)
+        name_at = off + 110
+        name = blob[name_at: name_at + namesize - 1].decode("utf-8", "replace")
+        data_at = (name_at + namesize + 3) & ~3
+        if name == "TRAILER!!!":
+            break
+        if stat.S_ISREG(mode):
+            out[name] = hashlib.sha256(blob[data_at:data_at + filesize]).hexdigest()
+        off = (data_at + filesize + 3) & ~3
+    return out
+
+
+def initramfs_members(iso: str) -> dict | None:
+    """{member path: sha256} for the initramfs inside an ISO, or None if it cannot be read.
+
+    The stock manifests record every regular file in the initramfs
+    (docs/30-inventory/manifests/initramfs-<target>.sha256), and the only way to say which
+    of an image's members are still Slax's is to look at them.
+    """
+    import diff
+    e = diff._entries(iso).get("/slax/boot/initrfs.img")
+    if not e or e.get("lba") is None:
+        return None
+    with open(iso, "rb") as fh:
+        fh.seek(e["lba"] * diff.SECTOR)
+        blob = fh.read(e["size"])
+    try:
+        raw = lzma.decompress(blob)
+    except lzma.LZMAError:
+        return None
+    return cpio_members(raw) or None
+
+
+def initramfs_delta(members: dict | None, stock: dict) -> dict:
+    """Which of an initramfs's members are the stock image's, member by member.
+
+    Pure. `members` is None when the initramfs could not be unpacked, and then nothing is
+    claimed about it -- the point of this is to stop asserting that the parts that match
+    Slax match Slax."""
+    if members is None or not stock:
+        return {"compared": False}
+    same = [p for p, h in members.items() if stock.get(p) == h]
+    return {"compared": True, "members": len(members), "stock_members": len(same),
+            "changed": sorted(p for p, h in members.items() if stock.get(p) != h),
+            "removed": sorted(p for p in stock if p not in members)}
+
+
 def alpine_aports_url(release: str | None, name: str) -> str | None:
     """Alpine's recipe for a package -- APKBUILD, patches, the upstream tarball it names --
     on the stable branch of the build container's release. A branch, not the release tag:
@@ -143,8 +216,12 @@ def alpine_aports_url(release: str | None, name: str) -> str | None:
 # ------------------------------------------------------------------ classify ------
 
 def _pointer_for_prebuilt(step: dict) -> dict:
+    """What a downloaded file points at. `pinned` is False when the recipe named no sha256,
+    so the file is whatever that server served on build day: recorded, but not reproducible.
+    Steps written before the verbs recorded it say nothing, and nothing is claimed for them."""
     return {"source": step.get("source"), "source_sha256": step.get("source_sha256"),
-            "member": step.get("member"), "upstream_source": step.get("upstream_source")}
+            "member": step.get("member"), "upstream_source": step.get("upstream_source"),
+            "pinned": step.get("pinned")}
 
 
 def _debian_pointer(rec: dict) -> dict:
@@ -157,7 +234,15 @@ def _debian_pointer(rec: dict) -> dict:
                 source_published_at=snapshot_url(src, ver) if src and ver else None)
 
 
-DEBIAN_ARCHIVE = re.compile(r"(^|[._])debian\.org_")
+def from_debian(origin: str) -> bool:
+    """True when an apt index filename names an archive Debian itself runs.
+
+    The origin is a FILENAME: the archive URI with "/" turned into "_", so everything
+    before the first "_" is the host and the rest is the path. `debian.org` can sit
+    anywhere in that path -- `mirror.example.com_debian.org_pub_dists_...` -- so only the
+    host is tested, and a package from someone else's mirror stays undeclared."""
+    host = (origin or "").split("_", 1)[0].split(":", 1)[0]
+    return host == "debian.org" or host.endswith(".debian.org")
 APT_QUOTED = set('\\|{}[]<>"^~_=!@#$%^&*')
 
 
@@ -198,13 +283,13 @@ def _packages(step: dict, flavour: str) -> tuple[list[dict], list[str], list[str
             debs.get((name, rec.get("version"))) or {}
         origin = rec.get("origin") or deb.get("origin")
         repo = next((src for prefix, src in declared if origin and origin.startswith(prefix)), None)
-        if repo is not None or (script and origin and not DEBIAN_ARCHIVE.search(origin)):
+        if repo is not None or (script and origin and not from_debian(origin)):
             up = (repo or step).get("upstream_source")
             where = f"the `{repo.get('name')}` repository" if repo else f"`{origin}`"
             if not up:
                 warns.append(f"{name} came from {where}, which the recipe gives no upstream_source")
             return dict(rec, archive=(repo or {}).get("name") or origin, source_published_at=up)
-        if origin and not DEBIAN_ARCHIVE.search(origin):
+        if origin and not from_debian(origin):
             problems.append(f"{name} came from an archive this step does not declare ({origin})")
             return dict(rec, archive=origin, source_published_at=None)
         if not origin and declared:
@@ -243,8 +328,12 @@ def _packages(step: dict, flavour: str) -> tuple[list[dict], list[str], list[str
 
 
 def classify(files: dict, stock: dict, prov: dict, target: str | None, target_info: dict,
-             allow_dirty: bool = False, strict: bool = False) -> dict:
-    """Pure: files {path: sha256} + stock index + provenance -> the sources document."""
+             allow_dirty: bool = False, strict: bool = False,
+             initramfs: dict | None = None) -> dict:
+    """Pure: files {path: sha256} + stock index + provenance -> the sources document.
+
+    `initramfs` is {member: sha256} for the image's own initramfs, or None when it could
+    not be unpacked; initramfs_members() reads it from the ISO."""
     components, unresolved, warnings = [], [], []
     builder = prov.get("builder") or {}
 
@@ -266,6 +355,13 @@ def classify(files: dict, stock: dict, prov: dict, target: str | None, target_in
                 artifacts.setdefault(a.lstrip("/"), []).append(r.get("recipe"))
                 last_artifact[a.lstrip("/")] = i
     generated = {g["path"]: g["sha256"] for g in (prov.get("pack") or {}).get("generated") or []}
+    # The stock index the other way round. `bundle.renumber` renames a stock bundle without
+    # touching a byte, so a path-keyed lookup misses it and the file falls through to the
+    # recipe's artifact list -- Slax's own binary, reported as something this project wrote.
+    stock_by_sha: dict = {}
+    for sp, sh in stock["files"].items():
+        if not sp.endswith("@64"):
+            stock_by_sha.setdefault(sh, sp)
 
     def add(path, sha, cls, by=None, **detail):
         components.append({"path": path, "sha256": sha, "class": cls, "by": by,
@@ -283,17 +379,17 @@ def classify(files: dict, stock: dict, prov: dict, target: str | None, target_in
             continue
         tail = path + "@64"
         if tail in files and stock["files"].get(tail) == files[tail]:
-            add(path, sha, "slax", note="boot-info table (bytes 8-63) rewritten by the "
-                "mastering tool; every other byte is the stock file")
+            add(path, sha, "slax", note="from byte 64 on it is the stock file, byte for "
+                "byte; the mastering tool rewrites the boot-info table at bytes 8-63 and "
+                "the first 64 bytes are skipped whole, so bytes 0-7 are not compared")
             continue
         recorded = [(rn, s) for rn, s in outputs.get(path, []) if s.get("output_sha256") == sha]
         if recorded:
             rn, s = recorded[-1]
             verb = s.get("verb")
             if path == "slax/boot/initrfs.img":
-                touched = [(r2, s2) for r2, s2 in outputs.get(path, [])]
                 parts = []
-                for r2, s2 in touched:
+                for r2, s2 in outputs.get(path, []):
                     if s2.get("verb") == "initramfs.busybox":
                         claim = s2.get("claim") or {}
                         if not claim.get("verified"):
@@ -312,8 +408,20 @@ def classify(files: dict, stock: dict, prov: dict, target: str | None, target_in
                                       "container": (c.get("container") or {}).get("image")})
                     else:
                         parts.append({"class": "ours", "by": r2, "verb": s2.get("verb")})
-                add(path, sha, "ours", by=rn, note="initramfs repacked by recipes; members "
-                    "that match the stock initramfs manifest are Slax as published", parts=parts)
+                delta = initramfs_delta(initramfs, stock["initramfs"])
+                if delta["compared"]:
+                    note = (f"initramfs repacked by recipes: {delta['stock_members']} of "
+                            f"{delta['members']} members are the stock image's, byte for byte")
+                    if delta["changed"]:
+                        note += f"; changed or added: {', '.join(delta['changed'][:8])}"
+                        if len(delta["changed"]) > 8:
+                            note += f", and {len(delta['changed']) - 8} more"
+                    if delta["removed"]:
+                        note += f"; removed: {len(delta['removed'])}"
+                else:
+                    note = ("initramfs repacked by recipes; its members were not compared "
+                            "against the stock manifest (it could not be unpacked here)")
+                add(path, sha, "ours", by=rn, note=note, parts=parts, stock_members=delta)
                 continue
             if verb == "bundle.packages":
                 flavour = s.get("flavour") or "debian"
@@ -326,18 +434,30 @@ def classify(files: dict, stock: dict, prov: dict, target: str | None, target_in
                     packages=pk, reinstall=s.get("reinstall"), apt_sources=s.get("apt_sources"))
             elif verb in ("bundle.fromTarball", "boot.payload"):
                 ptr = _pointer_for_prebuilt(s)
+                soft = []
                 if not ptr["upstream_source"]:
-                    msg = f"{rn}: {verb} names no upstream_source for {ptr['source']}"
+                    soft.append(f"{verb} names no upstream_source for {ptr['source']}")
+                if ptr["pinned"] is False:
+                    soft.append(f"{verb} took {ptr['source']} with no sha256 pinned, so what "
+                                "it fetched is what that server served, not a known file")
+                if soft:
                     if strict:
-                        unresolve(path, msg)
+                        unresolve(path, f"{rn}: " + "; ".join(soft))
                         continue
-                    warnings.append(msg)
+                    warnings.extend(f"{rn}: {m}" for m in soft)
                 add(path, sha, "prebuilt", by=rn, **ptr)
             elif verb == "boot.uefi":
                 tools = s.get("tools") or {}
                 grub = tools.get("grub-efi-amd64-bin")
                 if not grub:
                     unresolve(path, f"{rn}: boot.uefi recorded no GRUB package from the build host")
+                    continue
+                # host_package() returns just {"package": name} when dpkg-query -W fails, and
+                # that dict is truthy: without this the component was `built` with a null
+                # source, a null version and a null URL, and --fetch then crashed on it.
+                if not (grub.get("source") and (grub.get("source_version") or grub.get("version"))):
+                    unresolve(path, f"{rn}: the build host's {grub.get('package', 'GRUB')} "
+                                    f"recorded no source version, so there is nothing to point at")
                     continue
                 add(path, sha, "built", by=rn, what="GRUB EFI image (grub-mkstandalone)",
                     bootx64_sha256=s.get("bootx64_sha256"), grub_modules=s.get("grub_modules"),
@@ -349,9 +469,10 @@ def classify(files: dict, stock: dict, prov: dict, target: str | None, target_in
                 declared = {d["path"]: d for d in s.get("declares") or []}
                 bad = [e for e in s.get("unowned_elf") or [] if e["path"] not in declared]
                 if bad:
-                    unresolve(path, f"{rn}: bundle.script left ELF files no package owns and "
-                                    f"no `declares:` entry names: "
-                                    + ", ".join(e["path"] for e in bad[:5]))
+                    unresolve(path, f"{rn}: bundle.script left ELF files no package vouches "
+                                    f"for and no `declares:` entry names: "
+                                    + ", ".join(f"{e['path']} ({e.get('why', 'unowned')})"
+                                                for e in bad[:5]))
                     continue
                 if s.get("fetched") and not s.get("upstream_source"):
                     msg = f"{rn}: bundle.script fetched files but names no upstream_source"
@@ -381,6 +502,11 @@ def classify(files: dict, stock: dict, prov: dict, target: str | None, target_in
             continue
         if generated.get(path) == sha:
             add(path, sha, "ours", by="kitchen pack", note="generated at pack time")
+            continue
+        if sha in stock_by_sha:
+            add(path, sha, "slax", note=f"byte-identical to `{stock_by_sha[sha]}` in the stock "
+                                        "image, under a different name -- bundle.renumber "
+                                        "moves a bundle without rebuilding it")
             continue
         if path in last_output and last_artifact.get(path, -1) <= last_output[path]:
             rn, s = outputs[path][-1]
@@ -446,10 +572,11 @@ def classify(files: dict, stock: dict, prov: dict, target: str | None, target_in
     not_redistributable = [{"recipe": r.get("recipe"), "why": (r.get("redistribution") or {}).get("why")}
                            for r in recipes if (r.get("redistribution") or {}).get("allowed") is False]
 
-    firmware = firmware_facts(files, stock, recipes)
+    firmware = firmware_facts(files, stock, recipes, target)
     if firmware["stock_bundle"] and not firmware["license_texts"]:
         warnings.append(f"{STOCK_FIRMWARE}: Slax's own build removed the license texts of the "
-                        "firmware in this bundle (usr/lib/firmware/ipw2x00.LICENSE remains); "
+                        f"firmware in this bundle ({firmware_dir(target)}ipw2x00.LICENSE "
+                        "remains); "
                         "the firmware-refresh recipe reinstalls Debian's, and remove-bundle "
                         "with drop: 01-firmware leaves the firmware out")
 
@@ -480,7 +607,14 @@ STOCK_FIRMWARE = "slax/modules/01-firmware.sb"
 LICENSE_NAME = re.compile(r"(^|/)(LICENSES/|LICEN[CS]E)")
 
 
-def firmware_facts(files: dict, stock: dict, recipes: list) -> dict:
+def firmware_dir(target: str | None) -> str:
+    """Where firmware sits in an image of this target. Debian 12 is usr-merged and Slax's
+    Debian bundles record usr/lib/firmware; Slackware is not merged and its bundles hold
+    lib/firmware. Measured in all four stock 01-firmware.sb bundles."""
+    return "lib/firmware/" if (target or "").startswith("slackware") else "usr/lib/firmware/"
+
+
+def firmware_facts(files: dict, stock: dict, recipes: list, target: str | None = None) -> dict:
     """Which firmware the image carries and where its license texts are, from evidence.
 
     Slax's build deleted /usr/share/doc from its firmware packages, so the stock firmware
@@ -499,9 +633,13 @@ def firmware_facts(files: dict, stock: dict, recipes: list) -> dict:
                 license_texts.append({"recipe": r.get("recipe"), "bundle": st.get("output"),
                                       "packages": fw})
             for f in st.get("fetched") or []:
-                if not str(f.get("path", "")).startswith("usr/lib/firmware/"):
+                # Both spellings, so a Slackware recipe's fetched firmware is counted too.
+                path = str(f.get("path", ""))
+                pre = next((d for d in ("usr/lib/firmware/", "lib/firmware/")
+                            if path.startswith(d)), None)
+                if not pre:
                     continue
-                rel = f["path"][len("usr/lib/firmware/"):]
+                rel = path[len(pre):]
                 if rel == "WHENCE":
                     whence = True
                 elif LICENSE_NAME.search(rel):
@@ -510,7 +648,7 @@ def firmware_facts(files: dict, stock: dict, recipes: list) -> dict:
                     fetched_firmware += 1
     return {"stock_bundle": stock_bundle, "license_texts": license_texts,
             "fetched_firmware": fetched_firmware, "fetched_license_files": fetched_licenses,
-            "fetched_whence": whence}
+            "fetched_whence": whence, "firmware_dir": firmware_dir(target)}
 
 
 # ------------------------------------------------------------------ render --------
@@ -538,12 +676,15 @@ def markdown(doc: dict) -> str:
             lines += [f"- {fw['fetched_firmware']} firmware files were copied from linux-firmware, "
                       f"with {fw.get('fetched_license_files', 0)} license files"
                       + (" and WHENCE" if fw.get("fetched_whence") else "") + " beside them."]
+        d = fw.get("firmware_dir") or "usr/lib/firmware/"
         if fw.get("stock_bundle") and not fw.get("license_texts"):
             lines += [f"- `{STOCK_FIRMWARE}` is Slax's firmware bundle, whose license texts Slax's "
-                      "own build removed (`usr/lib/firmware/ipw2x00.LICENSE` remains)."]
+                      f"own build removed (`{d}ipw2x00.LICENSE` remains)."]
         if fw.get("stock_bundle"):
+            # Counted in all four stock bundles: 156 regular files, no license text, and
+            # the same set on Debian and Slackware (which spells the directory lib/firmware).
             lines += [f"- `{STOCK_FIRMWARE}` also holds the Broadcom b43 firmware Slax's build extracted "
-                      "from Broadcom's driver: 155 files in `usr/lib/firmware/b43/`, and no license "
+                      f"from Broadcom's driver: 156 files in `{d}b43/`, and no license "
                       "text came with them."]
         lines.append("")
     lines += ["| | components |", "|---|---|"]
@@ -818,7 +959,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--allow-dirty", action="store_true",
                     help="accept an image built from a kitchen tree with uncommitted changes")
     ap.add_argument("--strict", action="store_true",
-                    help="a download with no upstream_source is unresolved, not a warning")
+                    help="a download with no upstream_source, or none pinned by sha256, "
+                         "is unresolved rather than a warning")
     a = ap.parse_args(argv[1:])
 
     prov_path = a.provenance or a.iso + ".provenance.json"
@@ -834,8 +976,14 @@ def main(argv: list[str]) -> int:
     stock = stock_index(target, os.path.join(REPO, "docs", "30-inventory", "manifests"))
     files = iso_files(a.iso)
     check_local_inputs(prov)
-    doc = classify(files, stock, prov, target, info, a.allow_dirty, a.strict)
-    if (prov.get("pack") or {}).get("iso", {}).get("sha256") not in (None, _sha256(a.iso)):
+    # Only unpack the initramfs when the image's is not the stock one: an untouched
+    # initrfs.img is answered by its own sha256, and this saves the xz on every run.
+    irfs = files.get("slax/boot/initrfs.img")
+    members = (initramfs_members(a.iso)
+               if irfs and stock["files"].get("slax/boot/initrfs.img") != irfs else None)
+    doc = classify(files, stock, prov, target, info, a.allow_dirty, a.strict,
+                   initramfs=members)
+    if ((prov.get("pack") or {}).get("iso") or {}).get("sha256") not in (None, _sha256(a.iso)):
         doc["unresolved"].append({"path": "(image)", "reason": "the ISO's sha256 is not the one "
                                   "its provenance records -- it changed after pack"})
         doc["summary"]["unresolved"] = len(doc["unresolved"])

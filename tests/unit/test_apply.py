@@ -9,7 +9,8 @@ import os
 import shutil
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+sys.path.insert(0, os.path.join(REPO, "lib"))
 
 import apply  # noqa: E402
 
@@ -883,6 +884,67 @@ def test_fetches_and_bundles_record_provenance():
     check("boot.uefi records the host's GRUB", calls_prov(by_verb["boot.uefi"]), True)
 
 
+def test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package():
+    """_unowned_elf asked only whether SOME package names the path. A script that overwrote
+    a packaged binary -- `curl -o /usr/bin/ssh …` -- produced an ELF that no `declares:`
+    covered, was not reported, and left `kitchen sources` naming openssh-client as its
+    source. dpkg records an md5 for every file it ships, right beside the .list."""
+    import shutil
+    import tempfile
+    root = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(root, "usr", "bin"))
+        info = os.path.join(root, "var", "lib", "dpkg", "info")
+        os.makedirs(info)
+        elf = os.path.join(root, "usr", "bin", "ssh")
+        with open(elf, "wb") as f:
+            f.write(b"\x7fELF" + b"original\n")
+        with open(os.path.join(info, "openssh-client.list"), "w") as f:
+            f.write("/usr/bin/ssh\n")
+        import hashlib
+        digest = hashlib.md5(open(elf, "rb").read()).hexdigest()
+        with open(os.path.join(info, "openssh-client.md5sums"), "w") as f:
+            f.write(f"{digest}  usr/bin/ssh\n")
+
+        check("an untouched packaged binary is not reported",
+              apply._unowned_elf(root, ["usr/bin/ssh"]), [])
+
+        with open(elf, "wb") as f:                     # the script swaps the bytes
+            f.write(b"\x7fELF" + b"replaced\n")
+        got = apply._unowned_elf(root, ["usr/bin/ssh"])
+        check("the replaced one is", [e["path"] for e in got], ["usr/bin/ssh"])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_a_long_pack_hint_survives_the_round_trip():
+    """ctx.hint writes <work>/.kitchen/pack.yaml and lib/hints.sh reads it back with sed.
+    safe_dump folds a scalar at 80 columns onto a continuation line, and sed takes the
+    first line only: a 128-character publisher (the field's own limit) was mastered into
+    the image cut off at the last space before column 80, and the structure test then
+    compared the ISO against the same truncated string, so nothing noticed."""
+    import shutil
+    import subprocess
+    import tempfile
+    work = tempfile.mkdtemp()
+    try:
+        meta = os.path.join(work, ".kitchen")
+        os.makedirs(meta)
+        ctx = apply.Ctx.__new__(apply.Ctx)
+        ctx.meta, ctx.dry = meta, False
+        ctx.say = lambda *_a, **_k: None
+        publisher = ("Slax Kitchen build of Slax 12.2.0 with browsers and firmware "
+                     "for the lab machines in room 4")
+        ctx.hint("publisher", publisher)
+        ctx.hint("volid", "SLAX-CUSTOM")
+        read = subprocess.run(
+            ["sh", "-c", f'. {REPO}/lib/hints.sh; pack_hint "$1" publisher',
+             "sh", os.path.join(meta, "pack.yaml")], capture_output=True, text=True)
+        check("what pack would master", read.stdout.strip(), publisher)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def test_a_recipe_listed_twice_is_refused():
     """Naming one recipe twice applied it ONCE, silently: resolve() deduplicates by path,
     and a profile's per-recipe vars are keyed by recipe name, so the second entry's vars
@@ -1604,7 +1666,9 @@ def main():
                test_network_is_declared_where_it_is_used,
                test_fetches_and_bundles_record_provenance,
                test_recipe_relative_paths_go_through_ctx_local,
+               test_a_long_pack_hint_survives_the_round_trip,
                test_a_recipe_listed_twice_is_refused,
+               test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package,
                test_symlink_chain_cannot_escape,
                test_fromtarball_wires_both_guards_in,
                test_extract_members_matches_extractall_on_a_clean_archive,

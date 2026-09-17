@@ -128,10 +128,10 @@ behind:
   b43 blobs. Many laptops lose Wi-Fi.
 - **`firmware-linux-free` stays** — it lives in `01-core`, and it is free firmware.
 - **Or replace it rather than dropping it.** Removing `01-firmware` *and* applying
-  [`firmware-refresh`](firmware-refresh.md) gives one firmware bundle built from Debian's packages
-  with their copyright files, and no b43 blobs: measured at **139.4 MiB**, against 48.8 MiB when it
-  layers on top of the stock bundle, because the reinstall then really reinstalls the firmware
-  instead of only the documentation Slax deleted.
+  [`firmware-refresh`](firmware-refresh.md) gives two bundles with their license texts and no b43
+  blobs: `09-firmware-debian.sb`, measured at **139.4 MiB** against 48.8 MiB when it layers on top
+  of the stock bundle — because the reinstall then really reinstalls the firmware instead of only
+  the documentation Slax deleted — and `09-firmware-linux.sb` at 5.4 MiB either way.
 - **The package database still lists the removed packages as installed.** Each stock bundle carries a
   complete `var/lib/dpkg/status`, and the ones above `01-firmware` still record them. That is
   documented rather than changed. A recipe that installs one of those packages again afterwards has

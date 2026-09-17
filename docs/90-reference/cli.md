@@ -302,7 +302,7 @@ Two cases get special handling, because the naive answer is confidently wrong:
 The El Torito boot catalog is compared **by meaning** — platforms and bootable flags — not by bytes.
 It has no file extent of its own, so a byte comparison could not see it at all.
 
-## `sources <iso> [--json F] [--markdown F] [--fetch DIR]`
+## `sources <iso> [--json F] [--markdown F] [--fetch DIR] [--strict]`
 
 What is in a built image, and where the source of each part lives. Every file in the ISO is
 classified from evidence: the image's `<iso>.provenance.json` (written by `pack`) and the committed
@@ -330,9 +330,21 @@ sources  slax-tor-12.2.0.iso  (base debian-64bit-12.2.0)
 
 **A file matches a recorded step only if its sha256 is the one recorded.** A bundle altered after the
 step that made it is unresolved, not attributed to that step or to the recipe's journal entry. So
-is a `bundle.script` bundle holding an ELF file that no package owns and no `declares:` entry names,
-an image built from a dirty kitchen tree, a busybox whose build claim does not match the binary, and
-an ISO whose sha256 is not the one its provenance records.
+is a `bundle.script` bundle holding an ELF file that no package **vouches for** — one no package
+owns, or one whose bytes differ from the md5 its package recorded, which is what a script
+overwriting `/usr/bin/ssh` leaves behind — and that no `declares:` entry names. So is an image built
+from a dirty kitchen tree, a busybox whose build claim does not match the binary, and an ISO whose
+sha256 is not the one its provenance records.
+
+**`slax/boot/initrfs.img`, when a recipe has repacked it, is counted rather than asserted.** Its
+members are read straight out of the image (the cpio is parsed here, so no privilege and no `cpio`
+binary are needed) and compared with the committed initramfs manifest, and the note says how many
+of them are still Slax's and which are not.
+
+**A download nobody pinned is said out loud.** `bundle.fromTarball` and `boot.payload` record
+whether the recipe gave a `sha256:`; without one, what the build fetched is whatever that server
+served that day, so it is a warning — and with `--strict`, unresolved. `--strict` does the same for
+a download whose recipe names no `upstream_source`.
 
 **`ours` has to be true.** Whatever a recipe copies in with a local `src:`, and the recipe file
 itself, is recorded with its content digest. `sources` then asks git whether the recorded commit
@@ -459,6 +471,12 @@ and tested nowhere.
 Checks recipes and profiles against their JSON Schemas. Variables are substituted **before**
 validation, so a templated `bundle: "{{bundle}}"` is checked against its resolved value.
 
+It also runs the cross-checks a schema cannot state: a recipe's `metadata.name` must match its
+filename, a `Sources` mirror layout may not reference a field no target defines, and **a recipe that
+removes or renumbers a bundle may contain nothing else** — that one decides where a recipe may sit
+in a plan, so mixing it with a build makes its position a constraint on every other recipe. See
+[composing bundles](../40-workflow/composing-bundles.md).
+
 ## `selftest [stage] [scope]`
 
 Runs the commit gates: `pre-commit`, `pre-push` or `ci`. Hooks call the same script, so a hook can
@@ -476,7 +494,9 @@ detail for one. This works on **every** subcommand.
 
 ## Everything is implemented
 
-Every command in `--help` works. `kernel.replace` is the one remaining **verb**; see
+Every command in `--help` works. `kernel.replace` is the one remaining **verb** worth building —
+`initramfs.config` and `boot.secureboot` are declared and won't-do, so 23 of 26 are implemented;
+see
 [project status](../00-overview/status.md).
 
 ---
@@ -505,7 +525,7 @@ output:
   name: "slax-example-{{version}}.iso"    # {{version}} {{flavour}} {{arch}} {{name}}
   hybrid: true
   backend: xorriso         # optional
-test: [structure]          # structure | bios-boot | uefi-boot | usb | persistence
+test: [structure]          # structure | kernel-boot | bios-boot | uefi-boot | usb | persistence
 ```
 
 `usb` and `persistence` are accepted and reported as skipped — they need a KVM host.

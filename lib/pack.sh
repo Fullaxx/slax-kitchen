@@ -79,10 +79,18 @@ kitchen_pack() {
     fi
     [ -f "$src/slax/boot/isolinux.bin" ] || die "pack: $src does not look like a Slax tree (no slax/boot/isolinux.bin)"
 
+    # The work tree is the directory holding the ISO tree: work/iso -> work. Everything
+    # pack reads about the build -- the hints, the base image it came from, what each
+    # recipe did -- lives in its .kitchen/, so it is derived ONCE, here.
+    _work=$(dirname "$src")
+    [ -d "$_work/.kitchen" ] || printf '  %swarn%s no %s: the sidecar will record what pack did and no recipes
+' \
+        "$Y" "$O" "$_work/.kitchen"
+
     # Recipes record intent in <work>/.kitchen/pack.yaml rather than knowing xorriso
     # flags themselves: boot.isohybrid sets hybrid=true, boot.uefi sets uefi=true.
     # An explicit --uefi/--hybrid on the command line still wins.
-    _hints="$(dirname "$src")/.kitchen/pack.yaml"
+    _hints="$_work/.kitchen/pack.yaml"
     if [ -f "$_hints" ]; then
         grep -q '^hybrid: *true' "$_hints" && [ "$hybrid" = 0 ] && {
             hybrid=1; printf '  %shint%s hybrid MBR/GPT requested by a recipe\n' "$D" "$O"; }
@@ -217,7 +225,7 @@ kitchen_pack() {
     # recipe fetched and built; this adds what pack itself used -- the backend, the MBR it
     # copied from the build host -- and writes <iso>.provenance.json where `kitchen build`
     # deleting the work tree cannot take it with it. See lib/provenance.py.
-    if ! python3 "$REPO_ROOT/lib/provenance.py" finalize --work "$(dirname "$src")" \
+    if ! python3 "$REPO_ROOT/lib/provenance.py" finalize --work "$_work" \
             --iso "$out" --backend "$backend" ${_mbr:+--mbr "$_mbr"} > /dev/null; then
         die "pack: could not write $out.provenance.json"
     fi

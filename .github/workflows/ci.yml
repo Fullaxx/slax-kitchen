@@ -367,8 +367,15 @@ jobs:
 
   # ------------------------------------------------------------ tor assets --
   # Proof that the publishing pipeline works end to end, on a real profile: build `tor`,
-  # assemble what would travel with it, and verify that set. WEEKLY, dispatch and tags
-  # only -- the Tor Browser tarball is 138 MB from dist.torproject.org.
+  # assemble what would travel with it, and verify that set. WEEKLY and dispatch only --
+  # the Tor Browser tarball is 138 MB from dist.torproject.org.
+  #
+  # NOT ON TAGS, deliberately. release.yml's publish job needs the whole of this workflow,
+  # so on a tag this job would stand between a release and `contents: write` -- and its
+  # failure mode is external: a Tor Browser release retires the pinned tarball and the
+  # download 404s. That is exactly why all-browsers and tor-browser are in
+  # ci/slow-recipes.txt. A release must not wait on dist.torproject.org; the weekly run
+  # is what proves the pipeline, and `workflow_dispatch` runs it on demand before a tag.
   #
   # THE ISO IS NEVER UPLOADED, and not by convention: --no-image leaves it out of the set,
   # and --assert-no-images fails the job if any asset is an ISO 9660 image, squashfs, ELF,
@@ -386,7 +393,6 @@ jobs:
     needs: build
     if: >-
       github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-      || startsWith(github.ref, 'refs/tags/')
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -408,7 +414,7 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" out
       - name: assemble assets, without the image
         run: ./ci/release-assets.sh out/slax-tor-12.2.0.iso out/tor-assets --no-image
-      - name: verify, including that nothing in the set is an image
+      - name: verify, and refuse any asset that is an image or executable by content
         run: ./ci/release-verify.py out/tor-assets --assert-no-images
       # Only the verified directory. Not out/, which holds the ISO.
       - uses: actions/upload-artifact@v7

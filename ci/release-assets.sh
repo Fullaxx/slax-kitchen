@@ -87,12 +87,20 @@ def sha256(path):
     return h.hexdigest()
 
 
-def place(src, name, link=False):
+def asset_path(name):
+    """Where an asset goes, once its name is one GitHub will keep and nothing else claims
+    it. Both the files copied here and the tars built here go through this: a name GitHub
+    rewrites leaves SHA256SUMS naming a file that is not in the release."""
     if not SAFE.match(name):
         sys.exit(f"release-assets: {name!r} is not a name GitHub keeps as it is")
     dest = os.path.join(out, name)
     if os.path.exists(dest):
         sys.exit(f"release-assets: two assets would be named {name}")
+    return dest
+
+
+def place(src, name, link=False):
+    dest = asset_path(name)
     if link:
         try:
             os.link(src, dest)
@@ -125,9 +133,7 @@ for n in sorted(os.listdir(fetch)):
         # those names (~, +) are not ones GitHub keeps. One tar per package keeps them.
         members = sorted(os.listdir(p))
         name = re.sub(r"[^A-Za-z0-9._-]", "_", n) + ".source.tar"
-        dest = os.path.join(out, name)
-        if os.path.exists(dest):
-            sys.exit(f"release-assets: two assets would be named {name}")
+        dest = asset_path(name)
         with tarfile.open(dest, "w", format=tarfile.GNU_FORMAT) as t:
             for m in members:
                 info = t.gettarinfo(os.path.join(p, m), arcname=f"{n}/{m}")
@@ -136,8 +142,11 @@ for n in sorted(os.listdir(fetch)):
                 with open(os.path.join(p, m), "rb") as fh:
                     t.addfile(info, fh)
         contained = [f"{n}/{m}" for m in members]
-        add(name, "source", what=sorted({fetched[c]["what"] for c in contained if c in fetched}),
-            covers=sorted({fetched[c]["for"] for c in contained if fetched.get(c, {}).get("for")}),
+        # `what` and `for` are what the sources document says about each fetched file;
+        # a record carrying neither is still a file in the tar, so ask with .get().
+        add(name, "source",
+            what=sorted({w for c in contained if (w := fetched.get(c, {}).get("what"))}),
+            covers=sorted({f for c in contained if (f := fetched.get(c, {}).get("for"))}),
             contains=contained)
     else:
         place(p, n)

@@ -98,7 +98,7 @@ def check_tree_archive(path: str, name: str, state: dict | None, bad) -> None:
                 for ln in member.read().decode().splitlines():
                     sha, _, sub = ln.partition(" ")
                     listed[sub] = sha
-    except (tarfile.TarError, OSError) as e:
+    except (tarfile.TarError, OSError, ValueError) as e:
         bad(f"{name}: not a readable archive ({e})")
         return
     if member is None:
@@ -118,7 +118,15 @@ def verify(outdir: str, assert_no_images: bool = False) -> list[str]:
 
     if not os.path.isdir(outdir):
         return [f"{outdir}: not a directory"]
-    present = sorted(n for n in os.listdir(outdir) if os.path.isfile(os.path.join(outdir, n)))
+    # A release directory is FLAT. Everything else -- a subdirectory, a symlink, a socket --
+    # was invisible to every check below, which all work off this list, while the CI upload
+    # step takes the directory recursively.
+    present, odd = [], []
+    for n in sorted(os.listdir(outdir)):
+        full = os.path.join(outdir, n)
+        (present if os.path.isfile(full) and not os.path.islink(full) else odd).append(n)
+    for n in odd:
+        problems.append(f"{n}: not a regular file, and a release directory is flat")
     for n in ("SHA256SUMS", "release-index.json"):
         if n not in present:
             bad(f"no {n}")
@@ -148,6 +156,7 @@ def verify(outdir: str, assert_no_images: bool = False) -> list[str]:
     except ValueError as e:
         return problems + [f"release-index.json: not JSON ({e})"]
     assets = {a.get("name"): a for a in index.get("assets") or []}
+    image = index.get("image") or {}
     for n in sorted(set(assets) - files):
         bad(f"release-index.json names {n}, which is not here")
     for n in sorted(files - set(assets) - {"release-index.json"}):
@@ -167,13 +176,22 @@ def verify(outdir: str, assert_no_images: bool = False) -> list[str]:
             bad(f"{found[0]}: not readable JSON ({e})")
             return found[0], None
 
+    # BEFORE the records are read, so a directory whose provenance is unreadable is still
+    # told about the ISO sitting in it rather than only about the JSON.
+    if assert_no_images:
+        if image.get("attached"):
+            bad("--assert-no-images, and release-index.json says an image is attached")
+        for n in sorted(files):
+            kind = content_kind(os.path.join(outdir, n))
+            if kind:
+                bad(f"--assert-no-images, and {n} is {kind}")
+
     _pn, prov = one("provenance", ".provenance.json")
     _sn, src = one("sources", ".sources.json")
     if prov is None or src is None:
         return problems
 
     # --- one image, the same everywhere ---------------------------------------------
-    image = index.get("image") or {}
     want = image.get("sha256")
     if not want:
         bad("release-index.json names no image sha256")
@@ -224,14 +242,8 @@ def verify(outdir: str, assert_no_images: bool = False) -> list[str]:
             "firmware packages; add firmware-refresh, which reinstalls them, or leave the firmware "
             "out with remove-bundle")
 
-    # --- nothing that is an image, when none may be ---------------------------------
-    if assert_no_images:
-        if image.get("attached") or attached:
-            bad("--assert-no-images, and an image is attached")
-        for n in sorted(files):
-            kind = content_kind(os.path.join(outdir, n))
-            if kind:
-                bad(f"--assert-no-images, and {n} is {kind}")
+    if assert_no_images and attached:
+        bad("--assert-no-images, and an image asset is listed")
     return problems
 
 

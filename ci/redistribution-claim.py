@@ -39,27 +39,35 @@ def claim(outdir: str) -> str:
     else:
         lines.append("No image is attached to this release. It carries the records and source "
                      f"for `{image.get('name')}`, sha256 `{image.get('sha256')}`.")
-    lines += ["", "Attached with it:", ""]
+    lines += ["", "Attached with it:" if image.get("attached") else "Attached:", ""]
     for a in by_role.get("provenance", []):
         lines.append(f"- `{a['name']}` — what the build fetched and built, with sha256s")
     if md_name:
         lines.append(f"- `{md_name}` and `{src_name}` — every file in the image, and where the "
                      "source of each part is published")
     for a in by_role.get("source", []):
-        what = "; ".join(a.get("what") or []) or "source"
+        # `what` is a list in release-index.json, but one string reads as a list of
+        # characters to join(), which would describe an asset as "G; R; U; B".
+        w = a.get("what")
+        what = "; ".join([w] if isinstance(w, str) else (w or [])) or "source"
         lines.append(f"- `{a['name']}` — {what}")
 
     fw = src.get("firmware") or {}
     if fw.get("stock_bundle") or fw.get("license_texts") or fw.get("fetched_firmware"):
         lines += ["", "Using an image that contains firmware implies acceptance of each firmware's "
                       "license terms."]
+        d = fw.get("firmware_dir") or "usr/lib/firmware/"
+        # Each fact stated when it holds, rather than one branch excluding the next: an
+        # image whose firmware was fetched but whose stock bundle was dropped said only
+        # the first sentence, and never said where the license files beside it are.
         if fw.get("license_texts"):
-            lines[-1] += (" Debian's copyright files for its firmware packages are inside the image"
-                          + (", and a license file beside each file taken from linux-firmware."
-                             if fw.get("fetched_firmware") else "."))
-        elif fw.get("stock_bundle"):
+            lines[-1] += " Debian's copyright files for its firmware packages are inside the image."
+        if fw.get("fetched_firmware"):
+            lines[-1] += (f" A license file sits beside each of the {fw['fetched_firmware']} files "
+                          "taken from linux-firmware.")
+        if fw.get("stock_bundle") and not fw.get("license_texts"):
             lines[-1] += (" Slax's own build removed the license texts of its firmware bundle; "
-                          "`usr/lib/firmware/ipw2x00.LICENSE` is the one that remains.")
+                          f"`{d}ipw2x00.LICENSE` is the one that remains.")
         if fw.get("stock_bundle"):
             lines[-1] += (" Slax's firmware bundle also holds the Broadcom b43 firmware its build "
                           "extracted from Broadcom's driver, and no license text came with those files.")

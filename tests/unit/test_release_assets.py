@@ -139,6 +139,68 @@ class Fixture:
         shutil.rmtree(self.d, ignore_errors=True)
 
 
+def assembler():
+    """The python program embedded in ci/release-assets.sh, so the naming rules it applies
+    can be exercised without an ISO, a network or a clean checkout."""
+    text = open(os.path.join(ROOT, "ci", "release-assets.sh")).read()
+    body = text.split("<<'PY'\n", 1)[1]
+    return body.split("\nPY\n", 1)[0]
+
+
+def assemble(fetch_tree, assets_records):
+    """Run that program over a fetch directory, as release-assets.sh does. Returns
+    (returncode, output, the directory it wrote)."""
+    tmp = tempfile.mkdtemp()
+    out = os.path.join(tmp, "out")
+    work = os.path.join(tmp, "tmp")
+    os.makedirs(os.path.join(work, "fetch"))
+    os.makedirs(out)
+    for path, data in fetch_tree.items():
+        full = os.path.join(work, "fetch", path)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        open(full, "w").write(data)
+    json.dump({"assets": assets_records, "kitchen": {"commit": COMMIT}},
+              open(os.path.join(work, "sources.json"), "w"))
+    open(os.path.join(work, "SOURCES.md"), "w").write("# sources\n")
+    iso = os.path.join(tmp, "slax-x-1.0.iso")
+    open(iso, "w").write("not really an image")
+    open(iso + ".provenance.json", "w").write("{}\n")
+    prog = os.path.join(tmp, "assemble.py")
+    open(prog, "w").write(assembler())
+    r = subprocess.run([sys.executable, prog, iso, out, work, "0"],
+                       capture_output=True, text=True)
+    return r.returncode, r.stdout + r.stderr, out
+
+
+def test_a_source_tar_is_named_the_way_every_other_asset_is():
+    """One branch built its tar's name with its own re.sub and wrote it straight out,
+    skipping the SAFE check every other asset goes through: a package directory beginning
+    with a character GitHub rewrites produced `_foo.source.tar`, which GitHub renames,
+    leaving SHA256SUMS naming a file that is not in the release."""
+    rc, out, _ = assemble({"~foo-1.0/a.dsc": "x"}, [])
+    check("refused", rc, 1)
+    check("and says why", "is not a name GitHub keeps" in out, True)
+
+    rc, _out, dest = assemble({"grub2_2.12-1ubuntu7.3/g.dsc": "x"}, [])
+    check("an ordinary package is assembled", rc, 0)
+    check("under a safe name", "grub2_2.12-1ubuntu7.3.source.tar" in os.listdir(dest), True)
+
+
+def test_a_fetched_file_the_sources_document_says_nothing_about():
+    """The set comprehension asked `fetched[c]["what"]` for every record it found. A
+    record without that key -- the document does not require one -- was a KeyError in the
+    middle of assembling a release."""
+    rc, out, dest = assemble(
+        {"grub2_2.12/g.dsc": "x", "grub2_2.12/g.tar.xz": "y"},
+        [{"file": "grub2_2.12/g.dsc"},                       # no `what`, no `for`
+         {"file": "grub2_2.12/g.tar.xz", "what": "GRUB", "for": "slax/boot/bootx64.efi"}])
+    check("assembled", (rc, "Traceback" in out), (0, False))
+    index = json.load(open(os.path.join(dest, "release-index.json")))
+    tar = [a for a in index["assets"] if a["name"].endswith(".source.tar")][0]
+    check("says what it could", (tar["what"], tar["covers"]),
+          (["GRUB"], ["slax/boot/bootx64.efi"]))
+
+
 def test_a_complete_directory_passes():
     with Fixture() as d:
         check("no problems", verify_mod.verify(d, assert_no_images=True), [])
@@ -204,6 +266,28 @@ def test_no_images_is_checked_by_content_not_by_name():
                                             "an image is attached"), True)
 
 
+def test_anything_that_is_not_a_regular_file_is_refused():
+    """Every check works off the file list, so a directory or a symlink used to be invisible
+    to all of them -- while the CI upload step takes the directory recursively."""
+    with Fixture() as d:
+        os.mkdir(os.path.join(d, "extra"))
+        open(os.path.join(d, "extra", "smuggled.iso"), "wb").write(b"\0" * 0x8001 + b"CD001")
+        p = verify_mod.verify(d, assert_no_images=True)
+        check("the directory is named", mentions(p, "extra"), True)
+        check("and it fails", len(p) >= 1, True)
+
+
+def test_the_content_scan_runs_even_when_the_records_are_broken():
+    """--assert-no-images used to return early on an unreadable provenance, so the operator
+    heard about the JSON and not about the ISO sitting beside it."""
+    with Fixture(extra={"readme.md": (b"\0" * 0x8001 + b"CD001", "source")}) as d:
+        open(os.path.join(d, "x.iso.provenance.json"), "w").write("{ not json")
+        write_sums(d)
+        p = verify_mod.verify(d, assert_no_images=True)
+        check("the unreadable record is reported", mentions(p, "not readable JSON"), True)
+        check("and so is the ISO content", mentions(p, "is an ISO 9660 image"), True)
+
+
 def test_no_host_paths_and_no_renamed_names():
     with Fixture(prov_extra={"note": "/home/someone/build"}) as d:
         check("a host path", mentions(verify_mod.verify(d), "path on the build machine"), True)
@@ -265,15 +349,26 @@ def test_release_notes_use_the_claim_when_given_assets():
         check("the claim is in the notes", "This release attaches `x.iso`" in p.stdout, True)
         check("and the toolkit sentence is not", "a release of slax-kitchen is the toolkit" in p.stdout,
               False)
+        # The Provenance section says its own thing about checksums, four lines above the
+        # Redistribution section. It used to say "No image is attached to this release" in
+        # the same notes that attach one.
+        check("no contradiction with the provenance section",
+              "No image is attached to this release" in p.stdout, False)
+        check("it names the attached image's checksum instead",
+              "SHA256SUMS" in p.stdout and "not byte-reproducible" in p.stdout, True)
 
 
 def main():
-    for fn in [test_a_complete_directory_passes,
+    for fn in [test_a_source_tar_is_named_the_way_every_other_asset_is,
+               test_a_fetched_file_the_sources_document_says_nothing_about,
+               test_a_complete_directory_passes,
                test_sha256sums_must_be_exact,
                test_what_the_manifest_refuses_is_refused,
                test_built_here_needs_its_source,
                test_the_project_archive_carries_its_submodules,
                test_no_images_is_checked_by_content_not_by_name,
+               test_anything_that_is_not_a_regular_file_is_refused,
+               test_the_content_scan_runs_even_when_the_records_are_broken,
                test_no_host_paths_and_no_renamed_names,
                test_an_attached_image_carries_its_firmware_licenses,
                test_the_claim_names_what_is_attached,

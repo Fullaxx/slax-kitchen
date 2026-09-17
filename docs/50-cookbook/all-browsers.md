@@ -5,7 +5,8 @@ markers, and then **all six browsers launched and used** in a desktop under QEMU
 That last part is the rung: every other claim on this page is about files being in the right
 place, and this one is a person opening each browser and finding it works.
 
-> **CI builds this weekly, not on every push** — the only recipe treated that way. Its four vendor
+> **CI builds this weekly, not on every push** — one of the three recipes treated that way, with
+> [`tor-browser`](tor-browser.md) and [`firmware-refresh`](firmware-refresh.md). Its four vendor
 > signing keys are pinned by sha256, so a rotation fails the build *by design*, and that is someone
 > else's change: running it per-push would turn Google republishing a key into a red master. The
 > weekly run builds it, and `ci/upstream-watch.sh` checks the four keys every Monday in seconds

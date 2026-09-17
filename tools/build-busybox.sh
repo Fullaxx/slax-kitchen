@@ -154,14 +154,18 @@ fi
 UNPACK=$(mktemp -d)
 tar -C "$UNPACK" -xf "$OUTPUT.tar.part" && rm -f "$OUTPUT.tar.part"
 [ -s "$UNPACK/busybox" ] || { echo "build-busybox: no binary in the container's output" >&2; exit 1; }
-mv "$UNPACK/busybox" "$OUTPUT"
-mv "$UNPACK/.config" "$OUTPUT.config"
-chmod +x "$OUTPUT"
+# `set -e` is deliberately NOT on (the container run's exit code is read by hand below),
+# so every step that the final "here is your binary" line depends on is checked here.
+mv "$UNPACK/busybox" "$OUTPUT" && mv "$UNPACK/.config" "$OUTPUT.config" && chmod +x "$OUTPUT" || {
+    echo "build-busybox: could not put the build output at $OUTPUT" >&2
+    rm -rf "$UNPACK"
+    exit 1
+}
 
 # THE BUILD CLAIM. `initramfs.busybox` records it in the image's provenance, and `kitchen
 # sources` uses it to name what this binary was built from. `artifact.sha256` is what ties
 # the claim to THIS binary; a claim whose hash does not match is reported as unverified.
-python3 - "$OUTPUT" "$VERSION" "$SHA" "$IMAGE" "$UNPACK" "$(git -C "$(dirname "$0")/.." \
+if ! python3 - "$OUTPUT" "$VERSION" "$SHA" "$IMAGE" "$UNPACK" "$(git -C "$(dirname "$0")/.." \
         hash-object tools/build-busybox.sh 2>/dev/null || echo)" <<'PY'
 import hashlib, json, os, sys
 out, ver, sha, image, unpack, blob = sys.argv[1:7]
@@ -189,6 +193,15 @@ with open(out + ".provenance.json", "w") as f:
     json.dump(claim, f, indent=1, sort_keys=True)
     f.write("\n")
 PY
+then :; else
+    # Without the claim, `kitchen sources` reports this binary as built here with nothing
+    # to show for it, and the initramfs it goes into is unresolved. That is a failed
+    # build, not a warning -- and the half-written file must not be left to be believed.
+    echo "build-busybox: the build claim could not be written (python3 exited $?)" >&2
+    rm -f "$OUTPUT.provenance.json"
+    rm -rf "$UNPACK"
+    exit 1
+fi
 rm -rf "$UNPACK"
 
 # Assert what the initramfs actually requires, rather than trusting the toolchain.

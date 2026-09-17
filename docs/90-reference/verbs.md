@@ -58,9 +58,13 @@ redistribution:
 | `declares` | `bundle.script` | binaries the script **compiled**, each with `path`, `source_url`, `source_sha256` and optionally `license` |
 | `redistribution` | the recipe | `allowed: false` and a `why:` when an image containing this recipe's output must not be published |
 
-A download with no `upstream_source` is a warning, and unresolved under `kitchen sources --strict`.
-An ELF file that a `bundle.script` leaves behind, that no package owns and no `declares:` entry
-names, is always unresolved: something was compiled, and nothing says from what.
+A download with no `upstream_source` is a warning, and unresolved under `kitchen sources --strict`;
+so is a download the recipe pinned no `sha256:` for, because what it fetched is whatever that server
+served that day. An ELF file that a `bundle.script` leaves behind that no package **vouches for** —
+no package owns it, or its bytes are not the ones the owning package recorded an md5 for — and that
+no `declares:` entry names is always unresolved: something was compiled or overwritten, and nothing
+says from what. On Slackware, whose package database records no checksums, ownership is all there
+is, which is why `declares:` exists.
 
 **A local `src:` needs nothing extra, only a commit.** Files a verb copies in from beside the recipe
 go through one resolver, which records their path in the kitchen or project checkout and their

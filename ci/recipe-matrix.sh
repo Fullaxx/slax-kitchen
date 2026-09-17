@@ -58,7 +58,7 @@ trap 'rm -rf "$WORK"' EXIT
 
 printf 'recipe matrix: %s  (flavour=%s arch=%s)  %s\n' "$TARGET" "$FLAVOUR" "$ARCH" \
        "${RECIPE_DIR#"$REPO_ROOT"/}"
-pass=0; fail=0; skip=0; skipped_by_file=""
+pass=0; fail=0; skip=0; skipped_by_file=""; MATRIX_STARTED=$(date +%s)
 
 for recipe in "$RECIPE_DIR"/*.yaml; do
     [ -e "$recipe" ] || { echo "no recipes in $RECIPE_DIR" >&2; exit 2; }
@@ -98,6 +98,7 @@ PY
 )
     tree="$WORK/$name"
     log="$WORK/$name.log"
+    started=$(date +%s)
     rm -rf "$tree"
 
     if ! "$REPO_ROOT/kitchen" unpack "$ISO" -o "$tree" >"$log" 2>&1; then
@@ -162,10 +163,15 @@ PY
     fi
 
     sz=$(( $(stat -c%s "$out") / 1048576 ))
-    printf '  %sok%s   %-18s %s%s MiB%s\n' "$G" "$O" "$name" "$D" "$sz" "$O"
+    # Seconds per recipe: what belongs in ci/slow-recipes.txt is an EXTERNAL failure mode,
+    # not cost -- but the cost claim in that file has to come from somewhere, and a run
+    # that does not print it leaves it to memory.
+    printf '  %sok%s   %-18s %s%s MiB, %s s%s\n' "$G" "$O" "$name" "$D" "$sz" \
+        "$(( $(date +%s) - started ))" "$O"
     pass=$((pass+1))
     rm -rf "$tree" "$out" "$out.provenance.json"
 done
 
-printf '\n%d passed, %d failed, %d skipped\n' "$pass" "$fail" "$skip"
+printf '\n%d passed, %d failed, %d skipped in %d s\n' "$pass" "$fail" "$skip" \
+    "$(( $(date +%s) - MATRIX_STARTED ))"
 [ "$fail" -eq 0 ]

@@ -4,7 +4,8 @@ Machine-readable inventories extracted from the four reference Slax ISOs. These 
 artifacts kept under version control on purpose** — they are what `kitchen probe` and the structure
 tests compare against, and regenerating them requires the ISOs, which are deliberately *not* in the
 repo. `kitchen sources` reads the three `.sha256` kinds to recognise every stock file in a built
-image.
+image — and when a recipe has repacked `initrfs.img`, it reads that image's initramfs members and
+says how many of them are still Slax's, rather than assuming.
 
 | File | What it is | Rows |
 |---|---|---|

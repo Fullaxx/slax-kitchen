@@ -51,6 +51,20 @@ def test_stock_files_are_slax_by_hash():
     check("nothing unresolved", doc["unresolved"], [])
 
 
+def test_a_renumbered_stock_bundle_is_still_slax():
+    """`renumber-bundles` renames a stock bundle: same bytes, new name. Matched by path
+    alone it fell through to the recipe's artifact list and was reported as ours -- Slax's
+    binary bundle, claimed as project source, in the document whose whole job is
+    attribution."""
+    r = {"recipe": "renumber-bundles", "steps": [{"verb": "bundle.renumber"}],
+         "artifacts": ["slax/modules/95-core.sb"]}
+    doc = run({"slax/modules/95-core.sb": H["a"]}, prov([r]))
+    comp = doc["components"][0]
+    check("still Slax as published", comp["class"], "slax")
+    check("and says where it came from", "01-core.sb" in (comp.get("note") or ""), True)
+    check("nothing unresolved", doc["unresolved"], [])
+
+
 def test_a_changed_stock_file_with_no_record_is_unresolved():
     doc = run({"slax/boot/isolinux.cfg": H["9"]}, prov())
     check("unresolved", len(doc["unresolved"]), 1)
@@ -98,6 +112,52 @@ def test_a_download_without_upstream_source_warns_or_fails_under_strict():
     check("warning, not unresolved", (len(doc["warnings"]), len(doc["unresolved"])), (1, 0))
     doc = run({"slax/modules/15-app.sb": H["3"]}, p, strict=True)
     check("unresolved under --strict", len(doc["unresolved"]), 1)
+
+
+def test_the_initramfs_note_counts_members_instead_of_asserting_them():
+    """The note said "members that match the stock initramfs manifest are Slax as
+    published" while nothing compared any member: the manifest was read into `stock` and
+    never looked at again."""
+    stock = {"bin/busybox": H["1"], "init": H["2"], "bin/blkid": H["3"]}
+    got = sources.initramfs_delta({"bin/busybox": H["4"], "init": H["2"], "bin/blkid": H["3"]}, stock)
+    check("counted", (got["members"], got["stock_members"]), (3, 2))
+    check("named what changed", got["changed"], ["bin/busybox"])
+    check("nothing lost", got["removed"], [])
+    gone = sources.initramfs_delta({"init": H["2"]}, stock)
+    check("a dropped member", gone["removed"], ["bin/blkid", "bin/busybox"])
+    quiet = sources.initramfs_delta(None, stock)
+    check("unreadable initramfs claims nothing", quiet, {"compared": False})
+
+
+def test_an_unpinned_download_is_said_out_loud():
+    """bundle.fromTarball records `pinned`, and nothing read it: an archive taken on trust
+    (whatever the server served that day) was rendered exactly like a sha256-pinned one."""
+    step = {"verb": "bundle.fromTarball", "output": "slax/modules/15-app.sb", "output_sha256": H["3"],
+            "source": "https://example.org/app.tar.xz", "upstream_source": "https://example.org/src/",
+            "pinned": False}
+    p = prov([{"recipe": "app", "steps": [step]}])
+    doc = run({"slax/modules/15-app.sb": H["3"]}, p)
+    check("warned", any("no sha256" in w for w in doc["warnings"]), True)
+    check("unresolved under --strict", len(run({"slax/modules/15-app.sb": H["3"]}, p,
+                                               strict=True)["unresolved"]), 1)
+    step["pinned"] = True
+    doc = run({"slax/modules/15-app.sb": H["3"]}, prov([{"recipe": "app", "steps": [step]}]))
+    check("a pinned one is quiet", doc["warnings"], [])
+
+
+def test_a_mirror_path_cannot_impersonate_debian():
+    """The origin is an apt list filename with / turned into _, so `debian.org` can appear
+    in the PATH of some other host: mirror.example.com_debian.org_pub_... . Matching the
+    whole string handed that package a snapshot.debian.org URL that never had it."""
+    origin = "mirror.example.com_debian.org_pub_dists_bookworm_main_binary-amd64_Packages"
+    step = {"verb": "bundle.packages", "flavour": "debian", "output": "slax/modules/12-x.sb",
+            "output_sha256": H["5"],
+            "installed": [{"package": "evil", "version": "1", "architecture": "amd64"}],
+            "debs": [{"package": "evil", "version": "1", "architecture": "amd64",
+                      "sha256": H["6"], "origin": origin}]}
+    doc = run({"slax/modules/12-x.sb": H["5"]}, prov([{"recipe": "x", "steps": [step]}]))
+    check("not accepted as Debian", "does not declare" in (doc["unresolved"] or [{}])[0].get("reason", ""),
+          True)
 
 
 def test_packages_point_at_snapshot_including_reinstalls():
@@ -260,6 +320,12 @@ def test_grub_is_built_and_its_source_follows_the_builder():
           "https://snapshot.debian.org/package/grub2-unsigned/2.12-1ubuntu7.3/")
     doc = run({"boot/efi.img": H["3"]}, prov([rec({})]))
     check("no host record is unresolved", len(doc["unresolved"]), 1)
+    # dpkg-query -S found the owner but -W failed: a package name and nothing to point at.
+    # That used to pass as `built` with a null source and a null URL.
+    doc = run({"boot/efi.img": H["3"]},
+              prov([rec({"grub-efi-amd64-bin": {"package": "grub-efi-amd64-bin"}})]))
+    check("a package with no source version is unresolved", len(doc["unresolved"]), 1)
+    check("and says so", "source version" in (doc["unresolved"] or [{}])[0].get("reason", ""), True)
 
 
 def test_recipe_edits_and_pack_output_are_ours():
@@ -438,10 +504,14 @@ def test_markdown_renders():
 
 def main():
     for fn in [test_stock_files_are_slax_by_hash,
+               test_a_renumbered_stock_bundle_is_still_slax,
                test_a_changed_stock_file_with_no_record_is_unresolved,
                test_isolinux_bin_is_recognised_after_the_boot_info_table_is_rewritten,
                test_a_recorded_download_is_prebuilt_only_when_the_bytes_match,
                test_a_download_without_upstream_source_warns_or_fails_under_strict,
+               test_the_initramfs_note_counts_members_instead_of_asserting_them,
+               test_an_unpinned_download_is_said_out_loud,
+               test_a_mirror_path_cannot_impersonate_debian,
                test_packages_point_at_snapshot_including_reinstalls,
                test_a_package_from_a_recipe_repository_points_at_that_repository,
                test_a_repository_without_upstream_source_warns_or_fails_under_strict,

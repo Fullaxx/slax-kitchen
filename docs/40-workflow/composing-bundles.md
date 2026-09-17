@@ -98,9 +98,12 @@ a profile listing `firefox-esr` and then a removal, where each recipe is fine al
 [`firefox-esr`](../50-cookbook/firefox-esr.md) is the additive model — its comments record that it
 is correct with or without `05-chromium` beneath it, and only the size of its bundle changes.
 
-It is stricter than strictly necessary in one case — removing `98-dpkg-db.sb` or a `99-changes-N`,
-which are never part of a default stack and so cannot strand anything. Reorder, and it costs
-nothing. A rule with no exceptions is easier to hold in your head than one with a footnote.
+**The one exception is decided, not written down.** A removal whose pattern is anchored on a
+literal number higher than every bundle the plan builds — `^98-dpkg-db\.sb$` after a plan that
+builds `13-browsers`, say — cannot strand anything, because `from:` already drops everything
+sorting at or above the bundle being built. `_only_above` in `lib/apply.py` works that out from
+the step list and allows it. Anything it cannot decide — an unanchored or templated pattern — is
+treated as disturbing, because a regex can match anything.
 
 ## `from:` is a dial, not a switch
 

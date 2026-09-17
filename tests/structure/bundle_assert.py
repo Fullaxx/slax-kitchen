@@ -107,7 +107,12 @@ def entries(sb: str) -> list[tuple[str, int, int, str]]:
     """(mode, uid, gid, path) for every entry in a bundle. Needs no privilege."""
     r = subprocess.run(["unsquashfs", "-lln", sb], capture_output=True, text=True)
     if r.returncode != 0:
-        return []
+        # NOT an empty list. Returning one made every assertion below pass on a bundle
+        # nobody could read -- a compression the host's squashfs-tools lacks, a truncated
+        # file, unsquashfs missing -- which is the same "0 entries, ok" shape the comment
+        # below records as worse than no check at all.
+        raise RuntimeError(f"unsquashfs could not read {os.path.basename(sb)}: "
+                           + (r.stderr.strip().splitlines() or ["no output"])[-1])
     # -rwsr-xr-x 1000/1000    1 2026-09-15 22:32 squashfs-root/usr/bin/evil
     #     [0]       [1]       [2]     [3]    [4]           [5]
     # The uid/gid pair is field 1. An earlier version read field 2, so every line was
@@ -268,9 +273,19 @@ def main(argv: list[str]) -> int:
     # in the artifact says which verb built it, so "this one should be all-root" is not
     # a question this file can answer. Two invariants that hold regardless:
     print()
+    unreadable: list[str] = []
+
+    def rows_of(path: str):
+        """Entries, or None when the bundle could not be read -- never an empty list, so
+        a caller cannot mistake "unreadable" for "nothing to see"."""
+        try:
+            return entries(path)
+        except RuntimeError as e:
+            unreadable.append(str(e))
+            return None
+
     gen = os.path.join(mods, GENERATED)
-    if os.path.isfile(gen):
-        rows = entries(gen)
+    if os.path.isfile(gen) and (rows := rows_of(gen)) is not None:
         owned = [(u, g, p) for _m, u, g, p in rows if u != 0 or g != 0]
         t.check(not owned,
                 f"{GENERATED:<18} {len(rows)} entries, all uid 0 gid 0",
@@ -285,10 +300,15 @@ def main(argv: list[str]) -> int:
     #
     # Candidates first: the dpkg lookup unpacks each bundle's info directory, so it is
     # only paid when a bundle actually holds a privileged file.
-    cand = {n: [e for e in entries(os.path.join(mods, n))
-                if e[0].startswith("-") and setuid_or_setgid(e[0])] for n in names}
-    owned = packaged_paths(mods, names) if any(cand.values()) else set()
+    cand = {}
     for n in names:
+        rows = rows_of(os.path.join(mods, n))
+        if rows is not None:
+            cand[n] = [e for e in rows if e[0].startswith("-") and setuid_or_setgid(e[0])]
+    t.check(not unreadable, f"every bundle readable ({len(names)} listed)",
+            "; ".join(unreadable))
+    owned = packaged_paths(mods, list(cand)) if any(cand.values()) else set()
+    for n in cand:
         priv = unowned_privileged(cand[n], owned)
         t.check(not priv,
                 f"{n:<18} no setuid/setgid file that no package owns",
