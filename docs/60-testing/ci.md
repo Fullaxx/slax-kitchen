@@ -100,6 +100,13 @@ Debian**, which is the easy mistake to make when that is the ISO in front of you
 Assertions are derived from what the recipe claims: `uefi-bootable` is checked for an EFI El Torito
 entry, `isohybrid` for a hybrid MBR. A recipe that runs cleanly and changes nothing fails.
 
+Every image the matrix builds must also pass
+[`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir): each
+file in it is either byte-identical to the stock image or matches what a recorded step produced.
+A verb that writes a file without recording it fails its recipe here, on every target. That is how
+`boot.menu` and `boot.branding` were caught writing menus nothing recorded. The matrix builds from a
+working tree, so it passes `--allow-dirty`.
+
 ## Round-trip guards the core claim
 
 `ci/roundtrip.sh` unpacks, repacks with no recipes, extracts both images again, and compares:

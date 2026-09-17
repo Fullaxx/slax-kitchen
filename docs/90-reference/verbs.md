@@ -30,6 +30,46 @@ a ○ verb should not be able to touch anything outside the work tree, and that 
 than assumed. It is not a sandbox — `bundle.script` and `bundle.packages` run arbitrary code by
 design, which is why they are marked ◐ `chroot`.
 
+## Saying where the source is
+
+Verbs record what they fetched and built in the image's provenance, and
+[`kitchen sources`](cli.md#sources-iso---json-f---markdown-f---fetch-dir) turns that into a list
+of where each part's source lives. Three things the engine cannot work out for itself, a recipe
+states:
+
+```yaml
+- verb: bundle.fromTarball
+  bundle: 15-app
+  src: https://example.org/app-1.0-linux-x86_64.tar.xz
+  sha256: "…"
+  upstream_source: https://example.org/app/source/   # where its publisher keeps the source
+```
+
+```yaml
+# beside metadata: and steps:, for a recipe whose output must not be published
+redistribution:
+  allowed: false
+  why: installs a browser whose licence does not permit redistributing it
+```
+
+| Field | On | What it says |
+|---|---|---|
+| `upstream_source` | `boot.payload`, `bundle.fromTarball`, `bundle.script`, each `apt.sources` entry | where the publisher of something installed **unmodified** keeps its source: a URL, or a list of them |
+| `declares` | `bundle.script` | binaries the script **compiled**, each with `path`, `source_url`, `source_sha256` and optionally `license` |
+| `redistribution` | the recipe | `allowed: false` and a `why:` when an image containing this recipe's output must not be published |
+
+A download with no `upstream_source` is a warning, and unresolved under `kitchen sources --strict`.
+An ELF file that a `bundle.script` leaves behind, that no package owns and no `declares:` entry
+names, is always unresolved: something was compiled, and nothing says from what.
+
+**A local `src:` needs nothing extra, only a commit.** Files a verb copies in from beside the recipe
+go through one resolver, which records their path in the kitchen or project checkout and their
+content. `kitchen sources` checks both against the recorded commit, because those files are what
+the project source archive is promising to hold. A unit test fails any verb that resolves a
+recipe-relative path without it. `boot.payload`, `bundle.fromTarball` and `initramfs.busybox` are
+the exceptions: what they take in is a download or a build output, described by `upstream_source`
+or a build claim.
+
 ---
 
 ## Bundle
@@ -191,7 +231,12 @@ Foreign architectures and third-party repositories, for the packages Debian does
         key_url: https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
         key_sha256: "<64 hex>"   # required whenever key_url is given
         keep: false              # default: the repo and key do NOT ship
+        upstream_source: https://github.com/brave/brave-browser   # where its source is
 ```
+
+Each package's archive is recorded by matching its `.deb`'s sha256 against apt's own indexes, so
+`kitchen sources` points a package from this repository at its `upstream_source`, and a package from
+Debian at `snapshot.debian.org`. A package from an archive the step does not declare is unresolved.
 
 A key is **pinned by sha256**, like every other download here — an unpinned key lets a remote
 party decide what your image trusts, and a bundle is where that becomes permanent. The
@@ -253,6 +298,10 @@ KITCHEN-FETCHED <sha256> <path in the image> <url>
 is recorded in the image's provenance and left out of the output shown. `firmware-refresh` prints one
 per linux-firmware file. ELF files the step leaves behind that no package database owns are recorded
 too, with their sha256.
+
+`upstream_source:` says where what the script fetched is published, and `declares:` names what it
+compiled; see [saying where the source is](#saying-where-the-source-is). A package the script
+installs from a repository it added itself points at the step's `upstream_source`.
 
 `network: true` **declares** that the step reaches the internet; preflight then checks for one
 before any of the plan runs, rather than after unsquashing 122 MiB. It does not sandbox anything

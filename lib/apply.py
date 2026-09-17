@@ -402,6 +402,20 @@ class Ctx:
             else:
                 self._step[k] = v
 
+    def local(self, src: str) -> str:
+        """Resolve a recipe's local `src:` -- relative to the recipe file -- and record it.
+
+        What a recipe copies in, `kitchen sources` classes as `ours`: covered by the project
+        source archive. That is only true if the archive holds it, so the input is recorded
+        by where it sits in the kitchen or project checkout and by its content, and
+        `kitchen sources` checks both against the recorded commit. Downloads and build
+        outputs do not come through here; they carry upstream_source or a build claim.
+        """
+        path = src if os.path.isabs(src) else os.path.join(self.recipe_dir, src)
+        if not self.dry and os.path.exists(path):
+            self.prov(local_inputs=[provenance.local_input(path)])
+        return path
+
     def hint(self, key: str, value) -> None:
         """Ask `kitchen pack` to do something at mastering time."""
         path = os.path.join(self.meta, "pack.yaml")
@@ -545,7 +559,7 @@ def v_iso_files(ctx: Ctx, step: dict) -> None:
                 raise RuntimeError(
                     f"iso.files: {spec['dest']} needs `src` or `content`")
             src = spec["src"]
-            local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+            local = ctx.local(src)
             if os.path.isdir(local):
                 shutil.copytree(local, dest, dirs_exist_ok=True)
             else:
@@ -652,6 +666,7 @@ def _initramfs_pack(ctx: "Ctx", tree: str) -> None:
     after = os.path.getsize(img)
     ctx.say(f"repacked initrfs.img  {before:,} -> {after:,} bytes ({after - before:+,})")
     ctx.record("slax/boot/initrfs.img")
+    ctx.prov(output="slax/boot/initrfs.img", output_sha256=sha256(img))
 
 
 @verb("initramfs.files")
@@ -699,7 +714,7 @@ def v_initramfs_files(ctx: Ctx, step: dict) -> None:
                     f.write(spec["content"])
             else:
                 src = spec["src"]
-                local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+                local = ctx.local(src)
                 if not os.path.isfile(local):
                     raise RuntimeError(f"initramfs.files: no such source file: {local}")
                 shutil.copy2(local, dest)
@@ -929,12 +944,71 @@ def _status_changes(before: str, after: str) -> list[dict]:
 
 
 def _deb_hashes(root: str) -> list[dict]:
-    """sha256 of every .deb apt downloaded into the chroot, read before the chroot is gone."""
+    """Every .deb apt downloaded into the chroot -- sha256, and the package, version and
+    source package it declares -- read before the chroot is gone.
+
+    Reinstalled packages never show up in the status diff (their stanza does not change),
+    so the .debs are the only record of what they were.
+    """
     d = os.path.join(root, "var", "cache", "apt", "archives")
     if not os.path.isdir(d):
         return []
-    return [{"file": n, "sha256": sha256(os.path.join(d, n))}
-            for n in sorted(os.listdir(d)) if n.endswith(".deb")]
+    out = []
+    for n in sorted(os.listdir(d)):
+        if not n.endswith(".deb"):
+            continue
+        path = os.path.join(d, n)
+        rec = {"file": n, "sha256": sha256(path)}
+        if shutil.which("dpkg-deb"):
+            r = subprocess.run(["dpkg-deb", "-f", path, "Package", "Version", "Architecture",
+                                "Source"], capture_output=True, text=True)
+            f = dict(re.findall(r"^([A-Za-z-]+): (.*)$", r.stdout, re.M))
+            if f.get("Package"):
+                src, src_ver = f.get("Source", f["Package"]), f.get("Version")
+                m = re.match(r"^(\S+)\s+\((.+)\)$", src)
+                if m:
+                    src, src_ver = m.group(1), m.group(2)
+                rec.update(package=f["Package"], version=f.get("Version"),
+                           architecture=f.get("Architecture"), source=src,
+                           source_version=src_ver)
+        out.append(rec)
+    return out
+
+
+def _deb_origins(root: str, debs: list[dict]) -> list[dict]:
+    """Mark each downloaded .deb with the apt index that lists its sha256.
+
+    A package from a recipe's own repository is not on snapshot.debian.org, so `kitchen
+    sources` must not point there. apt keeps every archive's Packages index in
+    var/lib/apt/lists/, named after the archive's URI, and each stanza carries the .deb's
+    SHA256 -- so a match says which archive the file came from, rather than guessing from
+    the package name.
+    """
+    want = {d["sha256"]: d for d in debs if d.get("sha256")}
+    lists = os.path.join(root, "var", "lib", "apt", "lists")
+    if not want or not os.path.isdir(lists):
+        return debs
+    for n in sorted(os.listdir(lists)):
+        if not n.endswith("_Packages"):
+            continue
+        with open(os.path.join(lists, n), errors="replace") as f:
+            for ln in f:
+                if ln.startswith("SHA256: "):
+                    d = want.get(ln[8:].strip())
+                    if d is not None:
+                        d.setdefault("origin", n)
+    return debs
+
+
+def _pkgtools_added(before: dict, after: dict) -> list[str]:
+    """Slackware packages a chroot run registered: new entries in var/lib/pkgtools/packages.
+
+    Slackware has no Source field; the package file name (name-version-arch-build) and the
+    PACKAGE LOCATION inside its record are the only pointers there are.
+    """
+    prefix = "var/lib/pkgtools/packages/"
+    return sorted(k[len(prefix):] for k in after
+                  if k.startswith(prefix) and k not in before and "/" not in k[len(prefix):])
 
 
 FETCHED_LINE = re.compile(r"^KITCHEN-FETCHED ([0-9a-f]{64}) (\S+) (\S+)$")
@@ -1130,7 +1204,7 @@ def v_initramfs_modules(ctx: Ctx, step: dict) -> None:
                         f"modules, so they need no promotion.")
                 local = found[0]
             else:
-                local = m if os.path.isabs(m) else os.path.join(ctx.recipe_dir, m)
+                local = ctx.local(m)
             if not os.path.isfile(local):
                 raise RuntimeError(f"initramfs.modules: no such module: {local}")
             name = os.path.basename(local)
@@ -1363,6 +1437,7 @@ def v_initramfs_busybox(ctx: Ctx, step: dict) -> None:
         _initramfs_pack(ctx, tree)
         ctx.record("slax/boot/initrfs.img")
         ctx.prov(source=os.path.basename(local), source_sha256=sha256(local),
+                 source_location=provenance.root_relative(local),
                  claim=provenance.load_claim(local), output="slax/boot/initrfs.img",
                  output_sha256=sha256(ctx.p("slax", "boot", "initrfs.img")))
     finally:
@@ -1406,7 +1481,7 @@ def v_rootcopy_files(ctx: Ctx, step: dict) -> None:
                 raise RuntimeError(
                     f"rootcopy.files: {spec['dest']} needs `src` or `content`")
             src = spec["src"]
-            local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+            local = ctx.local(src)
             shutil.copy2(local, dest)
         if "mode" in spec:
             os.chmod(dest, int(spec["mode"], 8))
@@ -1441,7 +1516,7 @@ def v_rootcopy_preinit(ctx: Ctx, step: dict) -> None:
                 f.write("#!/bin/sh\n")
             f.write(script if script.endswith("\n") else script + "\n")
     else:
-        local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+        local = ctx.local(src)
         shutil.copy2(local, dest)
     os.chmod(dest, 0o755)
     ctx.record("slax/rootcopy/run/preinit.sh",
@@ -1638,7 +1713,7 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
                 f.write(spec["content"])
         else:
             src = spec["src"]
-            local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+            local = ctx.local(src)
             if os.path.isdir(local):
                 shutil.copytree(local, dest, dirs_exist_ok=True, symlinks=True)
             elif os.path.isfile(local):
@@ -1669,7 +1744,7 @@ def v_bundle_fromdir(ctx: Ctx, step: dict) -> None:
     """
     name = _bundle_name(step["bundle"], "bundle.fromDir")
     src = step["src"]
-    local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+    local = ctx.local(src)
     if ctx.dry:
         ctx.say(f"would pack {src} -> slax/modules/{name}")
         return
@@ -2059,6 +2134,9 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
                  upstream_source=step.get("upstream_source"),
                  fetched=_fetched_lines(r.stdout) or None,
                  installed=_status_changes(before_status, after_status) or None,
+                 slackware_installed=_pkgtools_added(before, after) or None,
+                 debs=_deb_origins(root, _deb_hashes(root)) or None,
+                 declares=step.get("declares"),
                  unowned_elf=_unowned_elf(root, keep) or None)
     finally:
         shutil.rmtree(build, ignore_errors=True)
@@ -2144,6 +2222,10 @@ def v_boot_menu(ctx: Ctx, step: dict) -> None:
 
         if not ctx.dry:
             open(path, "w").write(text)
+            # Recorded like every other verb that writes into the tree: the journal is
+            # how `kitchen status` shows it and how `kitchen sources` attributes the edit.
+            # boot.menu was one of two verbs that wrote files and recorded none.
+            ctx.record(os.path.relpath(path, ctx.tree))
 
 
 @verb("boot.cmdline")
@@ -2372,11 +2454,12 @@ def v_boot_branding(ctx: Ctx, step: dict) -> None:
         if not spec:
             continue
         src = spec if isinstance(spec, str) else spec["src"]
-        local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+        local = ctx.local(src)
         if not os.path.isfile(local):
             raise RuntimeError(f"boot.branding: {key} source not found: {local}")
         if not ctx.dry:
             shutil.copy2(local, ctx.p("slax", "boot", dest))
+            ctx.record(f"slax/boot/{dest}")
         ctx.say(f"replaced slax/boot/{dest} ({os.path.getsize(local)} bytes)")
         changed.append(dest)
 
@@ -2384,11 +2467,12 @@ def v_boot_branding(ctx: Ctx, step: dict) -> None:
         text = step["help"]
         if isinstance(text, dict):
             src = text["src"]
-            local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+            local = ctx.local(src)
             text = open(local).read()
         if not ctx.dry:
             with open(ctx.p("slax", "boot", "help.txt"), "w") as f:
                 f.write(text)
+            ctx.record("slax/boot/help.txt")
         ctx.say(f"rewrote slax/boot/help.txt ({len(text)} bytes, "
                 f"{len(text.splitlines())} lines)")
 
@@ -2420,10 +2504,11 @@ def v_boot_branding(ctx: Ctx, step: dict) -> None:
             text = re.sub(r"(?mi)^(LABEL\s+%s\s*\n)" % re.escape(want),
                           r"\1  MENU DEFAULT\n", text, count=1)
         if text != orig:
+            rel = os.path.relpath(path, ctx.tree)
             if not ctx.dry:
                 with open(path, "w") as f:
                     f.write(text)
-            rel = os.path.relpath(path, ctx.tree)
+                ctx.record(rel)
             ctx.say(f"updated {rel}")
             changed.append(rel)
 
@@ -2547,6 +2632,7 @@ def v_boot_uefi(ctx: Ctx, step: dict) -> None:
         return
     os.makedirs(grub_dir, exist_ok=True)
     open(os.path.join(grub_dir, "grub.cfg"), "w").write(cfg_text)
+    ctx.record("boot/grub/grub.cfg")
     ctx.say(f"boot/grub/grub.cfg: mirrored {len(entries)} menu entr"
             f"{'y' if len(entries) == 1 else 'ies'} from isolinux.cfg")
 
@@ -2579,6 +2665,7 @@ def v_boot_uefi(ctx: Ctx, step: dict) -> None:
                 raise RuntimeError(f"{cmd[0]} failed: {rr.stderr.strip()}")
         ctx.say(f"boot/efi.img: {img_kib} KiB FAT12 ESP containing "
                 f"EFI/BOOT/BOOTX64.EFI ({efi_kib} KiB GRUB)")
+        ctx.record("boot/efi.img")
         # GRUB here is BUILT by this verb, from whatever the build host has installed --
         # so the host's package and version are the only answer to "which GRUB is this".
         ctx.prov(output="boot/efi.img", output_sha256=sha256(img),
@@ -2962,10 +3049,12 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
         ctx.prov(packages=list(packages), flavour=flavour,
                  reinstall=bool(apt.get("reinstall")) or None,
                  apt_sources=[{k: s.get(k) for k in ("name", "uri", "suite", "components",
-                                                     "key_url", "key_sha256", "keep")}
+                                                     "key_url", "key_sha256", "keep",
+                                                     "upstream_source")}
                               for s in apt.get("sources") or []] or None,
                  installed=_status_changes(before_status, after_status) or None,
-                 debs=_deb_hashes(root) or None)
+                 slackware_installed=_pkgtools_added(before, after) or None,
+                 debs=_deb_origins(root, _deb_hashes(root)) or None)
     finally:
         shutil.rmtree(build, ignore_errors=True)
 
@@ -3178,7 +3267,13 @@ def apply_recipe(path: str, work: str, dry: bool = False,
         provenance.append_recipe(ctx.meta, {
             "recipe": name,
             "recipe_sha256": sha256(path),
+            # Inline `content:` lives in the recipe file, so the file is an input too.
+            "recipe_file": provenance.local_input(path),
             "vars": dict(overrides) if overrides else {},
+            # What the recipe changed, from the journal: the evidence `kitchen sources`
+            # uses for files a recipe wrote or edited without fetching anything.
+            "artifacts": list(ctx.changes),
+            "redistribution": doc.get("redistribution"),
             "steps": ctx.prov_steps,
         })
     return 0

@@ -96,6 +96,12 @@ A published image travels with:
   Software a recipe adds can carry trademark rules of its own: the Tor Project's policy, for
   example, does not allow "Tor" in the name of another product without written permission.
 
+[`kitchen sources <iso>`](docs/90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir)
+works out that list for a built image from the record `kitchen pack` writes beside it. Every file is
+matched by sha256 to the stock image or to the step that produced it, and anything it cannot match
+is named, with exit status 1. It also says whether the image's firmware has its license texts with
+it. `--fetch` gathers the source of what the build compiled, together with the project tree.
+
 ## This repository's releases
 
 A release of slax-kitchen is the toolkit: a tag, and notes saying what was verified. No image is

@@ -59,6 +59,7 @@ ${B}COMMANDS${O}
   test <iso> [--structure] [--kernel] [--bios] [--uefi] [--usb] [--persistence]
   shell <bundle|work>        chroot into a bundle for exploration
   diff <isoA> <isoB>         structural + per-file diff
+  sources <iso>              what is in a built ISO, and where each part's source lives
   upstream-diff              regenerate docs/15-upstream/drift-report.md
   version                    print the version and git commit
 
@@ -463,7 +464,7 @@ help_for() {
     case "$1" in
       unpack|pack|build|test|doctor|selftest|version) usage_cmd "$1" ;;
       probe|apply|validate|fetch|fingerprint) exec "$REPO_ROOT/lib/$1.py" --help ;;
-      status|diff|shell)   exec python3 "$REPO_ROOT/lib/$1.py" --help ;;
+      status|diff|shell|sources) exec python3 "$REPO_ROOT/lib/$1.py" --help ;;
       upstream-diff)       exec python3 "$REPO_ROOT/lib/upstream_diff.py" --help ;;
       help|--help|-h)      usage ;;
       *) usage; die "unknown command: $1" ;;
@@ -494,6 +495,7 @@ case "$cmd" in
     test)          kitchen_test "$@" ;;
     status)        python3 "$REPO_ROOT/lib/status.py" "$@" ;;
     diff)          python3 "$REPO_ROOT/lib/diff.py" "$@" ;;
+    sources)       python3 "$REPO_ROOT/lib/sources.py" "$@" ;;
     upstream-diff) python3 "$REPO_ROOT/lib/upstream_diff.py" "$@" ;;
     shell)         python3 "$REPO_ROOT/lib/shell.py" "$@" ;;
     *)             usage; die "unknown command: $cmd" ;;

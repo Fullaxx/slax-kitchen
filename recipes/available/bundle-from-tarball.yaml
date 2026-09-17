@@ -40,4 +40,6 @@ steps:
     bundle: "{{bundle}}"
     src: "https://github.com/junegunn/fzf/releases/download/v{{version}}/fzf-{{version}}-linux_amd64.tar.gz"
     sha256: "{{sha256}}"
+    # The release's own tag: where the source of this exact binary lives.
+    upstream_source: "https://github.com/junegunn/fzf/tree/v{{version}}"
     prefix: /usr/local/bin

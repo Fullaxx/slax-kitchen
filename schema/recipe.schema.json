@@ -107,6 +107,24 @@
         ]
       }
     },
+    "redistribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed",
+        "why"
+      ],
+      "description": "whether an image built with this recipe may be published at all; `kitchen sources` names every recipe with `allowed: false`",
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "why": {
+          "type": "string",
+          "minLength": 10
+        }
+      }
+    },
     "steps": {
       "type": "array",
       "minItems": 1,
@@ -198,6 +216,23 @@
               "extract": {
                 "type": "string",
                 "description": "pull this member out of a downloaded .zip/.tar.*; sha256 is checked against the archive"
+              },
+              "upstream_source": {
+                "description": "where the upstream publishes the source of what this step installs unmodified -- a URL, or several; recorded in the image's provenance and listed by `kitchen sources`",
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^https?://"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^https?://"
+                    },
+                    "minItems": 1
+                  }
+                ]
               }
             },
             "dependentRequired": {
@@ -479,6 +514,23 @@
                           "type": "boolean",
                           "default": false,
                           "description": "ship the source and key in the bundle, so the live system trusts the repo and can upgrade from it"
+                        },
+                        "upstream_source": {
+                          "description": "where the upstream publishes the source of what this step installs unmodified -- a URL, or several; recorded in the image's provenance and listed by `kitchen sources`",
+                          "oneOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^https?://"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^https?://"
+                              },
+                              "minItems": 1
+                            }
+                          ]
                         }
                       }
                     }
@@ -666,6 +718,23 @@
               },
               "world_readable": {
                 "type": "boolean"
+              },
+              "upstream_source": {
+                "description": "where the upstream publishes the source of what this step installs unmodified -- a URL, or several; recorded in the image's provenance and listed by `kitchen sources`",
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^https?://"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^https?://"
+                    },
+                    "minItems": 1
+                  }
+                ]
               }
             }
           }
@@ -729,6 +798,53 @@
                 "type": "array",
                 "items": {
                   "type": "string"
+                }
+              },
+              "upstream_source": {
+                "description": "where the upstream publishes the source of what this step installs unmodified -- a URL, or several; recorded in the image's provenance and listed by `kitchen sources`",
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^https?://"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^https?://"
+                    },
+                    "minItems": 1
+                  }
+                ]
+              },
+              "declares": {
+                "type": "array",
+                "description": "binaries this script COMPILES, with the source they were built from; an ELF no package owns and no entry declares makes `kitchen sources` exit 1",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "path",
+                    "source_url",
+                    "source_sha256"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "description": "path inside the image, no leading slash"
+                    },
+                    "source_url": {
+                      "type": "string",
+                      "pattern": "^https?://"
+                    },
+                    "source_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "license": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }

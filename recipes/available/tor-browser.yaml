@@ -92,6 +92,10 @@ steps:
     bundle: "{{browser_bundle}}"
     src: "https://dist.torproject.org/torbrowser/{{version}}/tor-browser-linux-x86_64-{{version}}.tar.xz"
     sha256: "{{sha256}}"
+    # Where the Tor Project publishes the source of this exact release -- the src-*.tar.xz
+    # tarballs sit beside the binaries. archive.torproject.org, not dist: dist keeps only
+    # current releases, the archive keeps every one. Recorded in the image's provenance.
+    upstream_source: "https://archive.torproject.org/tor-package-archive/torbrowser/{{version}}/"
     strip: 1
     prefix: /opt/tor-browser
     world_readable: true

@@ -42,6 +42,11 @@ steps:
     # This script wgets the .txz inside the chroot. Declaring it means preflight says
     # "no network" up front instead of unsquashing 122 MiB and failing at the download.
     network: true
+    # Slackware publishes each release's source beside its packages, one tree for both
+    # arches. `kitchen sources` points the packages installed here at it. Written out
+    # rather than built from {{mirror}}/{{release}}: the schema checks it is a URL before
+    # vars are substituted. Change it when you change `release:`.
+    upstream_source: https://mirrors.slackware.com/slackware/slackware-15.0/source/
     script: |
       #!/bin/sh
       set -e

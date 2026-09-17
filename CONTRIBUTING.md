@@ -412,6 +412,11 @@ A recipe we can take needs:
 - an honest **`compat:` block** — flavours, arches, and `privilege:` (`none`, `mknod`, `chroot`,
   `kvm`), which is what lets `doctor` tell a user whether their machine can run it
 - **matrix-verified on all four targets**, or a `compat:` block that explains the skip
+- **where the source is**, for anything it downloads: `upstream_source:` on the step or the apt
+  repository, `declares:` for anything a `bundle.script` compiles, and `redistribution: {allowed:
+  false, why: …}` if an image containing it must not be published — see
+  [saying where the source is](docs/90-reference/verbs.md#saying-where-the-source-is). The matrix
+  runs `kitchen sources` on every image it builds, so a file nothing accounts for fails there.
 - comments that say **why**, and record what you measured
 
 That last one is the strongest convention in the repository. Read any recipe in

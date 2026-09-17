@@ -881,6 +881,30 @@ def test_fetches_and_bundles_record_provenance():
     check("boot.uefi records the host's GRUB", calls_prov(by_verb["boot.uefi"]), True)
 
 
+def test_recipe_relative_paths_go_through_ctx_local():
+    """A file a recipe copies in is `ours` to `kitchen sources` only because Ctx.local
+    records where it sat and what it held. A verb that joins recipe_dir itself copies the
+    file in unrecorded, and the image then claims an archive covers something nobody
+    checked. Downloads and build outputs are the exceptions: they carry upstream_source or
+    a build claim, and are not expected to be in a checkout at all.
+    """
+    import ast
+    tree, _funcs, _by_verb, _fetchers = _fetching_verbs()
+    allowed = {"__init__", "local", "v_boot_payload", "v_bundle_fromtarball",
+               "v_initramfs_busybox"}
+    offenders = sorted({fn.name for fn in ast.walk(tree) if isinstance(fn, ast.FunctionDef)
+                        for n in ast.walk(fn)
+                        if isinstance(n, ast.Attribute) and n.attr == "recipe_dir"
+                        and fn.name not in allowed
+                        # a nested function is walked twice; report the innermost owner
+                        and not any(isinstance(c, ast.FunctionDef) and c is not fn and n in ast.walk(c)
+                                    for c in ast.walk(fn))})
+    check("every recipe-relative path is recorded by Ctx.local", offenders, [])
+    users = sum(1 for n in ast.walk(tree) if isinstance(n, ast.Call)
+                and ast.unparse(n.func) == "ctx.local")
+    check("and the verbs do call it", users >= 8, True)
+
+
 def test_symlink_chain_cannot_escape():
     """A two-member chain escapes a lexical check, so the guard has to be a real one.
 
@@ -1484,6 +1508,42 @@ def test_apt_reinstall_is_opt_in():
           ["apt-get", "install", "-y", "-qq"])
 
 
+def test_every_file_writing_verb_records_what_it_wrote():
+    """A verb that writes into the tree must ctx.record() it.
+
+    boot.menu and boot.branding edited isolinux.cfg and syslinux.cfg and recorded
+    nothing, so `kitchen status` never listed the edit -- and `kitchen sources` could
+    not attribute it, and reported serial-console's menu entry as an unexplained change
+    to a stock file. Found by running `kitchen sources` on the tor profile. Verbs that
+    only set pack hints write nothing and are exempt, by name.
+    """
+    import ast
+
+    _tree, funcs, by_verb, _fetchers = _fetching_verbs()
+    names = {f.name: f for f in funcs}
+
+    def reaches(fn, attr, seen=None):
+        seen = seen if seen is not None else set()
+        for n in ast.walk(fn):
+            if isinstance(n, ast.Call):
+                s = ast.unparse(n.func)
+                if s.endswith(attr):
+                    return True
+                callee = names.get(s)
+                if callee is not None and callee.name not in seen:
+                    seen.add(callee.name)
+                    if reaches(callee, attr, seen):
+                        return True
+        return False
+
+    hint_only = {"boot.isohybrid", "iso.metadata", "iso.checksums"}
+    for v, fn in sorted(by_verb.items()):
+        if v in hint_only:
+            check(f"{v} writes no files (sets hints only)", reaches(fn, "ctx.record"), False)
+            continue
+        check(f"{v} records what it writes", reaches(fn, "ctx.record"), True)
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -1503,6 +1563,7 @@ def main():
                test_removes_come_first,
                test_network_is_declared_where_it_is_used,
                test_fetches_and_bundles_record_provenance,
+               test_recipe_relative_paths_go_through_ctx_local,
                test_symlink_chain_cannot_escape,
                test_fromtarball_wires_both_guards_in,
                test_extract_members_matches_extractall_on_a_clean_archive,
@@ -1513,7 +1574,8 @@ def main():
                test_bundle_files_refuses_a_setuid_mode,
                test_iso_files_actually_writes_into_the_iso_tree,
                test_relax_modes_widens_without_granting,
-               test_apt_reinstall_is_opt_in]:
+               test_apt_reinstall_is_opt_in,
+               test_every_file_writing_verb_records_what_it_wrote]:
         fn()
     if FAILURES:
         for f in FAILURES:

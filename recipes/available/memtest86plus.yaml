@@ -30,6 +30,7 @@ steps:
     extract: "mt86p_810_x86_64"
     dest: slax/boot/memtest.bin
     mode: "0644"
+    upstream_source: "https://github.com/memtest86plus/memtest86plus/tree/v{{version}}"
 
   - verb: boot.payload
     when: arch==32bit
@@ -38,6 +39,7 @@ steps:
     extract: "mt86p_810_i586"
     dest: slax/boot/memtest.bin
     mode: "0644"
+    upstream_source: "https://github.com/memtest86plus/memtest86plus/tree/v{{version}}"
 
   # Added to both configs: isolinux.cfg is the CD menu, syslinux.cfg the USB/HDD one, and
   # upstream keeps them deliberately different (the CD one has no persistence entries).

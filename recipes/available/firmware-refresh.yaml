@@ -115,6 +115,7 @@ steps:
   - verb: bundle.script
     bundle: "{{linux_bundle}}"
     network: true
+    upstream_source: "https://gitlab.com/kernel-firmware/linux-firmware/-/tree/{{linux_firmware_tag}}"
     script: |
       #!/bin/sh
       set -eu

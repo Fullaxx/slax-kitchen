@@ -3,7 +3,8 @@
 Machine-readable inventories extracted from the four reference Slax ISOs. These are **generated
 artifacts kept under version control on purpose** — they are what `kitchen probe` and the structure
 tests compare against, and regenerating them requires the ISOs, which are deliberately *not* in the
-repo.
+repo. `kitchen sources` reads the three `.sha256` kinds to recognise every stock file in a built
+image.
 
 | File | What it is | Rows |
 |---|---|---|
@@ -11,6 +12,13 @@ repo.
 | | Slackware: package inventory across all 7 bundles — `bundle⇥package` | 423 |
 | `bootfiles-<target>.sha256` | sha256 of every file under `/slax/boot/` | 31 |
 | `initramfs-<target>.sha256` | sha256 of every regular file inside the unpacked `initrfs.img` | 329–331 |
+| `isofiles-<target>.sha256` | sha256 of every file outside `/slax/boot/` (the bundles, `readme.txt`), plus `isolinux.bin@64` | 8 (Debian), 9 (Slackware) |
+
+**`./slax/boot/isolinux.bin@64` is not a file.** It is the sha256 of `isolinux.bin` from byte 64 to
+the end. Bytes 8–63 are the boot-info table, which every mastering tool rewrites with the file's new
+position, so a repacked image never has the stock file's whole-file hash. Past byte 64 it is
+unchanged, and that is how `kitchen sources` still recognises it. The value is the same on all four
+targets.
 
 All four targets are present: `{debian,slackware}` × `{32bit,64bit}`.
 
@@ -20,7 +28,8 @@ All four targets are present: `{debian,slackware}` × `{32bit,64bit}`.
 ci/gen-manifests.sh isos/slax-*.iso
 ```
 
-Three seconds for all four images. Read-only and unprivileged throughout: `xorriso -osirrox` for the
+About sixteen seconds for all four images, most of it hashing the bundles for `isofiles`. Read-only
+and unprivileged throughout: `xorriso -osirrox` for the
 ISO9660 tree, `unsquashfs -o <offset>` to read bundles **in place** without extracting them, and
 `xz | cpio` for the initramfs. No loop devices and nothing mounted — the same constraints the dev
 container imposes (see [`../../40-workflow/container-vs-host.md`](../../40-workflow/container-vs-host.md)).

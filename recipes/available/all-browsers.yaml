@@ -35,6 +35,14 @@ vars:
   # refused outright; see docs/10-anatomy/bundles-squashfs.md for why those two are not
   # merely ordering. `bundle` is a var so a profile can move it.
   bundle: "13-browsers"
+# NOT FOR AN IMAGE ANYONE PUBLISHES. Chrome, Edge and Vivaldi are proprietary, and their
+# licence terms do not permit redistributing them inside an image; `kitchen sources` names
+# this recipe on any image built with it. Building one for yourself is fine.
+redistribution:
+  allowed: false
+  why: >-
+    installs Google Chrome, Microsoft Edge and Vivaldi, whose licences do not permit
+    redistributing them in an image
 steps:
   # DROP FIRST, THEN ADD -- the ordering chromium-current exists to demonstrate, for the
   # same two reasons. Overriding would leave both copies on the ISO, paying 79.1 MiB for
