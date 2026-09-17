@@ -151,19 +151,35 @@ def cpio_members(blob: bytes) -> dict:
         return int(blob[at + 6 + i * 8: at + 14 + i * 8], 16)
 
     out: dict[str, str] = {}
+    linked: dict[tuple, list[str]] = {}       # inode -> the names sharing it
+    content: dict[tuple, str] = {}            # inode -> the hash of the one copy of its data
     off = 0
     while off + 110 <= len(blob):
         if blob[off:off + 6] != b"070701":
             break
-        mode, filesize, namesize = field(off, 1), field(off, 6), field(off, 11)
+        mode, nlink, filesize = field(off, 1), field(off, 4), field(off, 6)
+        namesize = field(off, 11)
         name_at = off + 110
         name = blob[name_at: name_at + namesize - 1].decode("utf-8", "replace")
         data_at = (name_at + namesize + 3) & ~3
         if name == "TRAILER!!!":
             break
         if stat.S_ISREG(mode):
-            out[name] = hashlib.sha256(blob[data_at:data_at + filesize]).hexdigest()
+            digest = hashlib.sha256(blob[data_at:data_at + filesize]).hexdigest()
+            out[name] = digest
+            # HARD LINKS. newc stores the data once, with the LAST name; every earlier
+            # name gets filesize 0, which would hash as the empty file and read as a
+            # member that no longer matches Slax. Names sharing an inode share the hash.
+            if nlink > 1:
+                ino = (field(off, 0), field(off, 7), field(off, 8))
+                linked.setdefault(ino, []).append(name)
+                if filesize:
+                    content[ino] = digest
         off = (data_at + filesize + 3) & ~3
+    for ino, names in linked.items():
+        if ino in content:
+            for n in names:
+                out[n] = content[ino]
     return out
 
 

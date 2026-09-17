@@ -114,6 +114,39 @@ def test_a_download_without_upstream_source_warns_or_fails_under_strict():
     check("unresolved under --strict", len(doc["unresolved"]), 1)
 
 
+def newc(entries):
+    """A `newc` cpio archive, built byte by byte. entries: (name, mode, data, ino, nlink)."""
+    out = b""
+    for name, mode, data, ino, nlink in entries + [("TRAILER!!!", 0, b"", 0, 1)]:
+        raw = name.encode() + b"\0"
+        fields = [ino, mode, 0, 0, nlink, 0, len(data), 0, 0, 0, 0, len(raw), 0]
+        head = b"070701" + b"".join(b"%08X" % f for f in fields) + raw
+        head += b"\0" * (-len(head) % 4)
+        out += head + data + b"\0" * (-len(data) % 4)
+    return out
+
+
+def test_the_cpio_reader_reads_what_cpio_would():
+    """The initramfs is parsed here rather than unpacked, so the header walk is the thing
+    to get wrong: field offsets, the two paddings, and hard links -- newc stores a hard
+    link's data ONCE, with the last name, and gives every earlier name filesize 0. Hashing
+    those as empty would report them as members that no longer match Slax."""
+    import hashlib
+    body = b"#!/bin/sh\nexec /init\n"
+    h = hashlib.sha256(body).hexdigest()
+    arc = newc([("init", 0o100755, body, 11, 1),
+                ("dev/console", 0o020600, b"", 12, 1),          # a device node: not a file
+                ("bin/ln1", 0o100755, b"", 13, 2),              # hard link, data comes later
+                ("etc/passwd", 0o100644, b"root:x:0:0:\n", 14, 1),
+                ("bin/ln2", 0o100755, body, 13, 2)])
+    got = sources.cpio_members(arc)
+    check("device nodes are not members", "dev/console" in got, False)
+    check("every regular file is", sorted(got), ["bin/ln1", "bin/ln2", "etc/passwd", "init"])
+    check("content read correctly", got["init"], h)
+    check("and both names of a hard link carry it", (got["bin/ln1"], got["bin/ln2"]), (h, h))
+    check("a truncated archive stops rather than looping", sources.cpio_members(arc[:60]), {})
+
+
 def test_a_script_that_had_network_says_so():
     """`network: true` was recorded on the step and read by nothing. It does not make the
     bundle unresolved -- fetched files and packages account for themselves -- but nothing
@@ -528,6 +561,7 @@ def main():
                test_isolinux_bin_is_recognised_after_the_boot_info_table_is_rewritten,
                test_a_recorded_download_is_prebuilt_only_when_the_bytes_match,
                test_a_download_without_upstream_source_warns_or_fails_under_strict,
+               test_the_cpio_reader_reads_what_cpio_would,
                test_a_script_that_had_network_says_so,
                test_the_initramfs_note_counts_members_instead_of_asserting_them,
                test_an_unpinned_download_is_said_out_loud,
