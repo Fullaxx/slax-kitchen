@@ -41,7 +41,7 @@ _pack_derive_name() {
 
 kitchen_pack() {
     src="work/iso" out="" backend="" uefi=0 hybrid=0 volid="slax" appid="slax" sysid="LINUX" mdate="" force=0
-    publisher="" preparer="" _sums="" volid_set=0 appid_set=0 sysid_set=0
+    publisher="" preparer="" _sums="" volid_set=0 appid_set=0 sysid_set=0 _mbr=""
     while [ $# -gt 0 ]; do
         case "$1" in
             -o|--output)  out=$2; shift 2 ;;
@@ -144,6 +144,7 @@ kitchen_pack() {
         if [ "$hybrid" = 1 ]; then
             hdr=/usr/lib/ISOLINUX/isohdpfx.bin
             [ -f "$hdr" ] || die "pack: $hdr missing (apt-get install isolinux)"
+            _mbr=$hdr
             set -- "$@" -isohybrid-mbr "$hdr" -partition_offset 16
         fi
         if [ "$uefi" = 1 ]; then
@@ -205,5 +206,15 @@ kitchen_pack() {
             fi
         fi
     fi
+
+    # PROVENANCE BESIDE THE ISO. The work tree's .kitchen/provenance.json says what each
+    # recipe fetched and built; this adds what pack itself used -- the backend, the MBR it
+    # copied from the build host -- and writes <iso>.provenance.json where `kitchen build`
+    # deleting the work tree cannot take it with it. See lib/provenance.py.
+    if ! python3 "$REPO_ROOT/lib/provenance.py" finalize --work "$(dirname "$src")" \
+            --iso "$out" --backend "$backend" ${_mbr:+--mbr "$_mbr"} > /dev/null; then
+        die "pack: could not write $out.provenance.json"
+    fi
+    printf '  %sok%s   wrote %s\n' "$G" "$O" "$out.provenance.json"
     return 0
 }

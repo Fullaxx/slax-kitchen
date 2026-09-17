@@ -103,6 +103,30 @@ def status(work: str, verbose: bool = False) -> int:
                 mark = f"{Y}-{O}" if a.startswith("-") else "+"
                 print(f"       {mark} {a.lstrip('-')}")
 
+    # --- where it came from, inside the recipes ----------------------------------------
+    # One line, because the detail is for `kitchen sources` and the sidecar pack writes
+    # beside the ISO; this only says whether there is any, so a tree applied before
+    # provenance existed is not mistaken for one that fetched nothing.
+    prov_path = os.path.join(meta, "provenance.json")
+    if applied:
+        if os.path.isfile(prov_path):
+            import json
+            try:
+                recs = json.load(open(prov_path)).get("recipes") or []
+            except ValueError:
+                recs = None
+            if recs is None:
+                print(f"  {Y}provenance{O} .kitchen/provenance.json is unreadable")
+            else:
+                steps = [s for r in recs for s in r.get("steps") or []]
+                fetched = sum(1 for s in steps if s.get("source", "").startswith(("http://", "https://")))
+                fetched += sum(len(s.get("fetched") or []) for s in steps)
+                pkgs = sum(len(s.get("installed") or []) for s in steps)
+                print(f"  provenance {len(recs)} recipe(s) recorded: {len(steps)} step(s), "
+                      f"{fetched} download(s), {pkgs} package version(s)")
+        else:
+            print(f"  provenance {Y}none recorded{O} -- applied before provenance existed")
+
     # --- what pack will do ----------------------------------------------------------
     hints = _load(os.path.join(meta, "pack.yaml"))
     if hints:

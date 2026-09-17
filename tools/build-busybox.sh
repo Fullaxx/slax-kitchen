@@ -12,10 +12,17 @@
 # 64-bit images, which is why those images need CONFIG_IA32_EMULATION in any replacement
 # kernel. One i386 build therefore serves all four targets.
 #
-# WHY A CONTAINER. This host has no 32-bit libc and no musl. i386/alpine has both, needs
-# no privilege, and pins the toolchain as firmly as the source. Nothing is bind-mounted --
-# the daemon may not share this filesystem -- so the script goes in on stdin and the
-# finished binary comes out on stdout.
+# WHY A CONTAINER. This host has no 32-bit libc and no musl. i386/alpine has both and needs
+# no privilege. Nothing is bind-mounted -- the daemon may not share this filesystem -- so the
+# script goes in on stdin and the results come out on stdout, as a tar.
+#
+# WHAT IS PINNED, AND WHAT IS ONLY RECORDED. The busybox tarball is pinned by sha256 and the
+# image by digest. The apk packages the build installs are NOT pinned -- Alpine's stable
+# branch takes security updates -- so their exact versions are recorded instead, in the
+# build claim written beside the binary (<output>.provenance.json), together with the
+# resulting .config. An earlier version of this comment said the container "pins the
+# toolchain as firmly as the source" while pulling a floating tag and unversioned packages,
+# and kept neither the config nor the versions: nothing could have checked it.
 #
 # WHY NOT A CHECKED-IN .config. A 1000-line .config pins every symbol and says nothing
 # about intent, and has to be regenerated wholesale for every version bump. Starting from
@@ -26,7 +33,8 @@ set -u
 VERSION=1.37.0
 OUTPUT=""
 CHECK_PARITY=0
-IMAGE=i386/alpine:3.19
+# 3.19.9, pinned 2026-09-17. Bumping it is deliberate: pull, read the digest, change both.
+IMAGE=i386/alpine:3.19@sha256:394df6ab0b40dfb37a7581f3351db25fcc7fa30e50ac4b1249e1de22f2a47692
 
 # Pinned by upstream's own published .sha256 file, checked inside the container before a
 # single line is compiled.
@@ -68,8 +76,9 @@ command -v docker >/dev/null || {
 mkdir -p "$(dirname "$OUTPUT")"
 echo "building busybox $VERSION (static, i386, musl) in $IMAGE" >&2
 
-# The whole build, run inside the container. Diagnostics to stderr, binary to stdout.
-docker run --rm -i "$IMAGE" sh -s "$VERSION" "$SHA" > "$OUTPUT.part" <<'CONTAINER'
+# The whole build, run inside the container. Diagnostics to stderr; on stdout, a tar of
+# the binary, its .config, and the facts the build claim records.
+docker run --rm -i "$IMAGE" sh -s "$VERSION" "$SHA" > "$OUTPUT.tar.part" <<'CONTAINER'
 set -e
 VER=$1
 SHA=$2
@@ -129,17 +138,58 @@ if ! make -j"$(nproc)" >/tmp/build.log 2>&1; then
     exit 1
 fi
 echo "built $(wc -c < busybox) bytes"
-cat busybox >&3
+mkdir -p /tmp/out
+cp busybox .config /tmp/out/
+cat /etc/alpine-release > /tmp/out/alpine-release
+apk info -v 2>/dev/null | sort > /tmp/out/apk-versions
+tar -C /tmp/out -cf - busybox .config alpine-release apk-versions >&3
 CONTAINER
 
 rc=$?
-if [ "$rc" != 0 ] || [ ! -s "$OUTPUT.part" ]; then
-    rm -f "$OUTPUT.part"
+if [ "$rc" != 0 ] || [ ! -s "$OUTPUT.tar.part" ]; then
+    rm -f "$OUTPUT.tar.part"
     echo "build-busybox: build failed (exit $rc)" >&2
     exit 1
 fi
-mv "$OUTPUT.part" "$OUTPUT"
+UNPACK=$(mktemp -d)
+tar -C "$UNPACK" -xf "$OUTPUT.tar.part" && rm -f "$OUTPUT.tar.part"
+[ -s "$UNPACK/busybox" ] || { echo "build-busybox: no binary in the container's output" >&2; exit 1; }
+mv "$UNPACK/busybox" "$OUTPUT"
+mv "$UNPACK/.config" "$OUTPUT.config"
 chmod +x "$OUTPUT"
+
+# THE BUILD CLAIM. `initramfs.busybox` records it in the image's provenance, and `kitchen
+# sources` uses it to name what this binary was built from. `artifact.sha256` is what ties
+# the claim to THIS binary; a claim whose hash does not match is reported as unverified.
+python3 - "$OUTPUT" "$VERSION" "$SHA" "$IMAGE" "$UNPACK" "$(git -C "$(dirname "$0")/.." \
+        hash-object tools/build-busybox.sh 2>/dev/null || echo)" <<'PY'
+import hashlib, json, os, sys
+out, ver, sha, image, unpack, blob = sys.argv[1:7]
+def h(p):
+    return hashlib.sha256(open(p, "rb").read()).hexdigest()
+apk = {}
+for ln in open(os.path.join(unpack, "apk-versions")).read().split():
+    name, _, rest = ln.rpartition("-")
+    name, _, ver2 = name.rpartition("-")
+    apk[name] = f"{ver2}-{rest}"
+claim = {
+    "schema": "slax-kitchen/build-claim/v1",
+    "artifact": {"name": os.path.basename(out), "sha256": h(out), "arch": "i386", "static": True},
+    "script": {"path": "tools/build-busybox.sh", "git_blob": blob or None},
+    "container": {"image": image,
+                  "alpine_release": open(os.path.join(unpack, "alpine-release")).read().strip(),
+                  "apk": apk},
+    "sources": [{"name": "busybox", "version": ver, "license": "GPL-2.0-only",
+                 "url": f"https://busybox.net/downloads/busybox-{ver}.tar.bz2", "sha256": sha}],
+    "config": {"file": os.path.basename(out) + ".config", "sha256": h(out + ".config")},
+    "linked": [{"name": "musl", "version": apk.get("musl-dev") or apk.get("musl"),
+                "license": "MIT"}],
+}
+with open(out + ".provenance.json", "w") as f:
+    json.dump(claim, f, indent=1, sort_keys=True)
+    f.write("\n")
+PY
+rm -rf "$UNPACK"
 
 # Assert what the initramfs actually requires, rather than trusting the toolchain.
 desc=$(file -b "$OUTPUT" 2>/dev/null || echo "")
@@ -171,3 +221,5 @@ if [ "$CHECK_PARITY" = 1 ]; then
 fi
 
 echo "$OUTPUT"
+echo "$OUTPUT.config" >&2
+echo "$OUTPUT.provenance.json" >&2

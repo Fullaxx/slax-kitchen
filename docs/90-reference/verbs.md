@@ -243,6 +243,17 @@ Two behaviours it shares with `bundle.packages`, both load-bearing:
 - `BUNDLE_EXCLUDE` strips the runtime directories the chroot needed but a bundle must not ship,
   plus caches and lockfiles — including `var/lib/dpkg/status`, which is replaced by a fragment.
 
+**A script that downloads something says so.** The engine cannot see what a script fetched, so a
+line on stdout of the form
+
+```
+KITCHEN-FETCHED <sha256> <path in the image> <url>
+```
+
+is recorded in the image's provenance and left out of the output shown. `firmware-refresh` prints one
+per linux-firmware file. ELF files the step leaves behind that no package database owns are recorded
+too, with their sha256.
+
 `network: true` **declares** that the step reaches the internet; preflight then checks for one
 before any of the plan runs, rather than after unsquashing 122 MiB. It does not sandbox anything
 and does not claim to: isolating the chroot's network needs a user namespace, which not every

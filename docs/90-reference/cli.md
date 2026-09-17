@@ -125,6 +125,15 @@ Rebuilds an ISO from a work tree. Default output is `./out/<source>-custom.iso`,
 
 See [repack-iso.md](../40-workflow/repack-iso.md) for why there are two backends.
 
+**`pack` writes `<iso>.provenance.json` beside the ISO**: what each applied recipe fetched and built
+— URLs and sha256s, the package versions apt resolved and each `.deb`'s sha256, the build host's
+GRUB and the MBR `pack` copied from it, a build claim for a compiled binary — plus the backend, the
+kitchen commit and its submodule pins, and the ISO's own sha256. Verbs record into
+`<work>/.kitchen/provenance.json` as they run; `pack` finalizes it next to the ISO, where
+`kitchen build` deleting the work tree cannot take it. Paths are basenames or paths inside the
+image, and anything that looks like a place on the build machine is refused — the same rule as the
+Tier C ledger, sharing one pattern.
+
 ## `fetch [target|--all] [--verify-only] [-o DIR]`
 
 Download a base ISO and verify it. With no argument, lists the known targets and whether each is
@@ -214,6 +223,10 @@ work tree  /home/you/slax-kitchen/work
 this command existed** — and a record nobody reads is not provenance, it is a file.
 
 `-v` adds the source ISO's full path and sha256.
+
+A `provenance` line says how much the recipes recorded — steps, downloads, package versions — or that
+a tree was applied before provenance existed, so "fetched nothing" and "recorded nothing" are not
+confused.
 
 ### What the journal records
 

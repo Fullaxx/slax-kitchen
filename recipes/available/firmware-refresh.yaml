@@ -121,11 +121,13 @@ steps:
       TAG="{{linux_firmware_tag}}"
       DEST=/usr/lib/firmware
       TMP=$(mktemp -d)
+      SRC=""
 
       fetch() {
           for url in "https://gitlab.com/kernel-firmware/linux-firmware/-/raw/$TAG/$1" \
                      "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/$1?h=$TAG"; do
               if wget -q --tries=3 --waitretry=5 --timeout=60 -O "$TMP/f" "$url"; then
+                  SRC=$url
                   return 0
               fi
           done
@@ -148,6 +150,8 @@ steps:
                       exit 1
                   fi
                   install -m 0644 "$TMP/f" "$DEST/$path"
+                  # Read by bundle.script into the image's provenance: what came from where.
+                  echo "KITCHEN-FETCHED $got usr/lib/firmware/$path $SRC"
                   ;;
               link)
                   ln -s "$arg" "$DEST/$path"

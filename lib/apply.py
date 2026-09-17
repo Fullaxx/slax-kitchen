@@ -29,6 +29,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dpkgdb  # noqa: E402
+import provenance  # noqa: E402
 from validate import validate_file  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -347,6 +348,11 @@ class Ctx:
         self.recipe = recipe_name
         self.dry = dry
         self.changes: list[str] = []
+        # Provenance: one record per verb that ran, accumulated by prov() and written by
+        # apply_recipe. See lib/provenance.py for why the journal was not enough.
+        self.verb: str | None = None
+        self.prov_steps: list[dict] = []
+        self._step: dict | None = None
         os.makedirs(self.meta, exist_ok=True)
 
     def p(self, *parts) -> str:
@@ -368,6 +374,33 @@ class Ctx:
             print(f"    {msg}")
         if artifact not in self.changes:
             self.changes.append(artifact)
+
+    def begin_step(self, verb: str) -> None:
+        self.verb, self._step = verb, {"verb": verb}
+
+    def end_step(self) -> None:
+        if self._step and len(self._step) > 1:
+            self.prov_steps.append(self._step)
+        self.verb, self._step = None, None
+
+    def prov(self, **fields) -> None:
+        """Record where something came from, for <iso>.provenance.json.
+
+        Fields merge into the current verb's record; lists extend rather than replace, so
+        a verb and the helper building its bundle can both contribute. None values are
+        dropped. A dry run records nothing, because nothing happened.
+        """
+        if self.dry:
+            return
+        if self._step is None:
+            self._step = {"verb": self.verb or "?"}
+        for k, v in fields.items():
+            if v is None:
+                continue
+            if isinstance(v, list) and isinstance(self._step.get(k), list):
+                self._step[k].extend(v)
+            else:
+                self._step[k] = v
 
     def hint(self, key: str, value) -> None:
         """Ask `kitchen pack` to do something at mastering time."""
@@ -487,6 +520,10 @@ def v_boot_payload(ctx: Ctx, step: dict) -> None:
             shutil.copy2(local, dest)
     if "mode" in step:
         os.chmod(dest, int(step["mode"], 8))
+    if src:
+        ctx.prov(source=src if re.match(r"^https?://", src) else os.path.basename(src),
+                 source_sha256=got, member=member, upstream_source=step.get("upstream_source"),
+                 output=provenance.in_image(step["dest"]), output_sha256=sha256(dest))
     ctx.record(step['dest'], f"installed {step['dest']} ({os.path.getsize(dest)} bytes)")
 
 
@@ -863,6 +900,94 @@ def _read_status(root: str) -> str:
         return ""
 
 
+def _status_changes(before: str, after: str) -> list[dict]:
+    """Packages a chroot run installed or changed, with their source package, for provenance.
+
+    Source is what `kitchen sources` needs to point at an upstream: dpkg writes `Source:`
+    only when it differs from the binary name, and adds `(version)` only when that
+    differs too, so both fall back to the binary's own.
+    """
+    def stanzas(text: str) -> dict:
+        out = {}
+        for block in text.split("\n\n"):
+            f = dict(re.findall(r"^([A-Za-z-]+): ?(.*)$", block, re.M))
+            if f.get("Package") and f.get("Status", "").endswith(" installed"):
+                out[f"{f['Package']}:{f.get('Architecture', '')}"] = f
+        return out
+    old, new = stanzas(before), stanzas(after)
+    changed = []
+    for key, f in sorted(new.items()):
+        if key in old and old[key].get("Version") == f.get("Version"):
+            continue
+        src, src_ver = f.get("Source", f["Package"]), f.get("Version")
+        m = re.match(r"^(\S+)\s+\((.+)\)$", src)
+        if m:
+            src, src_ver = m.group(1), m.group(2)
+        changed.append({"package": f["Package"], "architecture": f.get("Architecture"),
+                        "version": f.get("Version"), "source": src, "source_version": src_ver})
+    return changed
+
+
+def _deb_hashes(root: str) -> list[dict]:
+    """sha256 of every .deb apt downloaded into the chroot, read before the chroot is gone."""
+    d = os.path.join(root, "var", "cache", "apt", "archives")
+    if not os.path.isdir(d):
+        return []
+    return [{"file": n, "sha256": sha256(os.path.join(d, n))}
+            for n in sorted(os.listdir(d)) if n.endswith(".deb")]
+
+
+FETCHED_LINE = re.compile(r"^KITCHEN-FETCHED ([0-9a-f]{64}) (\S+) (\S+)$")
+
+
+def _fetched_lines(stdout: str) -> list[dict]:
+    """What a bundle.script says it fetched: `KITCHEN-FETCHED <sha256> <path> <url>` lines.
+
+    A script knows what it downloaded and the engine cannot, so the script says so, and
+    the engine records it. firmware-refresh prints one per linux-firmware file.
+    """
+    out = []
+    for ln in stdout.splitlines():
+        m = FETCHED_LINE.match(ln.strip())
+        if m:
+            out.append({"sha256": m.group(1), "path": provenance.in_image(m.group(2)),
+                        "url": m.group(3)})
+    return out
+
+
+def _unowned_elf(root: str, keep: list[str]) -> list[dict]:
+    """ELF files in a delta that no package database owns: something was compiled or
+    dropped in by hand, and provenance should say so rather than let it pass as a
+    package's file."""
+    owned: set[str] = set()
+    info = os.path.join(root, "var", "lib", "dpkg", "info")
+    if os.path.isdir(info):
+        for n in os.listdir(info):
+            if n.endswith(".list"):
+                with open(os.path.join(info, n), errors="replace") as f:
+                    owned.update(ln.strip().lstrip("/") for ln in f)
+    pkgtools = os.path.join(root, "var", "lib", "pkgtools", "packages")
+    if os.path.isdir(pkgtools):
+        for n in os.listdir(pkgtools):
+            with open(os.path.join(pkgtools, n), errors="replace") as f:
+                owned.update(ln.strip() for ln in f)
+    out = []
+    for rel in keep:
+        full = os.path.join(root, rel)
+        if os.path.islink(full) or not os.path.isfile(full):
+            continue
+        try:
+            with open(full, "rb") as f:
+                if f.read(4) != b"\x7fELF":
+                    continue
+        except OSError:
+            continue
+        alt = rel[4:] if rel.startswith("usr/") else "usr/" + rel     # merged /usr
+        if rel not in owned and alt not in owned:
+            out.append({"path": rel, "sha256": sha256(full)})
+    return out
+
+
 def _stage_delta(root: str, keep: list[str], stage: str) -> None:
     """Copy the delta out of a chroot, preserving what the chroot actually had.
 
@@ -1237,6 +1362,9 @@ def v_initramfs_busybox(ctx: Ctx, step: dict) -> None:
 
         _initramfs_pack(ctx, tree)
         ctx.record("slax/boot/initrfs.img")
+        ctx.prov(source=os.path.basename(local), source_sha256=sha256(local),
+                 claim=provenance.load_claim(local), output="slax/boot/initrfs.img",
+                 output_sha256=sha256(ctx.p("slax", "boot", "initrfs.img")))
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -1495,6 +1623,8 @@ def _make_bundle(ctx: "Ctx", src_dir: str, name: str, verb: str,
     n = sum(len(f) for _, _, f in os.walk(src_dir))
     ctx.say(f"built slax/modules/{name} ({os.path.getsize(target) // 1024} KiB, {n} files)")
     ctx.record(f"slax/modules/{name}")
+    ctx.prov(output=f"slax/modules/{name}", output_sha256=sha256(target),
+             output_bytes=os.path.getsize(target))
     return target
 
 
@@ -1613,6 +1743,9 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
             raise RuntimeError(f"bundle.fromTarball: sha256 mismatch\n  want {want}\n  got  {got}")
         if not want:
             ctx.say(f"warning: no sha256 pinned for {os.path.basename(src)} (got {got[:16]}...)")
+        ctx.prov(source=src if re.match(r"^https?://", src) else os.path.basename(src),
+                 source_sha256=got, pinned=bool(want), strip=strip, prefix=prefix or None,
+                 world_readable=world_readable, upstream_source=step.get("upstream_source"))
 
         root = os.path.join(work, "root")
         dest = os.path.join(root, prefix) if prefix else root
@@ -1902,7 +2035,8 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
             raise RuntimeError(f"bundle.script: script failed (exit {r.returncode}):\n"
                                + (r.stderr.strip() or r.stdout.strip())[-1500:])
         if r.stdout.strip():
-            for ln in r.stdout.strip().splitlines()[-8:]:
+            shown = [ln for ln in r.stdout.strip().splitlines() if not FETCHED_LINE.match(ln)]
+            for ln in shown[-8:]:
                 ctx.say(f"  | {ln[:110]}")
         os.unlink(sp)
         after, after_status = _manifest(root), _read_status(root)
@@ -1920,6 +2054,12 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
         _stage_delta(root, keep, stage)
         _write_fragment(ctx, stage, name, before_status, after_status)
         _make_bundle(ctx, stage, name, "bundle.script")
+        ctx.prov(script_sha256=hashlib.sha256(script.encode()).hexdigest(),
+                 network=bool(step.get("network")) or None,
+                 upstream_source=step.get("upstream_source"),
+                 fetched=_fetched_lines(r.stdout) or None,
+                 installed=_status_changes(before_status, after_status) or None,
+                 unowned_elf=_unowned_elf(root, keep) or None)
     finally:
         shutil.rmtree(build, ignore_errors=True)
 
@@ -2439,6 +2579,16 @@ def v_boot_uefi(ctx: Ctx, step: dict) -> None:
                 raise RuntimeError(f"{cmd[0]} failed: {rr.stderr.strip()}")
         ctx.say(f"boot/efi.img: {img_kib} KiB FAT12 ESP containing "
                 f"EFI/BOOT/BOOTX64.EFI ({efi_kib} KiB GRUB)")
+        # GRUB here is BUILT by this verb, from whatever the build host has installed --
+        # so the host's package and version are the only answer to "which GRUB is this".
+        ctx.prov(output="boot/efi.img", output_sha256=sha256(img),
+                 bootx64_sha256=sha256(efi), grub_modules=GRUB_MODULES,
+                 tools={"grub-efi-amd64-bin": provenance.host_package(
+                            "/usr/lib/grub/x86_64-efi/moddep.lst"),
+                        "grub-mkstandalone": provenance.host_package(
+                            shutil.which("grub-mkstandalone")),
+                        "mkfs.vfat": provenance.host_package(shutil.which("mkfs.vfat")),
+                        "mcopy": provenance.host_package(shutil.which("mcopy"))})
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -2805,6 +2955,17 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
 
         # 7. Build with upstream's exact parameters (livekitlib create_bundle / dir2sb).
         _make_bundle(ctx, stage, out_name, "bundle.packages")
+
+        # 8. Provenance, read from the chroot before it is deleted: the .debs apt fetched
+        #    are gone with it, and nothing else ever recorded which versions it resolved.
+        apt = step.get("apt") or {}
+        ctx.prov(packages=list(packages), flavour=flavour,
+                 reinstall=bool(apt.get("reinstall")) or None,
+                 apt_sources=[{k: s.get(k) for k in ("name", "uri", "suite", "components",
+                                                     "key_url", "key_sha256", "keep")}
+                              for s in apt.get("sources") or []] or None,
+                 installed=_status_changes(before_status, after_status) or None,
+                 debs=_deb_hashes(root) or None)
     finally:
         shutil.rmtree(build, ignore_errors=True)
 
@@ -2988,7 +3149,9 @@ def apply_recipe(path: str, work: str, dry: bool = False,
                                    f"{NOT_YET[v]}")
             raise RuntimeError(f"step {i}: verb '{v}' is valid in the schema but not "
                                f"implemented yet (have: {', '.join(sorted(VERBS))})")
+        ctx.begin_step(v)
         fn(ctx, step)
+        ctx.end_step()
 
     if not dry:
         import yaml
@@ -3012,6 +3175,12 @@ def apply_recipe(path: str, work: str, dry: bool = False,
         j["applied"].append(entry)
         with open(jpath, "w") as f:
             yaml.safe_dump(j, f, sort_keys=False)
+        provenance.append_recipe(ctx.meta, {
+            "recipe": name,
+            "recipe_sha256": sha256(path),
+            "vars": dict(overrides) if overrides else {},
+            "steps": ctx.prov_steps,
+        })
     return 0
 
 

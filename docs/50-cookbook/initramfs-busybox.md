@@ -108,7 +108,20 @@ boot is exactly what should be built from pinned source rather than committed an
 `tools/build-busybox.sh` builds it in about 30 seconds inside `i386/alpine`, verifying upstream's
 published sha256 **before compiling a line**. The container is needed because this host has neither
 a 32-bit libc nor musl; nothing is bind-mounted, because the docker daemon may not share the
-filesystem — the script goes in on stdin and the binary comes out on stdout.
+filesystem — the script goes in on stdin and the results come out on stdout, as a tar.
+
+It writes three files, not one:
+
+| file | what |
+|---|---|
+| `build/busybox-1.37.0-i386-static` | the binary |
+| `….config` | the resulting `.config`, after `defconfig` and the deltas below |
+| `….provenance.json` | the **build claim**: the binary's sha256, the busybox tarball's URL and sha256, the image **by digest**, `/etc/alpine-release`, and the version of every apk package the build installed |
+
+The image is pinned by digest; the apk packages are not — Alpine's stable branch takes security
+updates — so their versions are recorded rather than promised. When the recipe installs the binary,
+`initramfs.busybox` copies the claim into the image's provenance and marks it **verified** only if the
+claim's sha256 is the sha256 of the binary it actually used.
 
 CI builds it too, cached on the script's own hash.
 

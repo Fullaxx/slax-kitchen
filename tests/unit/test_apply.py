@@ -775,26 +775,17 @@ def test_removes_come_first():
               apply.check_plan_order(plan), [])
 
 
-def test_network_is_declared_where_it_is_used():
-    """Every verb that reaches the network must say so at preflight.
+def _fetching_verbs():
+    """(tree, funcs, {verb: function}, verbs that urlopen) read from lib/apply.py's AST.
 
-    bundle.fromTarball did the identical urllib fetch boot.payload does, and the
-    inference in step_requires named only boot.payload -- so preflight passed and
-    `kitchen build` unpacked 436 MiB before dying at the download. Reported as #9.
-
-    Asserting on a hand-written list of verbs would rot the moment someone adds a
-    fetch. This reads lib/apply.py's own AST instead: find every urlopen, resolve it to
-    the function containing it, map that to a verb -- directly by its @verb decorator,
-    or for a helper via the @verb functions that call it -- and require each one to
-    declare network unconditionally or to be in _URL_SRC_VERBS. Finding the answer this
-    way is how #9 was confirmed to be exactly one verb and not three.
+    Shared by the network and provenance tests, so both see the same set of fetchers --
+    a verb added with a new urlopen is picked up by both or by neither.
     """
     import ast
 
     here = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(here, "..", "..", "lib", "apply.py")
     tree = ast.parse(open(path).read())
-
     funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
 
     def enclosing(line):
@@ -815,6 +806,7 @@ def test_network_is_declared_where_it_is_used():
                     out.append(f)
         return out
 
+    by_verb = {verb_of(f): f for f in funcs if verb_of(f)}
     fetchers = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -834,12 +826,59 @@ def test_network_is_declared_where_it_is_used():
             cv = verb_of(c)
             if cv:
                 fetchers.add(cv)
+    return tree, funcs, by_verb, fetchers
 
+
+def test_network_is_declared_where_it_is_used():
+    """Every verb that reaches the network must say so at preflight.
+
+    bundle.fromTarball did the identical urllib fetch boot.payload does, and the
+    inference in step_requires named only boot.payload -- so preflight passed and
+    `kitchen build` unpacked 436 MiB before dying at the download. Reported as #9.
+
+    Asserting on a hand-written list of verbs would rot the moment someone adds a
+    fetch. This reads lib/apply.py's own AST instead: find every urlopen, resolve it to
+    the function containing it, map that to a verb -- directly by its @verb decorator,
+    or for a helper via the @verb functions that call it -- and require each one to
+    declare network unconditionally or to be in _URL_SRC_VERBS. Finding the answer this
+    way is how #9 was confirmed to be exactly one verb and not three.
+    """
+    _tree, _funcs, _by_verb, fetchers = _fetching_verbs()
     check("found the urlopen verbs at all", bool(fetchers), True)
     for v in sorted(fetchers):
         declares = apply.VERB_REQUIRES.get(v, {}).get("network") is True
         infers = v in apply._URL_SRC_VERBS
         check(f"{v} declares or infers network", declares or infers, True)
+
+
+def test_fetches_and_bundles_record_provenance():
+    """Every verb that downloads something must say what it downloaded, and every bundle
+    must record its own hash.
+
+    Provenance that depends on each verb remembering to call ctx.prov rots exactly like
+    the network declaration above did (#9): the next verb with a urlopen forgets. So the
+    same AST walk finds every fetching verb and requires a ctx.prov call inside it, and
+    requires one inside _make_bundle, which every bundle-producing verb goes through.
+    Delete either call and this names it.
+    """
+    import ast
+
+    _tree, funcs, by_verb, fetchers = _fetching_verbs()
+
+    def calls_prov(fn):
+        return any(isinstance(n, ast.Call) and ast.unparse(n.func).endswith("ctx.prov")
+                   for n in ast.walk(fn))
+
+    check("found the urlopen verbs at all", bool(fetchers), True)
+    for v in sorted(fetchers):
+        check(f"{v} records provenance", calls_prov(by_verb[v]), True)
+    make = next((f for f in funcs if f.name == "_make_bundle"), None)
+    check("_make_bundle exists", make is not None, True)
+    if make is not None:
+        check("_make_bundle records the bundle's hash", calls_prov(make), True)
+    # The verb that BUILDS a binary from the host's toolchain -- no urlopen, still the
+    # one place the answer to "which GRUB is this" exists.
+    check("boot.uefi records the host's GRUB", calls_prov(by_verb["boot.uefi"]), True)
 
 
 def test_symlink_chain_cannot_escape():
@@ -1463,6 +1502,7 @@ def main():
                test_checksums_sign_is_a_key_id,
                test_removes_come_first,
                test_network_is_declared_where_it_is_used,
+               test_fetches_and_bundles_record_provenance,
                test_symlink_chain_cannot_escape,
                test_fromtarball_wires_both_guards_in,
                test_extract_members_matches_extractall_on_a_clean_archive,
