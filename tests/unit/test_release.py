@@ -11,6 +11,7 @@ after KITCHEN_VERSION is bumped.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -211,22 +212,98 @@ def test_notes_say_what_was_not_done():
     # pin the CLAIM instead, and let it fail loudly if someone ever weakens the release
     # matrix without saying so in the notes.
     check_in("says a release runs the full matrix", "A release runs the FULL matrix", out)
-    check_in("no ISO, and it is on purpose", "deliberate rather than an oversight", out)
-    check_in("source-offer obligation named", "source-offer obligation", out)
     check_in("credits upstream", "Tomáš Matějíček", out)
+    # A statement about the whole image the notes cannot back. What travels with a
+    # published image is set out in NOTICE.md; the notes never claim completeness.
+    if "complete corresponding source" in out.lower():
+        FAILURES.append("the notes claim complete corresponding source")
+
+
+NO_IMAGE = "No image is attached to this release"
+
+
+def workflow_uploads(text):
+    """Whether a release workflow attaches files to the Release, read from its text.
+
+    Two shapes attach something: `gh release upload`, or a path argument given to
+    `gh release create` (gh uploads any positional argument after the tag). A path is
+    what attaching looks like in practice -- `out/*.iso`, `dist/SHA256SUMS` -- so an
+    argument carrying a slash, a glob or a dot-extension counts. Options and their
+    values do not.
+    """
+    if re.search(r"\bgh\s+release\s+upload\b", text):
+        return True
+    joined = text.replace("\\\n", " ")
+    for ln in joined.splitlines():
+        m = re.search(r"\bgh\s+release\s+create\s+(.*)$", ln)
+        if not m:
+            continue
+        args, skip = m.group(1).split()[1:], False      # [0] is the tag
+        for a in args:
+            if skip:
+                skip = False
+                continue
+            if a.startswith("-"):
+                skip = "=" not in a and a in ("--title", "-t", "--notes", "-n",
+                                              "--notes-file", "-F", "--target",
+                                              "--discussion-category", "--notes-start-tag")
+                continue
+            if re.search(r"[/*]|\.[A-Za-z0-9]{1,5}\b", a.strip("\"'")):
+                return True
+    return False
+
+
+def attachment_claim_problems(notes_text, workflow_text):
+    """The Redistribution section's claim must agree with what the workflow uploads."""
+    a, b = notes_text.find("## Redistribution"), len(notes_text)
+    section = notes_text[a:b] if a != -1 else ""
+    says_none = NO_IMAGE in section
+    uploads = workflow_uploads(workflow_text)
+    if not uploads and not says_none:
+        return ["release.yml attaches nothing, but the notes do not say so"]
+    if uploads and says_none:
+        return ["release.yml attaches files, but the notes still say no image is attached"]
+    return []
+
+
+def test_notes_attachment_claim_follows_the_workflow():
+    """DERIVED, NOT PINNED. This used to assert the refusal itself -- "deliberate rather
+    than an oversight" -- which is the pinned-constant shape the Tier C comments above
+    record costing three rounds: the notes could never have told the truth about a release
+    that did attach something. What is pinned now is the invariant: the notes' claim
+    agrees with release.yml. Both directions are checked, against the real workflow and
+    against a fixture that uploads."""
+    out = notes("v9.9.9")
+    with open(os.path.join(ROOT, ".github", "workflows", "release.yml")) as fh:
+        real = fh.read()
+    for p in attachment_claim_problems(out, real):
+        FAILURES.append(f"real workflow: {p}")
+    check("the real workflow attaches nothing", workflow_uploads(real), False)
+    check_in("so the notes say none is attached", NO_IMAGE, out)
+
+    # The fixture that must fail. Adding an upload without changing the notes is exactly
+    # the drift this exists to catch.
+    uploading = real + '\n      - run: gh release upload "$TAG" out/*.iso out/SHA256SUMS\n'
+    check("an upload line is seen", workflow_uploads(uploading), True)
+    check("and contradicts the notes", len(attachment_claim_problems(out, uploading)), 1)
+    as_create = 'gh release create "$TAG" --title "$TAG" --notes-file notes.md dist/x.iso'
+    check("a path given to gh release create is an upload", workflow_uploads(as_create), True)
+    plain = 'gh release create "$TAG" --title "$TAG" --notes-file release-notes.md $PRE'
+    check("options and their values are not uploads", workflow_uploads(plain), False)
 
 
 def test_notes_publish_only_verifiable_hashes():
-    """Base ISO hashes are checkable by anyone; a built-ISO hash is not, because the
-    ISO container is not byte-reproducible. Publishing the second would be exactly
-    the false assurance the ladder exists to prevent."""
+    """Base ISO hashes are checkable by anyone, and they are the only hashes here because
+    no image is attached. An image published elsewhere carries SHA256SUMS, which checks a
+    download -- not a rebuild. The notes say both, in as many words."""
     out = notes("v9.9.9")
     with open(os.path.join(ROOT, "compat", "sources.yaml")) as fh:
         wanted = [ln.split(":", 1)[1].strip() for ln in fh if ln.strip().startswith("sha256:")]
     check("four base ISOs pinned in sources.yaml", len(wanted), 4)
     for h in wanted:
         check_in("base ISO hash carried into the notes", h, out)
-    check_in("and says why there is no ISO checksum", "not byte-reproducible", out)
+    check_in("says why there is no image checksum", "no image checksum", out)
+    check_in("and that rebuilds do not match", "not byte-reproducible", out)
 
 
 def test_tier_c_claim_follows_the_evidence():

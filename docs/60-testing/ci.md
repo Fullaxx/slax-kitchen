@@ -315,17 +315,22 @@ regenerate the fingerprint, `kitchen selftest ci`, then fix what breaks. See
 | `verify` | `uses: ./.github/workflows/ci.yml` — the whole of it, not a copy |
 | `publish` | `gh release create`. **The only job in this repository with `contents: write`.** |
 
-### No ISO is attached, on purpose
+### What a release attaches
 
-[NOTICE.md](../../NOTICE.md) puts the obligations of a built image on whoever publishes it, and part
-of the GPLv2 source offer cannot be satisfied from this repository at all: seven prebuilt static
-binaries under `vendor/linux-live/initramfs/static/` ship with no in-tree source, and the kernel is
-custom-built with an out-of-tree aufs patch set. So a Release carries a tag and an account of what
-was verified. You build the ISO.
+A tag and the notes — **no image**. A release of slax-kitchen is the toolkit. What travels with an
+image built with it, when one is published, is set out in [NOTICE.md](../../NOTICE.md): the source
+of what the build compiled or modified, where each upstream publishes its own, the firmware terms,
+and an identity that is not an official Slax release.
 
-It also publishes no checksum for a built ISO, because **nobody could check one**: the ISO container
-is not byte-reproducible — see [reproducibility](../40-workflow/reproducibility.md). The four base
-ISO hashes it does publish are verifiable, and `kitchen fetch` enforces them on every download.
+This section used to be titled *No ISO is attached, on purpose*, and gave a reason that read a note
+written for forks as a rule for this repository. `tests/unit/test_release.py` now checks the notes'
+attachment claim against what `release.yml` actually uploads, instead of pinning the sentence: the
+day the workflow attaches a file, the notes have to change with it.
+
+There is no checksum for a built image in the notes because none is attached. Where an image *is*
+published, its `SHA256SUMS` checks the download — not a rebuild, since the ISO container is not
+byte-reproducible; see [reproducibility](../40-workflow/reproducibility.md). The four base ISO hashes
+the notes do publish are verifiable, and `kitchen fetch` enforces them on every download.
 
 What it does say is what was *not* done. Tier C — BIOS menu, UEFI, USB image, persistence, boot to a
 desktop — needs `/dev/kvm`, which GitHub-hosted runners do not have, so no release claims a desktop

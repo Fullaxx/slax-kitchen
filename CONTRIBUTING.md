@@ -520,6 +520,6 @@ Please do not open a public issue for a vulnerability. See [SECURITY.md](SECURIT
 ## Licence
 
 MIT for this repository's own code, docs and recipes. Slax, Linux Live Kit and everything inside a
-built ISO carry their own licences — [NOTICE.md](NOTICE.md) sets out the boundary and the
-obligations that come with redistributing an image. By contributing you agree your contribution is
+built ISO carry their own licences — [NOTICE.md](NOTICE.md) sets out the boundary, the firmware
+terms, and what travels with a published image. By contributing you agree your contribution is
 licensed under the same terms.

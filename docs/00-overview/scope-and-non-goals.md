@@ -16,7 +16,8 @@ recipes, and the same scripts run in the git hooks and in CI so they cannot drif
 **Not a fork of Slax, and not a redistribution of it.** Upstream is vendored unmodified at
 `vendor/linux-live` as a pinned submodule, and never relicensed. The ISOs are not in this repository
 and are not mirrored to it — `kitchen fetch` downloads them from the official mirror and verifies
-the hash. If you find this useful, support Slax upstream; there is a donate link on slax.org.
+the hash. An image *built* with it can be published, and [`NOTICE.md`](../../NOTICE.md) sets out what
+travels with one. If you find this useful, support Slax upstream; there is a donate link on slax.org.
 
 **Not a Slax build system.** It does not compile a kernel, run debootstrap, or build bundles from
 scratch. It starts from a released ISO and changes it. The real build system is upstream's and is
@@ -73,8 +74,9 @@ recipe whose tools are missing rather than failing partway through.
 
 MIT for this repository's own code, docs and recipes. Slax and Linux Live Kit are **GPLv2** and stay
 that way under `vendor/`. Everything inside a built ISO carries its own licence — Debian and
-Slackware packages, non-free firmware, Chromium. [`NOTICE.md`](../../NOTICE.md) sets out the boundary
-and what redistributing an image obliges you to do.
+Slackware packages, non-free firmware, Chromium. [`NOTICE.md`](../../NOTICE.md) sets out the boundary,
+where each part's upstream publishes its source, the firmware terms, and what travels with a
+published image.
 
 ## Honest status
 

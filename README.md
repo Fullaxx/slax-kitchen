@@ -223,4 +223,4 @@ the bar for a pull request. Security reports go via [SECURITY.md](SECURITY.md).
 
 MIT for this repository's own code, docs and recipes — see [LICENSE](LICENSE). Slax, Linux Live Kit
 and everything inside a built ISO carry their own licences; [NOTICE.md](NOTICE.md) sets out the
-boundary and the obligations that come with redistributing an image.
+boundary, the firmware terms, and what travels with a published image.
