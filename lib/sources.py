@@ -486,8 +486,15 @@ def classify(files: dict, stock: dict, prov: dict, target: str | None, target_in
                     unresolve(path, f"{rn}: " + "; ".join((problems + warns)[:5]))
                     continue
                 warnings.extend(f"{rn}: {w}" for w in warns)
-                add(path, sha, "ours", by=rn, note="written by a script; what it fetched and "
-                    "installed is listed separately",
+                # `network: true` is recorded and was not read anywhere. It does not make the
+                # bundle unresolved -- fetched files, packages and declared binaries all
+                # account for themselves -- but the record should say that this bundle's
+                # account rests on what the script reported, because nothing here can see
+                # a download the script made without the KITCHEN-FETCHED protocol.
+                add(path, sha, "ours", by=rn, network=s.get("network"),
+                    note="written by a script; what it fetched and installed is listed "
+                    "separately" + (", and it ran with network access, so that list is the "
+                                    "script's own account" if s.get("network") else ""),
                     fetched=[dict(f, upstream_source=s.get("upstream_source"))
                              for f in s.get("fetched") or []] or None,
                     packages=pk or None,

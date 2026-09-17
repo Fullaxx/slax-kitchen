@@ -147,10 +147,10 @@ different things.
 ### Documentation
 
 **Phase 1 is complete.** `00-overview/`, `05-using-slax/`, `10-anatomy/`, `15-upstream/`,
-`20-boot-sequence/` and `30-inventory/` are done — 54 pages covering how the ISO is constructed, how
+`20-boot-sequence/` and `30-inventory/` are done — 56 pages covering how the ISO is constructed, how
 it boots on every medium, what software is in it, and the upstream source of truth for all of it.
 
-`40-workflow/` is also complete — 10 pages, every procedure written to work by hand with the
+`40-workflow/` is also complete — 14 pages, every procedure written to work by hand with the
 `kitchen` verb noted alongside.
 
 `60-testing/` is complete as of 2026-09-16 — [CI](../60-testing/ci.md) for what runs on every push,

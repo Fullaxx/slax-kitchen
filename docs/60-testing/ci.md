@@ -51,7 +51,7 @@ worse than a slow one:
 
 ```
   SKIP all-browsers      weekly, not per-push: four sha256-pinned vendor keys are an
-                         external dependency (622 s, and a key rotation would redden master)
+                         external dependency (456 s, and a key rotation would redden master)
 ```
 
 A **release tag runs everything a push does not**, because a release should be verified more than
@@ -94,15 +94,19 @@ so the second one costs nothing.
 
 Every recipe is applied **individually** to each of the four targets, then packed and asserted.
 One recipe per work tree, so a failure names exactly one recipe and recipes cannot mask each other.
-About 40 s per target.
+
+Measured on this hardware with nothing skipped, `debian-64bit`, 2026-09-17: **33 recipes in 1315 s**,
+a median of 6 s each. Four recipes account for more than half of it — `all-browsers` 456 s,
+`debian-browsers` 165 s, `libreoffice` 112 s, `firmware-refresh` and `tor-browser` 92 s each. Each
+line carries its own seconds, so the numbers above can be re-measured rather than remembered:
 
 ```
-recipe matrix: slackware-64bit-15.0.4  (flavour=slackware arch=64bit)
-  skip add-packages       not declared compatible with slackware/64bit
-  ok   isohybrid          455 MiB
-  ok   memtest86plus      454 MiB
+recipe matrix: debian-64bit-12.2.0  (flavour=debian arch=64bit)
+  skip bundle-from-txz    not declared compatible with debian/64bit
+  ok   isohybrid          416 MiB, 7 s
+  ok   memtest86plus      415 MiB, 7 s
   ...
-  6 passed, 0 failed, 1 skipped
+  33 passed, 0 failed, 2 skipped in 1315 s
 ```
 
 Skips come from each recipe's own `compat` block, so marking something Debian-only is enough — no

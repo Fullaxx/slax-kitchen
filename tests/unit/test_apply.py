@@ -992,12 +992,20 @@ def test_recipe_relative_paths_go_through_ctx_local():
     """
     import ast
     tree, _funcs, _by_verb, _fetchers = _fetching_verbs()
-    allowed = {"__init__", "local", "v_boot_payload", "v_bundle_fromtarball",
-               "v_initramfs_busybox"}
+    # Only the two verbs whose input is never expected in a checkout: a tarball named by
+    # URL and sha256, and a build output with its own claim. `boot.payload` is NOT here --
+    # it takes either, and when its `src:` is a local file that file is recorded like any
+    # other, which is what records() below asks of it.
+    allowed = {"__init__", "local", "v_bundle_fromtarball", "v_initramfs_busybox"}
+
+    def records(fn):
+        return any(isinstance(n, ast.Call) and ast.unparse(n.func) == "ctx.local"
+                   for n in ast.walk(fn))
+
     offenders = sorted({fn.name for fn in ast.walk(tree) if isinstance(fn, ast.FunctionDef)
                         for n in ast.walk(fn)
                         if isinstance(n, ast.Attribute) and n.attr == "recipe_dir"
-                        and fn.name not in allowed
+                        and fn.name not in allowed and not records(fn)
                         # a nested function is walked twice; report the innermost owner
                         and not any(isinstance(c, ast.FunctionDef) and c is not fn and n in ast.walk(c)
                                     for c in ast.walk(fn))})

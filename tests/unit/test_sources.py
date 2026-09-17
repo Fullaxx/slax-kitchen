@@ -114,6 +114,25 @@ def test_a_download_without_upstream_source_warns_or_fails_under_strict():
     check("unresolved under --strict", len(doc["unresolved"]), 1)
 
 
+def test_a_script_that_had_network_says_so():
+    """`network: true` was recorded on the step and read by nothing. It does not make the
+    bundle unresolved -- fetched files and packages account for themselves -- but nothing
+    here can see a download a script made without the KITCHEN-FETCHED protocol, so the
+    record has to say whose account this is."""
+    step = {"verb": "bundle.script", "output": "slax/modules/09-fw.sb", "output_sha256": H["2"],
+            "network": True, "upstream_source": "https://git.kernel.org/linux-firmware",
+            "fetched": [{"path": "usr/lib/firmware/x.bin", "sha256": H["3"]}]}
+    doc = run({"slax/modules/09-fw.sb": H["2"]}, prov([{"recipe": "fw", "steps": [step]}]))
+    comp = [c for c in doc["components"] if c["path"] == "slax/modules/09-fw.sb"][0]
+    check("recorded", comp["network"], True)
+    check("and said in the note", "script's own account" in comp["note"], True)
+
+    step = dict(step, network=None)
+    doc = run({"slax/modules/09-fw.sb": H["2"]}, prov([{"recipe": "fw", "steps": [step]}]))
+    comp = [c for c in doc["components"] if c["path"] == "slax/modules/09-fw.sb"][0]
+    check("a script with no network does not say it", "own account" in comp["note"], False)
+
+
 def test_the_initramfs_note_counts_members_instead_of_asserting_them():
     """The note said "members that match the stock initramfs manifest are Slax as
     published" while nothing compared any member: the manifest was read into `stock` and
@@ -509,6 +528,7 @@ def main():
                test_isolinux_bin_is_recognised_after_the_boot_info_table_is_rewritten,
                test_a_recorded_download_is_prebuilt_only_when_the_bytes_match,
                test_a_download_without_upstream_source_warns_or_fails_under_strict,
+               test_a_script_that_had_network_says_so,
                test_the_initramfs_note_counts_members_instead_of_asserting_them,
                test_an_unpinned_download_is_said_out_loud,
                test_a_mirror_path_cannot_impersonate_debian,

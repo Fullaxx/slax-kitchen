@@ -70,9 +70,10 @@ is, which is why `declares:` exists.
 go through one resolver, which records their path in the kitchen or project checkout and their
 content. `kitchen sources` checks both against the recorded commit, because those files are what
 the project source archive is promising to hold. A unit test fails any verb that resolves a
-recipe-relative path without it. `boot.payload`, `bundle.fromTarball` and `initramfs.busybox` are
-the exceptions: what they take in is a download or a build output, described by `upstream_source`
-or a build claim.
+recipe-relative path without it. `bundle.fromTarball` and `initramfs.busybox` are the exceptions:
+what they take in is a download or a build output, described by `upstream_source`
+or a build claim. `boot.payload` takes either, and is not an exception — a URL is described by
+`upstream_source`, and a local file is recorded like any other file copied in from a checkout.
 
 ---
 
