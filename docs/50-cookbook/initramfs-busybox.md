@@ -102,8 +102,11 @@ So there is one binary to build, not four.
 
 ## The binary is not in this repository
 
-`ci/checks/00-no-binaries.sh` rejects it, and that gate is right: a 1.2 MB blob that runs as root at
-boot is exactly what should be built from pinned source rather than committed and forgotten.
+A 1.2 MB blob that runs as root at boot is exactly what should be built from pinned source rather
+than committed and forgotten. It lives in `build/`, which `.gitignore` keeps out.
+`ci/checks/00-no-binaries.sh` is not what keeps it out, and would not stop a forced add: it rejects by
+extension, directory and size, and this is an extensionless 1.2 MB file. Measured by staging it with
+`git add -f`: the gate passed.
 
 `tools/build-busybox.sh` builds it in about 30 seconds inside `i386/alpine`, verifying upstream's
 published sha256 **before compiling a line**. The container is needed because this host has neither

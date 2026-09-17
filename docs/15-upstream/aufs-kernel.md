@@ -31,8 +31,11 @@ patch -p1 < $AUFS/aufs6-loopback.patch
 
 Five patches against the tree, plus two more (`vfs-ino`, `tmpfs-idr`), then `make bindeb-pkg`.
 
-Note the repository is named `aufs5-standalone` but the branch is `origin/aufs6.1` — the project
-kept the old repository name across kernel generations.
+The script clones `aufs5-standalone`, and the branch is `origin/aufs6.1`. The repository has since
+been renamed `sfjro/aufs-standalone`; GitHub redirects the old name, so the clone still works. It
+checks out whatever the branch holds on the day, which is why only the image says what shipped:
+`aufs.ko` in `01-core.sb` reports version `6.1-20230724`, commit `3402e2ca3861`. The branch head is
+now a later commit, so running the script today builds a different aufs.
 
 ## What ships
 
@@ -49,7 +52,10 @@ directory is `/lib/modules/6.1.38-smp`. Anything hardcoding `6.1.38` breaks on 3
 
 ## Config options that matter
 
-From `config-x86_64`:
+From the configuration embedded in the shipped kernel (`CONFIG_IKCONFIG=y`; `/proc/config.gz` on a
+running Slax). Upstream's committed `config-x86_64` is not that configuration — 3,092 options
+differ, including squashfs, isofs, ext4 and vfat, which it builds as modules — but every option
+in this table has the same value in both:
 
 | | Why |
 |---|---|

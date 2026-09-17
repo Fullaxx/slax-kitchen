@@ -12,7 +12,8 @@ compat:
   privilege: mknod
 vars:
   # Build it first:  tools/build-busybox.sh --check-parity
-  # Not committed -- ci/checks/00-no-binaries.sh rejects binaries, and rightly.
+  # Not committed: build/ is gitignored. (00-no-binaries would not catch a forced add --
+  # it rejects by extension, directory and size, and this is an extensionless 1.2 MB file.)
   busybox: ../../build/busybox-1.37.0-i386-static
 steps:
   # THE SHIPPED BUSYBOX IS FROM 2017. `BusyBox v1.26.2 (2017-12-14)`, byte-identical on
@@ -26,9 +27,9 @@ steps:
   # even on the 64-bit images -- which is the origin of the CONFIG_IA32_EMULATION
   # requirement that any replacement kernel inherits.
   #
-  # WHY THE BINARY IS NOT IN THIS REPOSITORY. 00-no-binaries rejects it, and that gate is
-  # right: a 1.2 MB blob that runs as root at boot is exactly the thing that should be
-  # built from pinned source rather than committed and forgotten. tools/build-busybox.sh
+  # WHY THE BINARY IS NOT IN THIS REPOSITORY. A 1.2 MB blob that runs as root at boot is
+  # exactly the thing that should be built from pinned source rather than committed and
+  # forgotten. .gitignore keeps build/ out; 00-no-binaries does not look at this file. tools/build-busybox.sh
   # does it in about 30 seconds, verifying upstream's published sha256 before compiling.
   #
   # APPLET PARITY, measured: 1.26.2 has 248 applets, this build has 406, and the only one

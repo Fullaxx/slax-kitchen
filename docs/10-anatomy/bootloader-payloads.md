@@ -1,12 +1,15 @@
 # Bootloader payloads
 
-Slax uses **SYSLINUX 6.03 and nothing else.** No GRUB, no shim, no Secure Boot. Nine of the files in
+Slax uses **SYSLINUX and nothing else**: 6.03 for BIOS, a 6.04 pre-release for UEFI. No GRUB, no
+shim, no Secure Boot. Nine of the files in
 `/slax/boot/` are part of that family, and they split into three groups that are easy to confuse:
 loaders that the firmware runs, COM32 modules that a loader then runs, and **installers that run on
 your own machine.**
 
 ```sh
 strings -a /slax/boot/isolinux.bin | grep -oE 'ISOLINUX [0-9.]+'   # → ISOLINUX 6.03
+strings -a /slax/boot/EFI/Boot/syslinux.efi | grep -oE 'Syslinux 6[^)]*\)'
+                                             # → Syslinux 6.04 (EFI; 6.04-pre1)
 ```
 
 ## Loaders
@@ -61,6 +64,11 @@ Fetching that package from `archive.debian.org` and comparing against the ISO:
 | `libcom32.c32` | byte-identical |
 | `libutil.c32` | byte-identical |
 | `vesamenu.c32` | byte-identical |
+
+**The UEFI side is a different build.** `syslinux.efi` reports `Syslinux 6.04 (EFI; 6.04-pre1)`, and
+`ldlinux.e64` and every EFI COM32 module carry `GCC: (GNU) 5.3.1 20151207 (Red Hat 5.3.1-2)` — a
+pre-release built with a Red Hat compiler, not Debian's 6.03. Everything below about 6.03 and the
+Debian package is about the BIOS side.
 
 **This matters because "6.03" is not enough to identify a compatible module.** Upstream's own
 prebuilt 6.03 binaries, from `syslinux-6.03.tar.xz` on kernel.org, are a *different build* of the

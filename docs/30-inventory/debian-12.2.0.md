@@ -68,7 +68,7 @@ Contents added per bundle:
 
 | | adds |
 |---|---|
-| `01-firmware` | 12 firmware packages, all wireless |
+| `01-firmware` | 12 packages: ten Debian firmware packages for wireless, Bluetooth and Ethernet (`bnx2` and `cavium` are wired), plus `firmware-b43-installer` and `b43-fwcutter`, whose Broadcom b43 firmware — 156 files — was extracted during Slax's build. Their `copyright` files were removed; `usr/lib/firmware/ipw2x00.LICENSE` is the one license text left |
 | `02-xorg` | Xorg, drivers, fonts, `xterm`, `Xdetect` |
 | `03-desktop` | fluxbox, xfce4-panel, xlunch, the `fb*` helpers |
 | `04-apps` | pcmanfm, connman-gtk, galculator, xarchiver, scite, lxtask + 33 libraries |

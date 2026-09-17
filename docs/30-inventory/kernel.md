@@ -44,13 +44,16 @@ patched in and the kernel rebuilt, every release. That single fact explains most
 about Slax:
 
 - there is no stock distribution kernel that will do;
-- the build needs `sfjro/aufs5-standalone` at the matching branch;
+- the build needs `sfjro/aufs-standalone` at the matching branch;
 - and replacing the kernel with a distribution one silently downgrades Slax to overlayfs, which
   disables `slax activate` and makes `union_append_bundles` a no-op.
 
 Built by `vendor/linux-live/Slax/debian12/aufs-kernel-compile/compile` from `linux-source-6.1` plus
-`sfjro/aufs5-standalone` at `origin/aufs6.1`. Details in
-[`15-upstream/aufs-kernel.md`](../15-upstream/aufs-kernel.md).
+`sfjro/aufs-standalone` at `origin/aufs6.1`. The repository was `aufs5-standalone` when the script was
+written, and GitHub redirects that name. The script checks out whatever the branch holds on the day,
+so the image is the only record of what shipped: the `aufs.ko` in `01-core.sb` reports version
+`6.1-20230724`, commit `3402e2ca3861`. The branch has moved on since, so the script run today builds a
+different aufs. Details in [`15-upstream/aufs-kernel.md`](../15-upstream/aufs-kernel.md).
 
 ## `CONFIG_IA32_EMULATION=y` is mandatory
 
@@ -64,7 +67,12 @@ The failure happens before any userspace exists to report it: a reboot loop with
 the highest-consequence constraint in the image, and it is the first thing a `kernel.replace` recipe
 must assert.
 
-Upstream's `aufs-kernel-compile/config-x86_64` has it set.
+The shipped kernel has it set. It embeds its own configuration (`CONFIG_IKCONFIG=y`, so a running
+Slax has it at `/proc/config.gz`), and that is the record to trust, not upstream's committed
+`aufs-kernel-compile/config-x86_64`. The committed file is not the configuration this kernel was built
+with: 3,092 options differ (1,816 set differently, 684 only in the shipped configuration, 592 only in
+the committed one), and it builds squashfs, isofs, ext4 and vfat as modules where the shipped kernel
+has them built in. It does have `IA32_EMULATION` set too.
 
 ## What is built in, and what is a module
 

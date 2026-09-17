@@ -24,7 +24,7 @@ mount -o loop "$2"/* "$2"             # self-mount: the ISO over its own mountpo
 echo "$2/$LIVEKITNAME"
 ```
 
-`@mount.httpfs2` is one of the seven static binaries in the initramfs. It presents the remote file as
+`@mount.httpfs2` is one of the seven static helpers beside busybox in the initramfs. It presents the remote file as
 a local one via FUSE with HTTP range requests, and the ISO inside it is then loop-mounted **over the
 same path**. Bundles are read on demand, so only the parts you actually touch cross the network.
 

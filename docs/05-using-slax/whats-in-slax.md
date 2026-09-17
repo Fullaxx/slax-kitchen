@@ -63,6 +63,6 @@ does not ship (it has `mkisofs` instead). A symlink fixes it.
 ## The initramfs
 
 8.9 MB compressed, and the same on all four ISOs apart from kernel modules. It contains BusyBox
-**1.26.2 from 2017** plus eight static helper binaries, and **all of them are 32-bit i386 even on
+**1.26.2 from 2017** plus seven static helper binaries, and **all of them are 32-bit i386 even on
 the 64-bit ISOs** — one blob set serves both builds, which is why the x86_64 kernel needs
 `CONFIG_IA32_EMULATION`.

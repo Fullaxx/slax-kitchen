@@ -75,6 +75,9 @@ busybox  blkid  eject  mc  ncurses-menu  mkfs.xfs.custom  xfs_growfs
 mount.dynfilefs  mount.httpfs2
 ```
 
+Slax 12.2.0's initramfs has eight of them. `mc` was added to this directory, and to the copy list,
+in `02c040b` on 2023-10-30 — three weeks after the release.
+
 `mount.dynfilefs` and `mount.httpfs2` are installed with an `@` prefix — `/bin/@mount.dynfilefs` —
 and `livekitlib` invokes them by that name directly, so busybox's `mount` never has to exec a
 `/sbin/mount.TYPE` helper.
@@ -88,7 +91,8 @@ Verified: all eight helpers are UPX-packed; **busybox alone is not**. All nine a
 even in the 64-bit ISO — one blob set serves both builds, which is why the x86_64 kernel needs
 `CONFIG_IA32_EMULATION`. No build configuration is published for any of them.
 
-## A post-release commit
+## Post-release commits
 
-The only change since Slax 12.2.0 shipped is `9825e93` (2024-11-14), adding the `.ko.xz`
-decompression at line 139 for RHEL-based build hosts. **It has never appeared in a release.**
+Two changes since Slax 12.2.0 shipped on 2023-10-09: `02c040b` (2023-10-30) copies the new `mc`
+binary into the initramfs, and `9825e93` (2024-11-14) adds the `.ko.xz` decompression at line 139
+for RHEL-based build hosts. **Neither has appeared in a release.**

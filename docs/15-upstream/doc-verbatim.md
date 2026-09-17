@@ -76,7 +76,8 @@ DynFileFS container rather than an unlimited bind mount.
 > Source code for precompiled binaries (initramfs/static/*) can be found at
 > http://ftp.slax.org/Slax-7.x-development/sources/Slax-7.0-sources/busybox-and-ntfs3g/
 
-One URL, covering two of the nine binaries, pointing at a Slax 7.x tree.
+One URL, covering two of the nine binaries now in `initramfs/static/`, pointing at a Slax 7.x tree.
+Slax 12.2.0 shipped eight of them: `mc` was added on 2023-10-30, three weeks after the release.
 
 ## `LICENSE` and `GNU_GPL`
 
