@@ -52,11 +52,17 @@ def claim(outdir: str) -> str:
     fw = src.get("firmware") or {}
     if fw.get("stock_bundle") or fw.get("license_texts") or fw.get("fetched_firmware"):
         lines += ["", "Using an image that contains firmware implies acceptance of each firmware's "
-                      "license terms. The license texts are inside the image"
-                  + (": Debian's copyright files, and a license file beside each file taken "
-                     "from linux-firmware." if fw.get("license_texts") else ".")]
-    lines += ["", "The image does not identify itself as an official Slax release. Slax and Linux "
-                  "Live Kit are the work of **Tomáš Matějíček** — <https://www.slax.org>."]
+                      "license terms."]
+        if fw.get("license_texts"):
+            lines[-1] += (" The license texts are inside the image: Debian's copyright files for "
+                          "its firmware packages"
+                          + (", and a license file beside the files taken from linux-firmware."
+                             if fw.get("fetched_firmware") else "."))
+        elif fw.get("stock_bundle"):
+            lines[-1] += (" Slax's own build removed the license texts of its firmware bundle; "
+                          "`usr/lib/firmware/ipw2x00.LICENSE` is the one that remains.")
+    lines += ["", "Slax and Linux Live Kit are the work of **Tomáš Matějíček** — "
+                  "<https://www.slax.org>."]
     return "\n".join(lines) + "\n"
 
 

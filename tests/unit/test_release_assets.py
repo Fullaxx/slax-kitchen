@@ -231,6 +231,24 @@ def test_the_claim_names_what_is_attached():
         check("an attached image is named with its hash", "This release attaches `x.iso`" in text, True)
 
 
+def test_the_claim_says_only_what_the_directory_shows():
+    """Found on the first real run, on the tor assets: the section said "The license texts are
+    inside the image" about an image whose firmware texts Slax's build had removed, and "does
+    not identify itself as an official Slax release" about an image with volume id `slax`.
+    Neither was read off anything."""
+    stock = {"stock_bundle": True, "license_texts": []}
+    with Fixture(firmware=stock) as d:
+        text = claim_mod.claim(d)
+        check("no license-text claim without the texts", "license texts are inside" in text, False)
+        check("says what is true instead", "removed the license texts" in text, True)
+        check("no identity claim it cannot check", "official Slax release" in text, False)
+    restored = {"stock_bundle": True, "license_texts": [{"recipe": "firmware-refresh",
+                                                         "bundle": "slax/modules/09-firmware-debian.sb",
+                                                         "packages": ["firmware-iwlwifi"]}]}
+    with Fixture(firmware=restored) as d:
+        check("the texts, when they are there", "license texts are inside" in claim_mod.claim(d), True)
+
+
 def test_release_notes_use_the_claim_when_given_assets():
     with Fixture(attached=True) as d:
         p = subprocess.run([os.path.join(ROOT, "ci", "release-notes.sh"), "v9.9.9"], cwd=ROOT,
@@ -252,6 +270,7 @@ def main():
                test_no_host_paths_and_no_renamed_names,
                test_an_attached_image_carries_its_firmware_licenses,
                test_the_claim_names_what_is_attached,
+               test_the_claim_says_only_what_the_directory_shows,
                test_release_notes_use_the_claim_when_given_assets]:
         fn()
     if FAILURES:

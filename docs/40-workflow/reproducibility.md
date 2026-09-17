@@ -163,6 +163,22 @@ That is a fidelity test, not a reproducibility test, and it is the one wired int
 "the payload survived" is what
 actually matters for an ISO that has to boot.
 
+## A published image is explained, not reproduced
+
+A rebuilt ISO does not match the published one byte for byte, and nothing here pretends otherwise.
+What a published image carries instead is a record that accounts for every file in it:
+`<iso>.provenance.json` and the sources manifest, checked by
+[`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir). `SHA256SUMS`
+checks that a download is the file that was published; the records say what that file is made of.
+
+**The source assets are reproducible, even though the image is not.** `ci/release-assets.sh` writes
+the project archives with no timestamps (`git archive` of the recorded commits, gzip with mtime 0),
+and each source package as a tar with fixed metadata. Measured on the `tor` image at commit
+`6419fa4`: two runs, each downloading GRUB's source package from Launchpad again, wrote identical
+`SHA256SUMS`. Anyone with the same image and commit can regenerate the source set and compare hashes,
+which is a check a rebuild of the ISO cannot offer. See
+[publishing an image](publishing-images.md).
+
 ## What is never reproducible, and does not need to be
 
 | | |
