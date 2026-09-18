@@ -10,20 +10,32 @@ compat:
   slax: ">=12.0.0"
   privilege: none
 vars:
-  # Regex over bundle FILENAMES. 05-chromium is the usual first candidate: it is the
-  # single largest optional bundle (79 MiB on Debian, 115 MiB on Slackware) and Slax can
+  # Regex over bundle FILENAMES, anchored so it cannot catch a bundle that merely starts
+  # the same way. 05-chromium is the default because it is the usual first candidate: the
+  # single largest optional bundle (79 MiB on Debian, 115 MiB on Slackware), and Slax can
   # re-fetch it on demand at runtime -- /usr/bin/fbliveapp downloads it from slax.org and
-  # `slax activate`s it the first time you click the browser icon.
+  # `slax activate`s it the first time you click the browser icon, so the desktop's
+  # browser entry becomes an installer rather than breaking. How that recovers differs by
+  # flavour and needs a network either way: Debian runs `apt install chromium`, Slackware
+  # fetches the bundle from slax.org. On an air-gapped build, mask the launcher too --
+  # see the cookbook page.
   #
-  # Other useful values:
-  #   "06-devel"                      Slackware only, 81 MiB of gcc/headers
-  #   "05-chromium|06-devel"          both
-  #   "01-firmware"                   only if you know the target hardware
+  # SEVERAL BUNDLES GO IN ONE PATTERN, not in a second copy of this recipe: a plan applies
+  # each recipe once, so a profile listing it twice is refused rather than silently
+  # dropping the second entry.
+  #
+  #   "^(05-chromium|06-devel)\\.sb$"   both (06-devel is Slackware only, 81 MiB)
+  #   "^01-firmware\\.sb$"              only if you know the target hardware
   #
   # Do NOT remove 01-core: it is the root filesystem. 02-xorg and 03-desktop leave a
   # console-only system, which is a legitimate thing to want -- pair with a `text` boot
   # parameter so the X autostart unit does not fire.
-  drop: "05-chromium"
+  drop: "^05-chromium\\.sb$"
 steps:
+  # THIS RECIPE REMOVES, AND DOES NOTHING ELSE, which is a rule rather than a style:
+  # lib/validate.py refuses a recipe that mixes removal with building. A bundle is built
+  # against everything below it, so removing one afterwards can leave an unresolvable
+  # NEEDED that no gate can see -- check_plan_order refuses that order, which is why a
+  # removal goes first in a profile and every additive recipe then composes in any order.
   - verb: bundle.remove
     match: "{{drop}}"

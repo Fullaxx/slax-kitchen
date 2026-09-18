@@ -101,7 +101,7 @@ set serves all targets.
 ### Why i386 matters
 
 An x86-64 kernel can only execute these if it was built with `CONFIG_IA32_EMULATION=y`. Slax's is —
-confirmed in upstream's `aufs-kernel-compile/config-x86_64`. **A `kernel.replace` that drops
+confirmed in the configuration the shipped kernel embeds (`/proc/config.gz`). **A `kernel.replace` that drops
 `IA32_EMULATION` makes the entire initramfs unrunnable**, and the failure comes before any userspace
 that could report it. This is the highest-consequence constraint in the whole image.
 

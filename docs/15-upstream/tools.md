@@ -31,8 +31,9 @@ busybox and ntfs-3g:
 > Source code for precompiled binaries (initramfs/static/*) can be found at
 > http://ftp.slax.org/Slax-7.x-development/sources/Slax-7.0-sources/busybox-and-ntfs3g/
 
-So seven of the nine binaries ship with no in-tree source and no stated provenance. That is worth
-knowing if you redistribute an image: see [NOTICE.md](../../NOTICE.md).
+So eight of the nine binaries have no source in the repository, and the one pointer that exists is
+a Slax 7 URL, for busybox, that returned 404 when checked on 2026-09-17. What an image built from
+these carries when it is published is in [NOTICE.md](../../NOTICE.md).
 
 Why a custom `mkfs.xfs` at all: `persistent_changes` formats the DynFileFS container with it, and it
 needs to work inside a 45 MB initramfs with no libraries — hence a purpose-built static binary

@@ -2,11 +2,13 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Thirty-six recipes ship today.** Every one is built and structurally asserted on all four
-targets by CI (or on the subset its `compat:` block declares) — with two exceptions:
-[`all-browsers`](all-browsers.md) and [`tor-browser`](tor-browser.md) are built weekly rather than
-on every push, because four sha256-pinned vendor keys and a version-pinned Tor Browser tarball are
-external dependencies — someone else's release should not redden master. See
+**Thirty-five recipes ship today.** Every one is built and structurally asserted on all four
+targets by CI (or on the subset its `compat:` block declares) — with three exceptions:
+[`all-browsers`](all-browsers.md), [`tor-browser`](tor-browser.md) and
+[`firmware-refresh`](firmware-refresh.md) are built weekly rather than on every push, because four
+sha256-pinned vendor keys, a version-pinned Tor Browser tarball and 65 files fetched from
+linux-firmware mirrors are external dependencies — someone else's release should not redden
+master. See
 [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) and [CI](../60-testing/ci.md). Each page opens with the rung of
 the [verification ladder](../../CONTRIBUTING.md) it actually reached — `matrix-verified`,
 `artifact boot-verified`, `boot-verified` or `runtime-verified` — and the `95-status-vocab` gate
@@ -35,7 +37,7 @@ kitchen build <profile>             # fetch -> unpack -> apply* -> pack -> test
 | [`boot-cmdline`](boot-cmdline.md) | bake `toram` and friends into every entry; drop the broken `automount` | ○ |
 | [`host-grub-entry`](host-grub-entry.md) | a GRUB entry for booting Slax from a bootloader you already have | ○ |
 | [`iso-identity`](iso-identity.md) | label the image as yours, and write a verifiable checksum | ○ |
-| [`firmware-refresh`](firmware-refresh.md) | the GPU firmware stock Slax ships **none** of; +90 MiB | ◐ |
+| [`firmware-refresh`](firmware-refresh.md) | firmware so the ISO works on more hardware — Debian's plus what only linux-firmware has; +53 MiB | ◐ |
 
 The first two fix real gaps in every stock image, and together produce one file that boots four
 ways: BIOS optical, UEFI optical, BIOS `dd`'d stick, UEFI `dd`'d stick.
@@ -58,12 +60,11 @@ to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
 |---|---|---|
 | [`add-packages`](add-packages.md) | install distro packages into a new `07-*.sb`. The template recipe | ◐ |
 | [`rootcopy-overlay`](rootcopy-overlay.md) | drop files straight onto the live filesystem — **no squashfs rebuild at all** | ○ |
-| [`remove-bundle`](remove-bundle.md) | drop bundles by regex to slim the image | ○ |
-| [`remove-chromium`](remove-chromium.md) | the named preset for the above: −79 MiB Debian, −115 MiB Slackware | ○ |
+| [`remove-bundle`](remove-bundle.md) | drop bundles by pattern — the only recipe that removes anything; the stock browser is −79 MiB Debian, −115 MiB Slackware | ○ |
 | [`chromium-current`](chromium-current.md) | replace the 2023 browser — stock is chromium **117**, from September 2023 | ◐ |
 | [`debian-browsers`](debian-browsers.md) | current Chromium **and** Firefox in one bundle — both arches, no vendor repos | ◐ |
-| [`all-browsers`](all-browsers.md) | six browsers in one bundle, replacing the stock one — 64-bit, **1227 MiB ISO** | ◐ |
-| [`tor-browser`](tor-browser.md) | Tor Browser from a pinned tarball, replacing Chromium — 64-bit, runs as `guest` | ◐ |
+| [`all-browsers`](all-browsers.md) | six browsers in one bundle — 64-bit; pair it with `remove-bundle` | ◐ |
+| [`tor-browser`](tor-browser.md) | Tor Browser from a pinned tarball — 64-bit, runs as `guest`; pair it with `remove-bundle` | ◐ |
 | [`firefox-esr`](firefox-esr.md) | add the second browser no Slax image ships; amd64 **and** i386 | ◐ |
 | [`libreoffice`](libreoffice.md) | Writer, Calc, Impress and Draw — 116 MiB, the largest single addition here | ◐ |
 | [`branding`](branding.md) | hostname, version string and login banner, from a 4 KiB override bundle | ○ |
@@ -100,7 +101,7 @@ Cheapest first. Prefer the first one that solves your problem:
 | Slax to see a disk it currently cannot find | [`initramfs-add-modules`](initramfs-add-modules.md) | one repack, ~10 KiB |
 | a config file, a script, an ssh key on the live system | [`rootcopy-overlay`](rootcopy-overlay.md) | **nothing** — copied in at boot |
 | extra software | [`add-packages`](add-packages.md) | one `mksquashfs`, ~450 KiB |
-| a smaller image | [`remove-chromium`](remove-chromium.md) | one bundle deleted |
+| a smaller image | [`remove-bundle`](remove-bundle.md) | one bundle deleted |
 | it to boot on a modern laptop | [`uefi-bootable`](uefi-bootable.md) | rebuild |
 | it on a USB stick via `dd` | [`isohybrid`](isohybrid.md) + `uefi-bootable` | rebuild |
 
@@ -112,7 +113,13 @@ shipped bundle is for **removal only**; nothing else needs it.
 
 ## Flavour coverage
 
-Seven of the eight work on both flavours and both word sizes. The exception:
+**Twenty-four of the thirty-five work on all four targets.** Counted from the `compat:` blocks:
+eight are Debian-only (`add-packages`, `all-browsers`, `chromium-current`, `debian-browsers`,
+`firefox-esr`, `firmware-refresh`, `libreoffice`, `tor-browser`), two are Slackware-only
+(`bundle-from-txz`, `fix-slackware-bugs`), and three ship 64-bit vendor builds only
+(`all-browsers`, `bundle-from-tarball`, `tor-browser`). So a target's matrix runs 33 recipes on
+debian-64bit, 30 on debian-32bit, 27 on slackware-64bit and 26 on slackware-32bit. The one that
+most often surprises people:
 
 | | |
 |---|---|

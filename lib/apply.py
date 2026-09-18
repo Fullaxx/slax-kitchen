@@ -29,6 +29,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dpkgdb  # noqa: E402
+import provenance  # noqa: E402
 from validate import validate_file  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -189,7 +190,7 @@ def _built_before(work: str | None) -> list[tuple[str, str]]:
 
     Without this the rule holds inside one invocation and nowhere else: the two
     one-liners every cookbook page documents -- `kitchen apply firefox-esr` then
-    `kitchen apply remove-chromium` -- both exit 0 and produce exactly the state the
+    `kitchen apply remove-bundle` -- both exit 0 and produce exactly the state the
     single-invocation refusal exists to prevent.
 
     The journal is the right source and the filesystem is not: it records what earlier
@@ -237,7 +238,7 @@ def check_plan_order(plan: list[tuple[str, dict]], work: str | None = None) -> l
 
     * Within one plan, it is decidable from the step list alone.
     * Across invocations it is not, and plan-only was not enough -- `kitchen apply
-      firefox-esr` then `kitchen apply remove-chromium` is what every cookbook page
+      firefox-esr` then `kitchen apply remove-bundle` is what every cookbook page
       documents, and both exited 0. `work` seeds the prior bundles from the journal.
     * Under --preflight-only there is no tree yet, because `kitchen build` preflights
       before it unpacks (lib/build.sh). `work` is None there and the rule is plan-only,
@@ -272,9 +273,9 @@ def check_plan_order(plan: list[tuple[str, dict]], work: str | None = None) -> l
                 f"{bundle} was built{by}. A bundle takes everything below it as given, so "
                 f"disturbing one afterwards can leave an unresolvable NEEDED that no gate "
                 f"can see. Put every bundle.remove and bundle.renumber before every "
-                f"bundle.packages / bundle.script -- chromium-current does, deliberately, "
-                f"and removing first also makes the remaining from: stacks come out right "
-                f"on their own.")
+                f"bundle.packages / bundle.script -- that is what the removal recipe "
+                f"(remove-bundle) is for, listed first, and removing first also makes the "
+                f"remaining from: stacks come out right on their own.")
     return problems
 
 
@@ -347,6 +348,11 @@ class Ctx:
         self.recipe = recipe_name
         self.dry = dry
         self.changes: list[str] = []
+        # Provenance: one record per verb that ran, accumulated by prov() and written by
+        # apply_recipe. See lib/provenance.py for why the journal was not enough.
+        self.verb: str | None = None
+        self.prov_steps: list[dict] = []
+        self._step: dict | None = None
         os.makedirs(self.meta, exist_ok=True)
 
     def p(self, *parts) -> str:
@@ -369,6 +375,47 @@ class Ctx:
         if artifact not in self.changes:
             self.changes.append(artifact)
 
+    def begin_step(self, verb: str) -> None:
+        self.verb, self._step = verb, {"verb": verb}
+
+    def end_step(self) -> None:
+        if self._step and len(self._step) > 1:
+            self.prov_steps.append(self._step)
+        self.verb, self._step = None, None
+
+    def prov(self, **fields) -> None:
+        """Record where something came from, for <iso>.provenance.json.
+
+        Fields merge into the current verb's record; lists extend rather than replace, so
+        a verb and the helper building its bundle can both contribute. None values are
+        dropped. A dry run records nothing, because nothing happened.
+        """
+        if self.dry:
+            return
+        if self._step is None:
+            self._step = {"verb": self.verb or "?"}
+        for k, v in fields.items():
+            if v is None:
+                continue
+            if isinstance(v, list) and isinstance(self._step.get(k), list):
+                self._step[k].extend(v)
+            else:
+                self._step[k] = v
+
+    def local(self, src: str) -> str:
+        """Resolve a recipe's local `src:` -- relative to the recipe file -- and record it.
+
+        What a recipe copies in, `kitchen sources` classes as `ours`: covered by the project
+        source archive. That is only true if the archive holds it, so the input is recorded
+        by where it sits in the kitchen or project checkout and by its content, and
+        `kitchen sources` checks both against the recorded commit. Downloads and build
+        outputs do not come through here; they carry upstream_source or a build claim.
+        """
+        path = src if os.path.isabs(src) else os.path.join(self.recipe_dir, src)
+        if not self.dry and os.path.exists(path):
+            self.prov(local_inputs=[provenance.local_input(path)])
+        return path
+
     def hint(self, key: str, value) -> None:
         """Ask `kitchen pack` to do something at mastering time."""
         path = os.path.join(self.meta, "pack.yaml")
@@ -379,7 +426,11 @@ class Ctx:
         cur[key] = value
         if not self.dry:
             with open(path, "w") as f:
-                yaml.safe_dump(cur, f, sort_keys=True)
+                # ONE LINE PER HINT. lib/hints.sh reads this file with sed, and safe_dump
+                # folds a scalar longer than 80 columns onto a continuation line: a
+                # publisher near the ISO field's 128-character limit was mastered, and
+                # then tested, truncated at the last space before column 80.
+                yaml.safe_dump(cur, f, sort_keys=True, width=4096)
         self.say(f"pack hint: {key}={value}")
 
 
@@ -487,6 +538,21 @@ def v_boot_payload(ctx: Ctx, step: dict) -> None:
             shutil.copy2(local, dest)
     if "mode" in step:
         os.chmod(dest, int(step["mode"], 8))
+    if src:
+        remote = bool(re.match(r"^https?://", src))
+        if not remote:
+            # A file from beside the recipe is recorded the way every other local input
+            # is, so `kitchen sources` can check it against the recorded commit. Ctx.local
+            # takes the path and nothing else; it resolves relative to the recipe itself.
+            ctx.local(src)
+        ctx.prov(source=src if remote else os.path.basename(src),
+                 source_sha256=got, member=member,
+                 # `pinned` says whether a DOWNLOAD was named by sha256. A checked-in file
+                 # is answered by its commit, not by a hash of what a server served, and
+                 # recording pinned=False for one would warn about the wrong thing.
+                 pinned=bool(want) if remote else None,
+                 upstream_source=step.get("upstream_source"),
+                 output=provenance.in_image(step["dest"]), output_sha256=sha256(dest))
     ctx.record(step['dest'], f"installed {step['dest']} ({os.path.getsize(dest)} bytes)")
 
 
@@ -508,7 +574,7 @@ def v_iso_files(ctx: Ctx, step: dict) -> None:
                 raise RuntimeError(
                     f"iso.files: {spec['dest']} needs `src` or `content`")
             src = spec["src"]
-            local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+            local = ctx.local(src)
             if os.path.isdir(local):
                 shutil.copytree(local, dest, dirs_exist_ok=True)
             else:
@@ -615,6 +681,7 @@ def _initramfs_pack(ctx: "Ctx", tree: str) -> None:
     after = os.path.getsize(img)
     ctx.say(f"repacked initrfs.img  {before:,} -> {after:,} bytes ({after - before:+,})")
     ctx.record("slax/boot/initrfs.img")
+    ctx.prov(output="slax/boot/initrfs.img", output_sha256=sha256(img))
 
 
 @verb("initramfs.files")
@@ -662,7 +729,7 @@ def v_initramfs_files(ctx: Ctx, step: dict) -> None:
                     f.write(spec["content"])
             else:
                 src = spec["src"]
-                local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+                local = ctx.local(src)
                 if not os.path.isfile(local):
                     raise RuntimeError(f"initramfs.files: no such source file: {local}")
                 shutil.copy2(local, dest)
@@ -863,6 +930,193 @@ def _read_status(root: str) -> str:
         return ""
 
 
+def _status_changes(before: str, after: str) -> list[dict]:
+    """Packages a chroot run installed or changed, with their source package, for provenance.
+
+    Source is what `kitchen sources` needs to point at an upstream: dpkg writes `Source:`
+    only when it differs from the binary name, and adds `(version)` only when that
+    differs too, so both fall back to the binary's own.
+    """
+    def stanzas(text: str) -> dict:
+        out = {}
+        for block in text.split("\n\n"):
+            f = dict(re.findall(r"^([A-Za-z-]+): ?(.*)$", block, re.M))
+            if f.get("Package") and f.get("Status", "").endswith(" installed"):
+                out[f"{f['Package']}:{f.get('Architecture', '')}"] = f
+        return out
+    old, new = stanzas(before), stanzas(after)
+    changed = []
+    for key, f in sorted(new.items()):
+        if key in old and old[key].get("Version") == f.get("Version"):
+            continue
+        src, src_ver = f.get("Source", f["Package"]), f.get("Version")
+        m = re.match(r"^(\S+)\s+\((.+)\)$", src)
+        if m:
+            src, src_ver = m.group(1), m.group(2)
+        changed.append({"package": f["Package"], "architecture": f.get("Architecture"),
+                        "version": f.get("Version"), "source": src, "source_version": src_ver})
+    return changed
+
+
+def _deb_hashes(root: str) -> list[dict]:
+    """Every .deb apt downloaded into the chroot -- sha256, and the package, version and
+    source package it declares -- read before the chroot is gone.
+
+    Reinstalled packages never show up in the status diff (their stanza does not change),
+    so the .debs are the only record of what they were.
+    """
+    d = os.path.join(root, "var", "cache", "apt", "archives")
+    if not os.path.isdir(d):
+        return []
+    out = []
+    for n in sorted(os.listdir(d)):
+        if not n.endswith(".deb"):
+            continue
+        path = os.path.join(d, n)
+        rec = {"file": n, "sha256": sha256(path)}
+        if shutil.which("dpkg-deb"):
+            r = subprocess.run(["dpkg-deb", "-f", path, "Package", "Version", "Architecture",
+                                "Source"], capture_output=True, text=True)
+            f = dict(re.findall(r"^([A-Za-z-]+): (.*)$", r.stdout, re.M))
+            if f.get("Package"):
+                src, src_ver = f.get("Source", f["Package"]), f.get("Version")
+                m = re.match(r"^(\S+)\s+\((.+)\)$", src)
+                if m:
+                    src, src_ver = m.group(1), m.group(2)
+                rec.update(package=f["Package"], version=f.get("Version"),
+                           architecture=f.get("Architecture"), source=src,
+                           source_version=src_ver)
+        out.append(rec)
+    return out
+
+
+def _deb_origins(root: str, debs: list[dict]) -> list[dict]:
+    """Mark each downloaded .deb with the apt index that lists its sha256.
+
+    A package from a recipe's own repository is not on snapshot.debian.org, so `kitchen
+    sources` must not point there. apt keeps every archive's Packages index in
+    var/lib/apt/lists/, named after the archive's URI, and each stanza carries the .deb's
+    SHA256 -- so a match says which archive the file came from, rather than guessing from
+    the package name.
+    """
+    want = {d["sha256"]: d for d in debs if d.get("sha256")}
+    lists = os.path.join(root, "var", "lib", "apt", "lists")
+    if not want or not os.path.isdir(lists):
+        return debs
+    for n in sorted(os.listdir(lists)):
+        if not n.endswith("_Packages"):
+            continue
+        with open(os.path.join(lists, n), errors="replace") as f:
+            for ln in f:
+                if ln.startswith("SHA256: "):
+                    d = want.get(ln[8:].strip())
+                    if d is not None:
+                        d.setdefault("origin", n)
+    return debs
+
+
+def _pkgtools_added(before: dict, after: dict) -> list[str]:
+    """Slackware packages a chroot run registered: new entries in var/lib/pkgtools/packages.
+
+    Slackware has no Source field; the package file name (name-version-arch-build) and the
+    PACKAGE LOCATION inside its record are the only pointers there are.
+    """
+    prefix = "var/lib/pkgtools/packages/"
+    return sorted(k[len(prefix):] for k in after
+                  if k.startswith(prefix) and k not in before and "/" not in k[len(prefix):])
+
+
+FETCHED_LINE = re.compile(r"^KITCHEN-FETCHED ([0-9a-f]{64}) (\S+) (\S+)$")
+
+
+def _fetched_lines(stdout: str) -> list[dict]:
+    """What a bundle.script says it fetched: `KITCHEN-FETCHED <sha256> <path> <url>` lines.
+
+    A script knows what it downloaded and the engine cannot, so the script says so, and
+    the engine records it. firmware-refresh prints one per linux-firmware file.
+    """
+    out = []
+    for ln in stdout.splitlines():
+        m = FETCHED_LINE.match(ln.strip())
+        if m:
+            out.append({"sha256": m.group(1), "path": provenance.in_image(m.group(2)),
+                        "url": m.group(3)})
+    return out
+
+
+def _unowned_elf(root: str, keep: list[str]) -> list[dict]:
+    """ELF files in a delta that no package vouches for, either because no package owns
+    the path, or because the bytes are no longer the ones the package installed.
+
+    OWNERSHIP IS NOT INTEGRITY. A script that writes over a packaged binary --
+    `curl -o /usr/bin/ssh …`, or a `make install` that lands in /usr/bin -- leaves a path
+    dpkg still lists, so the first version of this passed it and `kitchen sources` went on
+    naming openssh-client as its source. dpkg records an md5 for nearly every file it
+    ships, in the .md5sums beside the .list, so the question can be asked properly.
+
+    Slackware's package database lists files and no checksums, so under `flavour:
+    slackware` ownership remains all there is; that is why `declares:` exists. Two more
+    paths fall back to ownership alone, and neither is announced: dpkg leaves CONFFILES
+    out of .md5sums, and a few packages ship no .md5sums at all.
+    """
+    owned: set[str] = set()
+    recorded: dict[str, set] = {}
+    info = os.path.join(root, "var", "lib", "dpkg", "info")
+    if os.path.isdir(info):
+        for n in os.listdir(info):
+            if n.endswith(".list"):
+                with open(os.path.join(info, n), errors="replace") as f:
+                    owned.update(ln.strip().lstrip("/") for ln in f)
+            elif n.endswith(".md5sums"):
+                with open(os.path.join(info, n), errors="replace") as f:
+                    for ln in f:
+                        digest, _, rel = ln.strip().partition("  ")
+                        if rel and len(digest) == 32:
+                            # EVERY package that records this path, not the last one read.
+                            # A diversion or a Replaces: takeover has two packages naming
+                            # one path with different digests, and keeping whichever
+                            # os.listdir returned last made the answer depend on the order
+                            # of a directory listing.
+                            recorded.setdefault(rel.lstrip("/"), set()).add(digest)
+    pkgtools = os.path.join(root, "var", "lib", "pkgtools", "packages")
+    if os.path.isdir(pkgtools):
+        for n in os.listdir(pkgtools):
+            with open(os.path.join(pkgtools, n), errors="replace") as f:
+                owned.update(ln.strip() for ln in f)
+    out = []
+    for rel in keep:
+        full = os.path.join(root, rel)
+        if os.path.islink(full) or not os.path.isfile(full):
+            continue
+        try:
+            with open(full, "rb") as f:
+                if f.read(4) != b"\x7fELF":
+                    continue
+        except OSError:
+            continue
+        alt = rel[4:] if rel.startswith("usr/") else "usr/" + rel     # merged /usr
+        if rel not in owned and alt not in owned:
+            out.append({"path": rel, "sha256": sha256(full), "why": "no package owns it"})
+            continue
+        want = recorded.get(rel) or recorded.get(alt)
+        try:
+            if want and _md5(full) not in want:
+                out.append({"path": rel, "sha256": sha256(full),
+                            "why": "its package recorded different bytes for this path"})
+        except OSError:
+            out.append({"path": rel, "sha256": "",
+                        "why": "it could not be read to check against its package"})
+    return out
+
+
+def _md5(path: str) -> str:
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def _stage_delta(root: str, keep: list[str], stage: str) -> None:
     """Copy the delta out of a chroot, preserving what the chroot actually had.
 
@@ -1005,7 +1259,7 @@ def v_initramfs_modules(ctx: Ctx, step: dict) -> None:
                         f"modules, so they need no promotion.")
                 local = found[0]
             else:
-                local = m if os.path.isabs(m) else os.path.join(ctx.recipe_dir, m)
+                local = ctx.local(m)
             if not os.path.isfile(local):
                 raise RuntimeError(f"initramfs.modules: no such module: {local}")
             name = os.path.basename(local)
@@ -1237,6 +1491,10 @@ def v_initramfs_busybox(ctx: Ctx, step: dict) -> None:
 
         _initramfs_pack(ctx, tree)
         ctx.record("slax/boot/initrfs.img")
+        ctx.prov(source=os.path.basename(local), source_sha256=sha256(local),
+                 source_location=provenance.root_relative(local),
+                 claim=provenance.load_claim(local), output="slax/boot/initrfs.img",
+                 output_sha256=sha256(ctx.p("slax", "boot", "initrfs.img")))
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -1278,7 +1536,7 @@ def v_rootcopy_files(ctx: Ctx, step: dict) -> None:
                 raise RuntimeError(
                     f"rootcopy.files: {spec['dest']} needs `src` or `content`")
             src = spec["src"]
-            local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+            local = ctx.local(src)
             shutil.copy2(local, dest)
         if "mode" in spec:
             os.chmod(dest, int(spec["mode"], 8))
@@ -1313,7 +1571,7 @@ def v_rootcopy_preinit(ctx: Ctx, step: dict) -> None:
                 f.write("#!/bin/sh\n")
             f.write(script if script.endswith("\n") else script + "\n")
     else:
-        local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+        local = ctx.local(src)
         shutil.copy2(local, dest)
     os.chmod(dest, 0o755)
     ctx.record("slax/rootcopy/run/preinit.sh",
@@ -1495,6 +1753,8 @@ def _make_bundle(ctx: "Ctx", src_dir: str, name: str, verb: str,
     n = sum(len(f) for _, _, f in os.walk(src_dir))
     ctx.say(f"built slax/modules/{name} ({os.path.getsize(target) // 1024} KiB, {n} files)")
     ctx.record(f"slax/modules/{name}")
+    ctx.prov(output=f"slax/modules/{name}", output_sha256=sha256(target),
+             output_bytes=os.path.getsize(target))
     return target
 
 
@@ -1508,7 +1768,7 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
                 f.write(spec["content"])
         else:
             src = spec["src"]
-            local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+            local = ctx.local(src)
             if os.path.isdir(local):
                 shutil.copytree(local, dest, dirs_exist_ok=True, symlinks=True)
             elif os.path.isfile(local):
@@ -1539,7 +1799,7 @@ def v_bundle_fromdir(ctx: Ctx, step: dict) -> None:
     """
     name = _bundle_name(step["bundle"], "bundle.fromDir")
     src = step["src"]
-    local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+    local = ctx.local(src)
     if ctx.dry:
         ctx.say(f"would pack {src} -> slax/modules/{name}")
         return
@@ -1613,6 +1873,9 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
             raise RuntimeError(f"bundle.fromTarball: sha256 mismatch\n  want {want}\n  got  {got}")
         if not want:
             ctx.say(f"warning: no sha256 pinned for {os.path.basename(src)} (got {got[:16]}...)")
+        ctx.prov(source=src if re.match(r"^https?://", src) else os.path.basename(src),
+                 source_sha256=got, pinned=bool(want), strip=strip, prefix=prefix or None,
+                 world_readable=world_readable, upstream_source=step.get("upstream_source"))
 
         root = os.path.join(work, "root")
         dest = os.path.join(root, prefix) if prefix else root
@@ -1902,7 +2165,8 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
             raise RuntimeError(f"bundle.script: script failed (exit {r.returncode}):\n"
                                + (r.stderr.strip() or r.stdout.strip())[-1500:])
         if r.stdout.strip():
-            for ln in r.stdout.strip().splitlines()[-8:]:
+            shown = [ln for ln in r.stdout.strip().splitlines() if not FETCHED_LINE.match(ln)]
+            for ln in shown[-8:]:
                 ctx.say(f"  | {ln[:110]}")
         os.unlink(sp)
         after, after_status = _manifest(root), _read_status(root)
@@ -1920,6 +2184,15 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
         _stage_delta(root, keep, stage)
         _write_fragment(ctx, stage, name, before_status, after_status)
         _make_bundle(ctx, stage, name, "bundle.script")
+        ctx.prov(script_sha256=hashlib.sha256(script.encode()).hexdigest(),
+                 network=bool(step.get("network")) or None,
+                 upstream_source=step.get("upstream_source"),
+                 fetched=_fetched_lines(r.stdout) or None,
+                 installed=_status_changes(before_status, after_status) or None,
+                 slackware_installed=_pkgtools_added(before, after) or None,
+                 debs=_deb_origins(root, _deb_hashes(root)) or None,
+                 declares=step.get("declares"),
+                 unowned_elf=_unowned_elf(root, keep) or None)
     finally:
         shutil.rmtree(build, ignore_errors=True)
 
@@ -2004,6 +2277,10 @@ def v_boot_menu(ctx: Ctx, step: dict) -> None:
 
         if not ctx.dry:
             open(path, "w").write(text)
+            # Recorded like every other verb that writes into the tree: the journal is
+            # how `kitchen status` shows it and how `kitchen sources` attributes the edit.
+            # boot.menu was one of two verbs that wrote files and recorded none.
+            ctx.record(os.path.relpath(path, ctx.tree))
 
 
 @verb("boot.cmdline")
@@ -2232,11 +2509,12 @@ def v_boot_branding(ctx: Ctx, step: dict) -> None:
         if not spec:
             continue
         src = spec if isinstance(spec, str) else spec["src"]
-        local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+        local = ctx.local(src)
         if not os.path.isfile(local):
             raise RuntimeError(f"boot.branding: {key} source not found: {local}")
         if not ctx.dry:
             shutil.copy2(local, ctx.p("slax", "boot", dest))
+            ctx.record(f"slax/boot/{dest}")
         ctx.say(f"replaced slax/boot/{dest} ({os.path.getsize(local)} bytes)")
         changed.append(dest)
 
@@ -2244,11 +2522,12 @@ def v_boot_branding(ctx: Ctx, step: dict) -> None:
         text = step["help"]
         if isinstance(text, dict):
             src = text["src"]
-            local = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+            local = ctx.local(src)
             text = open(local).read()
         if not ctx.dry:
             with open(ctx.p("slax", "boot", "help.txt"), "w") as f:
                 f.write(text)
+            ctx.record("slax/boot/help.txt")
         ctx.say(f"rewrote slax/boot/help.txt ({len(text)} bytes, "
                 f"{len(text.splitlines())} lines)")
 
@@ -2280,10 +2559,11 @@ def v_boot_branding(ctx: Ctx, step: dict) -> None:
             text = re.sub(r"(?mi)^(LABEL\s+%s\s*\n)" % re.escape(want),
                           r"\1  MENU DEFAULT\n", text, count=1)
         if text != orig:
+            rel = os.path.relpath(path, ctx.tree)
             if not ctx.dry:
                 with open(path, "w") as f:
                     f.write(text)
-            rel = os.path.relpath(path, ctx.tree)
+                ctx.record(rel)
             ctx.say(f"updated {rel}")
             changed.append(rel)
 
@@ -2407,6 +2687,7 @@ def v_boot_uefi(ctx: Ctx, step: dict) -> None:
         return
     os.makedirs(grub_dir, exist_ok=True)
     open(os.path.join(grub_dir, "grub.cfg"), "w").write(cfg_text)
+    ctx.record("boot/grub/grub.cfg")
     ctx.say(f"boot/grub/grub.cfg: mirrored {len(entries)} menu entr"
             f"{'y' if len(entries) == 1 else 'ies'} from isolinux.cfg")
 
@@ -2439,6 +2720,17 @@ def v_boot_uefi(ctx: Ctx, step: dict) -> None:
                 raise RuntimeError(f"{cmd[0]} failed: {rr.stderr.strip()}")
         ctx.say(f"boot/efi.img: {img_kib} KiB FAT12 ESP containing "
                 f"EFI/BOOT/BOOTX64.EFI ({efi_kib} KiB GRUB)")
+        ctx.record("boot/efi.img")
+        # GRUB here is BUILT by this verb, from whatever the build host has installed --
+        # so the host's package and version are the only answer to "which GRUB is this".
+        ctx.prov(output="boot/efi.img", output_sha256=sha256(img),
+                 bootx64_sha256=sha256(efi), grub_modules=GRUB_MODULES,
+                 tools={"grub-efi-amd64-bin": provenance.host_package(
+                            "/usr/lib/grub/x86_64-efi/moddep.lst"),
+                        "grub-mkstandalone": provenance.host_package(
+                            shutil.which("grub-mkstandalone")),
+                        "mkfs.vfat": provenance.host_package(shutil.which("mkfs.vfat")),
+                        "mcopy": provenance.host_package(shutil.which("mcopy"))})
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -2640,6 +2932,25 @@ def _detect_flavour(tree: str) -> str:
     return "debian"
 
 
+def apt_install_argv(apt: dict) -> list[str]:
+    """The apt-get command bundle.packages runs, from the step's `apt:` block.
+
+    REINSTALL is for packages a stock bundle already has at the same version. `apt-get
+    install` of those is a silent no-op -- firmware-refresh listed four of them and none
+    reached its bundle -- and the stock copy is missing its /usr/share/doc, because
+    upstream's cleanup deleted it. --reinstall re-unpacks the archive. dpkg restores each
+    file's archive mtime and the delta compares size+mtime+mode (_manifest), so files that
+    come back unchanged stay out of the bundle and what lands is what differs: the docs.
+    Measured: ten stock firmware packages reinstalled into a 64 KiB bundle of 32 files.
+    """
+    argv = ["apt-get", "install", "-y", "-qq"]
+    if apt.get("no_recommends", True):
+        argv.append("--no-install-recommends")
+    if apt.get("reinstall", False):
+        argv.append("--reinstall")
+    return argv
+
+
 @verb("bundle.packages")
 def v_bundle_packages(ctx: Ctx, step: dict) -> None:
     """Install distro packages into a NEW bundle, built from the ISO's own bundles.
@@ -2708,14 +3019,11 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
             # Foreign architectures and third-party repos must be in place BEFORE the
             # index refresh, or apt-get update will not see them.
             step_excludes = _apt_sources(ctx, root, step.get("apt") or {})
-            if step.get("apt", {}).get("update", True):
+            if (step.get("apt") or {}).get("update", True):
                 r = _in_chroot(root, ["apt-get", "update", "-qq"])
                 if r.returncode != 0:
                     raise RuntimeError("apt-get update failed:\n" + r.stderr.strip()[-1500:])
-            argv = ["apt-get", "install", "-y", "-qq"]
-            if step.get("apt", {}).get("no_recommends", True):
-                argv.append("--no-install-recommends")
-            r = _in_chroot(root, argv + list(packages))
+            r = _in_chroot(root, apt_install_argv(step.get("apt") or {}) + list(packages))
         elif flavour == "slackware":
             # slackpkg + slackpkg+ are preconfigured in Slax's 01-core, but -batch=on
             # does NOT cover slackpkg's "you picked a -current mirror but 15.0+ is
@@ -2789,6 +3097,19 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
 
         # 7. Build with upstream's exact parameters (livekitlib create_bundle / dir2sb).
         _make_bundle(ctx, stage, out_name, "bundle.packages")
+
+        # 8. Provenance, read from the chroot before it is deleted: the .debs apt fetched
+        #    are gone with it, and nothing else ever recorded which versions it resolved.
+        apt = step.get("apt") or {}
+        ctx.prov(packages=list(packages), flavour=flavour,
+                 reinstall=bool(apt.get("reinstall")) or None,
+                 apt_sources=[{k: s.get(k) for k in ("name", "uri", "suite", "components",
+                                                     "key_url", "key_sha256", "keep",
+                                                     "upstream_source")}
+                              for s in apt.get("sources") or []] or None,
+                 installed=_status_changes(before_status, after_status) or None,
+                 slackware_installed=_pkgtools_added(before, after) or None,
+                 debs=_deb_origins(root, _deb_hashes(root)) or None)
     finally:
         shutil.rmtree(build, ignore_errors=True)
 
@@ -2972,7 +3293,9 @@ def apply_recipe(path: str, work: str, dry: bool = False,
                                    f"{NOT_YET[v]}")
             raise RuntimeError(f"step {i}: verb '{v}' is valid in the schema but not "
                                f"implemented yet (have: {', '.join(sorted(VERBS))})")
+        ctx.begin_step(v)
         fn(ctx, step)
+        ctx.end_step()
 
     if not dry:
         import yaml
@@ -2996,6 +3319,18 @@ def apply_recipe(path: str, work: str, dry: bool = False,
         j["applied"].append(entry)
         with open(jpath, "w") as f:
             yaml.safe_dump(j, f, sort_keys=False)
+        provenance.append_recipe(ctx.meta, {
+            "recipe": name,
+            "recipe_sha256": sha256(path),
+            # Inline `content:` lives in the recipe file, so the file is an input too.
+            "recipe_file": provenance.local_input(path),
+            "vars": dict(overrides) if overrides else {},
+            # What the recipe changed, from the journal: the evidence `kitchen sources`
+            # uses for files a recipe wrote or edited without fetching anything.
+            "artifacts": list(ctx.changes),
+            "redistribution": doc.get("redistribution"),
+            "steps": ctx.prov_steps,
+        })
     return 0
 
 
@@ -3018,6 +3353,26 @@ def recipe_search_path() -> list[str]:
                   if os.path.isdir(os.path.join(base, d)) and not d.endswith(".files"))
     first = [d for d in dirs if d == "available"]
     return [os.path.join(base, d) for d in first + [d for d in dirs if d != "available"]]
+
+
+def duplicate_recipes(names: list[str]) -> str | None:
+    """A refusal for any recipe named more than once, or None.
+
+    Applying one twice was never possible and never said so: resolve() deduplicates by
+    path, and per-recipe vars are keyed by recipe name, so a second entry was dropped and
+    took its vars with it. Harmless while each removal had its own preset recipe; with one
+    generic remove-bundle, "drop chromium and the firmware bundle" is the obvious mistake.
+    """
+    counts: dict[str, int] = {}
+    for n in names:
+        counts[n] = counts.get(n, 0) + 1
+    dups = sorted(n for n, c in counts.items() if c > 1)
+    if not dups:
+        return None
+    return (f"{', '.join(dups)} listed more than once. Each recipe is applied once, so the "
+            f"second entry is dropped and its vars with it. Say it in one entry instead: "
+            f"remove-bundle takes one pattern for several bundles, as in "
+            f'drop: "^(05-chromium|01-firmware)\\.sb$".')
 
 
 def read_profile_recipes(path: str) -> tuple[list[str], dict[str, dict]]:
@@ -3048,6 +3403,9 @@ def read_profile_recipes(path: str) -> tuple[list[str], dict[str, dict]]:
         names.append(entry["name"])
         if entry.get("vars"):
             overrides[entry["name"]] = dict(entry["vars"])
+    dup = duplicate_recipes(names)
+    if dup:
+        raise RuntimeError(f"invalid profile {path}: {dup}")
     return names, overrides
 
 
@@ -3093,6 +3451,11 @@ def main(argv: list[str]) -> int:
             return 2
         if not names:
             print(f"error: {a.profile} lists no recipes", file=sys.stderr)
+            return 2
+    else:
+        dup = duplicate_recipes(names)
+        if dup:
+            print(f"error: {dup}", file=sys.stderr)
             return 2
     if not a.preflight_only and not os.path.isdir(os.path.join(a.work, "iso")):
         print(f"no work tree at {a.work}/iso (run 'kitchen unpack' first)", file=sys.stderr)

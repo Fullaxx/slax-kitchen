@@ -41,7 +41,8 @@ _pack_derive_name() {
 
 kitchen_pack() {
     src="work/iso" out="" backend="" uefi=0 hybrid=0 volid="slax" appid="slax" sysid="LINUX" mdate="" force=0
-    publisher="" preparer="" _sums="" volid_set=0 appid_set=0 sysid_set=0
+    publisher="" preparer="" _sums="" volid_set=0 appid_set=0 sysid_set=0 _mbr=""
+    publisher_set=0 preparer_set=0
     while [ $# -gt 0 ]; do
         case "$1" in
             -o|--output)  out=$2; shift 2 ;;
@@ -52,6 +53,11 @@ kitchen_pack() {
             --hybrid)     hybrid=1; shift ;;
             --volid)      volid=$2; volid_set=1; shift 2 ;;
             --appid)      appid=$2; appid_set=1; shift 2 ;;
+            # Listed by `kitchen help pack` since iso.metadata existed, and refused here as
+            # unknown options until the publishing work tried to use them.
+            --sysid)      sysid=$2; sysid_set=1; shift 2 ;;
+            --publisher)  publisher=$2; publisher_set=1; shift 2 ;;
+            --preparer)   preparer=$2; preparer_set=1; shift 2 ;;
             --date)       mdate=$2; shift 2 ;;
             -h|--help)      usage_cmd pack; return 0 ;;
             -*) die "pack: unknown option $1" ;;
@@ -73,10 +79,18 @@ kitchen_pack() {
     fi
     [ -f "$src/slax/boot/isolinux.bin" ] || die "pack: $src does not look like a Slax tree (no slax/boot/isolinux.bin)"
 
+    # The work tree is the directory holding the ISO tree: work/iso -> work. Everything
+    # pack reads about the build -- the hints, the base image it came from, what each
+    # recipe did -- lives in its .kitchen/, so it is derived ONCE, here.
+    _work=$(dirname "$src")
+    [ -d "$_work/.kitchen" ] || printf '  %swarn%s no %s: the sidecar will record what pack did and no recipes
+' \
+        "$Y" "$O" "$_work/.kitchen"
+
     # Recipes record intent in <work>/.kitchen/pack.yaml rather than knowing xorriso
     # flags themselves: boot.isohybrid sets hybrid=true, boot.uefi sets uefi=true.
     # An explicit --uefi/--hybrid on the command line still wins.
-    _hints="$(dirname "$src")/.kitchen/pack.yaml"
+    _hints="$_work/.kitchen/pack.yaml"
     if [ -f "$_hints" ]; then
         grep -q '^hybrid: *true' "$_hints" && [ "$hybrid" = 0 ] && {
             hybrid=1; printf '  %shint%s hybrid MBR/GPT requested by a recipe\n' "$D" "$O"; }
@@ -87,15 +101,15 @@ kitchen_pack() {
         # in the tree they could live -- they are set by the mastering tool. An explicit
         # CLI flag still wins, which is why each is only taken when unset.
         for _k in volid appid sysid publisher preparer; do
-            _v=$(sed -n "s/^$_k: *//p" "$_hints" | head -1 | sed "s/^[\"']//;s/[\"']$//")
+            _v=$(pack_hint "$_hints" "$_k")
             [ -z "$_v" ] && continue
             _taken=1
             case "$_k" in
                 volid)     if [ "$volid_set" = 0 ]; then volid=$_v; else _taken=0; fi ;;
                 appid)     if [ "$appid_set" = 0 ]; then appid=$_v; else _taken=0; fi ;;
                 sysid)     if [ "$sysid_set" = 0 ]; then sysid=$_v; else _taken=0; fi ;;
-                publisher) publisher=$_v ;;
-                preparer)  preparer=$_v ;;
+                publisher) if [ "$publisher_set" = 0 ]; then publisher=$_v; else _taken=0; fi ;;
+                preparer)  if [ "$preparer_set" = 0 ]; then preparer=$_v; else _taken=0; fi ;;
             esac
             if [ "$_taken" = 1 ]; then
                 printf '  %shint%s %s=%s\n' "$D" "$O" "$_k" "$_v"
@@ -103,7 +117,7 @@ kitchen_pack() {
                 printf '  %shint%s %s=%s overridden on the command line\n' "$D" "$O" "$_k" "$_v"
             fi
         done
-        _sums=$(sed -n 's/^checksums: *//p' "$_hints" | head -1)
+        _sums=$(pack_hint "$_hints" checksums)
     fi
 
     if [ -z "$backend" ]; then
@@ -144,6 +158,7 @@ kitchen_pack() {
         if [ "$hybrid" = 1 ]; then
             hdr=/usr/lib/ISOLINUX/isohdpfx.bin
             [ -f "$hdr" ] || die "pack: $hdr missing (apt-get install isolinux)"
+            _mbr=$hdr
             set -- "$@" -isohybrid-mbr "$hdr" -partition_offset 16
         fi
         if [ "$uefi" = 1 ]; then
@@ -205,5 +220,15 @@ kitchen_pack() {
             fi
         fi
     fi
+
+    # PROVENANCE BESIDE THE ISO. The work tree's .kitchen/provenance.json says what each
+    # recipe fetched and built; this adds what pack itself used -- the backend, the MBR it
+    # copied from the build host -- and writes <iso>.provenance.json where `kitchen build`
+    # deleting the work tree cannot take it with it. See lib/provenance.py.
+    if ! python3 "$REPO_ROOT/lib/provenance.py" finalize --work "$_work" \
+            --iso "$out" --backend "$backend" ${_mbr:+--mbr "$_mbr"} > /dev/null; then
+        die "pack: could not write $out.provenance.json"
+    fi
+    printf '  %sok%s   wrote %s\n' "$G" "$O" "$out.provenance.json"
     return 0
 }

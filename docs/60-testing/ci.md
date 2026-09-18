@@ -10,6 +10,7 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 | `ci.yml` → `build` | push to master, or any PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
 | `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | one direct-kernel QEMU boot under TCG, asserting |
 | `ci.yml` (weekly) | Thursdays 05:41 UTC, or dispatch | the same, plus the skipped recipes and the [Tier C](tier-c.md) boot matrix |
+| `ci.yml` → `tor-assets` | weekly or dispatch — **not on tags** | builds `tor`, assembles and verifies what would travel with it, uploads the records and source — [never the image](#tor-assets-the-pipeline-proven-weekly) |
 | `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml` — **the full matrix**, not the per-push subset — then publish |
 | `upstream-watch.yml` | Mondays 06:17 UTC, or dispatch | linux-live HEAD, new Slax release, mirror health, pinned signing keys |
 
@@ -26,7 +27,7 @@ want the matrix. It also has to stay unscoped for a PR to be mergeable at all: m
 branch protection requires five checks from this workflow — `commit gates` and the four
 `build <target>` jobs — and `pull_request` is the only trigger that produces them for a PR.
 
-Most of CI runs on every push to master. Two things deliberately do not, and both are on the
+Most of CI runs on every push to master. Three things deliberately do not, and all are on the
 weekly run:
 
 | | per push | weekly / tag / dispatch |
@@ -34,24 +35,35 @@ weekly run:
 | gates, container, 4-target build matrix | ✅ | ✅ |
 | the recipes in [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) | ❌ | ✅ |
 | direct-kernel boot, asserting markers | ✅ | ✅ |
-| BIOS + UEFI screenshot boots | ❌ | ✅ |
+| [Tier C](tier-c.md): build `boot-matrix`, then four paths and five asserting boots | ❌ | ✅ |
+| `tor-assets`: the publishing procedure on a real image, never uploading it | ❌ | ✅ weekly and dispatch, ❌ on tags |
 
 **The bar for `ci/slow-recipes.txt` is not "slow".** It is that the recipe's failure mode is
 *external* — something outside this repository breaks it — so running it per-push converts someone
 else's change into a red master at a cadence nobody can act on. Being merely expensive is not
-enough; cost is not a reason to stop checking. Today the file holds one entry: `all-browsers`,
-whose four vendor signing keys are pinned by sha256 and will rotate.
+enough; cost is not a reason to stop checking. Today the file holds three entries, each an
+external dependency: `all-browsers`, whose four vendor signing keys are pinned by sha256 and will
+rotate; `tor-browser`, a version-pinned 138 MB download; and `firmware-refresh`, 65 sha256-pinned
+files fetched from linux-firmware mirrors.
 
 Each skip is printed with its reason. A matrix that quietly ran less than it looks like would be
 worse than a slow one:
 
 ```
   SKIP all-browsers      weekly, not per-push: four sha256-pinned vendor keys are an
-                         external dependency (622 s, and a key rotation would redden master)
+                         external dependency (456 s, and a key rotation would redden master)
 ```
 
-A **release tag runs everything**, because a release should be verified more than a push, not less.
+A **release tag runs everything a push does not**, because a release should be verified more than
+a push, not less: the skipped recipes and the Tier C boot matrix both run.
 `ci.yml` distinguishes them with `startsWith(github.ref, 'refs/tags/')`.
+
+**`tor-assets` is the one job a tag does not run**, and for the same reason the recipes in
+`ci/slow-recipes.txt` are held back: its failure mode is external. `release.yml`'s publish job
+needs the whole of `ci.yml`, so on a tag that job would stand between a finished release and
+`contents: write`, waiting on a 138 MB download from `dist.torproject.org` that a Tor Browser
+release can retire. The weekly run is what proves that pipeline; `workflow_dispatch` runs it on
+demand before tagging.
 
 ## The toolchain list
 
@@ -82,15 +94,19 @@ so the second one costs nothing.
 
 Every recipe is applied **individually** to each of the four targets, then packed and asserted.
 One recipe per work tree, so a failure names exactly one recipe and recipes cannot mask each other.
-About 40 s per target.
+
+Measured on this hardware with nothing skipped, `debian-64bit`, 2026-09-17: **33 recipes in 1315 s**,
+a median of 6 s each. Four recipes account for more than half of it — `all-browsers` 456 s,
+`debian-browsers` 165 s, `libreoffice` 112 s, `firmware-refresh` and `tor-browser` 92 s each. Each
+line carries its own seconds, so the numbers above can be re-measured rather than remembered:
 
 ```
-recipe matrix: slackware-64bit-15.0.4  (flavour=slackware arch=64bit)
-  skip add-packages       not declared compatible with slackware/64bit
-  ok   isohybrid          455 MiB
-  ok   memtest86plus      454 MiB
+recipe matrix: debian-64bit-12.2.0  (flavour=debian arch=64bit)
+  skip bundle-from-txz    not declared compatible with debian/64bit
+  ok   isohybrid          416 MiB, 7 s
+  ok   memtest86plus      415 MiB, 7 s
   ...
-  6 passed, 0 failed, 1 skipped
+  33 passed, 0 failed, 2 skipped in 1315 s
 ```
 
 Skips come from each recipe's own `compat` block, so marking something Debian-only is enough — no
@@ -99,6 +115,13 @@ Debian**, which is the easy mistake to make when that is the ISO in front of you
 
 Assertions are derived from what the recipe claims: `uefi-bootable` is checked for an EFI El Torito
 entry, `isohybrid` for a hybrid MBR. A recipe that runs cleanly and changes nothing fails.
+
+Every image the matrix builds must also pass
+[`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir): each
+file in it is either byte-identical to the stock image or matches what a recorded step produced.
+A verb that writes a file without recording it fails its recipe here, on every target. That is how
+`boot.menu` and `boot.branding` were caught writing menus nothing recorded. The matrix builds from a
+working tree, so it passes `--allow-dirty`.
 
 ## Round-trip guards the core claim
 
@@ -305,6 +328,32 @@ regenerate the fingerprint, `kitchen selftest ci`, then fix what breaks. See
 > It does **not** watch busybox or CVEs. The busybox replacement is pinned and tested by
 > [`tests/busybox/gates.sh`](../../tests/busybox/gates.sh), not by this.
 
+## Tor assets: the pipeline, proven weekly
+
+The `tor-assets` job runs the [publishing procedure](../40-workflow/publishing-images.md) on a real
+profile, so the scripts a project uses to publish are exercised against a real image rather than
+fixtures alone:
+
+```sh
+sudo ./kitchen build tor
+./ci/release-assets.sh out/slax-tor-12.2.0.iso out/tor-assets --no-image
+./ci/release-verify.py out/tor-assets --assert-no-images
+```
+
+`tor` has what makes the procedure worth testing: a 138 MB prebuilt download with its own
+`upstream_source`, Debian packages, and a GRUB EFI image built from the runner's own GRUB, whose
+source package is fetched and attached.
+
+**The image is never uploaded.** The Tor Project's trademark policy does not allow "Tor" in the name
+of another product without written permission, so this image is built, checked and discarded.
+`--no-image` leaves it out of the set; `--assert-no-images` then fails the job if any asset is an
+ISO 9660 image, squashfs, ELF, PE or FAT filesystem, judged by content, so a renamed ISO would not
+pass either. The upload is a workflow artifact of `out/tor-assets/` only, not a release asset.
+
+Weekly rather than per push for the same reason `tor-browser` is on the slow list: the download is
+an external dependency. The verify gate's own logic is unit-tested on every push by
+`tests/unit/test_release_assets.py`, which breaks a fixture directory one way at a time.
+
 ## Releases
 
 `release.yml` runs on a `v*` tag. Three jobs:
@@ -315,17 +364,27 @@ regenerate the fingerprint, `kitchen selftest ci`, then fix what breaks. See
 | `verify` | `uses: ./.github/workflows/ci.yml` — the whole of it, not a copy |
 | `publish` | `gh release create`. **The only job in this repository with `contents: write`.** |
 
-### No ISO is attached, on purpose
+### What a release attaches
 
-[NOTICE.md](../../NOTICE.md) puts the obligations of a built image on whoever publishes it, and part
-of the GPLv2 source offer cannot be satisfied from this repository at all: seven prebuilt static
-binaries under `vendor/linux-live/initramfs/static/` ship with no in-tree source, and the kernel is
-custom-built with an out-of-tree aufs patch set. So a Release carries a tag and an account of what
-was verified. You build the ISO.
+A tag and the notes — **no image**. A release of slax-kitchen is the toolkit. What travels with an
+image built with it, when one is published, is set out in [NOTICE.md](../../NOTICE.md): the source
+of what the build compiled or modified, where each upstream publishes its own, the firmware terms,
+and an identity that is not an official Slax release.
 
-It also publishes no checksum for a built ISO, because **nobody could check one**: the ISO container
-is not byte-reproducible — see [reproducibility](../40-workflow/reproducibility.md). The four base
-ISO hashes it does publish are verifiable, and `kitchen fetch` enforces them on every download.
+This section used to be titled *No ISO is attached, on purpose*, and gave a reason that read a note
+written for forks as a rule for this repository. `tests/unit/test_release.py` now checks the notes'
+attachment claim against what `release.yml` actually uploads, instead of pinning the sentence: the
+day the workflow attaches a file, the notes have to change with it.
+
+A project that does publish an image sets `RELEASE_ASSETS` to the directory
+`ci/release-assets.sh` wrote, and the section is generated from that directory by
+`ci/redistribution-claim.py` instead, naming what is attached. See
+[publishing an image](../40-workflow/publishing-images.md).
+
+There is no checksum for a built image in the notes because none is attached. Where an image *is*
+published, its `SHA256SUMS` checks the download — not a rebuild, since the ISO container is not
+byte-reproducible; see [reproducibility](../40-workflow/reproducibility.md). The four base ISO hashes
+the notes do publish are verifiable, and `kitchen fetch` enforces them on every download.
 
 What it does say is what was *not* done. Tier C — BIOS menu, UEFI, USB image, persistence, boot to a
 desktop — needs `/dev/kvm`, which GitHub-hosted runners do not have, so no release claims a desktop

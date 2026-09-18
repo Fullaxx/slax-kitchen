@@ -71,7 +71,7 @@ EXPLAINS = [
     # going missing is exactly the kind of change probe exists to flag, and
     # `remove-bundle` takes an arbitrary regex, so explaining every removal would mean
     # never reporting one.
-    ("bundles.05-chromium.sb",  "present", "REMOVED", "remove-chromium"),
+    ("bundles.05-chromium.sb",  "present", "REMOVED", "remove-bundle"),
 ]
 # Changing any of these means the ISO is not the release it claims to be.
 CRITICAL_PREFIXES = ("kernel.release", "initramfs.scripts", "metadata.flavour",

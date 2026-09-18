@@ -60,6 +60,48 @@ for ISO in "$@"; do
     ( cd "$WORK/irfs" && xz -dc "$WORK/boot/initrfs.img" | cpio -id --quiet 2>/dev/null )
     manifest "$WORK/irfs" "$OUT/initramfs-$target.sha256" 20 "$target initramfs"
 
+    # --- every other file on the ISO: the bundles, and /readme.txt ---------------
+    # What `kitchen sources` recognises as Slax as published, by hash. Read straight from
+    # each file's extent -- a 120 MiB bundle costs a read, not an extraction.
+    xorriso -indev "$ISO" -find / -type f -exec report_lba -- 2>/dev/null \
+      | python3 -c '
+import hashlib, sys
+iso = open(sys.argv[1], "rb")
+rows = []
+for line in sys.stdin:
+    if not line.startswith("File data lba:"):
+        continue
+    parts = [p.strip() for p in line.split(",")]
+    lba, size, path = int(parts[1]), int(parts[3]), parts[4].strip("\x27")
+    if path == "/slax/boot/isolinux.bin":
+        # The mastering tool rewrites bytes 8-63 -- the boot-info table -- with LBAs that
+        # are different in every ISO it writes, so the whole-file hash cannot recognise a
+        # repacked but unchanged isolinux.bin. The bytes after the table can.
+        h = hashlib.sha256()
+        iso.seek(lba * 2048 + 64)
+        h.update(iso.read(size - 64))
+        rows.append((path + "@64", h.hexdigest()))
+        continue
+    if path.startswith("/slax/boot/"):
+        continue
+    h = hashlib.sha256()
+    iso.seek(lba * 2048)
+    left = size
+    while left > 0:
+        chunk = iso.read(min(left, 1 << 22))
+        if not chunk:
+            # A recorded extent running past EOF -- a truncated or half-written image.
+            # Without this the loop never ends, because read() keeps returning b"".
+            raise SystemExit(f"gen-manifests: {path}: extent runs past the end of the image")
+        h.update(chunk)
+        left -= len(chunk)
+    rows.append((path, h.hexdigest()))
+for path, digest in sorted(rows):
+    print(f"{digest}  .{path}")
+' "$ISO" > "$OUT/isofiles-$target.sha256"
+    [ "$(wc -l < "$OUT/isofiles-$target.sha256")" -ge 3 ] || {
+        echo "$target: fewer than 3 files outside /slax/boot -- refusing that manifest" >&2; exit 1; }
+
     # --- packages ---------------------------------------------------------------
     # Bundle extents are read straight out of the ISO; nothing is extracted.
     xorriso -indev "$ISO" -find /slax/modules -exec report_lba -- 2>/dev/null \
@@ -106,8 +148,9 @@ PY
         done < "$WORK/bundles"
     fi
 
-    printf '   boot=%-4s initramfs=%-4s packages=%s\n' \
+    printf '   boot=%-4s initramfs=%-4s isofiles=%-3s packages=%s\n' \
         "$(wc -l < "$OUT/bootfiles-$target.sha256")" \
         "$(wc -l < "$OUT/initramfs-$target.sha256")" \
+        "$(wc -l < "$OUT/isofiles-$target.sha256")" \
         "$(wc -l < "$OUT/$target.packages.tsv")"
 done

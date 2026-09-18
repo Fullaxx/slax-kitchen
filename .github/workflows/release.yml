@@ -7,11 +7,11 @@
 
 name: release
 
-# NO ISO IS ATTACHED, deliberately -- NOTICE.md puts the GPLv2 source-offer
-# obligation on whoever publishes a customized image, and part of it cannot be
-# satisfied from this repository (seven static binaries under
-# vendor/linux-live/initramfs/static/ ship with no in-tree source). What gets
-# published is a tag and an honest account of what was verified.
+# A release of this repository is the toolkit: a tag and an honest account of what was
+# verified. No image is attached. NOTICE.md sets out what travels with an image built with
+# slax-kitchen when one is published. tests/unit/test_release.py checks the notes'
+# attachment claim against the uploads in this file, so adding one here without changing
+# ci/release-notes.sh fails the unit gate.
 on:
   push:
     tags: ['v*']

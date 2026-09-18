@@ -2,7 +2,7 @@ apiVersion: slax-kitchen/v1
 kind: Recipe
 metadata:
   name: all-browsers
-  summary: Replace the stock Chromium bundle with one carrying six browsers
+  summary: Six browsers in one bundle -- Brave, Chrome, Chromium, Edge, Firefox, Vivaldi
   tags: [browser, bundle, packages, apt-sources]
 compat:
   # Debian only, for the reason every bundle.packages recipe here is Debian only: Slax's
@@ -35,20 +35,32 @@ vars:
   # refused outright; see docs/10-anatomy/bundles-squashfs.md for why those two are not
   # merely ordering. `bundle` is a var so a profile can move it.
   bundle: "13-browsers"
+# NOT FOR AN IMAGE ANYONE PUBLISHES. Chrome, Edge and Vivaldi are proprietary, and their
+# licence terms do not permit redistributing them inside an image; `kitchen sources` names
+# this recipe on any image built with it. Building one for yourself is fine.
+redistribution:
+  allowed: false
+  why: >-
+    installs Google Chrome, Microsoft Edge and Vivaldi, whose licences do not permit
+    redistributing them in an image
 steps:
-  # DROP FIRST, THEN ADD -- the ordering chromium-current exists to demonstrate, for the
-  # same two reasons. Overriding would leave both copies on the ISO, paying 79.1 MiB for
-  # a Chromium nobody can reach, and files the 2023 build had that the current one does
-  # not would still be visible in the union, because a bundle can add and replace but
-  # cannot delete. See docs/40-workflow/composing-bundles.md.
+  # IT ONLY ADDS. This bundle sits above 05-chromium and shadows it, so Slax's 2023
+  # Chromium stays on the ISO -- 79.1 MiB for a browser nobody reaches -- unless a removal
+  # takes it out. That removal is its own recipe, listed first in the profile:
   #
-  # check_plan_order refuses the other order before anything is modified, across recipes
-  # AND across invocations -- which is why this recipe does the removal itself rather
-  # than leaning on remove-chromium. It also means all-browsers and debian-browsers
-  # cannot both be applied: both match literal 05, so the second one compares 05 against
-  # an already-built 13 and is refused. That refusal is correct; they are alternatives.
-  - verb: bundle.remove
-    match: "^05-chromium\\.sb$"
+  #   - name: remove-bundle
+  #     vars: {drop: "^05-chromium\\.sb$"}
+  #
+  # Nothing here requires it. With 05-chromium still below, apt finds its media and crypto
+  # libraries installed and this bundle comes out smaller, assuming 05 stays; with it gone,
+  # apt pulls them in and the bundle is self-contained. Both are correct -- the same dial
+  # firefox-esr documents. check_plan_order is what keeps the order honest: a removal listed
+  # after any bundle has been built is refused, which is why removals go at the top.
+  #
+  # debian-browsers is the alternative to this recipe rather than its companion: it
+  # installs Chromium and Firefox from Debian proper, on both arches. Nothing refuses a
+  # profile that lists both now that neither removes anything, but the second bundle
+  # would reinstall what the first already carries.
 
   # SIX BROWSERS, ONE BUNDLE, ONE APT TRANSACTION -- so one dependency closure is solved
   # and a library three of them share is installed once rather than three times. The

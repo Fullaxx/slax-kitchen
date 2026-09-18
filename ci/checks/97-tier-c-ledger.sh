@@ -25,8 +25,8 @@ LEDGER="$REPO_ROOT/tests/boot/tier-c.json"
 [ -f "$LEDGER" ] || { note "tests/boot/tier-c.json not present - Tier C has not been run"; exit 0; }
 have python3 || { note "python3 not installed - skipping the Tier C ledger check"; exit 0; }
 
-python3 - "$LEDGER" <<'PY' || fail "tests/boot/tier-c.json"
-import json, re, sys
+python3 - "$LEDGER" "$REPO_ROOT" <<'PY' || fail "tests/boot/tier-c.json"
+import json, os, re, sys
 
 DOC_KEYS = {"kitchen": str, "commit": str, "qemu": str, "accel": str,
             "date": str, "runs": list}
@@ -42,8 +42,11 @@ RESULTS = {"pass", "fail"}
 ACCELS = {"kvm", "tcg"}
 
 # A value that names a place on somebody's disk. Checked on every string in the document,
-# not only the ones we expect to be paths.
-HOSTISH = re.compile(r"(^/|/home/|/root/|/Users/|~/|\\\\)")
+# not only the ones we expect to be paths. ONE definition, shared with lib/provenance.py:
+# an image's provenance sidecar follows the same rule as this ledger, and two copies of a
+# regex are how the two would drift.
+sys.path.insert(0, os.path.join(sys.argv[2], "lib"))
+from provenance import HOSTISH  # noqa: E402
 
 bad = []
 try:

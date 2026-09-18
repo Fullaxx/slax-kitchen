@@ -33,19 +33,32 @@ Built on debian-64bit, 2026:
 The bundle is larger because the 22 media and crypto libraries that came with the old Chromium
 left with it, and the new bundle carries current versions of all of them.
 
-## Drop, then add — not override
+Those figures are from a build with the removal listed first. Applied on its own the ISO is
+**526 MiB** (2026-09-17) — the 2023 bundle stays, and this bundle is smaller because apt finds its
+libraries already installed.
 
-The recipe removes `05-chromium.sb` before building. That ordering is the point:
+## Pair it with a removal, listed first
 
-- **Overriding** would leave both copies on the ISO, paying 79 MiB for a Chromium nobody can
-  reach — and files the 2023 build had that the current one does not would still be visible in the
-  union afterwards, because a bundle can add and replace but **cannot delete**.
-- **Removing first** also makes `from:` come out right on its own. With `05-chromium` gone, the
-  default stack is `01-core … 04-apps`, so `apt` reinstalls the browser runtime into the new bundle
-  and the result is self-contained.
+This recipe adds a bundle at `10`, which outranks `05`, so the browser you get is the current one
+either way. What the removal buys is the space and the leftovers:
 
-See [composing bundles](../40-workflow/composing-bundles.md) for the reasoning, and
-[`remove-chromium`](remove-chromium.md) if you want the browser gone rather than replaced.
+```yaml
+recipes:
+  - name: remove-bundle
+    vars: {drop: "^05-chromium\\.sb$"}
+  - chromium-current
+```
+
+- **Without it**, both copies stay on the ISO — 79 MiB for a Chromium nobody can reach — and files
+  the 2023 build had that the current one does not are still visible in the union, because a bundle
+  can add and replace but **cannot delete**.
+- **With it**, `from:` also comes out right: the default stack is `01-core … 04-apps`, so `apt`
+  reinstalls the browser runtime into the new bundle and the result is self-contained. The
+  measurements above are from a build done that way; without the removal apt finds those libraries
+  installed and the bundle is smaller, at the price of assuming `05` stays.
+
+Removal is a recipe of its own and goes first — see [composing
+bundles](../40-workflow/composing-bundles.md) and [`remove-bundle`](remove-bundle.md).
 
 ## The desktop launcher
 

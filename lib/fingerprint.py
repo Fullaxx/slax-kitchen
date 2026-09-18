@@ -163,7 +163,7 @@ def fingerprint(iso: str, name: str | None = None) -> dict:
         vmlinuz = os.path.join(boot, "vmlinuz")
         rel, banner = kernel_banner(vmlinuz) if os.path.exists(vmlinuz) else ("", "")
         fp["kernel"] = {"release": rel, "banner": banner,
-                        "sha256": files.get("vmlinuz", {}).get("sha256", "")}
+                        "sha256": (files.get("vmlinuz") or {}).get("sha256", "")}
 
         # ---- initramfs -----------------------------------------------------
         img = os.path.join(boot, "initrfs.img")
@@ -266,7 +266,7 @@ def fingerprint(iso: str, name: str | None = None) -> dict:
                 ident["arch_probe_result"] = out.strip().split(",")[0]
                 ident["arch"] = "32bit" if "32-bit" in out else "64bit"
                 break
-        if "arch" not in ident and fp.get("kernel", {}).get("release", "").endswith("-smp"):
+        if "arch" not in ident and (fp.get("kernel") or {}).get("release", "").endswith("-smp"):
             ident["arch"] = "32bit"       # 32-bit Slax kernels carry LOCALVERSION=-smp
         claimed = ident.get("slax_version_file", "")
         if claimed and ident.get("arch"):

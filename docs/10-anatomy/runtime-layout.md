@@ -23,7 +23,7 @@ or a `preinit.sh` hook, and `/run/initramfs/memory/X` afterwards, from the runni
 ```
 /run/initramfs/                 the initramfs itself, kept alive for shutdown
 ├── shutdown                    run on the way down — see shutdown.md
-├── bin/                        busybox + the 8 static helpers, still available
+├── bin/                        busybox + the 7 static helpers, still available
 └── memory/
     ├── data      → the boot medium, mounted. Contains slax/
     ├── bundles/  → one directory per .sb, each a read-only squashfs loop mount

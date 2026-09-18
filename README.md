@@ -156,18 +156,18 @@ steps:
 ./kitchen pack                     # -> out/slax-...-custom.iso
 ```
 
-**Thirty-six recipes ship today.** The ones most people want first:
+**Thirty-five recipes ship today.** The ones most people want first:
 
 | | |
 |---|---|
 | `uefi-bootable` | make the ISO boot on UEFI firmware |
 | `isohybrid` | make it `dd`-able to a USB stick |
-| `firmware-refresh` | the GPU firmware stock Slax ships **none** of — no amdgpu, i915 or radeon at all |
+| `firmware-refresh` | firmware so the ISO works on more hardware — GPU, audio, Wi-Fi; Debian's, plus what only linux-firmware has |
 | `add-packages` | install distro packages into a new bundle |
 | `chromium-current` | replace the 2023 browser — stock is chromium **117**, from September 2023 |
 | `debian-browsers` | current Chromium **and** Firefox in one bundle, 32- and 64-bit |
 | `all-browsers` | six browsers in one bundle — Brave, Chrome, Chromium, Edge, Firefox, Vivaldi |
-| `remove-chromium` | or drop it entirely (−79 to −115 MiB) |
+| `remove-bundle` | drop bundles by pattern — the stock browser is −79 to −115 MiB |
 | `enable-ssh` | switch on the sshd both flavours already ship but never enable |
 | `users-and-auth` | replace the published `root`/`toor` password |
 | `rootcopy-overlay` | drop files onto the live system with no rebuild |
@@ -209,9 +209,15 @@ differences it recognises to the recipes that cause them. A weekly CI job watche
 
 See **[docs/00-overview/status.md](docs/00-overview/status.md)** for what is verified, what is
 written but unsupported, and what does not exist yet. Short version: the core loop
-(unpack → apply → pack → test) works and is boot-tested in CI, thirty-six recipes ship across
+(unpack → apply → pack → test) works and is boot-tested in CI, thirty-five recipes ship across
 23 verbs, and the documentation of Slax itself is complete. `kernel.replace` is the one verb still
 unwritten.
+
+Every image carries a record of what went into it: `kitchen pack` writes `<iso>.provenance.json`
+beside the ISO, and `kitchen sources` matches every file in the image to the stock release or to the
+step that produced it, gathering the source of whatever was built. If you publish an image,
+[publishing an image](docs/40-workflow/publishing-images.md) is the procedure and
+[NOTICE.md](NOTICE.md) is what travels with it.
 
 ## Contributing
 
@@ -223,4 +229,4 @@ the bar for a pull request. Security reports go via [SECURITY.md](SECURITY.md).
 
 MIT for this repository's own code, docs and recipes — see [LICENSE](LICENSE). Slax, Linux Live Kit
 and everything inside a built ISO carry their own licences; [NOTICE.md](NOTICE.md) sets out the
-boundary and the obligations that come with redistributing an image.
+boundary, the firmware terms, and what travels with a published image.

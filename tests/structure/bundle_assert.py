@@ -107,7 +107,12 @@ def entries(sb: str) -> list[tuple[str, int, int, str]]:
     """(mode, uid, gid, path) for every entry in a bundle. Needs no privilege."""
     r = subprocess.run(["unsquashfs", "-lln", sb], capture_output=True, text=True)
     if r.returncode != 0:
-        return []
+        # NOT an empty list. Returning one made every assertion below pass on a bundle
+        # nobody could read -- a compression the host's squashfs-tools lacks, a truncated
+        # file, unsquashfs missing -- which is the same "0 entries, ok" shape the comment
+        # below records as worse than no check at all.
+        raise RuntimeError(f"unsquashfs could not read {os.path.basename(sb)}: "
+                           + (r.stderr.strip().splitlines() or ["no output"])[-1])
     # -rwsr-xr-x 1000/1000    1 2026-09-15 22:32 squashfs-root/usr/bin/evil
     #     [0]       [1]       [2]     [3]    [4]           [5]
     # The uid/gid pair is field 1. An earlier version read field 2, so every line was
@@ -128,6 +133,85 @@ def entries(sb: str) -> list[tuple[str, int, int, str]]:
 def setuid_or_setgid(mode: str) -> bool:
     """`unsquashfs -lln` renders the bits in the x columns, as ls does."""
     return len(mode) >= 10 and (mode[3] in "sS" or mode[6] in "sS")
+
+
+def image_path(p: str) -> str:
+    """`squashfs-root/usr/bin/su` as an absolute path in the image: `/usr/bin/su`."""
+    rel = p[len("squashfs-root"):] if p.startswith("squashfs-root") else p
+    return rel or "/"
+
+
+USR_ALIASES = ("bin", "sbin", "lib", "lib32", "lib64", "libx32")
+
+
+def usr_merged(p: str) -> str:
+    """A path in the /usr form, so a package database and a filesystem can be compared.
+
+    Debian 12 is usr-merged and dpkg still records what the .deb shipped: `/bin/su` for a
+    file the image has at `/usr/bin/su`. Slackware is not merged and really does have
+    `/bin/mount`, which its own database records as `bin/mount`. Normalising BOTH sides
+    the same way makes either database answer for either layout.
+    """
+    head, _, rest = p.lstrip("/").partition("/")
+    return f"/usr/{head}/{rest}" if head in USR_ALIASES and rest else p
+
+
+def unowned_privileged(rows: list, owned: set) -> list:
+    """setuid/setgid FILES in `rows` that no package owns.
+
+    THE QUESTION IS PROVENANCE, NOT THE BITS. Bundles are mounted as root at every boot,
+    and not everything in one comes from a package: `bundle.fromTarball` takes an archive
+    whose `sha256:` is optional and refuses setuid members itself, and a bundle.script can
+    chmod anything. What is worth a human look is a privileged file with no package behind
+    it -- so the package database decides, and packaged content passes whoever owns it.
+
+    Directories are not tested. setgid on a directory means files created inside inherit
+    its group; it hands nobody any privilege. Debian sets it on /var/lib/tor (02700,
+    debian-tor) and on /var/mail, and tor refuses to start if its data directory is not
+    owned by the user it drops to -- the first version of this rule flagged every entry
+    owned by a non-root uid and failed the tor recipe for obeying its own package.
+
+    If this misfires on packaged content again, the agreed next step is to report rather
+    than fail.
+    """
+    return [(m, u, g, p) for m, u, g, p in rows
+            if m.startswith("-") and setuid_or_setgid(m)
+            and usr_merged(image_path(p)) not in owned]
+
+
+def packaged_paths(mods: str, names: list) -> set:
+    """Every path a package database records across the stack, in the /usr form.
+
+    Read from the bundles rather than from a merged database: a package's file list
+    travels with the bundle that installed it, and each stock bundle carries its own.
+    Both flavours are read, because both ship setuid binaries -- dpkg's
+    `var/lib/dpkg/info/*.list` (absolute paths), and Slackware's
+    `var/lib/pkgtools/packages/<pkg>` (relative paths, after a `FILE LIST:` header).
+    """
+    owned: set = set()
+    for n in names:
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["unsquashfs", "-q", "-f", "-d", d, os.path.join(mods, n),
+                            "var/lib/dpkg/info", "var/lib/pkgtools/packages"],
+                           capture_output=True)
+            info = os.path.join(d, "var", "lib", "dpkg", "info")
+            if os.path.isdir(info):
+                for f in sorted(os.listdir(info)):
+                    if not f.endswith(".list"):
+                        continue
+                    with open(os.path.join(info, f), errors="replace") as fh:
+                        owned.update(usr_merged(ln.strip()) for ln in fh if ln.strip())
+            pkgs = os.path.join(d, "var", "lib", "pkgtools", "packages")
+            if os.path.isdir(pkgs):
+                for f in sorted(os.listdir(pkgs)):
+                    listing = False
+                    with open(os.path.join(pkgs, f), errors="replace") as fh:
+                        for ln in fh:
+                            if ln.startswith("FILE LIST:"):
+                                listing = True
+                            elif listing and ln.strip():
+                                owned.add(usr_merged("/" + ln.strip().lstrip("./")))
+    return owned
 
 
 def main(argv: list[str]) -> int:
@@ -189,25 +273,45 @@ def main(argv: list[str]) -> int:
     # in the artifact says which verb built it, so "this one should be all-root" is not
     # a question this file can answer. Two invariants that hold regardless:
     print()
+    unreadable: list[str] = []
+
+    def rows_of(path: str):
+        """Entries, or None when the bundle could not be read -- never an empty list, so
+        a caller cannot mistake "unreadable" for "nothing to see"."""
+        try:
+            return entries(path)
+        except RuntimeError as e:
+            unreadable.append(str(e))
+            return None
+
     gen = os.path.join(mods, GENERATED)
-    if os.path.isfile(gen):
-        rows = entries(gen)
+    if os.path.isfile(gen) and (rows := rows_of(gen)) is not None:
         owned = [(u, g, p) for _m, u, g, p in rows if u != 0 or g != 0]
         t.check(not owned,
                 f"{GENERATED:<18} {len(rows)} entries, all uid 0 gid 0",
                 "non-root: " + ", ".join(f"{p} ({u}:{g})" for u, g, p in owned[:4])
                 if owned else "")
 
-    # A setuid or setgid file owned by a non-root uid is never right here. Every such
-    # entry in a stock bundle is uid 0 -- chage and expiry are root/shadow, crontab is
-    # root/messagebus -- and an image that runs as root has no use for one that is not.
-    # This is what would catch -all-root being enabled on a verb whose source can carry
-    # setuid, which is the trap that made #4 and #8 inseparable.
+    # A setuid or setgid file that no package owns does not belong in a bundle: a bundle
+    # is mounted as root at every boot, and this is what would catch -all-root being
+    # disabled on a verb whose source can carry setuid, which is the trap that made #4 and
+    # #8 inseparable. Packaged content passes -- dpkg's lists are the authority on what is
+    # meant to be there. See unowned_privileged() for why directories are not tested.
+    #
+    # Candidates first: the dpkg lookup unpacks each bundle's info directory, so it is
+    # only paid when a bundle actually holds a privileged file.
+    cand = {}
     for n in names:
-        priv = [(m, u, g, p) for m, u, g, p in entries(os.path.join(mods, n))
-                if setuid_or_setgid(m) and u != 0]
+        rows = rows_of(os.path.join(mods, n))
+        if rows is not None:
+            cand[n] = [e for e in rows if e[0].startswith("-") and setuid_or_setgid(e[0])]
+    t.check(not unreadable, f"every bundle readable ({len(names)} listed)",
+            "; ".join(unreadable))
+    owned = packaged_paths(mods, list(cand)) if any(cand.values()) else set()
+    for n in cand:
+        priv = unowned_privileged(cand[n], owned)
         t.check(not priv,
-                f"{n:<18} no setuid/setgid file owned by a non-root uid",
+                f"{n:<18} no setuid/setgid file that no package owns",
                 "found: " + ", ".join(f"{p} ({m} {u}:{g})" for m, u, g, p in priv[:4])
                 if priv else "")
 

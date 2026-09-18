@@ -37,7 +37,10 @@ kitchen_unpack() {
     {
         echo "source_iso: $(cd "$(dirname "$iso")" && pwd)/$(basename "$iso")"
         echo "source_sha256: $(sha256sum "$iso" | cut -d' ' -f1)"
-        echo "source_size: $(stat -c%s "$iso")"
+        # -L: sha256sum follows a symlinked ISO, so the size must too. Without it a linked
+        # download cache recorded the LINK's size -- 66 bytes beside the sha256 of 416 MiB --
+        # and the provenance sidecar carried the same wrong number into out/.
+        echo "source_size: $(stat -L -c%s "$iso")"
         echo "unpacked_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     } > "$dest/.kitchen/origin.yaml"
 

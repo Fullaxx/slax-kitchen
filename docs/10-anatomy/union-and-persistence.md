@@ -152,7 +152,7 @@ front — but it does mean `perchsize=` is fixed at creation and can only be inc
 
 It is the one filesystem in the shipped set that grows online without unmounting, which is what makes
 `perchsize=` raisable on a later boot. `xfs_growfs` and `mkfs.xfs.custom` are two of the seven static
-binaries in the initramfs for exactly this.
+helpers in the initramfs for exactly this.
 
 ## `savechanges` — the other kind of persistence
 

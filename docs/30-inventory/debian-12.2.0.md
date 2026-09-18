@@ -68,7 +68,7 @@ Contents added per bundle:
 
 | | adds |
 |---|---|
-| `01-firmware` | 12 firmware packages, all wireless |
+| `01-firmware` | 91 MiB: 713 firmware files, 211 MiB unpacked. 12 packages: ten Debian firmware packages for wireless, Bluetooth and Ethernet (`bnx2` and `cavium` are wired), plus `firmware-b43-installer` and `b43-fwcutter`, which during Slax's build cut 155 Broadcom b43 firmware files out of Broadcom's `wl` driver and listed them in `b43/firmware-b43-installer.catalog`. The packages' `copyright` files were removed; `usr/lib/firmware/ipw2x00.LICENSE` is the one license text left, and none came with the b43 files. [What `firmware-refresh` adds on top](../50-cookbook/firmware-refresh.md#the-stock-firmware-it-builds-on) |
 | `02-xorg` | Xorg, drivers, fonts, `xterm`, `Xdetect` |
 | `03-desktop` | fluxbox, xfce4-panel, xlunch, the `fb*` helpers |
 | `04-apps` | pcmanfm, connman-gtk, galculator, xarchiver, scite, lxtask + 33 libraries |

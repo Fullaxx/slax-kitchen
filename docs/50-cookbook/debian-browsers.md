@@ -13,7 +13,7 @@ Zero configuration. Debian, **32-bit and 64-bit**.
 
 ## What it does
 
-Removes the stock `05-chromium.sb` and builds one bundle carrying a current **Chromium** and
+Builds one bundle carrying a current **Chromium** and
 **Firefox ESR**. It is the union of [`chromium-current`](chromium-current.md) and
 [`firefox-esr`](firefox-esr.md) in a single bundle — do not apply those alongside it.
 
@@ -58,6 +58,9 @@ installed, both named deliberately — see below.
 | **ISO** | **560.0 MiB** | **561.1 MiB** |
 | boot | 3/3 livekit markers | 3/3 livekit markers |
 
+Measured with the removal listed first. Applied on its own, with `05-chromium` still on the image,
+the 64-bit ISO is **635 MiB** (2026-09-17).
+
 The estimate written before the build was ~517 MiB — 416 − 79 + ~180 MiB of bundle at the ~3.4:1
 ratio this repo had measured twice before. **The real figure is 560 MiB, 8% higher**, because the
 bundle came out at 223 MiB rather than 180: browser binaries hold more already-compressed data than
@@ -96,22 +99,33 @@ Base — see [`libreoffice`](libreoffice.md). Three are named back explicitly:
 `chromium-common` is named explicitly rather than left to the solver, so the declared set matches
 what this page documents. apt would pull it in regardless.
 
-## Drop, then add
+## Pair it with a removal, listed first
+
+This recipe adds; taking Slax's browser out is a separate recipe, and it goes first:
+
+```yaml
+recipes:
+  - name: remove-bundle
+    vars: {drop: "^05-chromium\\.sb$"}
+  - debian-browsers
+```
 
 `check_plan_order` requires every `bundle.remove` to precede every `bundle.packages`, across recipes
-*and* across invocations — it seeds prior bundles from `.kitchen/journal.yaml`. Doing the removal
-inside this recipe makes that ordering true by construction, exactly as
-[`chromium-current`](chromium-current.md) does.
+*and* across invocations — it seeds prior bundles from `.kitchen/journal.yaml`. This recipe used to
+do the removal itself, which made that ordering true by construction and also made its own position
+a constraint on every other recipe in the profile. Removal now lives in one recipe; see
+[composing bundles](../40-workflow/composing-bundles.md).
 
-It also makes `from:` come out right on its own. With `05-chromium` gone the default stack is
-`01-core … 04-apps`, so apt pulls the shared browser runtime back into this bundle and the result
-stands on its own. `05-chromium` was never only Chromium: it carries `libnss3`, `libnspr4`,
-`libopus0`, `libflac12`, `libwebpmux3` and eighteen more — see
+The removal is also what makes `from:` come out right. With `05-chromium` gone the default stack is
+`01-core … 04-apps`, so apt pulls the shared browser runtime into this bundle and the result stands
+on its own; with `05` still below, apt finds it installed and the bundle is smaller but assumes `05`
+stays. `05-chromium` was never only Chromium: it carries `libnss3`, `libnspr4`, `libopus0`,
+`libflac12`, `libwebpmux3` and eighteen more — see
 [the bundle map](../30-inventory/bundle-map.md).
 
-> **This recipe and [`all-browsers`](all-browsers.md) are alternatives, not companions.** Both remove
-> `^05-chromium\.sb$`, so a plan containing both makes `_only_above` compare the literal `05` against
-> an already-built `13` or `14`, and it is refused before anything is modified.
+> **This recipe and [`all-browsers`](all-browsers.md) are alternatives, not companions.** Nothing
+> refuses a plan that lists both now that neither removes anything — you would simply be building
+> two overlapping browser bundles, the higher-numbered one winning.
 
 ## Dependencies, and what the bundle actually contains
 

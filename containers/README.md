@@ -53,7 +53,8 @@ this project where a download is *not* pinned by hash.
 
 Everything else is pinned because it ends up inside an image that boots as root: base ISOs by
 sha256 and byte size, apt signing keys by sha256, the busybox tarball by sha256, `vendor/linux-live`
-by commit. **Nothing from this container is copied into the ISO.** `bundle.packages` chroots into
+by commit. **Almost nothing from this container is copied into the ISO** — the exceptions are
+[listed below](#what-the-base-actually-changes-in-the-iso). `bundle.packages` chroots into
 the bundle and runs Debian's own `apt` against Debian's own glibc — which is exactly why
 `fakechroot` was rejected, since it `LD_PRELOAD`s host binaries against target libraries and
 Ubuntu's glibc 2.39 cannot load against Debian's 2.36. The host userland does not leak in.
@@ -110,12 +111,15 @@ and it hides the divergence instead of recording it.
 
 ### What the base actually changes in the ISO
 
-Two things built here end up inside the shipped image, and both run before the kernel:
+Three things from this container can end up inside the shipped image. Two run before the kernel:
 
 | what | from | how it gets in |
 |---|---|---|
 | `BOOTX64.EFI` | the host's GRUB | `grub-mkstandalone` → `boot/efi.img` → El Torito alt-boot entry |
 | the isohybrid MBR | the host's syslinux | `isohdpfx.bin` → `xorriso -isohybrid-mbr` → the ISO's first 432 bytes |
+| `/etc/localtime` | the host's tzdata | [`locale-timezone-keyboard`](../docs/50-cookbook/locale-timezone-keyboard.md) copies the host's tzfile, since a recipe cannot reference a path inside the tree it is building |
+
+`kitchen sources` names all three with the host package they came from, and where its source is.
 
 Measured across the two bases:
 

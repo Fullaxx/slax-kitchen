@@ -2,7 +2,7 @@ apiVersion: slax-kitchen/v1
 kind: Recipe
 metadata:
   name: debian-browsers
-  summary: Replace the stock Chromium bundle with a current Chromium and Firefox
+  summary: Current Chromium and Firefox in one bundle, from Debian proper
   tags: [browser, bundle, packages]
 compat:
   # Debian only, like every bundle.packages recipe here: Slax's Slackware base is frozen
@@ -19,21 +19,25 @@ compat:
   privilege: chroot
 vars:
   # 14: beside all-browsers at 13, both in 10-89 which is a FORK's range rather than
-  # slax-kitchen's. They are alternatives and cannot both be applied -- see the ordering
-  # note on the first step. `bundle` is a var so a profile can move it.
+  # slax-kitchen's. They are alternatives -- see the note on the first step. `bundle` is
+  # a var so a profile can move it.
   bundle: "14-browsers"
 steps:
-  # DROP FIRST, THEN ADD -- the ordering chromium-current exists to demonstrate.
-  # Overriding would leave both copies on the ISO, paying 79.1 MiB for a Chromium nobody
-  # can reach, and files the 2023 build had that the current one does not would still be
-  # visible in the union, because a bundle can add and replace but cannot delete.
+  # IT ONLY ADDS. This bundle sits above 05-chromium and shadows it, so Slax's 2023
+  # Chromium stays on the ISO -- 79.1 MiB for a browser nobody reaches -- unless a removal
+  # takes it out. That removal is its own recipe, listed first in the profile:
   #
-  # check_plan_order refuses the other order before anything is modified, across recipes
-  # AND across invocations. It also means this recipe and all-browsers cannot both be
-  # applied: both match literal 05, so the second compares 05 against an already-built
-  # 13 or 14 and is refused. Correct -- they are alternatives, not companions.
-  - verb: bundle.remove
-    match: "^05-chromium\\.sb$"
+  #   - name: remove-bundle
+  #     vars: {drop: "^05-chromium\\.sb$"}
+  #
+  # Nothing here requires it. With 05-chromium still below, apt finds its media and crypto
+  # libraries installed and this bundle comes out smaller, assuming 05 stays; with it gone,
+  # apt pulls them in and the bundle is self-contained. Both are correct -- the same dial
+  # firefox-esr documents. check_plan_order is what keeps the order honest: a removal listed
+  # after any bundle has been built is refused, which is why removals go at the top.
+  #
+  # all-browsers is the alternative to this recipe rather than its companion: six browsers,
+  # 64-bit only, three of them from vendor repositories.
 
   # WHY THIS EXISTS BESIDE all-browsers, and it is not only about architecture.
   #

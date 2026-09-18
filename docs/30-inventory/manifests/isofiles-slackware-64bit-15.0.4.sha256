@@ -1,0 +1,9 @@
+605bfd37866004222bd9ed8d36df0264199cfed732c7cdeebb1d0b2e808d6c35  ./readme.txt
+001cd6201313d1a13321fbc4e041df441a1ada3232ce365998998833581dbc3e  ./slax/boot/isolinux.bin@64
+a95f8bb6469668b2b03ba21e16441c1d23db2393ac7dbc96e94709f904cc1b8a  ./slax/modules/01-core.sb
+7b103c32bca7910ad84b16916d02bbce6c037fc107a38b56ca38b80fdca35855  ./slax/modules/01-firmware.sb
+28ba1f8d7a684b7fa875748b2472e15908a0af4a0fe82b764d9fbeeefa6aa7fd  ./slax/modules/02-xorg.sb
+2bf2e04740e11b8b5f227c5de05f882efc7f4a6e4c266b4f74318244535f758c  ./slax/modules/03-desktop.sb
+fe5b6e19ecc585b4ec93782fba4c45b4e8dfed4be1c8863b3b9396f732678f64  ./slax/modules/04-apps.sb
+7a5766167fecc7d96b6d522b52e47d988b4f3dc631e24cde0b4d21c7d6327313  ./slax/modules/05-chromium.sb
+3ab6f7438f5de81075f4ee2b1798bac7dea8d71ae84a1b242e26dee9db951b4d  ./slax/modules/06-devel.sb

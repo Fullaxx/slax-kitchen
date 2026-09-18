@@ -30,6 +30,51 @@ a ○ verb should not be able to touch anything outside the work tree, and that 
 than assumed. It is not a sandbox — `bundle.script` and `bundle.packages` run arbitrary code by
 design, which is why they are marked ◐ `chroot`.
 
+## Saying where the source is
+
+Verbs record what they fetched and built in the image's provenance, and
+[`kitchen sources`](cli.md#sources-iso---json-f---markdown-f---fetch-dir) turns that into a list
+of where each part's source lives. Three things the engine cannot work out for itself, a recipe
+states:
+
+```yaml
+- verb: bundle.fromTarball
+  bundle: 15-app
+  src: https://example.org/app-1.0-linux-x86_64.tar.xz
+  sha256: "…"
+  upstream_source: https://example.org/app/source/   # where its publisher keeps the source
+```
+
+```yaml
+# beside metadata: and steps:, for a recipe whose output must not be published
+redistribution:
+  allowed: false
+  why: installs a browser whose licence does not permit redistributing it
+```
+
+| Field | On | What it says |
+|---|---|---|
+| `upstream_source` | `boot.payload`, `bundle.fromTarball`, `bundle.script`, each `apt.sources` entry | where the publisher of something installed **unmodified** keeps its source: a URL, or a list of them |
+| `declares` | `bundle.script` | binaries the script **compiled**, each with `path`, `source_url`, `source_sha256` and optionally `license` |
+| `redistribution` | the recipe | `allowed: false` and a `why:` when an image containing this recipe's output must not be published |
+
+A download with no `upstream_source` is a warning, and unresolved under `kitchen sources --strict`;
+so is a download the recipe pinned no `sha256:` for, because what it fetched is whatever that server
+served that day. An ELF file that a `bundle.script` leaves behind that no package **vouches for** —
+no package owns it, or its bytes are not the ones the owning package recorded an md5 for — and that
+no `declares:` entry names is always unresolved: something was compiled or overwritten, and nothing
+says from what. On Slackware, whose package database records no checksums, ownership is all there
+is, which is why `declares:` exists.
+
+**A local `src:` needs nothing extra, only a commit.** Files a verb copies in from beside the recipe
+go through one resolver, which records their path in the kitchen or project checkout and their
+content. `kitchen sources` checks both against the recorded commit, because those files are what
+the project source archive is promising to hold. A unit test fails any verb that resolves a
+recipe-relative path without it. `bundle.fromTarball` and `initramfs.busybox` are the exceptions:
+what they take in is a download or a build output, described by `upstream_source`
+or a build claim. `boot.payload` takes either, and is not an exception — a URL is described by
+`upstream_source`, and a local file is recorded like any other file copied in from a checkout.
+
 ---
 
 ## Bundle
@@ -117,7 +162,11 @@ archive's publisher would be choosing what runs privileged on your image. Use `b
 ```
 
 The only case where deleting beats overriding: a whiteout hides a file but does not reclaim its
-space. See [remove-chromium](../50-cookbook/remove-chromium.md).
+space. See [remove-bundle](../50-cookbook/remove-bundle.md), which is the recipe that does this.
+
+**A recipe that removes or renumbers a bundle may contain nothing else**, and `kitchen validate`
+refuses one that does. A removal decides where its recipe may sit in a plan, so mixing it into a
+recipe that also builds makes that recipe's position a constraint on every other one.
 
 **This must run before every `bundle.packages` and `bundle.script` in the plan**, across all
 recipes, and the run is refused otherwise. A bundle built against the default `from:` stack takes
@@ -159,6 +208,13 @@ Two real examples, both from [`libreoffice`](../50-cookbook/libreoffice.md): wit
 `libreoffice-base` installs happily without the JRE it needs, so it starts and then cannot open a
 database. An application that looks installed and fails when clicked is worse than one you left out.
 
+**`apt.reinstall` defaults to `false`.** Set it for packages the stock image already has at the same
+version: `apt-get install` of those does nothing, and the stock copy has lost its `/usr/share/doc`,
+because Slax's build deletes it. With `reinstall: true` apt unpacks them again; files that come back
+unchanged in size, mtime and mode stay out of the bundle, so what ships is what differs — the
+copyright files. Measured on ten stock firmware packages: a 64 KiB bundle of 32 files. See
+[`firmware-refresh`](../50-cookbook/firmware-refresh.md).
+
 **`from:` defaults to every bundle that will sit below this one**, which is almost always what
 you want. Name a shorter stack and apt reinstalls libraries the image already has, and those
 copies then shadow the originals from a higher bundle. It is a size-versus-independence dial:
@@ -184,7 +240,12 @@ Foreign architectures and third-party repositories, for the packages Debian does
         key_url: https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
         key_sha256: "<64 hex>"   # required whenever key_url is given
         keep: false              # default: the repo and key do NOT ship
+        upstream_source: https://github.com/brave/brave-browser   # where its source is
 ```
+
+Each package's archive is recorded by matching its `.deb`'s sha256 against apt's own indexes, so
+`kitchen sources` points a package from this repository at its `upstream_source`, and a package from
+Debian at `snapshot.debian.org`. A package from an archive the step does not declare is unresolved.
 
 A key is **pinned by sha256**, like every other download here — an unpinned key lets a remote
 party decide what your image trusts, and a bundle is where that becomes permanent. The
@@ -235,6 +296,21 @@ Two behaviours it shares with `bundle.packages`, both load-bearing:
   package database, and a bundle without it leaves new binaries invisible to dpkg.
 - `BUNDLE_EXCLUDE` strips the runtime directories the chroot needed but a bundle must not ship,
   plus caches and lockfiles — including `var/lib/dpkg/status`, which is replaced by a fragment.
+
+**A script that downloads something says so.** The engine cannot see what a script fetched, so a
+line on stdout of the form
+
+```
+KITCHEN-FETCHED <sha256> <path in the image> <url>
+```
+
+is recorded in the image's provenance and left out of the output shown. `firmware-refresh` prints one
+per linux-firmware file. ELF files the step leaves behind that no package database owns are recorded
+too, with their sha256.
+
+`upstream_source:` says where what the script fetched is published, and `declares:` names what it
+compiled; see [saying where the source is](#saying-where-the-source-is). A package the script
+installs from a repository it added itself points at the step's `upstream_source`.
 
 `network: true` **declares** that the step reaches the internet; preflight then checks for one
 before any of the plan runs, rather than after unsquashing 122 MiB. It does not sandbox anything

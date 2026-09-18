@@ -29,6 +29,8 @@ kitchen_version() {
     printf '%s' "$_v"
 }
 
+# shellcheck source=lib/hints.sh
+. "$REPO_ROOT/lib/hints.sh"
 # shellcheck source=lib/unpack.sh
 . "$REPO_ROOT/lib/unpack.sh"
 # shellcheck source=lib/pack.sh
@@ -59,6 +61,7 @@ ${B}COMMANDS${O}
   test <iso> [--structure] [--kernel] [--bios] [--uefi] [--usb] [--persistence]
   shell <bundle|work>        chroot into a bundle for exploration
   diff <isoA> <isoB>         structural + per-file diff
+  sources <iso>              what is in a built ISO, and where each part's source lives
   upstream-diff              regenerate docs/15-upstream/drift-report.md
   version                    print the version and git commit
 
@@ -375,6 +378,7 @@ kitchen pack [-s DIR] [-o FILE]   rebuild an ISO from a work tree
       --hybrid         add an isohybrid MBR (and a GPT alongside UEFI)
       --volid ID       volume id            --appid ID     application id
       --sysid ID       system id            --publisher S  --preparer S
+      --date STAMP     pin the image timestamps, YYYYMMDDhhmmsscc (xorriso only)
 
 Recipes record these as hints in <work>/.kitchen/pack.yaml; a flag given here wins.
 Debian status fragments are merged into 98-dpkg-db.sb at this point.
@@ -414,6 +418,8 @@ kitchen test <iso> [options]      assert things about a built ISO
   --out DIR            where evidence lands (default: <dir of iso>/boot-tests)
   --expect-uefi        --structure: require an EFI El Torito entry
   --expect-hybrid      --structure: require an isohybrid MBR
+  --volid ID           --structure: the volume id to require (default: slax;
+                       `kitchen build` passes whatever the recipes asked for)
 
 --kernel needs no help to assert: it builds its own cmdline with ttyS0 as the only
 console. The bootloader modes are pointed at a boot entry that names ttyS0 LAST --
@@ -463,7 +469,7 @@ help_for() {
     case "$1" in
       unpack|pack|build|test|doctor|selftest|version) usage_cmd "$1" ;;
       probe|apply|validate|fetch|fingerprint) exec "$REPO_ROOT/lib/$1.py" --help ;;
-      status|diff|shell)   exec python3 "$REPO_ROOT/lib/$1.py" --help ;;
+      status|diff|shell|sources) exec python3 "$REPO_ROOT/lib/$1.py" --help ;;
       upstream-diff)       exec python3 "$REPO_ROOT/lib/upstream_diff.py" --help ;;
       help|--help|-h)      usage ;;
       *) usage; die "unknown command: $1" ;;
@@ -494,6 +500,7 @@ case "$cmd" in
     test)          kitchen_test "$@" ;;
     status)        python3 "$REPO_ROOT/lib/status.py" "$@" ;;
     diff)          python3 "$REPO_ROOT/lib/diff.py" "$@" ;;
+    sources)       python3 "$REPO_ROOT/lib/sources.py" "$@" ;;
     upstream-diff) python3 "$REPO_ROOT/lib/upstream_diff.py" "$@" ;;
     shell)         python3 "$REPO_ROOT/lib/shell.py" "$@" ;;
     *)             usage; die "unknown command: $cmd" ;;

@@ -411,7 +411,16 @@ A recipe we can take needs:
   it changes, what it costs, and what it does *not* do
 - an honest **`compat:` block** — flavours, arches, and `privilege:` (`none`, `mknod`, `chroot`,
   `kvm`), which is what lets `doctor` tell a user whether their machine can run it
+- **only additions.** A recipe that removes or renumbers a bundle does nothing else, and
+  `kitchen validate` refuses one that does: a removal dictates where its recipe may sit in a plan,
+  and that constraint then applies to every recipe beside it. `remove-bundle` is the one recipe that
+  removes; list it first and the rest compose in any order
 - **matrix-verified on all four targets**, or a `compat:` block that explains the skip
+- **where the source is**, for anything it downloads: `upstream_source:` on the step or the apt
+  repository, `declares:` for anything a `bundle.script` compiles, and `redistribution: {allowed:
+  false, why: …}` if an image containing it must not be published — see
+  [saying where the source is](docs/90-reference/verbs.md#saying-where-the-source-is). The matrix
+  runs `kitchen sources` on every image it builds, so a file nothing accounts for fails there.
 - comments that say **why**, and record what you measured
 
 That last one is the strongest convention in the repository. Read any recipe in
@@ -458,7 +467,10 @@ whole stack below you, and is a size-versus-removability dial rather than a corr
 reasoning is in [composing bundles](docs/40-workflow/composing-bundles.md).
 
 `tests/structure/bundle_assert.py` walks the assembled stack and fails if any bundle's database is
-less complete than the one it shadows; `ci/recipe-matrix.sh` runs it for every recipe — except
+less complete than the one it shadows, or if a bundle carries a setuid or setgid **file that no
+package owns** — dpkg's file lists are the authority, so packaged content passes whoever owns it,
+and a privilege bit that arrived with a tarball or a script does not. `ci/recipe-matrix.sh` runs it
+for every recipe — except
 those listed in `ci/slow-recipes.txt`, which are built weekly and on every release tag rather than
 on every push. Each such skip is printed with its reason.
 
@@ -520,6 +532,6 @@ Please do not open a public issue for a vulnerability. See [SECURITY.md](SECURIT
 ## Licence
 
 MIT for this repository's own code, docs and recipes. Slax, Linux Live Kit and everything inside a
-built ISO carry their own licences — [NOTICE.md](NOTICE.md) sets out the boundary and the
-obligations that come with redistributing an image. By contributing you agree your contribution is
+built ISO carry their own licences — [NOTICE.md](NOTICE.md) sets out the boundary, the firmware
+terms, and what travels with a published image. By contributing you agree your contribution is
 licensed under the same terms.

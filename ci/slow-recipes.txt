@@ -10,8 +10,11 @@
 # someone else's change into a red master, at a cadence where we cannot act on it anyway.
 # A recipe that is merely expensive stays in: cost is not a reason to stop checking.
 #
-# Measured on debian-64bit, run ca2f71b, 2026-09-16: the matrix was 1306 s total, of which
-# all-browsers was 622 s and every one of the other 49 entries combined was 468 s.
+# Measured on debian-64bit, run 9907ed3, 2026-09-17, with nothing skipped: 33 recipes in
+# 1315 s. all-browsers was 456 s of that, tor-browser 92 s and firmware-refresh 92 s; the
+# other 30 recipes came to 662 s between them, at a median of 6 s each. The matrix prints
+# each recipe's seconds, so these numbers can be re-measured rather than remembered.
 
-all-browsers  weekly, not per-push: four sha256-pinned vendor keys are an external dependency (622 s, and a key rotation would redden master)
+all-browsers  weekly, not per-push: four sha256-pinned vendor keys are an external dependency (456 s, and a key rotation would redden master)
 tor-browser   weekly, not per-push: a version-pinned 138 MB tarball from dist.torproject.org is an external dependency, and a Tor Browser release would redden master
+firmware-refresh  weekly, not per-push: 65 sha256-pinned files fetched from linux-firmware mirrors (git.kernel.org answered 503 to a burst while they were measured) are an external dependency

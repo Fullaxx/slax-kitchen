@@ -3,7 +3,7 @@
 What is verified, what is written but unsupported, and what does not exist yet. Kept honest on
 purpose: a toolkit that overclaims produces broken ISOs nobody notices until boot.
 
-Last updated 2026-09-13.
+Last updated 2026-09-17.
 
 ---
 
@@ -28,6 +28,7 @@ the resulting ISO in QEMU and reading the console.
 | preflight | ✅ every tool/file/capability the plan needs checked up front; `build` checks before unpacking |
 | `kitchen build` | ✅ whole pipeline from one profile, ~4 s for four recipes; derives test expectations from the recipe list |
 | `kitchen test` | ✅ `--structure` (18 assertions, ~1 s), `--bios`, `--uefi` |
+| `kitchen sources` | ✅ every file in a built image matched by sha256 to the stock image or to the step that produced it, from the provenance `pack` writes beside the ISO; exit 1 on anything it cannot account for, and `--fetch` gathers the source of what was built |
 
 ### Recipes
 
@@ -37,14 +38,14 @@ the resulting ISO in QEMU and reading the console.
 | `isohybrid` | ✅ MBR + GPT + type-`0xEF` partition verified in the image |
 | `serial-console` | ✅ entry present in both configs |
 | `memtest86plus` | ✅ **booted on BIOS and UEFI** — Memtest86+ 8.10 selected from each menu and running |
-| `remove-bundle` | ✅ **booted** — ISO 416 → 336 MiB, five bundles instead of six |
-| `remove-chromium` | ✅ named preset for the above; 416 → 336 MiB (Debian), 455 → 340 MiB (Slackware) |
+| `remove-bundle` | ✅ **booted** — ISO 416 → 336 MiB, five bundles instead of six. The only recipe that removes anything; 455 → 340 MiB on Slackware |
 | `rootcopy-overlay` | ✅ **booted** — file copy and preinit hook both confirmed firing |
 | `add-packages` | ✅ **booted** on Debian — bundle mounts last, `Live Kit done, starting slax` |
 | `initramfs-add-binary` | ✅ **booted** — file survives the repack, image still reaches `slax login:` |
 | `initramfs-add-modules` | ✅ **booted** — promotes from a bundle; verified on both flavours and both arches |
 | `initramfs-boot-timeout` | ✅ **booted** — `sh -n` gate proven against a deliberately boot-bricking patch |
 | `branding` | ✅ **booted** — 4 KiB override bundle beats 01-core; shipped bundles untouched |
+| `firmware-refresh` | ✅ **booted** — two bundles above Slax's own (48.8 + 5.4 MiB, ISO 416 → 469 MiB); measured against the 1,959 firmware names the kernel's modules ask for, of which stock has 295 |
 
 The same ISO boots on **both** BIOS and UEFI after `uefi-bootable` + `isohybrid`, which stock Slax
 cannot do at all.
@@ -59,8 +60,15 @@ checker that only examined one link per line.
 The toolchain is one list — [`containers/packages/`](../../containers/README.md) — read by both the
 workflows and the reference container, and CI builds that container on every push and runs
 `kitchen doctor --strict` plus all thirteen gates *inside* it. A `v*` tag runs the same CI and then
-publishes a Release; it attaches no ISO, for the reasons in [NOTICE.md](../../NOTICE.md), and its
-notes name the rung each target reached. See [CI](../60-testing/ci.md).
+publishes a Release of the toolkit, whose notes name the rung each target reached. No image is
+attached; [NOTICE.md](../../NOTICE.md) sets out what travels with one when it is published. See
+[CI](../60-testing/ci.md).
+
+Every image `kitchen pack` writes now carries a provenance record beside it, and `kitchen sources`
+turns that into an account of every file in the image. `ci/release-assets.sh` assembles what would
+travel with a published one and `ci/release-verify.py` refuses a set that does not carry what it
+claims; the weekly CI run proves that pipeline on the `tor` profile and uploads the records and
+source, never the image. See [publishing an image](../40-workflow/publishing-images.md).
 
 ---
 
@@ -114,7 +122,7 @@ clear message naming what *is* available, rather than silently skipping.
 
 ### Recipes
 
-**33.** The remaining gaps are the ones that need real engineering rather than YAML:
+**35.** The remaining gaps are the ones that need real engineering rather than YAML:
 
 | | |
 |---|---|
@@ -131,18 +139,18 @@ different things.
 
 | rung | pages |
 |---|---|
-| `matrix-verified` — builds and passes structure assertions on its declared targets | 16 |
+| `matrix-verified` — builds and passes structure assertions on its declared targets | 14 |
 | `artifact boot-verified` — booted, and `testkit` confirms the artifact reached the union | 4 |
-| `boot-verified` — booted to `slax login:` with all three livekit markers | 12 |
-| `runtime-verified` — the feature was watched working | 3 |
+| `boot-verified` — booted to `slax login:` with all three livekit markers | 13 |
+| `runtime-verified` — the feature was watched working | 4 |
 
 ### Documentation
 
 **Phase 1 is complete.** `00-overview/`, `05-using-slax/`, `10-anatomy/`, `15-upstream/`,
-`20-boot-sequence/` and `30-inventory/` are done — 54 pages covering how the ISO is constructed, how
+`20-boot-sequence/` and `30-inventory/` are done — 56 pages covering how the ISO is constructed, how
 it boots on every medium, what software is in it, and the upstream source of truth for all of it.
 
-`40-workflow/` is also complete — 10 pages, every procedure written to work by hand with the
+`40-workflow/` is also complete — 14 pages, every procedure written to work by hand with the
 `kitchen` verb noted alongside.
 
 `60-testing/` is complete as of 2026-09-16 — [CI](../60-testing/ci.md) for what runs on every push,

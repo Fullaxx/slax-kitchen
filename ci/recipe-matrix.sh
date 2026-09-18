@@ -18,6 +18,8 @@
 # works on 64-bit Debian.
 set -u
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck source=lib/hints.sh
+. "$REPO_ROOT/lib/hints.sh"
 TARGET=${1:?usage: recipe-matrix.sh <target> <iso> [recipe-dir]}
 ISO=${2:?usage: recipe-matrix.sh <target> <iso> [recipe-dir]}
 RECIPE_DIR=${3:-recipes/available}
@@ -56,7 +58,7 @@ trap 'rm -rf "$WORK"' EXIT
 
 printf 'recipe matrix: %s  (flavour=%s arch=%s)  %s\n' "$TARGET" "$FLAVOUR" "$ARCH" \
        "${RECIPE_DIR#"$REPO_ROOT"/}"
-pass=0; fail=0; skip=0; skipped_by_file=""
+pass=0; fail=0; skip=0; skipped_by_file=""; MATRIX_STARTED=$(date +%s)
 
 for recipe in "$RECIPE_DIR"/*.yaml; do
     [ -e "$recipe" ] || { echo "no recipes in $RECIPE_DIR" >&2; exit 2; }
@@ -96,6 +98,7 @@ PY
 )
     tree="$WORK/$name"
     log="$WORK/$name.log"
+    started=$(date +%s)
     rm -rf "$tree"
 
     if ! "$REPO_ROOT/kitchen" unpack "$ISO" -o "$tree" >"$log" 2>&1; then
@@ -139,9 +142,9 @@ PY
     [ "$name" = isohybrid ] && set -- "$@" --expect-hybrid
     # A recipe may legitimately change the volume id. Read what it asked for from its
     # own pack hints rather than special-casing the recipe name here -- any future
-    # recipe that sets volid then gets the right expectation for free.
-    _volid=$(sed -n 's/^volid: *//p' "$tree/.kitchen/pack.yaml" 2>/dev/null \
-             | head -1 | sed "s/^[\"']//;s/[\"']$//")
+    # recipe that sets volid then gets the right expectation for free. pack_hint is the
+    # reader pack and `kitchen build` use too.
+    _volid=$(pack_hint "$tree/.kitchen/pack.yaml" volid)
     [ -n "$_volid" ] && set -- "$@" --volid "$_volid"
     if ! python3 "$@" >>"$log" 2>&1; then
         printf '  %sFAIL%s %-18s structure assertions failed\n' "$R" "$O" "$name"
@@ -149,11 +152,26 @@ PY
         fail=$((fail+1)); rm -rf "$tree" "$out"; continue
     fi
 
+    # Every file in the image attributed: Slax as published, a recorded package or
+    # download, something built here, or something a recipe wrote. An unexplained file
+    # fails the recipe that produced it, by name. --allow-dirty because the question here
+    # is attribution, not whether the tree was committed -- the release path checks that.
+    if ! python3 "$REPO_ROOT/lib/sources.py" "$out" --allow-dirty >>"$log" 2>&1; then
+        printf '  %sFAIL%s %-18s kitchen sources left something unresolved\n' "$R" "$O" "$name"
+        grep -E "UNRESOLVED|Traceback|Error" "$log" | sed 's/^/        /'
+        fail=$((fail+1)); rm -rf "$tree" "$out" "$out.provenance.json"; continue
+    fi
+
     sz=$(( $(stat -c%s "$out") / 1048576 ))
-    printf '  %sok%s   %-18s %s%s MiB%s\n' "$G" "$O" "$name" "$D" "$sz" "$O"
+    # Seconds per recipe: what belongs in ci/slow-recipes.txt is an EXTERNAL failure mode,
+    # not cost -- but the cost claim in that file has to come from somewhere, and a run
+    # that does not print it leaves it to memory.
+    printf '  %sok%s   %-18s %s%s MiB, %s s%s\n' "$G" "$O" "$name" "$D" "$sz" \
+        "$(( $(date +%s) - started ))" "$O"
     pass=$((pass+1))
-    rm -rf "$tree" "$out"
+    rm -rf "$tree" "$out" "$out.provenance.json"
 done
 
-printf '\n%d passed, %d failed, %d skipped\n' "$pass" "$fail" "$skip"
+printf '\n%d passed, %d failed, %d skipped in %d s\n' "$pass" "$fail" "$skip" \
+    "$(( $(date +%s) - MATRIX_STARTED ))"
 [ "$fail" -eq 0 ]

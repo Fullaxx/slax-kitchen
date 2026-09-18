@@ -7,12 +7,13 @@
 # the interesting half of these notes is the verification claim, and that has to be
 # written by something that knows what this project's CI actually runs.
 #
-# NO ISO IS ATTACHED TO A RELEASE, deliberately. NOTICE.md: "A built ISO is an
-# aggregate ... GPLv2 components carry a source-offer obligation. If you publish a
-# customized ISO, that obligation is yours." The unsatisfiable half is concrete --
-# seven binaries under vendor/linux-live/initramfs/static/ ship with no in-tree
-# source, and the kernel is custom-built with an out-of-tree aufs patch set. So this
-# publishes a tag and an honest account of what was tested; you build the ISO.
+# A RELEASE OF THIS REPOSITORY IS THE TOOLKIT, not an image. No ISO is attached, so the
+# notes say so, and point at NOTICE.md for what travels with an image when one IS
+# published. This paragraph used to be a refusal -- "part of it cannot be satisfied from
+# this repository ... you build the ISO" -- which read a note written for forks as a rule
+# for this repo, and a unit test pinned the refusal word for word. The attachment claim is
+# now checked against what release.yml actually uploads (tests/unit/test_release.py), so
+# the day the workflow attaches something, this text has to change with it.
 set -u
 # Overridable, the same way ci/lib.sh does it -- which is what lets
 # tests/unit/test_release.py point this at a throwaway repo instead of
@@ -22,6 +23,9 @@ TAG=${1:-}
 RUN_URL=""
 [ "${2:-}" = "--run-url" ] && RUN_URL=${3:-}
 [ -n "$TAG" ] || { echo "usage: ci/release-notes.sh <tag> [--run-url URL]" >&2; exit 2; }
+
+# Before the cd: a relative RELEASE_ASSETS is relative to where the CALLER stands.
+case "${RELEASE_ASSETS:-}" in "" | /*) ;; *) RELEASE_ASSETS="$PWD/$RELEASE_ASSETS" ;; esac
 
 cd "$REPO_ROOT" || exit 2
 
@@ -37,6 +41,46 @@ if [ -z "$SLUG" ]; then
            | sed -e 's#^git@github.com:##' -e 's#^https://github.com/##' -e 's#\.git$##')
 fi
 BLOB="https://github.com/${SLUG:-Fullaxx/slax-kitchen}/blob/$TAG"
+
+# THE REDISTRIBUTION SECTION. A release of this repository attaches no image, and says
+# so. A project that publishes an image assembles its assets with ci/release-assets.sh and
+# sets RELEASE_ASSETS to that directory; the section is then generated from the directory
+# by ci/redistribution-claim.py, so it names what is attached rather than promising it.
+if [ -n "${RELEASE_ASSETS:-}" ]; then
+    REDISTRIBUTION=$(python3 "$REPO_ROOT/ci/redistribution-claim.py" "$RELEASE_ASSETS") || exit 1
+    ATTACHED=$(python3 -c 'import json,sys
+print("yes" if ((json.load(open(sys.argv[1])).get("image") or {}).get("attached")) else "no")' \
+        "$RELEASE_ASSETS/release-index.json") || exit 1
+else
+    REDISTRIBUTION="## Redistribution
+
+No image is attached to this release: a release of slax-kitchen is the toolkit.
+
+A Slax ISO is an aggregate — Debian or Slackware packages, non-free firmware, and Slax's
+own kernel and initramfs, each under its own terms. What travels with an image built with
+this toolkit when one is published — the source of what the build compiled or modified,
+where each upstream publishes its own, the firmware terms, and an identity that is not an
+official Slax release — is set out in [NOTICE.md]($BLOB/NOTICE.md).
+
+Slax and Linux Live Kit are the work of **Tomáš Matějíček** — <https://www.slax.org>.
+This project customizes his work; it is not the project's home. If you find it useful,
+support Slax upstream."
+fi
+
+if [ "${ATTACHED:-no}" = yes ]; then
+    IMAGE_CHECKSUM_NOTE="The attached image's checksum is in \`SHA256SUMS\`, which checks the download. It does
+not promise that a rebuild matches, because **images are not byte-reproducible**:
+\`genisoimage\` varies both the volume timestamps and the extent order, and an identical
+tree rebuilt elsewhere has been measured differing in 99.9% of its sectors. See
+[reproducibility]($BLOB/docs/40-workflow/reproducibility.md)."
+else
+    IMAGE_CHECKSUM_NOTE="No image is attached to this release, so there is no image checksum here. Where an image
+*is* published, its \`SHA256SUMS\` checks the download. It does not promise that a rebuild
+matches, because **images are not byte-reproducible**: \`genisoimage\` varies both the
+volume timestamps and the extent order, and an identical tree rebuilt elsewhere has been
+measured differing in 99.9% of its sectors. See
+[reproducibility]($BLOB/docs/40-workflow/reproducibility.md)."
+fi
 
 # The tag being released is usually not yet an object (the workflow runs on the ref,
 # but a dry run has no tag at all), so walk back from the previous tag if there is
@@ -139,27 +183,7 @@ $(sed -n '/^targets:/,$p' compat/sources.yaml \
 $RECIPES recipes, $GATES gates. \`kitchen doctor --report\` on the build machine records the
 tool versions.
 
-**The ISO itself is not byte-reproducible**, so no checksum for one is published here:
-\`genisoimage\` varies both the volume timestamps and the extent order, and an identical
-tree rebuilt elsewhere has been measured differing in 99.9% of its sectors. See
-[reproducibility]($BLOB/docs/40-workflow/reproducibility.md). A hash nobody can
-reproduce is false assurance, not provenance.
+$IMAGE_CHECKSUM_NOTE
 
-## Redistribution
-
-No ISO is attached to this release, and that is deliberate rather than an oversight.
-
-A built Slax ISO is an aggregate: Debian or Slackware packages under their own
-licences, non-free firmware with per-package redistribution terms, Chromium, and a
-Linux kernel custom-built with the out-of-tree aufs patch set. GPLv2 components carry
-a source-offer obligation, and parts of it cannot be satisfied from this repository —
-seven prebuilt static binaries under \`vendor/linux-live/initramfs/static/\` ship with
-no in-tree source.
-
-If you publish a customized ISO, that obligation is yours. See
-[NOTICE.md]($BLOB/NOTICE.md).
-
-Slax and Linux Live Kit are the work of **Tomáš Matějíček** — <https://www.slax.org>.
-This project customizes his work; it is not the project's home. If you find it useful,
-support Slax upstream.
+$REDISTRIBUTION
 EOF

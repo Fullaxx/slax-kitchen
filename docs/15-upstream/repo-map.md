@@ -15,7 +15,7 @@ linux-live/
 │   ├── initramfs_create      assembles and compresses initrfs.img
 │   ├── init                  what the kernel executes  (ships verbatim)
 │   ├── shutdown              clean unmount + CD eject  (ships verbatim)
-│   └── static/               9 prebuilt static binaries, committed as blobs
+│   └── static/               9 prebuilt static binaries, committed as blobs (8 in 12.2.0)
 │
 ├── bootfiles/                syslinux 6.03 family + mbr.bin + bootinst.{sh,bat}
 │

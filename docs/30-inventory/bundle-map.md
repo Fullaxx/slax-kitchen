@@ -122,7 +122,7 @@ not only Chromium: it carries `libnss3`, `libnspr4`, `libopus0`, `libvorbis0a`, 
 `libflac12`, `libpulse0`, `libsndfile1`, `libwebpmux3`, `libwoff1`, `libmp3lame0`, `libmpg123-0`
 and `libopenh264-7` — effectively the shared browser runtime. Drop it and anything else with a
 rendering engine has to ship its own copies. See
-[`remove-chromium`](../50-cookbook/remove-chromium.md).
+[`remove-bundle`](../50-cookbook/remove-bundle.md).
 
 ### `06-devel` — Slackware only
 

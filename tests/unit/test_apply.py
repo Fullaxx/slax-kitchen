@@ -9,7 +9,8 @@ import os
 import shutil
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+sys.path.insert(0, os.path.join(REPO, "lib"))
 
 import apply  # noqa: E402
 
@@ -649,14 +650,16 @@ def test_removes_come_first():
     missing libraries, so the fragment does not declare them and the merged database
     stays self-consistent. The build succeeds and passes every gate.
 
-    chromium-current is the discriminating case and must keep passing: it removes
-    05-chromium FIRST and then builds, deliberately (d0f48e8). The cross-recipe case is
-    the one that prompted this -- firefox-esr and remove-chromium are each fine alone.
+    A profile that removes first and then builds must keep passing: that is what every
+    profile here does, with remove-bundle listed ahead of the additive recipes. The
+    cross-recipe case is the one that prompted this -- firefox-esr and remove-bundle are
+    each fine alone. No recipe mixes the two jobs any more; lib/validate.py refuses one
+    that tries, and tests/unit/test_validate.py covers that.
     """
     remove = {"verb": "bundle.remove", "match": "^05-chromium\\.sb$"}
     cases = [
-        ("remove then build, one recipe",
-         [("chromium-current", remove),
+        ("remove then build, two recipes",
+         [("remove-bundle", remove),
           ("chromium-current", {"verb": "bundle.packages", "bundle": "10-chromium"})],
          False),
         ("build then remove, one recipe",
@@ -664,7 +667,7 @@ def test_removes_come_first():
          True),
         ("build then remove, across recipes",
          [("firefox-esr", {"verb": "bundle.packages", "bundle": "11-firefox"}),
-          ("remove-chromium", remove)],
+          ("remove-bundle", remove)],
          True),
         ("bundle.script counts as building",
          [("r", {"verb": "bundle.script", "bundle": "07-x"}), ("r", remove)],
@@ -731,7 +734,7 @@ def test_removes_come_first():
 
     # Across invocations. The rule held inside one plan and nowhere else, so running the
     # two one-liners every cookbook page documents -- `kitchen apply firefox-esr` then
-    # `kitchen apply remove-chromium` -- produced exactly the state the single-plan
+    # `kitchen apply remove-bundle` -- produced exactly the state the single-plan
     # refusal exists to prevent. The journal is what makes the second run see the first.
     import tempfile
     work = tempfile.mkdtemp()
@@ -744,7 +747,7 @@ def test_removes_come_first():
     with open(journal, "w") as f:
         f.write("applied:\n  - recipe: firefox-esr\n    verbs: [bundle.packages]\n"
                 "    artifacts: [slax/modules/11-firefox.sb]\n")
-    later = [("remove-chromium", {"verb": "bundle.remove", "match": "^05-chromium\\.sb$"})]
+    later = [("remove-bundle", {"verb": "bundle.remove", "match": "^05-chromium\\.sb$"})]
 
     check("a later invocation sees the earlier build",
           bool(apply.check_plan_order(later, work)), True)
@@ -761,7 +764,7 @@ def test_removes_come_first():
     check("work=None falls back to plan-only",
           apply.check_plan_order(later, None), [])
 
-    # And the real shipped recipes must all pass, chromium-current above all.
+    # And the real shipped recipes must all pass.
     import glob
 
     import yaml
@@ -775,26 +778,17 @@ def test_removes_come_first():
               apply.check_plan_order(plan), [])
 
 
-def test_network_is_declared_where_it_is_used():
-    """Every verb that reaches the network must say so at preflight.
+def _fetching_verbs():
+    """(tree, funcs, {verb: function}, verbs that urlopen) read from lib/apply.py's AST.
 
-    bundle.fromTarball did the identical urllib fetch boot.payload does, and the
-    inference in step_requires named only boot.payload -- so preflight passed and
-    `kitchen build` unpacked 436 MiB before dying at the download. Reported as #9.
-
-    Asserting on a hand-written list of verbs would rot the moment someone adds a
-    fetch. This reads lib/apply.py's own AST instead: find every urlopen, resolve it to
-    the function containing it, map that to a verb -- directly by its @verb decorator,
-    or for a helper via the @verb functions that call it -- and require each one to
-    declare network unconditionally or to be in _URL_SRC_VERBS. Finding the answer this
-    way is how #9 was confirmed to be exactly one verb and not three.
+    Shared by the network and provenance tests, so both see the same set of fetchers --
+    a verb added with a new urlopen is picked up by both or by neither.
     """
     import ast
 
     here = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(here, "..", "..", "lib", "apply.py")
     tree = ast.parse(open(path).read())
-
     funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
 
     def enclosing(line):
@@ -815,6 +809,7 @@ def test_network_is_declared_where_it_is_used():
                     out.append(f)
         return out
 
+    by_verb = {verb_of(f): f for f in funcs if verb_of(f)}
     fetchers = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -834,12 +829,236 @@ def test_network_is_declared_where_it_is_used():
             cv = verb_of(c)
             if cv:
                 fetchers.add(cv)
+    return tree, funcs, by_verb, fetchers
 
+
+def test_network_is_declared_where_it_is_used():
+    """Every verb that reaches the network must say so at preflight.
+
+    bundle.fromTarball did the identical urllib fetch boot.payload does, and the
+    inference in step_requires named only boot.payload -- so preflight passed and
+    `kitchen build` unpacked 436 MiB before dying at the download. Reported as #9.
+
+    Asserting on a hand-written list of verbs would rot the moment someone adds a
+    fetch. This reads lib/apply.py's own AST instead: find every urlopen, resolve it to
+    the function containing it, map that to a verb -- directly by its @verb decorator,
+    or for a helper via the @verb functions that call it -- and require each one to
+    declare network unconditionally or to be in _URL_SRC_VERBS. Finding the answer this
+    way is how #9 was confirmed to be exactly one verb and not three.
+    """
+    _tree, _funcs, _by_verb, fetchers = _fetching_verbs()
     check("found the urlopen verbs at all", bool(fetchers), True)
     for v in sorted(fetchers):
         declares = apply.VERB_REQUIRES.get(v, {}).get("network") is True
         infers = v in apply._URL_SRC_VERBS
         check(f"{v} declares or infers network", declares or infers, True)
+
+
+def test_fetches_and_bundles_record_provenance():
+    """Every verb that downloads something must say what it downloaded, and every bundle
+    must record its own hash.
+
+    Provenance that depends on each verb remembering to call ctx.prov rots exactly like
+    the network declaration above did (#9): the next verb with a urlopen forgets. So the
+    same AST walk finds every fetching verb and requires a ctx.prov call inside it, and
+    requires one inside _make_bundle, which every bundle-producing verb goes through.
+    Delete either call and this names it.
+    """
+    import ast
+
+    _tree, funcs, by_verb, fetchers = _fetching_verbs()
+
+    def calls_prov(fn):
+        return any(isinstance(n, ast.Call) and ast.unparse(n.func).endswith("ctx.prov")
+                   for n in ast.walk(fn))
+
+    check("found the urlopen verbs at all", bool(fetchers), True)
+    for v in sorted(fetchers):
+        check(f"{v} records provenance", calls_prov(by_verb[v]), True)
+    make = next((f for f in funcs if f.name == "_make_bundle"), None)
+    check("_make_bundle exists", make is not None, True)
+    if make is not None:
+        check("_make_bundle records the bundle's hash", calls_prov(make), True)
+    # The verb that BUILDS a binary from the host's toolchain -- no urlopen, still the
+    # one place the answer to "which GRUB is this" exists.
+    check("boot.uefi records the host's GRUB", calls_prov(by_verb["boot.uefi"]), True)
+
+
+def test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package():
+    """_unowned_elf asked only whether SOME package names the path. A script that overwrote
+    a packaged binary -- `curl -o /usr/bin/ssh …` -- produced an ELF that no `declares:`
+    covered, was not reported, and left `kitchen sources` naming openssh-client as its
+    source. dpkg records an md5 for every file it ships, right beside the .list."""
+    import shutil
+    import tempfile
+    root = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(root, "usr", "bin"))
+        info = os.path.join(root, "var", "lib", "dpkg", "info")
+        os.makedirs(info)
+        elf = os.path.join(root, "usr", "bin", "ssh")
+        with open(elf, "wb") as f:
+            f.write(b"\x7fELF" + b"original\n")
+        with open(os.path.join(info, "openssh-client.list"), "w") as f:
+            f.write("/usr/bin/ssh\n")
+        import hashlib
+        digest = hashlib.md5(open(elf, "rb").read()).hexdigest()
+        with open(os.path.join(info, "openssh-client.md5sums"), "w") as f:
+            f.write(f"{digest}  usr/bin/ssh\n")
+
+        check("an untouched packaged binary is not reported",
+              apply._unowned_elf(root, ["usr/bin/ssh"]), [])
+
+        with open(elf, "wb") as f:                     # the script swaps the bytes
+            f.write(b"\x7fELF" + b"replaced\n")
+        got = apply._unowned_elf(root, ["usr/bin/ssh"])
+        check("the replaced one is", [e["path"] for e in got], ["usr/bin/ssh"])
+
+        # TWO PACKAGES, ONE PATH. A diversion or a Replaces: takeover records the same
+        # path twice with different digests; keeping whichever .md5sums os.listdir read
+        # last made this answer depend on a directory listing's order. The file matches
+        # one of them, so it is vouched for.
+        other = hashlib.md5(open(elf, "rb").read()).hexdigest()
+        with open(os.path.join(info, "ssh-replacement.md5sums"), "w") as f:
+            f.write(f"{other}  usr/bin/ssh\n")
+        with open(os.path.join(info, "ssh-replacement.list"), "w") as f:
+            f.write("/usr/bin/ssh\n")
+        check("a path two packages record",
+              apply._unowned_elf(root, ["usr/bin/ssh"]), [])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_boot_payload_copies_a_local_file_and_records_it():
+    """RUN the verb, do not read it. The static check above asks only whether the function
+    MENTIONS ctx.local; the call added to satisfy it passed two arguments to a method that
+    takes one, so every recipe with a recipe-local `src:` died with a TypeError -- after
+    the file had been copied and chmodded, leaving the tree half-written.
+
+    A local file is not a download: it is recorded as a local input, and `pinned` (which
+    means "the recipe named the sha256 of a file some server served") does not apply."""
+    import shutil
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    try:
+        recipe_dir = os.path.join(tmp, "recipe")
+        os.makedirs(recipe_dir)
+        payload = os.path.join(recipe_dir, "memtest.bin")
+        with open(payload, "wb") as f:
+            f.write(b"\x7fELF payload\n")
+        ctx = apply.Ctx(os.path.join(tmp, "work"), recipe_dir, "local-payload")
+        os.makedirs(ctx.tree)
+        ctx.say = lambda *_a, **_k: None
+        ctx.begin_step("boot.payload")          # as apply_recipe does around every verb
+        apply.v_boot_payload(ctx, {"verb": "boot.payload", "dest": "/slax/boot/memtest.bin",
+                                   "src": "memtest.bin", "mode": "0644"})
+        ctx.end_step()
+        landed = os.path.join(ctx.tree, "slax", "boot", "memtest.bin")
+        check("the payload is in the tree", os.path.isfile(landed), True)
+        step = ctx.prov_steps[-1]
+        check("recorded as a local input", bool(step.get("local_inputs")), True)
+        check("and not as an unpinned download", step.get("pinned"), None)
+        check("with the file's own name", step.get("source"), "memtest.bin")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_long_pack_hint_survives_the_round_trip():
+    """ctx.hint writes <work>/.kitchen/pack.yaml and lib/hints.sh reads it back with sed.
+    safe_dump folds a scalar at 80 columns onto a continuation line, and sed takes the
+    first line only: a 128-character publisher (the field's own limit) was mastered into
+    the image cut off at the last space before column 80, and the structure test then
+    compared the ISO against the same truncated string, so nothing noticed."""
+    import shutil
+    import subprocess
+    import tempfile
+    work = tempfile.mkdtemp()
+    try:
+        meta = os.path.join(work, ".kitchen")
+        os.makedirs(meta)
+        ctx = apply.Ctx.__new__(apply.Ctx)
+        ctx.meta, ctx.dry = meta, False
+        ctx.say = lambda *_a, **_k: None
+        publisher = ("Slax Kitchen build of Slax 12.2.0 with browsers and firmware "
+                     "for the lab machines in room 4")
+        ctx.hint("publisher", publisher)
+        ctx.hint("volid", "SLAX-CUSTOM")
+        read = subprocess.run(
+            ["sh", "-c", f'. {REPO}/lib/hints.sh; pack_hint "$1" publisher',
+             "sh", os.path.join(meta, "pack.yaml")], capture_output=True, text=True)
+        check("what pack would master", read.stdout.strip(), publisher)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def test_a_recipe_listed_twice_is_refused():
+    """Naming one recipe twice applied it ONCE, silently: resolve() deduplicates by path,
+    and a profile's per-recipe vars are keyed by recipe name, so the second entry's vars
+    overwrote the first and then vanished with it.
+
+    That was harmless while every removal had its own preset recipe. With one generic
+    remove-bundle, "drop chromium and the firmware bundle" is the obvious two-entry
+    mistake, and the answer is one entry with one pattern.
+    """
+    import tempfile
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "twice.yaml")
+
+    def profile(lines):
+        with open(path, "w") as f:
+            f.write("apiVersion: slax-kitchen/v1\nkind: Profile\nmetadata:\n"
+                    "  name: twice\n  summary: A profile written for this test\n"
+                    "base: {flavour: debian, arch: 64bit, version: \"12.2.0\"}\n"
+                    "recipes:\n" + lines + "output:\n  name: \"x-{{version}}.iso\"\n")
+        return path
+
+    try:
+        names, _ov = apply.read_profile_recipes(profile("  - remove-bundle\n  - add-packages\n"))
+        check("a profile that names each recipe once is fine", names, ["remove-bundle", "add-packages"])
+
+        twice = profile('  - name: remove-bundle\n    vars: {drop: "^05-chromium\\\\.sb$"}\n'
+                        '  - name: remove-bundle\n    vars: {drop: "^01-firmware\\\\.sb$"}\n')
+        try:
+            apply.read_profile_recipes(twice)
+            check("listing a recipe twice is refused", "accepted", "refused")
+        except RuntimeError as e:
+            check("the refusal names the recipe", "remove-bundle" in str(e), True)
+            check("and says what to do instead", "one entry" in str(e).lower(), True)
+    finally:
+        os.unlink(path)
+        os.rmdir(d)
+
+
+def test_recipe_relative_paths_go_through_ctx_local():
+    """A file a recipe copies in is `ours` to `kitchen sources` only because Ctx.local
+    records where it sat and what it held. A verb that joins recipe_dir itself copies the
+    file in unrecorded, and the image then claims an archive covers something nobody
+    checked. Downloads and build outputs are the exceptions: they carry upstream_source or
+    a build claim, and are not expected to be in a checkout at all.
+    """
+    import ast
+    tree, _funcs, _by_verb, _fetchers = _fetching_verbs()
+    # Only the two verbs whose input is never expected in a checkout: a tarball named by
+    # URL and sha256, and a build output with its own claim. `boot.payload` is NOT here --
+    # it takes either, and when its `src:` is a local file that file is recorded like any
+    # other, which is what records() below asks of it.
+    allowed = {"__init__", "local", "v_bundle_fromtarball", "v_initramfs_busybox"}
+
+    def records(fn):
+        return any(isinstance(n, ast.Call) and ast.unparse(n.func) == "ctx.local"
+                   for n in ast.walk(fn))
+
+    offenders = sorted({fn.name for fn in ast.walk(tree) if isinstance(fn, ast.FunctionDef)
+                        for n in ast.walk(fn)
+                        if isinstance(n, ast.Attribute) and n.attr == "recipe_dir"
+                        and fn.name not in allowed and not records(fn)
+                        # a nested function is walked twice; report the innermost owner
+                        and not any(isinstance(c, ast.FunctionDef) and c is not fn and n in ast.walk(c)
+                                    for c in ast.walk(fn))})
+    check("every recipe-relative path is recorded by Ctx.local", offenders, [])
+    users = sum(1 for n in ast.walk(tree) if isinstance(n, ast.Call)
+                and ast.unparse(n.func) == "ctx.local")
+    check("and the verbs do call it", users >= 8, True)
 
 
 def test_symlink_chain_cannot_escape():
@@ -1429,6 +1648,58 @@ def test_relax_modes_widens_without_granting():
     shutil.rmtree(outside_dir, ignore_errors=True)
 
 
+def test_apt_reinstall_is_opt_in():
+    """`apt-get install` of a package the stock image already has at the same version does
+    nothing. firmware-refresh listed firmware-realtek, -atheros, -iwlwifi and -brcm80211 and
+    measured: its bundle's dpkg fragment declared five packages, none of those four. The
+    flag is what makes a reinstall reach the bundle -- and it must stay opt-in, because on
+    by default every recipe would re-unpack whatever it names that is already installed.
+    """
+    base = ["apt-get", "install", "-y", "-qq", "--no-install-recommends"]
+    check("default: no --reinstall", apply.apt_install_argv({}), base)
+    check("reinstall: true adds it", apply.apt_install_argv({"reinstall": True}),
+          base + ["--reinstall"])
+    check("reinstall: false is the default", apply.apt_install_argv({"reinstall": False}), base)
+    check("no_recommends still honoured", apply.apt_install_argv({"no_recommends": False}),
+          ["apt-get", "install", "-y", "-qq"])
+
+
+def test_every_file_writing_verb_records_what_it_wrote():
+    """A verb that writes into the tree must ctx.record() it.
+
+    boot.menu and boot.branding edited isolinux.cfg and syslinux.cfg and recorded
+    nothing, so `kitchen status` never listed the edit -- and `kitchen sources` could
+    not attribute it, and reported serial-console's menu entry as an unexplained change
+    to a stock file. Found by running `kitchen sources` on the tor profile. Verbs that
+    only set pack hints write nothing and are exempt, by name.
+    """
+    import ast
+
+    _tree, funcs, by_verb, _fetchers = _fetching_verbs()
+    names = {f.name: f for f in funcs}
+
+    def reaches(fn, attr, seen=None):
+        seen = seen if seen is not None else set()
+        for n in ast.walk(fn):
+            if isinstance(n, ast.Call):
+                s = ast.unparse(n.func)
+                if s.endswith(attr):
+                    return True
+                callee = names.get(s)
+                if callee is not None and callee.name not in seen:
+                    seen.add(callee.name)
+                    if reaches(callee, attr, seen):
+                        return True
+        return False
+
+    hint_only = {"boot.isohybrid", "iso.metadata", "iso.checksums"}
+    for v, fn in sorted(by_verb.items()):
+        if v in hint_only:
+            check(f"{v} writes no files (sets hints only)", reaches(fn, "ctx.record"), False)
+            continue
+        check(f"{v} records what it writes", reaches(fn, "ctx.record"), True)
+
+
 def main():
     for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                test_slackware_pkgname, test_when_guard, test_subst,
@@ -1447,6 +1718,12 @@ def main():
                test_checksums_sign_is_a_key_id,
                test_removes_come_first,
                test_network_is_declared_where_it_is_used,
+               test_fetches_and_bundles_record_provenance,
+               test_recipe_relative_paths_go_through_ctx_local,
+               test_boot_payload_copies_a_local_file_and_records_it,
+               test_a_long_pack_hint_survives_the_round_trip,
+               test_a_recipe_listed_twice_is_refused,
+               test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package,
                test_symlink_chain_cannot_escape,
                test_fromtarball_wires_both_guards_in,
                test_extract_members_matches_extractall_on_a_clean_archive,
@@ -1456,7 +1733,9 @@ def main():
                test_all_root_is_per_verb,
                test_bundle_files_refuses_a_setuid_mode,
                test_iso_files_actually_writes_into_the_iso_tree,
-               test_relax_modes_widens_without_granting]:
+               test_relax_modes_widens_without_granting,
+               test_apt_reinstall_is_opt_in,
+               test_every_file_writing_verb_records_what_it_wrote]:
         fn()
     if FAILURES:
         for f in FAILURES:
