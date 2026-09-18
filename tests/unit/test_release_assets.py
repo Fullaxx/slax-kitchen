@@ -368,29 +368,44 @@ def test_release_notes_use_the_claim_when_given_assets():
 
 
 def main():
-    for fn in [test_a_source_tar_is_named_the_way_every_other_asset_is,
-               test_nothing_may_take_the_name_of_a_file_this_script_writes,
-               test_a_fetched_file_the_sources_document_says_nothing_about,
-               test_a_complete_directory_passes,
-               test_sha256sums_must_be_exact,
-               test_what_the_manifest_refuses_is_refused,
-               test_built_here_needs_its_source,
-               test_the_project_archive_carries_its_submodules,
-               test_no_images_is_checked_by_content_not_by_name,
-               test_anything_that_is_not_a_regular_file_is_refused,
-               test_the_content_scan_runs_even_when_the_records_are_broken,
-               test_no_host_paths_and_no_renamed_names,
-               test_an_attached_image_carries_its_firmware_licenses,
-               test_the_claim_names_what_is_attached,
-               test_the_claim_says_only_what_the_directory_shows,
-               test_release_notes_use_the_claim_when_given_assets]:
-        fn()
-    if FAILURES:
-        for f in FAILURES:
-            print(f"FAIL {f}", file=sys.stderr)
-        return 1
-    print("tests/unit/test_release_assets.py: all checks passed")
-    return 0
+    # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
+    # 1 of this file's 2 mkdtemp() calls had no cleanup, so running this file by hand left
+    # their trees in /tmp and nothing took them away. ci/checks/80-unit.sh does this
+    # for a GATE run; the box is the half that survives running the file directly.
+    # Issue #25.
+    #
+    # Set before the first test, because tempfile.tempdir only steers calls made
+    # after it -- and cleared afterwards so a caller that imports this file is not
+    # left pointing at a directory that no longer exists.
+    box = tempfile.mkdtemp(prefix="test_release_assets-")
+    tempfile.tempdir = box
+    try:
+        for fn in [test_a_source_tar_is_named_the_way_every_other_asset_is,
+                   test_nothing_may_take_the_name_of_a_file_this_script_writes,
+                   test_a_fetched_file_the_sources_document_says_nothing_about,
+                   test_a_complete_directory_passes,
+                   test_sha256sums_must_be_exact,
+                   test_what_the_manifest_refuses_is_refused,
+                   test_built_here_needs_its_source,
+                   test_the_project_archive_carries_its_submodules,
+                   test_no_images_is_checked_by_content_not_by_name,
+                   test_anything_that_is_not_a_regular_file_is_refused,
+                   test_the_content_scan_runs_even_when_the_records_are_broken,
+                   test_no_host_paths_and_no_renamed_names,
+                   test_an_attached_image_carries_its_firmware_licenses,
+                   test_the_claim_names_what_is_attached,
+                   test_the_claim_says_only_what_the_directory_shows,
+                   test_release_notes_use_the_claim_when_given_assets]:
+            fn()
+        if FAILURES:
+            for f in FAILURES:
+                print(f"FAIL {f}", file=sys.stderr)
+            return 1
+        print("tests/unit/test_release_assets.py: all checks passed")
+        return 0
+    finally:
+        tempfile.tempdir = None
+        shutil.rmtree(box, ignore_errors=True)
 
 
 if __name__ == "__main__":

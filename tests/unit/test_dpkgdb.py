@@ -312,21 +312,38 @@ def test_a_saved_session_supersedes_the_fragments_below_it():
 
 
 def main():
-    for fn in [test_key_includes_architecture, test_blank_line_inside_description,
-               test_delta_is_added_and_changed, test_delta_empty_when_nothing_changed,
-               test_merge_replaces_in_place, test_merge_appends_new_and_keeps_base,
-               test_merge_is_idempotent, test_merge_order_later_fragment_wins,
-               test_sortmod_matches_livekit, test_render_round_trip,
-               test_merge_fragments_into_chroot,
-               test_a_real_status_does_not_discard_the_fragments_below_it,
-               test_a_saved_session_supersedes_the_fragments_below_it]:
-        fn()
-    if FAILURES:
-        for f in FAILURES:
-            print(f"FAIL {f}", file=sys.stderr)
-        return 1
-    print("tests/unit/test_dpkgdb.py: all checks passed")
-    return 0
+    # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
+    # all 7 of this file's mkdtemp() calls had no cleanup, so running this file by hand left
+    # their trees in /tmp and nothing took them away. ci/checks/80-unit.sh does this
+    # for a GATE run; the box is the half that survives running the file directly.
+    # Issue #25.
+    #
+    # Set before the first test, because tempfile.tempdir only steers calls made
+    # after it -- and cleared afterwards so a caller that imports this file is not
+    # left pointing at a directory that no longer exists.
+    import shutil
+    import tempfile
+    box = tempfile.mkdtemp(prefix="test_dpkgdb-")
+    tempfile.tempdir = box
+    try:
+        for fn in [test_key_includes_architecture, test_blank_line_inside_description,
+                   test_delta_is_added_and_changed, test_delta_empty_when_nothing_changed,
+                   test_merge_replaces_in_place, test_merge_appends_new_and_keeps_base,
+                   test_merge_is_idempotent, test_merge_order_later_fragment_wins,
+                   test_sortmod_matches_livekit, test_render_round_trip,
+                   test_merge_fragments_into_chroot,
+                   test_a_real_status_does_not_discard_the_fragments_below_it,
+                   test_a_saved_session_supersedes_the_fragments_below_it]:
+            fn()
+        if FAILURES:
+            for f in FAILURES:
+                print(f"FAIL {f}", file=sys.stderr)
+            return 1
+        print("tests/unit/test_dpkgdb.py: all checks passed")
+        return 0
+    finally:
+        tempfile.tempdir = None
+        shutil.rmtree(box, ignore_errors=True)
 
 
 if __name__ == "__main__":

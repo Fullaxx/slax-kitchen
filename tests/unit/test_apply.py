@@ -1752,49 +1752,65 @@ def test_every_file_writing_verb_records_what_it_wrote():
 
 
 def main():
-    for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
-               test_slackware_pkgname, test_when_guard, test_subst,
-               test_extract_member, test_preflight, test_under_containment,
-               test_wont_do_verbs, test_parse_lsdl,
-               test_initramfs_busybox_registered,
-               test_say_does_not_journal, test_apt_source_line,
-               test_network_declaration, test_profile_recipe_forms,
-               test_overrides_merge_not_replace,
-               test_unknown_override_is_rejected,
-               test_recipe_search_path,
-               test_reserved_bundle_numbers,
-               test_renumber_refuses_reserved,
-               test_link_targets_refused,
-               test_fromtarball_refuses_symlink_escape,
-               test_checksums_sign_is_a_key_id,
-               test_removes_come_first,
-               test_network_is_declared_where_it_is_used,
-               test_fetches_and_bundles_record_provenance,
-               test_recipe_relative_paths_go_through_ctx_local,
-               test_boot_payload_copies_a_local_file_and_records_it,
-               test_a_long_pack_hint_survives_the_round_trip,
-               test_a_recipe_listed_twice_is_refused,
-               test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package,
-               test_symlink_chain_cannot_escape,
-               test_fromtarball_wires_both_guards_in,
-               test_extract_members_matches_extractall_on_a_clean_archive,
-               test_stage_delta_preserves_what_the_chroot_had,
-               test_both_chroot_verbs_use_one_staging_loop,
-               test_fromtarball_refuses_privileged_members,
-               test_all_root_is_per_verb,
-               test_bundle_files_refuses_a_setuid_mode,
-               test_iso_files_actually_writes_into_the_iso_tree,
-               test_relax_modes_widens_without_granting,
-               test_apt_reinstall_is_opt_in,
-               test_every_file_writing_verb_records_what_it_wrote,
-               test_status_removals_is_a_transition_not_a_scan]:
-        fn()
-    if FAILURES:
-        for f in FAILURES:
-            print(f"FAIL {f}", file=sys.stderr)
-        return 1
-    print("tests/unit/test_apply.py: all checks passed")
-    return 0
+    # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
+    # 17 of this file's 25 mkdtemp() calls had no cleanup, so running this file by hand left
+    # their trees in /tmp and nothing took them away. ci/checks/80-unit.sh does this
+    # for a GATE run; the box is the half that survives running the file directly.
+    # Issue #25.
+    #
+    # Set before the first test, because tempfile.tempdir only steers calls made
+    # after it -- and cleared afterwards so a caller that imports this file is not
+    # left pointing at a directory that no longer exists.
+    import tempfile
+    box = tempfile.mkdtemp(prefix="test_apply-")
+    tempfile.tempdir = box
+    try:
+        for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
+                   test_slackware_pkgname, test_when_guard, test_subst,
+                   test_extract_member, test_preflight, test_under_containment,
+                   test_wont_do_verbs, test_parse_lsdl,
+                   test_initramfs_busybox_registered,
+                   test_say_does_not_journal, test_apt_source_line,
+                   test_network_declaration, test_profile_recipe_forms,
+                   test_overrides_merge_not_replace,
+                   test_unknown_override_is_rejected,
+                   test_recipe_search_path,
+                   test_reserved_bundle_numbers,
+                   test_renumber_refuses_reserved,
+                   test_link_targets_refused,
+                   test_fromtarball_refuses_symlink_escape,
+                   test_checksums_sign_is_a_key_id,
+                   test_removes_come_first,
+                   test_network_is_declared_where_it_is_used,
+                   test_fetches_and_bundles_record_provenance,
+                   test_recipe_relative_paths_go_through_ctx_local,
+                   test_boot_payload_copies_a_local_file_and_records_it,
+                   test_a_long_pack_hint_survives_the_round_trip,
+                   test_a_recipe_listed_twice_is_refused,
+                   test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package,
+                   test_symlink_chain_cannot_escape,
+                   test_fromtarball_wires_both_guards_in,
+                   test_extract_members_matches_extractall_on_a_clean_archive,
+                   test_stage_delta_preserves_what_the_chroot_had,
+                   test_both_chroot_verbs_use_one_staging_loop,
+                   test_fromtarball_refuses_privileged_members,
+                   test_all_root_is_per_verb,
+                   test_bundle_files_refuses_a_setuid_mode,
+                   test_iso_files_actually_writes_into_the_iso_tree,
+                   test_relax_modes_widens_without_granting,
+                   test_apt_reinstall_is_opt_in,
+                   test_every_file_writing_verb_records_what_it_wrote,
+                   test_status_removals_is_a_transition_not_a_scan]:
+            fn()
+        if FAILURES:
+            for f in FAILURES:
+                print(f"FAIL {f}", file=sys.stderr)
+            return 1
+        print("tests/unit/test_apply.py: all checks passed")
+        return 0
+    finally:
+        tempfile.tempdir = None
+        shutil.rmtree(box, ignore_errors=True)
 
 
 if __name__ == "__main__":

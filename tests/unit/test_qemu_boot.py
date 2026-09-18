@@ -106,18 +106,34 @@ def test_a_missing_serial_file_is_not_a_crash():
 
 
 def main():
-    for fn in [test_returns_as_soon_as_every_expectation_is_present,
-               test_a_missing_expectation_still_burns_the_whole_ceiling,
-               test_a_partial_match_does_not_satisfy,
-               test_no_expectations_keeps_the_flat_sleep,
-               test_a_missing_serial_file_is_not_a_crash]:
-        fn()
-    if FAILURES:
-        for f in FAILURES:
-            print(f"FAIL {f}", file=sys.stderr)
-        return 1
-    print("tests/unit/test_qemu_boot.py: all checks passed")
-    return 0
+    # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
+    # both of this file's mkdtemp() calls had no cleanup, so running this file by hand left
+    # their trees in /tmp and nothing took them away. ci/checks/80-unit.sh does this
+    # for a GATE run; the box is the half that survives running the file directly.
+    # Issue #25.
+    #
+    # Set before the first test, because tempfile.tempdir only steers calls made
+    # after it -- and cleared afterwards so a caller that imports this file is not
+    # left pointing at a directory that no longer exists.
+    import shutil
+    box = tempfile.mkdtemp(prefix="test_qemu_boot-")
+    tempfile.tempdir = box
+    try:
+        for fn in [test_returns_as_soon_as_every_expectation_is_present,
+                   test_a_missing_expectation_still_burns_the_whole_ceiling,
+                   test_a_partial_match_does_not_satisfy,
+                   test_no_expectations_keeps_the_flat_sleep,
+                   test_a_missing_serial_file_is_not_a_crash]:
+            fn()
+        if FAILURES:
+            for f in FAILURES:
+                print(f"FAIL {f}", file=sys.stderr)
+            return 1
+        print("tests/unit/test_qemu_boot.py: all checks passed")
+        return 0
+    finally:
+        tempfile.tempdir = None
+        shutil.rmtree(box, ignore_errors=True)
 
 
 if __name__ == "__main__":

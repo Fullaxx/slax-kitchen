@@ -75,7 +75,23 @@ for t in "$REPO_ROOT"/tests/unit/test_*.py; do
         note "fixtures kept for debugging: $_tmp"
         _tmp=
     }
-    if [ -n "$_tmp" ]; then rm -rf "$_tmp"; fi
+    if [ -n "$_tmp" ]; then
+        # AND THE BOX IS A DETECTOR, NOT ONLY A MOP. Whatever is still in here after a test
+        # PASSED was left behind rather than cleaned up, and removing it quietly is how the
+        # four tests in issue #25 went on littering every by-hand run with nothing to say
+        # so. Free, because the directory is already in hand: a behavioural census would
+        # re-run the whole suite, and at 16 s dominated by test_qemu_boot's deliberate
+        # sleeps that would double a gate which runs at pre-commit AND pre-push.
+        #
+        # Only after a PASS. A failing test keeps everything by the branch above, and
+        # complaining about its fixtures there would be noise on top of a real failure.
+        _left=$(ls -A "$_tmp" 2>/dev/null | wc -l)
+        if [ "$_left" -gt 0 ]; then
+            fail "$(basename "$t"): left $_left fixture(s) in its TMPDIR"
+            ls -A "$_tmp" | sed 's/^/      /' >&2
+        fi
+        rm -rf "$_tmp"
+    fi
     rm -f /tmp/.kitchen-unit.$$
 done
 check_result
