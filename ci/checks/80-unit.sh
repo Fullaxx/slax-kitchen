@@ -1,6 +1,6 @@
 #!/bin/sh
 # stages: pre-commit pre-push ci
-# desc: Unit tests for the recipe engine's pure logic (no ISO needed, milliseconds).
+# desc: Unit tests for the recipe engine's pure logic (no ISO needed, seconds).
 . "$(dirname "$0")/../lib.sh"
 
 # GIT'S REPOSITORY VARIABLES DO NOT BELONG IN A TEST'S ENVIRONMENT.

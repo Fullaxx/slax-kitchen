@@ -316,6 +316,9 @@ merely stated in prose. **Propose the fix — and expect it to be measured again
 container bases before it is taken.** A fix nobody re-derived is a claim, and this project does not
 run on claims.
 
+The same applies to **reviewing** a change, and not only to taking a proposed one: a verdict nobody
+derived is a claim wearing a review's clothes. Read the diff against the issue it answers.
+
 ### Related issues are common, and worth saying out loud
 
 Two of the first three turned out to interact: an ordering rule had to land before a change to how
@@ -434,7 +437,28 @@ A new verb needs: the implementation, the `schema/recipe.schema.json` enum entry
 [the verb reference](docs/90-reference/verbs.md), and a recipe that exercises it.
 
 Pure logic — anything that does not need an ISO — belongs in `tests/unit/test_apply.py`, which runs
-in milliseconds as one of the thirteen gates. Every case in that file is a bug that actually shipped.
+as one of the thirteen gates. Every case in that file is a bug that actually shipped.
+
+**Seconds, not milliseconds, and it is worth knowing where they go.** The whole unit gate is about
+17 s, and 12.5 s of that is `tests/unit/test_qemu_boot.py` alone — it drives a poller, so real sleeps
+*are* the thing under test, and its own docstring says so. Everything else together is under 5 s, the
+next slowest being `test_apply.py` at 1.3 s. That cost is paid at **both** `pre-commit` and
+`pre-push`.
+
+**The gate runs your test in a sandbox, and has opinions about what you leave in it.** Three rules,
+each of which came from something that shipped — the measurements and the failures behind them are
+in [`ci/checks/80-unit.sh`](ci/checks/80-unit.sh)'s header:
+
+- **git's repository-local variables are cleared** before each test. A test that shells out to `git`
+  acts on its own fixture and never on the commit in progress. Without this, `git commit -a` under
+  the hook died with `error: Error building trees` while the gate printed `ok`.
+- **each test gets a private `TMPDIR`**, removed afterwards. Five tests here had been leaving 46
+  directories per run in `/tmp` and nothing took them away.
+- **a test that passes having left anything in that `TMPDIR` fails the gate**, named and listed. A
+  test that *fails* keeps its fixtures instead, and the path is printed beside the failure.
+
+Clean up after yourself anyway. The gate is a net for a **gate** run; someone running your file
+directly gets none of it, which is what the third rule is there to notice.
 
 **A check that cannot fail is worse than no check.** This has bitten this project at least four
 times — a workflow that never opened an issue because `$?` after a pipeline is `tee`'s status; a

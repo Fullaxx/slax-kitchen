@@ -115,9 +115,19 @@ def main():
     # Set before the first test, because tempfile.tempdir only steers calls made
     # after it -- and cleared afterwards so a caller that imports this file is not
     # left pointing at a directory that no longer exists.
+    #
+    # BOTH THE GLOBAL AND THE VARIABLE. tempfile.tempdir steers this process; TMPDIR steers
+    # the children, and they are not the same thing. ci/release-assets.sh and three siblings
+    # do `mktemp -d "${TMPDIR:-/tmp}/..."`, which reads the variable and never the global, so
+    # the global on its own leaves a subprocess's fixture outside the box. Nothing here drives
+    # one of those today -- but the box claims every fixture this file makes, and those are
+    # fixtures this file made. Under the gate it changes nothing, since the ambient TMPDIR is
+    # already the gate's own box; it is the by-hand run that this is for.
     import shutil
     box = tempfile.mkdtemp(prefix="test_qemu_boot-")
     tempfile.tempdir = box
+    _tmpdir = os.environ.get("TMPDIR")
+    os.environ["TMPDIR"] = box
     try:
         for fn in [test_returns_as_soon_as_every_expectation_is_present,
                    test_a_missing_expectation_still_burns_the_whole_ceiling,
@@ -133,6 +143,9 @@ def main():
         return 0
     finally:
         tempfile.tempdir = None
+        os.environ.pop("TMPDIR", None)
+        if _tmpdir is not None:
+            os.environ["TMPDIR"] = _tmpdir
         shutil.rmtree(box, ignore_errors=True)
 
 

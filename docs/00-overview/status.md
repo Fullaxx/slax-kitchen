@@ -53,7 +53,7 @@ cannot do at all.
 ### Quality
 
 Thirteen commit gates, shared by hooks and CI so they cannot drift. Unit tests for the recipe engine's pure
-logic run in milliseconds with no ISO. The gates have caught real bugs in their own authors' code
+logic run with no ISO, in seconds. The gates have caught real bugs in their own authors' code
 repeatedly — including a `$'\r'` that silently degraded to matching `$r` under `dash`, and a link
 checker that only examined one link per line.
 

@@ -13,6 +13,17 @@ gets.
 Not optional and not from memory: `6ecf019` fixed #17, #18 and #19 without it, and left three
 issues open that the code had already answered.
 
+## Before reviewing anything
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) § *"Proposing a fix is welcome, and it will be checked"* —
+*a fix nobody re-derived is a claim, and this project does not run on claims*, which applies to a
+review as much as to a proposed fix.
+
+The one part of that with no home in the repo, because it is about this session and not about the
+tree: **when the user says "self-review", that means you.** Read the diffs and the issues they
+answer and report directly. Do not invoke the code-review skill — it is expensive, and being asked
+to review is not being asked to pay for that.
+
 ## Before producing Tier C evidence
 
 Read [`docs/60-testing/tier-c.md`](docs/60-testing/tier-c.md) § *"A recorded run needs a clean

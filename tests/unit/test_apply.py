@@ -2,8 +2,8 @@
 """Unit tests for the recipe engine's pure logic.
 
 These exist because every case below is a bug that actually shipped during development
-and was caught by inspecting a built bundle rather than by a test. They run in
-milliseconds and need no ISO.
+and was caught by inspecting a built bundle rather than by a test. They need no ISO and
+take about a second.
 """
 import os
 import shutil
@@ -1769,9 +1769,19 @@ def main():
     # Set before the first test, because tempfile.tempdir only steers calls made
     # after it -- and cleared afterwards so a caller that imports this file is not
     # left pointing at a directory that no longer exists.
+    #
+    # BOTH THE GLOBAL AND THE VARIABLE. tempfile.tempdir steers this process; TMPDIR steers
+    # the children, and they are not the same thing. ci/release-assets.sh and three siblings
+    # do `mktemp -d "${TMPDIR:-/tmp}/..."`, which reads the variable and never the global, so
+    # the global on its own leaves a subprocess's fixture outside the box. Nothing here drives
+    # one of those today -- but the box claims every fixture this file makes, and those are
+    # fixtures this file made. Under the gate it changes nothing, since the ambient TMPDIR is
+    # already the gate's own box; it is the by-hand run that this is for.
     import tempfile
     box = tempfile.mkdtemp(prefix="test_apply-")
     tempfile.tempdir = box
+    _tmpdir = os.environ.get("TMPDIR")
+    os.environ["TMPDIR"] = box
     try:
         for fn in [test_bundle_exclude, test_bundle_exclude_account_backups,
                    test_slackware_pkgname, test_when_guard, test_subst,
@@ -1818,6 +1828,9 @@ def main():
         return 0
     finally:
         tempfile.tempdir = None
+        os.environ.pop("TMPDIR", None)
+        if _tmpdir is not None:
+            os.environ["TMPDIR"] = _tmpdir
         # Put the descend bit back before removing. Fixtures here carry deliberately
         # hostile modes -- 0o700 directories, setuid binaries, whole tarballs of them --
         # and any directory without u+x stops an ordinary user removing what is under it.
