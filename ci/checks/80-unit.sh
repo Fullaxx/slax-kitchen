@@ -49,12 +49,33 @@ if [ -z "$_repo_env" ]; then
     exit
 fi
 
+# AND A TMPDIR OF ITS OWN, FOR THE SAME REASON, IN THE SAME PLACE.
+#
+# Five of the fifteen tests here build fixtures with tempfile.mkdtemp() and never remove
+# them: 46 directories per run of this gate, measured with TMPDIR pointed somewhere empty.
+# This gate runs at pre-commit AND pre-push, so a machine with the hooks installed collects
+# them at every commit and every push -- 238 MB of them since 2026-09-13 on the machine
+# where it was found. CI runners are thrown away, which is why nothing noticed. Issue #24.
+#
+# Here rather than in the five tests for the reason above, and for one the #23 scrub does
+# not have: test_unit_gate.py's fixture is made by a probe THIS GATE SPAWNS, a grandchild
+# the test cannot see, so its own `finally: rmtree` could never have reached it. A test
+# cannot always clean up after itself. The gate can.
+#
+# KEPT WHEN THE TEST FAILS, and the path printed: a failure is exactly when the fixtures
+# are worth having, and a red gate blocks the commit, so they cannot pile up. The leak then
+# only happens when someone is already looking for it.
 for t in "$REPO_ROOT"/tests/unit/test_*.py; do
     [ -f "$t" ] || continue
-    ( unset $_repo_env; exec python3 "$t" ) >/dev/null 2>/tmp/.kitchen-unit.$$ || {
+    _tmp=$(mktemp -d) || { fail "$(basename "$t"): cannot create its TMPDIR"; continue; }
+    ( unset $_repo_env; TMPDIR=$_tmp; export TMPDIR; exec python3 "$t" ) \
+        >/dev/null 2>/tmp/.kitchen-unit.$$ || {
         fail "$(basename "$t")"
         sed 's/^/      /' /tmp/.kitchen-unit.$$ >&2
+        note "fixtures kept for debugging: $_tmp"
+        _tmp=
     }
+    if [ -n "$_tmp" ]; then rm -rf "$_tmp"; fi
     rm -f /tmp/.kitchen-unit.$$
 done
 check_result
