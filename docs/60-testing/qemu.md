@@ -48,7 +48,7 @@ $ tools/qemu/boot.py out/slax-boot-matrix-debian-64bit-12.2.0.iso --bios
   display   vnc on 127.0.0.1:5900 (qemu prints the real port below if taken)
 
   from your workstation:
-    ssh -L 5900:127.0.0.1:5900 bacon_dev
+    ssh -L 5900:127.0.0.1:5900 <kvm-host>
     vncviewer localhost:5900
 
   the terminal is the qemu monitor and the guest's serial line: Ctrl-a c switches,

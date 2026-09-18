@@ -35,6 +35,20 @@ SCHEMA = "slax-kitchen/provenance/v1"
 WORK_FILE = "provenance.json"
 
 # A value that names a place on somebody's disk.
+#
+# BELT AND BRACES, not the thing doing the work. Audited 2026-09-18: every producer already
+# records the right thing at the point of recording -- `source=` is os.path.basename() for a
+# local file and the URL for a remote one (apply.py:548, :1526, :1908), and the Tier C
+# ledger's row builder drops paths deliberately ("recorded by basename and size, which are
+# facts about the artifact"). So this regex sits underneath code that is already explicit,
+# and in the session that produced it its only catch was a FALSE POSITIVE -- issue #20,
+# which stopped the weekly job.
+#
+# The exception, and the reason it is still here: `vars` is a passthrough of arbitrary
+# recipe-author strings, produced by no call site, so no producer-side discipline reaches
+# it. That is why vars has its own narrower rule in hostish_values rather than this one.
+# Kept rather than relaxed because the Tier C ledger it guards IS committed to git, and
+# removing redundancy from a working guard trades real risk for no benefit.
 HOSTISH = re.compile(r"(^/|/home/|/root/|/Users/|~/|\\\\)")
 URLISH = re.compile(r"^[a-z][a-z0-9+.-]*://")
 
