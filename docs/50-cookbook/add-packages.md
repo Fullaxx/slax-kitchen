@@ -30,6 +30,11 @@ See [composing bundles](../40-workflow/composing-bundles.md).
 Full mechanics, and why real `chroot` is used rather than `proot`, are in
 [edit-bundles.md](../40-workflow/edit-bundles.md).
 
+**apt is not allowed to remove anything**, and a build stops if it tries. A bundle cannot delete, so
+a removed package keeps every file it has while the database says it is gone — and never gets
+patched again. If that stops a build of yours, the reasons and the three ways out are in
+[composing bundles](../40-workflow/composing-bundles.md#apt-wanted-to-remove-a-package).
+
 ## Bundle numbering
 
 `bundle:` must start with `NN-`, and the schema enforces it, because **load order is the numeric
