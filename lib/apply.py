@@ -3458,9 +3458,14 @@ def apply_recipe(path: str, work: str, dry: bool = False,
         # can be traced back to a recipe; a var that changed the output is part of that.
         if overrides:
             entry["vars"] = dict(overrides)
-        j["applied"].append(entry)
-        with open(jpath, "w") as f:
-            yaml.safe_dump(j, f, sort_keys=False)
+
+        # PROVENANCE FIRST, because it is the one that can refuse. It validates what it is
+        # about to record and raises on a build-machine path; written the other way round, a
+        # refusal left a journal entry saying the recipe had been applied while provenance
+        # held nothing -- and check_plan_order's _built_before reads the journal, so the
+        # next run believed it had already happened. Safe to reorder: append_recipe is
+        # handed list(ctx.changes) and never reads the journal file, whatever its comment
+        # about "from the journal" suggests. Issue #20.
         provenance.append_recipe(ctx.meta, {
             "recipe": name,
             "recipe_sha256": sha256(path),
@@ -3473,6 +3478,9 @@ def apply_recipe(path: str, work: str, dry: bool = False,
             "redistribution": doc.get("redistribution"),
             "steps": ctx.prov_steps,
         })
+        j["applied"].append(entry)
+        with open(jpath, "w") as f:
+            yaml.safe_dump(j, f, sort_keys=False)
     return 0
 
 

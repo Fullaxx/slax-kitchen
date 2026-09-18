@@ -52,17 +52,82 @@ def in_image(path: str) -> str:
     return (path or "").lstrip("/")
 
 
-def hostish_values(obj, where: str = "") -> list[str]:
-    """Every string in obj that names a place on a disk. URLs are allowed."""
+# A build-machine location by SHAPE, without the bare "absolute" alternative. Used for a
+# recipe's `vars`, where an absolute path is usually describing the image rather than the
+# builder -- see hostish_values.
+HOSTISH_SHAPE = re.compile(r"(/home/|/root/|/Users/|~/|\\\\)")
+
+
+def build_machine_paths(work: str | None = None) -> list[str]:
+    """Prefixes this build actually used, as opposed to paths that merely look host-ish.
+
+    The shape rules are guesses about somebody else's filesystem layout. These are not
+    guesses -- they are where this build is happening, so a value starting with one of them
+    names the builder however innocent it looks.
+
+    DERIVED, NOT CONFIGURED. An earlier draft read KITCHEN_WORK and KITCHEN_REPO_ROOT from
+    the environment, which nothing sets: the half of the rule that is supposed to catch the
+    leaks a shape cannot would have been dead code, and would have passed every test written
+    against it. The repo root is this file's own grandparent and the work tree is handed to
+    append_recipe; both are facts at the moment of the check.
+    """
+    out = []
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for p in (work, repo, os.environ.get("HOME")):
+        if p and p.startswith("/") and p.rstrip("/") not in ("", "/home", "/root", "/Users"):
+            out.append(p.rstrip("/") + "/")
+    return out
+
+
+def hostish_values(obj, where: str = "", image_paths_ok: tuple = (),
+                   work: str | None = None) -> list[str]:
+    """Every string in obj that names a place on a disk. URLs are allowed.
+
+    `image_paths_ok` names top-level keys whose values describe the IMAGE, where a leading
+    slash is ordinary and not evidence of anything. Only `vars` is passed today.
+
+    WHY vars NEEDS ITS OWN RULE. A var is a recipe author's string and the engine cannot
+    know what it means; `testkit` takes `marker: /var/lib/kitchen-perch-marker` and builds
+    the path by concatenation, so a relative value would resolve to /unionvar/lib/... The
+    blanket `^/` rule refused that, which stopped profiles/boot-matrix.yaml and with it the
+    weekly Tier C job. Issue #20.
+
+    The two fixes suggested there were both worse. Recording vars through in_image() would
+    strip the leading slash, and HOSTISH's /root/ alternative needs a LEADING slash -- so
+    `/root/code/x` would become `root/code/x` and sail through, fixing the false positive by
+    blinding the guard to the commonest leak. Flagging only paths that exist on the builder
+    is wrong in both directions: /etc/hostname exists here AND is a legitimate image path,
+    while a leak naming a path this machine does not have would pass.
+
+    So: keep every shape signal except "absolute", and add the paths this build actually
+    used, which are facts rather than guesses. HOSTISH itself is untouched, because
+    ci/release-verify.py and ci/checks/97-tier-c-ledger.sh depend on it -- an absolute
+    iso_name really is a leak.
+
+    THE GAP, stated rather than discovered: a builder that works somewhere unusual, say
+    /opt/somebuilder/artifacts, is not caught by shape, and is only caught by the second
+    half if that path is this build's work tree or repo root. Narrower than a guard that
+    stops a shipped profile, and the leaks that actually occur here are under $HOME, /root
+    or the work tree.
+    """
     out: list[str] = []
     if isinstance(obj, dict):
         for k, v in obj.items():
-            out += hostish_values(v, f"{where}.{k}" if where else str(k))
+            sub = f"{where}.{k}" if where else str(k)
+            out += hostish_values(v, sub,
+                                  ("",) if k in image_paths_ok else image_paths_ok, work)
     elif isinstance(obj, list):
         for i, v in enumerate(obj):
-            out += hostish_values(v, f"{where}[{i}]")
-    elif isinstance(obj, str) and not URLISH.match(obj) and HOSTISH.search(obj):
-        out.append(f"{where}: {obj!r}")
+            out += hostish_values(v, f"{where}[{i}]", image_paths_ok, work)
+    elif isinstance(obj, str) and not URLISH.match(obj):
+        # "" in image_paths_ok marks "we are inside a subtree that describes the image".
+        if "" in image_paths_ok:
+            hit = HOSTISH_SHAPE.search(obj) or any(
+                obj.startswith(pre) for pre in build_machine_paths(work))
+        else:
+            hit = HOSTISH.search(obj)
+        if hit:
+            out.append(f"{where}: {obj!r}")
     return out
 
 
@@ -264,7 +329,11 @@ def load_work(meta: str) -> dict:
 
 def append_recipe(meta: str, entry: dict) -> None:
     """Add one applied recipe's records to <work>/.kitchen/provenance.json."""
-    bad = hostish_values(entry)
+    # `vars` describes the image, not the builder: see hostish_values. `meta` is
+    # <work>/.kitchen, so its parent is the work tree -- the one build-machine path that
+    # cannot be guessed from shape and is exactly where a leak would come from. Issue #20.
+    bad = hostish_values(entry, image_paths_ok=("vars",),
+                         work=os.path.dirname(os.path.abspath(meta)))
     if bad:
         raise RuntimeError("provenance would record a path on the build machine:\n  "
                            + "\n  ".join(bad))
@@ -335,7 +404,12 @@ def finalize(work: str, iso: str, backend: str, mbr: str | None) -> str:
     if mbr:
         out["pack"]["mbr"] = {"file": os.path.basename(mbr), "sha256": sha256(mbr),
                               "package": host_package(mbr)}
-    bad = hostish_values(out)
+    # SAME EXEMPTION AS append_recipe, and it has to be here too: this re-validates the
+    # whole document at pack time, recipes[].vars included. Fixing only append_recipe left
+    # `kitchen build boot-matrix` failing at the very last step -- the ISO written, then
+    # "could not write ...provenance.json" -- which the unit tests could not see and only a
+    # real build did. `work` is this build's work tree, which is the point of passing it.
+    bad = hostish_values(out, image_paths_ok=("vars",), work=os.path.abspath(work))
     if bad:
         raise RuntimeError("provenance would record a path on the build machine:\n  "
                            + "\n  ".join(bad))
