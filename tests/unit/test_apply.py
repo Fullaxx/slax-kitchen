@@ -1114,6 +1114,14 @@ def test_symlink_chain_cannot_escape():
                     i.linkname = link
                     t.addfile(i)
                 elif typ == tarfile.DIRTYPE:
+                    # 0o755 EXPLICITLY. TarInfo defaults mode to 0o644, which on a DIRECTORY
+                    # is no execute bit: the extracted tree cannot be descended, so an
+                    # unprivileged user cannot unlink what is inside it and rmtree leaves the
+                    # whole fixture behind. This battery is about symlink escape and never
+                    # about modes, so the default was never meaningful here -- it just leaked.
+                    # Invisible developing as root, which ignores the bits. CI runs
+                    # unprivileged and 80-unit's detector named it: "left 1 fixture(s)".
+                    i.mode = 0o755
                     t.addfile(i)
                 else:
                     body = b"x\n"
@@ -1810,6 +1818,17 @@ def main():
         return 0
     finally:
         tempfile.tempdir = None
+        # Put the descend bit back before removing. Fixtures here carry deliberately
+        # hostile modes -- 0o700 directories, setuid binaries, whole tarballs of them --
+        # and any directory without u+x stops an ordinary user removing what is under it.
+        # rmtree then fails, ignore_errors swallows it, and the tree stays. top-down, so
+        # chmodding a child while visiting its parent is what lets the walk descend.
+        for parent, dirs, _files in os.walk(box):
+            for d in dirs:
+                try:
+                    os.chmod(os.path.join(parent, d), 0o700)
+                except OSError:
+                    pass
         shutil.rmtree(box, ignore_errors=True)
 
 
