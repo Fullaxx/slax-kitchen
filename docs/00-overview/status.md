@@ -193,6 +193,6 @@ reports it as available and no longer offers `proot`, which was rejected as unsa
 
 ## Known upstream issues
 
-Fourteen, recorded separately in [known upstream issues](../30-inventory/known-upstream-bugs.md).
+Fifteen, recorded separately in [known upstream issues](../30-inventory/known-upstream-bugs.md).
 The two that shape this project most: the stock ISO **cannot boot on UEFI** and **cannot be `dd`'d
 to a USB stick**. Both are fixed by recipes here.

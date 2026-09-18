@@ -48,7 +48,7 @@ and `kitchen status` tells you what you actually applied. Two of the three usual
 
 **Upstream Slax is a third party.** Tomáš Matějíček's Slax and Linux Live Kit are not ours, and a
 lot of surprising behaviour is theirs rather than ours. Check
-[known upstream issues](docs/30-inventory/known-upstream-bugs.md) — there are fourteen documented,
+[known upstream issues](docs/30-inventory/known-upstream-bugs.md) — there are fifteen documented,
 several of which look exactly like a bug in this toolkit until you read them.
 
 ---
@@ -217,7 +217,7 @@ will report `skip` rather than `FAIL`.
 A verdict of `MODIFIED (N unexplained differences)` with something you did not cause is worth
 reporting. `DIFFERENT RELEASE` means the ISO is not the release it claims to be.
 
-Then read [known upstream issues](docs/30-inventory/known-upstream-bugs.md). Fourteen documented,
+Then read [known upstream issues](docs/30-inventory/known-upstream-bugs.md). Fifteen documented,
 including: the shipped busybox is from 2017; Slackware cannot verify **any** TLS certificate;
 `nosound` is documented and not implemented; the ISO cannot boot on UEFI or be `dd`'d to a stick at
 all without the recipes here.

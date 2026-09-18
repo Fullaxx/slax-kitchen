@@ -36,15 +36,21 @@ cd "$REPO_ROOT" || exit 2
 ISO="" PROFILE=boot-matrix TARGET="" OUT=out/tier-c
 LEDGER=tests/boot/tier-c.json GOLDEN_DIR=tests/boot/golden
 SECONDS_CEIL=120 PATHS="bios uefi usb persistence" KEEP=0 ALLOW_DIRTY=0
-COMMITTED_DEST=1   # cleared as soon as --ledger or --golden-dir points elsewhere
+# TWO destinations, tracked separately, because --allow-dirty has to move BOTH. One flag
+# cleared by either option is an OR, and the refusal below reads as an AND -- it names both
+# options and says "as well", and docs/60-testing/tier-c.md says "and". Issue #18: with one
+# flag, `--allow-dirty --ledger /tmp/x.json` passed while GOLDEN_DIR stayed at the committed
+# default, and a missing golden is CREATED rather than failed, so a dirty exploratory run
+# could write a golden into tests/boot/golden/ -- the hole 142fc21 closed, by the other door.
+LEDGER_REDIRECTED=0 GOLDEN_REDIRECTED=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --iso)        ISO=$2; shift 2 ;;
         --profile)    PROFILE=$2; shift 2 ;;
         --target)     TARGET=$2; shift 2 ;;
         --out)        OUT=$2; shift 2 ;;
-        --ledger)     LEDGER=$2; COMMITTED_DEST=0; shift 2 ;;
-        --golden-dir) GOLDEN_DIR=$2; COMMITTED_DEST=0; shift 2 ;;
+        --ledger)     LEDGER=$2; LEDGER_REDIRECTED=1; shift 2 ;;
+        --golden-dir) GOLDEN_DIR=$2; GOLDEN_REDIRECTED=1; shift 2 ;;
         --seconds)    SECONDS_CEIL=$2; shift 2 ;;
         --paths)      PATHS=$2; shift 2 ;;
         --keep)       KEEP=1; shift ;;
@@ -88,8 +94,12 @@ if have git; then
             # REPLACES that target's real rows and drags the document's accel down with
             # it. Found by running this demo against the defaults and watching 5 KVM rows
             # become 1 dirty TCG row.
-            [ "$COMMITTED_DEST" = 0 ] || die "--allow-dirty would merge a throwaway run
-  into the committed evidence ($LEDGER). Send it somewhere else as well:
+            # BOTH, not either: a golden is written into GOLDEN_DIR the first time a
+            # target is seen, so redirecting only the ledger still lets a dirty run put a
+            # golden in the committed directory.
+            [ "$LEDGER_REDIRECTED" = 1 ] && [ "$GOLDEN_REDIRECTED" = 1 ] || \
+                die "--allow-dirty would write into the committed evidence
+  (ledger $LEDGER, goldens $GOLDEN_DIR). Send BOTH somewhere else:
     --ledger /tmp/scratch.json --golden-dir /tmp/scratch-golden" ;;
     esac
 fi

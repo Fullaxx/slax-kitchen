@@ -237,3 +237,75 @@ build targets a 2023 Slackware 15.0 userland.
 
 If you cannot update it, [`remove-bundle`](../50-cookbook/remove-bundle.md) at least stops the
 image shipping a browser that looks current and is not.
+
+---
+
+## 15. A `.desktop` whose `Icon=` does not resolve is deleted without a word  · *both flavours, all four images*
+
+`xlunch_genquick` builds the launcher's entry list, and its last act on each `.desktop` is:
+
+```sh
+if [ -e "$Icon" ]; then
+   echo "$Name;$Icon;$Exec"
+fi
+```
+
+If the icon search found nothing, `$Icon` is still the bare string from the file, `[ -e wine ]` is
+false against the generator's working directory, and the entry is **never emitted**. No error, no
+log line, no tile — the application is simply not in the launcher.
+
+The search that has to fail for this to happen is narrower than it looks:
+
+```sh
+ICONSIZES="$1 128 64 48 32"
+ICONPATHS="/usr/share/icons/hicolor /usr/share/pixmaps /usr/share/icons/gnome"
+```
+
+Three shapes × three paths × four sizes = 36 candidates, and only `.png` is ever appended. So
+**`scalable/` is never searched** (it is not a numeric size), **`.svg` is never tried**, and
+**`Adwaita/` is not among the three themes**.
+
+Measured against a built Debian 32-bit stack, replaying the generator's own loop over all 34,004
+paths in the union:
+
+```
+Icon=terminal                 -> EMITTED  /usr/share/icons/hicolor/128x128/apps/terminal.png
+Icon=chromium.png             -> EMITTED  /usr/share/icons/hicolor/128x128/apps/chromium.png
+Icon=wine                     -> DROPPED  (no match on any of the 36 candidate paths)
+Icon=accessories-text-editor  -> DROPPED  (no match on any of the 36 candidate paths)
+```
+
+The stock entries resolving is what validates the replay. What actually exists for the two that
+vanish:
+
+```
+usr/share/icons/hicolor/scalable/apps/wine.svg                    <- 'scalable' is not a size
+usr/share/icons/Adwaita/48x48/legacy/accessories-text-editor.png  <- 'Adwaita' is not searched
+```
+
+`wine` is the icon Debian's own `wine` package ships; `accessories-text-editor` is a standard
+freedesktop name. Both are entirely reasonable to write, and both silently produce nothing.
+
+**`NoDisplay` is not read at all.** The parser greps an anchored
+`^(Name|Icon|Exec|Hidden|Terminal)=`, so the freedesktop key for "do not show this" never reaches
+it. **`Hidden=true` IS honoured**, before the icon search:
+
+```sh
+if [ "$Hidden" = "true" ]; then
+   continue
+fi
+```
+
+That matters in both directions. To suppress an entry, use `Hidden=true` — a stub carrying only
+`NoDisplay=true` works by accident, because it happens to ship no `Icon=` and the empty string then
+fails `[ -e ]`. Add an `Icon=` line to such a stub and the entry you were hiding comes back.
+
+**Workaround, one line either way:** an **absolute path** in `Icon=`, which the search loop cannot
+reassign so `[ -e ]` tests the real file; or ship a `.png` under `/usr/share/pixmaps/`, whose bare
+`$ICONPATH/$Icon` shape needs no size directory.
+
+`tests/unit/test_desktop_entries.py` refuses a recipe that writes a `.desktop` this generator would
+drop, because a workaround nobody checks is not a workaround.
+
+**Not a regression:** true of every Slax release, and `xlunch_genquick` is byte-identical across the
+stock bundles.

@@ -7,6 +7,13 @@ Exec=tor-browser %U
 Terminal=false
 X-MultipleArgs=false
 Type=Application
+# ABSOLUTE, AND THAT IS LOAD-BEARING. Slax's xlunch_genquick searches 36 candidate paths
+# for a bare icon name -- three shapes, three themes, four numeric sizes -- appending only
+# ".png". It never looks in scalable/, never tries .svg, and does not know Adwaita. If none
+# of the 36 match, $Icon keeps the bare name, the generator's final [ -e "$Icon" ] fails,
+# and THE ENTRY IS SILENTLY DROPPED: no error, no tile. An absolute path cannot be
+# reassigned by that loop, so [ -e ] tests this file and finds it. See issue 15 in
+# docs/30-inventory/known-upstream-bugs.md; tests/unit/test_desktop_entries.py enforces it.
 Icon=/opt/tor-browser/Browser/browser/chrome/icons/default/default128.png
 Categories=Network;WebBrowser;
 MimeType=text/html;text/xml;application/xhtml_xml;x-scheme-handler/http;x-scheme-handler/https;

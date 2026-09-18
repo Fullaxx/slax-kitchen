@@ -97,7 +97,25 @@ lands in the writable layer and beats every bundle:
         Type=Application
         Name=Web Browser
         NoDisplay=true
+        Hidden=true
 ```
+
+**`Hidden=true` is the line that does the work**, and it is easy to leave out. Slax's
+`xlunch_genquick` greps an anchored `^(Name|Icon|Exec|Hidden|Terminal)=`, so it **never reads
+`NoDisplay`** — that key is for the freedesktop consumers, and it is kept for them. `Hidden=true`
+it does read, and acts on before it looks for an icon:
+
+```sh
+if [ "$Hidden" = "true" ]; then
+   continue
+fi
+```
+
+Without it, a stub like this suppresses the tile only by accident: it ships no `Icon=`, the empty
+string fails the generator's final `[ -e "$Icon" ]`, and the entry is dropped for the wrong reason.
+Add an `Icon=` line to such a stub — a reasonable-looking improvement — and the entry you were
+hiding comes back. See [issue 15](../30-inventory/known-upstream-bugs.md), and
+`tests/unit/test_desktop_entries.py`, which refuses this shape.
 
 The Fluxbox menu entry lives inside `03-desktop.sb` at `/root/.fluxbox/menu`, so removing *that* one
 needs either a rootcopy of the whole menu file or a rebuilt bundle.
