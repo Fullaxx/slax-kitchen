@@ -198,6 +198,11 @@ Install distro packages into a new bundle. **Debian only**; see
   apt: {update: true, no_recommends: true}
 ```
 
+**apt runs with `--no-remove`, and there is no way to turn that off.** If satisfying your
+`packages:` list would mean removing something, the build stops before anything is unpacked. The
+reasoning, the three ways out, and what evidence would justify an opt-out are in
+[composing bundles](../40-workflow/composing-bundles.md#apt-wanted-to-remove-a-package).
+
 **`apt.no_recommends` defaults to `true`**, which is right for a bundle — it is what stops one
 package dragging in a desktop's worth of suggestions. The cost is that it also drops packages the
 thing you asked for genuinely needs to be *usable*, and nothing warns you. Check the Recommends of

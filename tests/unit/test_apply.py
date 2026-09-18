@@ -1655,13 +1655,64 @@ def test_apt_reinstall_is_opt_in():
     flag is what makes a reinstall reach the bundle -- and it must stay opt-in, because on
     by default every recipe would re-unpack whatever it names that is already installed.
     """
-    base = ["apt-get", "install", "-y", "-qq", "--no-install-recommends"]
+    base = ["apt-get", "install", "-y", "-qq", "--no-remove", "--no-install-recommends"]
     check("default: no --reinstall", apply.apt_install_argv({}), base)
     check("reinstall: true adds it", apply.apt_install_argv({"reinstall": True}),
           base + ["--reinstall"])
     check("reinstall: false is the default", apply.apt_install_argv({"reinstall": False}), base)
     check("no_recommends still honoured", apply.apt_install_argv({"no_recommends": False}),
-          ["apt-get", "install", "-y", "-qq"])
+          ["apt-get", "install", "-y", "-qq", "--no-remove"])
+
+    # --no-remove is on EVERY shape and has no opt-out: a recipe cannot turn it off, so
+    # the only way it leaves is somebody editing this line, which is the point. Issue #14.
+    for shape in ({}, {"reinstall": True}, {"no_recommends": False},
+                  {"reinstall": True, "no_recommends": False}):
+        check(f"--no-remove present for {shape}",
+              "--no-remove" in apply.apt_install_argv(shape), True)
+
+
+def test_status_removals_is_a_transition_not_a_scan():
+    """A package that was installed and is not any more, both ways apt can do it.
+
+    THE FALSE POSITIVE IS THE HARD PART. Stock Debian 12 already ships nine
+    `deinstall ok config-files` stanzas, so a check that looked for `deinstall` in the
+    result would fire on every build ever run and be switched off inside a day. Only a
+    BEFORE -> AFTER transition means anything.
+
+    Both removal shapes have to count, because they fail differently downstream and
+    neither can be inferred from the other: `apt-get remove` leaves a `deinstall ok
+    config-files` stanza that dpkgdb.delta() puts in the fragment, so the booted image
+    reports the package gone; `apt-get purge` deletes the stanza, delta() iterates the
+    after side only and says nothing, and the base's entry survives. Issue #14.
+    """
+    def st(pkg, status="install ok installed", arch="amd64", ver="1.0"):
+        return f"Package: {pkg}\nStatus: {status}\nArchitecture: {arch}\nVersion: {ver}\n"
+
+    before = st("foo") + "\n" + st("keep")
+    check("apt-get remove: deinstall ok config-files is a removal",
+          apply._status_removals(before, st("foo", "deinstall ok config-files") + "\n" + st("keep")),
+          ["foo:amd64"])
+    check("apt-get purge: a vanished stanza is a removal",
+          apply._status_removals(before, st("keep")), ["foo:amd64"])
+    check("nothing removed", apply._status_removals(before, before), [])
+
+    # The nine the base already carries: present as deinstall on BOTH sides, so not a
+    # transition, so not a removal. This is the assertion that keeps the check usable.
+    stale = st("gcc-12-base", "deinstall ok config-files")
+    check("a pre-existing deinstall stanza is not a removal",
+          apply._status_removals(stale + "\n" + before, stale + "\n" + before), [])
+
+    # An upgrade changes Version and nothing else. dpkgdb.delta() correctly calls that a
+    # change; this must not call it a removal.
+    check("an ordinary upgrade is not a removal",
+          apply._status_removals(st("foo", ver="1.0"), st("foo", ver="2.0")), [])
+
+    # Architecture is part of the key: a package removed for one arch while another stays
+    # is a removal of that one, which matters on an image with i386 foreign-arch enabled.
+    check("arch is part of the identity",
+          apply._status_removals(st("foo", arch="i386") + "\n" + st("foo", arch="amd64"),
+                                 st("foo", arch="amd64")),
+          ["foo:i386"])
 
 
 def test_every_file_writing_verb_records_what_it_wrote():
@@ -1735,7 +1786,8 @@ def main():
                test_iso_files_actually_writes_into_the_iso_tree,
                test_relax_modes_widens_without_granting,
                test_apt_reinstall_is_opt_in,
-               test_every_file_writing_verb_records_what_it_wrote]:
+               test_every_file_writing_verb_records_what_it_wrote,
+               test_status_removals_is_a_transition_not_a_scan]:
         fn()
     if FAILURES:
         for f in FAILURES:

@@ -211,6 +211,84 @@ than no feature.
 
 To remove something, remove the bundle that contains it.
 
+## "apt wanted to remove a package"
+
+If a build stopped with that, this section is why, and what to do. It is written for whoever hits
+it, which will not be the person who decided it.
+
+### What happened
+
+`apt-get install` decided it had to remove something to satisfy what your recipe asked for — a
+`Conflicts:`, or a package superseded by one you named. `bundle.packages` passes `--no-remove`, so
+apt aborted **before unpacking anything**. Your chroot is untouched and no bundle was written.
+
+### Why it refuses, when apt would have coped
+
+Because a bundle cannot delete, and the rule above has a consequence that is easy to miss: the
+removal would happen in the *build chroot*, and the files live in the *bundle below*, which the
+build never touches. They are still there at boot. What changes is only the database:
+
+| you would run, on the built image | you would get |
+|---|---|
+| `dpkg -s X` | **not installed** — the fragment carries `deinstall ok config-files`, and the pack-time merge replaces the base's entry with it |
+| `dpkg -L X` | the full file list, read from the lower bundle's `.list`, because `var/lib/dpkg/info/` is a directory and unions correctly |
+| any file of X | **present, and it runs** |
+
+Three consequences follow, in rising order of how much they should worry you:
+
+1. **A hybrid nobody shipped.** Where X and the package that replaced it collide, the higher bundle
+   wins — which is the outcome you wanted. X's *other* files survive. The image carries a mixture
+   of two package versions that no maintainer ever tested together.
+2. **Tools disagree about reality.** Anything that asks dpkg gets one answer and anything that looks
+   at the filesystem gets another.
+3. **X is never patched again.** `apt upgrade` on the live system skips a package it believes is
+   uninstalled. Its code is present, reachable, and invisible to the updater — indefinitely.
+
+The third is the reason this is a refusal rather than a warning.
+
+### What to do, and when each one stops working
+
+1. **Name different packages.** If the conflict is between two things that do the same job, pick the
+   one the image does not already have.
+2. **Pin a version that does not conflict.** `pkg=1.2.3-1` in the recipe's `packages:` list.
+   Bookworm is frozen, so a version that resolves today will resolve tomorrow.
+3. **Remove the bundle that holds the conflicting package**, with `remove-bundle` listed first in
+   the profile — the documented answer, and the one the rule above points at.
+
+   ```yaml
+   recipes:
+     - name: remove-bundle
+       vars: {drop: "^05-chromium\\.sb$"}
+     - your-recipe
+   ```
+
+**Option 3 does not always exist**, and this is the honest limit of the current design: you cannot
+remove `01-core`, because it *is* the root filesystem. If the package apt wants to drop lives there,
+none of the three options applies, and you have found the case that reopens this decision. See below.
+
+### Why there is no flag to override it
+
+Considered and rejected, so that the next person does not have to re-derive it:
+
+| | why not |
+|---|---|
+| allow it silently, as before | the three consequences above, none of them visible to the person building the image |
+| allow it, but warn | a line in a ten-minute build log, and a green CI run. The image still ships with a database that disagrees with its own files |
+| allow it, and keep the package in the database | honest about the files, but the removal the recipe implicitly asked for did not happen, and the version recorded is wrong too, since some of that package's files are now shadowed |
+| a per-recipe opt-out | reinstates exactly the problem, on the say-so of whoever was trying to get past an error message |
+
+At the time this was written **nothing in the tree triggered it**: no shipped recipe asks apt to
+remove anything, and `all-browsers` resolves a nine-package dependency closure without a single
+removal. An opt-out designed against an imagined case would have been designed wrong.
+
+### What would change the answer
+
+**A real recipe that needs a package removed and cannot use option 3** — most likely because the
+package is in `01-core`. If you are reading this because you hit exactly that, you are holding the
+evidence this decision lacked. Please open an issue with the recipe, the package, and the output of
+the refusal, rather than adding a flag: the right shape of the escape hatch depends on what your
+case actually needs, and nobody has had one yet.
+
 ## Numbering
 
 Load order is the numeric prefix and **higher wins**. `00`–`09` is the platform — upstream's

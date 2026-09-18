@@ -930,6 +930,38 @@ def _read_status(root: str) -> str:
         return ""
 
 
+def _status_removals(before: str, after: str) -> list[str]:
+    """Packages that were installed before a chroot run and are not installed after.
+
+    A BEFORE->AFTER TRANSITION, never a scan of `after`. The stock Debian 12 base already
+    ships nine `deinstall ok config-files` stanzas (docs/30-inventory/debian-12.2.0.md),
+    so a check that looked for `deinstall` in the result would fire on every build ever
+    run and be switched off within a day.
+
+    Both removal shapes count, and they fail differently downstream, which is why neither
+    can be inferred from the other:
+
+      apt-get remove   the stanza survives as `deinstall ok config-files`. dpkgdb.delta()
+                       sees changed text, puts it in the fragment, and dpkgdb.merge
+                       replaces the base's `install ok installed` with it -- so the booted
+                       image reports the package gone while every file of it is still
+                       mounted from the frozen lower bundle.
+      apt-get purge    the stanza is absent. delta() iterates `after` only, so the fragment
+                       says nothing, the base's stanza survives, and the database
+                       accidentally tells the truth.
+
+    Returns `name:arch` keys, sorted, so a caller can name them.
+    """
+    def installed(text: str) -> set:
+        out = set()
+        for block in text.split("\n\n"):
+            f = dict(re.findall(r"^([A-Za-z-]+): ?(.*)$", block, re.M))
+            if f.get("Package") and f.get("Status", "").endswith(" installed"):
+                out.add(f"{f['Package']}:{f.get('Architecture', '')}")
+        return out
+    return sorted(installed(before) - installed(after))
+
+
 def _status_changes(before: str, after: str) -> list[dict]:
     """Packages a chroot run installed or changed, with their source package, for provenance.
 
@@ -2173,7 +2205,19 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
 
         added = [k for k in after if k not in before]
         modified = [k for k in after if k in before and after[k] != before[k]]
+        vanished = [k for k in before if k not in after and not BUNDLE_EXCLUDE.search(k)]
         keep = sorted(k for k in added + modified if not BUNDLE_EXCLUDE.search(k))
+        # REPORTED HERE, REFUSED IN bundle.packages, and the asymmetry is the point: there
+        # apt decides to remove something behind the recipe's back, here the author wrote
+        # the command. A script that removes a package is still building an image whose
+        # database disagrees with its files -- so it is said out loud, every time, rather
+        # than stopped.
+        gone = _status_removals(before_status, after_status)
+        if gone:
+            ctx.say(f"warning: no longer installed after this script: {', '.join(gone)}. "
+                    "Their files remain in the bundle below, so the image will report "
+                    "them gone while they are still present and runnable. See "
+                    "docs/40-workflow/composing-bundles.md.")
         ctx.say(f"delta: {len(added)} added, {len(modified)} modified, "
                 f"{len(keep)} kept after exclusions")
         if not keep:
@@ -2189,6 +2233,11 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
                  upstream_source=step.get("upstream_source"),
                  fetched=_fetched_lines(r.stdout) or None,
                  installed=_status_changes(before_status, after_status) or None,
+                 # Recorded because _status_changes cannot see it: it filters both
+                 # sides on " installed" and then walks the AFTER side only, so a
+                 # package that left is unreachable and `kitchen sources` showed
+                 # nothing at all. Issue #14.
+                 uninstalled=_status_removals(before_status, after_status) or None,
                  slackware_installed=_pkgtools_added(before, after) or None,
                  debs=_deb_origins(root, _deb_hashes(root)) or None,
                  declares=step.get("declares"),
@@ -2932,6 +2981,31 @@ def _detect_flavour(tree: str) -> str:
     return "debian"
 
 
+def _apt_would_remove(root: str, argv: list, packages) -> list[str]:
+    """Which packages apt wanted to remove, asked in simulate mode.
+
+    Only ever called after a --no-remove refusal, to turn apt's terse "packages need to be
+    removed but remove is disabled" into a message naming them. `-s` neither downloads nor
+    unpacks, and --no-remove is dropped for this run so apt will state its plan rather than
+    refuse again. -qq is dropped too: it is what suppresses the list.
+    """
+    sim = [a for a in argv if a not in ("--no-remove", "-qq")] + ["-s"] + list(packages)
+    try:
+        r = _in_chroot(root, sim)
+    except Exception:                                  # noqa: BLE001
+        return []
+    names, grab = [], False
+    for line in (r.stdout or "").splitlines():
+        if line.startswith("The following packages will be REMOVED"):
+            grab = True
+            continue
+        if grab:
+            if not line.startswith(" "):
+                break
+            names += line.split()
+    return names
+
+
 def apt_install_argv(apt: dict) -> list[str]:
     """The apt-get command bundle.packages runs, from the step's `apt:` block.
 
@@ -2942,8 +3016,22 @@ def apt_install_argv(apt: dict) -> list[str]:
     file's archive mtime and the delta compares size+mtime+mode (_manifest), so files that
     come back unchanged stay out of the bundle and what lands is what differs: the docs.
     Measured: ten stock firmware packages reinstalled into a 64 KiB bundle of 32 files.
+
+    --NO-REMOVE IS NOT A TUNING KNOB, and it has no opt-out on purpose. A bundle records
+    added-or-modified files and cannot express a deletion, so a package apt removes here
+    keeps every one of its files -- they are in the frozen bundle below, which this build
+    does not touch. What changes is the database: the stanza becomes `deinstall ok
+    config-files`, the fragment carries it, and the booted image then reports the package
+    gone while `dpkg -L` still lists its files and every one of them runs. Worse, `apt
+    upgrade` on the live system skips a package it believes is uninstalled, so that code
+    is never patched again.
+
+    apt already has the answer and applies it BEFORE unpacking anything, so there is no
+    half-built chroot to unwind. The remedy when it fires is to remove the bundle holding
+    the conflict -- see docs/40-workflow/composing-bundles.md, which also records why no
+    opt-out exists and what evidence would justify adding one.
     """
-    argv = ["apt-get", "install", "-y", "-qq"]
+    argv = ["apt-get", "install", "-y", "-qq", "--no-remove"]
     if apt.get("no_recommends", True):
         argv.append("--no-install-recommends")
     if apt.get("reinstall", False):
@@ -3023,7 +3111,8 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
                 r = _in_chroot(root, ["apt-get", "update", "-qq"])
                 if r.returncode != 0:
                     raise RuntimeError("apt-get update failed:\n" + r.stderr.strip()[-1500:])
-            r = _in_chroot(root, apt_install_argv(step.get("apt") or {}) + list(packages))
+            apt_argv = apt_install_argv(step.get("apt") or {})
+            r = _in_chroot(root, apt_argv + list(packages))
         elif flavour == "slackware":
             # slackpkg + slackpkg+ are preconfigured in Slax's 01-core, but -batch=on
             # does NOT cover slackpkg's "you picked a -current mirror but 15.0+ is
@@ -3064,6 +3153,27 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
             raise RuntimeError(f"bundle.packages: unknown flavour {flavour!r}")
         if r.returncode != 0:
             out = (r.stderr.strip() or r.stdout.strip())
+            # apt's --no-remove refusal is one terse line, and -qq makes it terser: it does
+            # not say WHICH packages it wanted to drop, which is the only thing the person
+            # reading this needs. Ask again in simulate mode -- no download, no unpacking,
+            # and the chroot is untouched because --no-remove already stopped the real run
+            # before it began.
+            if flavour == "debian" and "remove" in out.lower():
+                names = _apt_would_remove(root, apt_argv, packages)
+                if names:
+                    raise RuntimeError(
+                        "bundle.packages: apt wanted to REMOVE "
+                        f"{', '.join(names)} to satisfy this install, and this verb "
+                        "refuses.\n"
+                        "A bundle records added-or-modified files and cannot express a "
+                        "deletion, so those packages would keep every file they have -- "
+                        "in the bundle below, which this build does not touch -- while "
+                        "the database said they were gone. `dpkg -L` would still list "
+                        "them, they would still run, and `apt upgrade` would never patch "
+                        "them again.\n"
+                        "What to do instead, and why there is no flag to override this: "
+                        "docs/40-workflow/composing-bundles.md, "
+                        "'apt wanted to remove a package'.")
             raise RuntimeError(f"package install failed (exit {r.returncode}):\n"
                                + _chroot_hint(out) + out[-1500:])
 
@@ -3078,11 +3188,38 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
         after, after_status = _manifest(root), _read_status(root)
 
         # 4. Delta = added OR modified. Names alone are not enough.
+        #
+        # `vanished` is reported and never packaged, because a bundle cannot express a
+        # deletion: those files are still in the bundle below, which this build did not
+        # touch, and they will be there at boot. Usually that is harmless -- a manpage an
+        # upgrade dropped -- and occasionally it is not, if the file is a plugin in a
+        # scanned directory or a fragment in a conf.d. Either way nobody was told before.
+        # Excluded the same way `keep` is, or the count is dominated by the apt scaffolding
+        # BUNDLE_EXCLUDE already names: lists, archive caches, lockfiles.
         added = [k for k in after if k not in before]
         modified = [k for k in after if k in before and after[k] != before[k]]
+        vanished = [k for k in before if k not in after and not _excluded(k, step_excludes)]
         keep = sorted(k for k in added + modified if not _excluded(k, step_excludes))
         ctx.say(f"delta: {len(added)} added, {len(modified)} modified, "
-                f"{len(keep)} kept after exclusions")
+                f"{len(keep)} kept after exclusions"
+                + (f", {len(vanished)} vanished (still present from the bundle below)"
+                   if vanished else ""))
+
+        # A package that LEFT is a different matter, and --no-remove should already have
+        # stopped it -- so reaching here means something removed a package by another
+        # route: a postinst, a maintainer script, dpkg called directly. Refuse for the
+        # same reason and before anything is staged, because _make_bundle writes the .sb
+        # and journals it, and refusing after that leaves an artifact behind.
+        gone = _status_removals(before_status, after_status)
+        if gone:
+            raise RuntimeError(
+                f"bundle.packages: these packages are no longer installed after the "
+                f"run: {', '.join(gone)}.\n"
+                "Their files are still in the bundle below and will be present at boot, "
+                "so the database would say gone while `dpkg -L` listed them and they "
+                "ran -- and `apt upgrade` would never patch them again.\n"
+                "See docs/40-workflow/composing-bundles.md, "
+                "'apt wanted to remove a package'.")
         if not keep:
             raise RuntimeError("bundle.packages: nothing to package "
                                "(were the packages already present in the base?)")
@@ -3108,6 +3245,11 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
                                                      "upstream_source")}
                               for s in apt.get("sources") or []] or None,
                  installed=_status_changes(before_status, after_status) or None,
+                 # Recorded because _status_changes cannot see it: it filters both
+                 # sides on " installed" and then walks the AFTER side only, so a
+                 # package that left is unreachable and `kitchen sources` showed
+                 # nothing at all. Issue #14.
+                 uninstalled=_status_removals(before_status, after_status) or None,
                  slackware_installed=_pkgtools_added(before, after) or None,
                  debs=_deb_origins(root, _deb_hashes(root)) or None)
     finally:
