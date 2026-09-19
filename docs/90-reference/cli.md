@@ -468,6 +468,16 @@ the kernel's xz decoder cannot do CRC64, which is xz's default, so an initramfs 
 `--check=crc32` is an image that will not boot. Both were asserted in prose here for a long time
 and tested nowhere.
 
+**`kvm` means this account can write `/dev/kvm`**, which is the test every boot uses to choose
+KVM over TCG. It used to test for read access, so a device that was readable but not writable had
+doctor saying `KVM (fast)` about boots that ran under TCG. When the device is present and not
+writable, doctor now says why:
+- the account is not in a group that can write it, so join that group and log in again;
+- the device's mode lets no group write it;
+- even root is refused, which is a container's device cgroup.
+
+In that case doctor no longer suggests `--device /dev/kvm`.
+
 ## `validate <file.yaml>...`
 
 Checks recipes and profiles against their JSON Schemas. Variables are substituted **before**

@@ -147,8 +147,14 @@ kitchen_test() {
 
     if [ "$want_kernel$want_bios$want_uefi$want_usb$want_perch" != "00000" ]; then
         have qemu-system-x86_64 || { warn_no_qemu; return 1; }
-        [ -r /dev/kvm ] || printf '  %snote: no /dev/kvm, running under TCG -- this is slow%s\n' \
-            "$D" "$O"
+        # -w, the test qemu_boot.py applies before it passes -enable-kvm. This was -r, so a
+        # device this account could read and not write went to TCG with no note at all.
+        if [ ! -e /dev/kvm ]; then
+            printf '  %snote: no /dev/kvm, running under TCG -- this is slow%s\n' "$D" "$O"
+        elif [ ! -w /dev/kvm ]; then
+            printf '  %snote: /dev/kvm is not writable by this account, running under TCG -- this is slow%s\n' \
+                "$D" "$O"
+        fi
     fi
 
     # Direct kernel boot and the persistence pair both need the kernel and initramfs
