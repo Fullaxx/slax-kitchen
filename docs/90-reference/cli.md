@@ -7,6 +7,12 @@ kitchen <command> [options]
 Paths are relative to your **current directory**, not the repo, so `work/` and `out/` behave like any
 build directory. Both are gitignored.
 
+**Every command checks the tools it needs before it starts**, and names the package for any that
+is missing. `kitchen test` checks what all the modes you asked for need, at once, before running
+any of them. The commands that only read an image (`test --structure`, `diff`, `sources`, `probe`,
+`fingerprint`) used to run xorriso and the rest unchecked, and a missing one ended in a Python
+traceback.
+
 ---
 
 ## `build <profile>` — the whole pipeline

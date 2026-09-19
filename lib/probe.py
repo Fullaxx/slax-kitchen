@@ -20,7 +20,8 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fingerprint import fingerprint  # noqa: E402
+import need  # noqa: E402
+from fingerprint import NEEDS, fingerprint  # noqa: E402
 
 # Fields that legitimately change on any rebuild, even with no recipes applied.
 BENIGN = {
@@ -136,6 +137,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--compat-dir", default=None)
     ap.add_argument("-v", "--verbose", action="store_true", help="list every difference")
     a = ap.parse_args(argv[1:])
+    need.require(NEEDS, "kitchen probe")
     if not os.path.isfile(a.iso):
         print(f"no such file: {a.iso}", file=sys.stderr)
         return 2

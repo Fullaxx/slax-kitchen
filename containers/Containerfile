@@ -82,7 +82,7 @@ RUN apt-get update -qq \
  && rm -rf /tmp/packages /var/lib/apt/lists/*
 
 # The image does not pin what it installs, so it records it. `kitchen doctor
-# --report` tells you the versions of the 20 tools; this is everything else, for
+# --report` tells you the versions of its tools; this is everything else, for
 # the day a measurement in docs/ needs to name what it ran on.
 ARG BASE
 RUN { echo "# slax-kitchen reference container"; \

@@ -14,6 +14,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import need  # noqa: E402
 from isoparse import IsoReader  # noqa: E402
 
 # Every stock bundle on all four reference ISOs has exactly these parameters, and so must
@@ -52,6 +53,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--require", action="append", default=[],
                     help="extra path that must exist in the ISO")
     a = ap.parse_args(argv[1:])
+    # xorriso lists the image's files. Checked first: without it the listing below died in
+    # a traceback, after half the assertions had already printed.
+    need.require(["xorriso"], "iso_assert.py")
     if not os.path.isfile(a.iso):
         print(f"no such file: {a.iso}", file=sys.stderr)
         return 2

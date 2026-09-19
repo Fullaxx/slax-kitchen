@@ -72,7 +72,7 @@ and so does [the reference container](../../containers/README.md) — so a packa
 tool reaches CI and a developer's machine in the same commit.
 
 The `container` job is what keeps that honest. `kitchen doctor --strict` exits non-zero if any of
-the 20 tools is missing or any toolchain assertion fails, so an incomplete list fails the build
+its tools is missing or any toolchain assertion fails, so an incomplete list fails the build
 rather than surfacing later as a recipe that cannot find `mcopy`.
 
 It runs on both supported bases. `containers/README.md` claims any current Debian-family release

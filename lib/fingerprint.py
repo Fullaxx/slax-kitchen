@@ -26,7 +26,12 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import need  # noqa: E402
 from isoparse import IsoReader  # noqa: E402
+
+# Everything fingerprint() runs, checked before it runs any of it. `kitchen probe` calls
+# fingerprint() too, and checks the same list.
+NEEDS = ("xorriso", "unsquashfs", "xz", "cpio", "file")
 
 BOOT_DIR = "/slax/boot"
 MODULES_DIR = "/slax/modules"
@@ -298,6 +303,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("-o", "--output", help="write YAML here (default: stdout)")
     ap.add_argument("-n", "--name", help="override the fingerprint name")
     a = ap.parse_args(argv[1:])
+    need.require(NEEDS, "kitchen fingerprint")
     if not os.path.isfile(a.iso):
         print(f"no such file: {a.iso}", file=sys.stderr)
         return 2

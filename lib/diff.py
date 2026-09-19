@@ -31,6 +31,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import need  # noqa: E402
 from isoparse import IsoReader  # noqa: E402
 
 SECTOR = 2048
@@ -306,6 +307,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--limit", type=int, default=20,
                     help="max changed paths to print (default 20)")
     args = ap.parse_args(argv[1:])
+    need.require(["xorriso"] + (["unsquashfs"] if args.bundles else []), "kitchen diff")
     return diff(args.a, args.b, args.bundles, args.limit)
 
 

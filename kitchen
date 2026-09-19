@@ -94,17 +94,32 @@ mcopy|mtools|write into the ESP image WITHOUT mounting it
 grub-mkstandalone|grub-efi-amd64-bin|build BOOTX64.EFI for UEFI boot
 qemu-system-x86_64|qemu-system-x86|boot tests
 qemu-img|qemu-utils|qcow2 disks for tools/qemu/boot.py
+mkfs.ext4|e2fsprogs|persistence test disks
 shellcheck|shellcheck|commit gate
 yamllint|yamllint|commit gate
 jq|jq|JSON handling
 curl|curl|fetch base ISOs
 file|file|artifact identification'
 
+# Is a tool installed? mkfs.* lives in /usr/sbin, which a non-login PATH can lack --
+# qemu_boot.py and ci/tier-c.sh look there too, so a tool they would find is not MISS here.
+have_tool() {
+    have "$1" && return 0
+    case "$1" in mkfs.*) PATH="$PATH:/usr/sbin:/sbin:/usr/local/sbin" have "$1" ;; *) return 1 ;; esac
+}
+
+# The package that puts a tool on PATH, read from TOOLS. A tool the table does not list is
+# assumed to share its package's name -- which python3, the one such caller, does.
+tool_pkg() {
+    _tp=$(echo "$TOOLS" | awk -F'|' -v t="$1" '$1 == t { print $2; exit }')
+    printf '%s' "${_tp:-$1}"
+}
+
 doctor_tools() {
     printf '%sTools%s\n' "$B" "$O"
     missing=0
     echo "$TOOLS" | while IFS='|' read -r bin pkg why; do
-        if have "$bin"; then
+        if have_tool "$bin"; then
             printf '  %sok%s   %-20s %s%s%s\n' "$G" "$O" "$bin" "$D" "$why" "$O"
         else
             printf '  %sMISS%s %-20s %s(apt-get install %s)%s\n' "$R" "$O" "$bin" "$D" "$pkg" "$O"
@@ -113,7 +128,7 @@ doctor_tools() {
     # recount outside the subshell
     missing=0
     for bin in $(echo "$TOOLS" | cut -d'|' -f1); do
-        have "$bin" || missing=$((missing+1))
+        have_tool "$bin" || missing=$((missing+1))
     done
     [ "$missing" -eq 0 ] || printf '  %s%d tool(s) missing%s\n' "$Y" "$missing" "$O"
     # Published rather than returned: --strict needs it, and `doctor` with no flags
@@ -244,6 +259,9 @@ tool_version() {
         mkfs.vfat)             _o=$(timeout 5 mkfs.vfat --help </dev/null 2>&1 \
                                     | grep -iE '^mkfs\.fat [0-9]' | head -1) ;;
         mcopy)                 _o=$(timeout 5 mcopy -V </dev/null 2>&1 | head -1) ;;
+        # -V, not --version, which e2fsprogs does not take; and /usr/sbin, as have_tool.
+        mkfs.ext4)             _o=$(PATH="$PATH:/usr/sbin:/sbin" timeout 5 mkfs.ext4 -V \
+                                    </dev/null 2>&1 | head -1) ;;
         # ShellCheck prints a banner first; the version is on the second line.
         shellcheck)            _o="shellcheck $(timeout 5 shellcheck --version </dev/null 2>&1 \
                                     | sed -n 's/^version: //p' | head -1)" ;;
@@ -324,7 +342,7 @@ doctor_report() {
     echo
     echo "tools:"
     echo "$TOOLS" | while IFS='|' read -r bin pkg _why; do
-        if have "$bin"; then
+        if have_tool "$bin"; then
             printf '  %-20s %s\n' "$bin" "$(tool_version "$bin")"
         else
             printf '  %-20s MISSING (apt-get install %s)\n' "$bin" "$pkg"
@@ -473,9 +491,12 @@ found by reading the ISO's own menu -- because /dev/console is the last console=
 everything init prints goes there. Apply `serial-console` to get such an entry. On an
 ISO without one these modes fall back to screenshot evidence and say so.
 
-A menu that cannot be read is not a menu without the entry: without xorriso, with a
-menu that will not extract, or with an entry whose label cannot be typed, those modes
-fail and boot nothing. --kernel and --persistence need xorriso too, for the kernel.
+A menu that cannot be read is not a menu without the entry: with a menu that will not
+extract, or with an entry whose label cannot be typed, those modes fail and boot nothing.
+
+Every tool the modes you ask for need is checked before any of them runs, and each
+missing one is named with its package: xorriso for --structure, the kernel and the
+menu; qemu for every boot; mkfs.ext4 for --persistence.
 
 Logs and screenshots land in <dir of iso>/boot-tests/.
 H

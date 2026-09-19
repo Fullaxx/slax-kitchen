@@ -20,7 +20,7 @@ docker build -f containers/Containerfile --build-arg BASE=debian:12 \
 and `--security-opt seccomp=unconfined` are not needed for anything — see
 [container vs host](../docs/40-workflow/container-vs-host.md).
 
-Inside, `./kitchen doctor` should report 20 tools ok and both toolchain assertions passing. If it
+Inside, `./kitchen doctor` should report every tool ok and every toolchain assertion passing. If it
 does not, the image is wrong, not your checkout.
 
 ## The package list

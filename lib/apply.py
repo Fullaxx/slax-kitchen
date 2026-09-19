@@ -63,16 +63,9 @@ NOT_YET = {
 }
 
 # Which Debian/Ubuntu package provides each tool, so a failure can say what to install
-# rather than just what is absent.
-TOOL_PKG = {
-    "xorriso": "xorriso", "genisoimage": "genisoimage",
-    "mksquashfs": "squashfs-tools", "unsquashfs": "squashfs-tools",
-    "cpio": "cpio", "xz": "xz-utils",
-    "grub-mkstandalone": "grub-efi-amd64-bin", "mkfs.vfat": "dosfstools",
-    "mmd": "mtools", "mcopy": "mtools",
-    "isohybrid": "syslinux-utils", "extlinux": "extlinux", "syslinux": "syslinux",
-    "qemu-system-x86_64": "qemu-system-x86", "chroot": "coreutils",
-}
+# rather than just what is absent. Kept in lib/need.py, which the commands that only read
+# an image use to check their own tools; one copy for both.
+from need import TOOL_PKG  # noqa: E402
 
 # What each verb needs BEFORE it runs. `tools` are executables on PATH, `files` are
 # data files a package must have installed, `caps` are kernel capabilities, and

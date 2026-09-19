@@ -169,6 +169,39 @@ kitchen_test() {
     outdir=${outdir_opt:-"$(dirname "$iso")/boot-tests"}
     mkdir -p "$outdir" || die "test: cannot write to $outdir"
 
+    # EVERY TOOL THE REQUESTED MODES NEED, checked before any mode runs. This was two partial
+    # checks made mid-run: qemu, whose message said "skipping boot test" and then failed the
+    # test, and xorriso for the boot modes only -- while --structure ran iso_assert.py, which
+    # needs xorriso too, and died in a traceback without it. apply.py's VERB_REQUIRES
+    # comment has the argument: checking on entry is "far too late".
+    #   --structure                      xorriso lists the image's files
+    #   --kernel, --persistence          qemu; xorriso takes the kernel out of the image;
+    #                                    mkfs.ext4 makes the persistence disk
+    #   --bios, --uefi, --usb            qemu; xorriso reads the menu, unless --keys or
+    #                                    --no-keys means it is never read
+    _need="python3"
+    [ "$want_structure" = 1 ] && _need="$_need xorriso"
+    if [ "$want_kernel$want_bios$want_uefi$want_usb$want_perch" != "00000" ]; then
+        _need="$_need qemu-system-x86_64"
+        { [ "$want_kernel" = 1 ] || [ "$want_perch" = 1 ]; } && _need="$_need xorriso"
+        [ "$want_perch" = 1 ] && _need="$_need mkfs.ext4"
+        [ "$want_bios$want_uefi$want_usb" != 000 ] && [ "$auto_keys" = 1 ] \
+            && _need="$_need xorriso"
+    fi
+    _miss=""
+    for _t in $_need; do
+        case " $_miss " in *" $_t "*) continue ;; esac
+        have_tool "$_t" || _miss="$_miss $_t"
+    done
+    if [ -n "$_miss" ]; then
+        for _t in $_miss; do
+            printf '  %sFAIL%s %s is not installed (apt-get install %s)\n' \
+                "$R" "$O" "$_t" "$(tool_pkg "$_t")"
+        done
+        printf '       nothing was tested: every mode asked for needs these before it can start\n'
+        return 1
+    fi
+
     rc=0
     if [ "$want_structure" = 1 ]; then
         printf '%s* structure%s\n' "$B" "$O"
@@ -176,7 +209,6 @@ kitchen_test() {
     fi
 
     if [ "$want_kernel$want_bios$want_uefi$want_usb$want_perch" != "00000" ]; then
-        have qemu-system-x86_64 || { warn_no_qemu; return 1; }
         # -w, the test qemu_boot.py applies before it passes -enable-kvm. This was -r, so a
         # device this account could read and not write went to TCG with no note at all.
         if [ ! -e /dev/kvm ]; then
@@ -184,22 +216,6 @@ kitchen_test() {
         elif [ ! -w /dev/kvm ]; then
             printf '  %snote: /dev/kvm is not writable by this account, running under TCG -- this is slow%s\n' \
                 "$D" "$O"
-        fi
-        # xorriso is how a boot reads the image: the kernel and initramfs for --kernel and
-        # --persistence, the boot menu for a menu mode choosing its own entry. Checked here,
-        # before anything boots, because without it the two kinds of mode failed in two
-        # different ways -- and the menu modes did not fail at all: they fell back to a
-        # screenshot and passed, reporting "no serial entry in this ISO". ci/tier-c.sh has
-        # refused to start without xorriso all along; this is the same rule for everyone.
-        _xneed=""
-        { [ "$want_kernel" = 1 ] || [ "$want_perch" = 1 ]; } && _xneed="the kernel and initramfs"
-        [ "$want_bios$want_uefi$want_usb" != 000 ] && [ "$auto_keys" = 1 ] \
-            && _xneed="${_xneed:+$_xneed and }the boot menu"
-        if [ -n "$_xneed" ] && ! have xorriso; then
-            printf '  %sFAIL%s xorriso is not installed (apt-get install xorriso): it reads %s\n' \
-                "$R" "$O" "$_xneed"
-            printf '       out of the image, so nothing was booted\n'
-            return 1
         fi
     fi
 
@@ -336,10 +352,6 @@ _boot_run() {
     for _e in $expects; do [ -n "$_e" ] && set -- "$@" --expect "$_e"; done
     IFS=$_oifs
     python3 "$@"
-}
-
-warn_no_qemu() {
-    printf '  %sqemu-system-x86_64 not installed -- skipping boot test%s\n' "$Y" "$O"
 }
 
 kitchen_build() {

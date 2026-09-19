@@ -102,6 +102,9 @@ class Fixture:
             if f.endswith(".sh"):
                 shutil.copy2(os.path.join(ROOT, "lib", f), os.path.join(self.repo, "lib", f))
         write(os.path.join(self.repo, "tests", "boot", "qemu_boot.py"), STUB_HARNESS, 0o755)
+        # The structure check too, so a test can see whether --structure ever reached it.
+        write(os.path.join(self.repo, "tests", "structure", "iso_assert.py"),
+              STUB_HARNESS.replace("sys.argv[1:]", '["iso_assert"] + sys.argv[1:]'), 0o755)
         self.bin = os.path.join(tmp, "bin")
         os.makedirs(self.bin)
         for t in TOOLS:
@@ -119,6 +122,9 @@ class Fixture:
 
     def with_xorriso(self):
         write(os.path.join(self.bin, "xorriso"), STUB_XORRISO, 0o755)
+
+    def without_qemu(self):
+        os.unlink(os.path.join(self.bin, "qemu-system-x86_64"))
 
     def iso_file(self, path, text):
         write(os.path.join(self.tree, path.lstrip("/")), text)
@@ -166,8 +172,46 @@ def test_no_xorriso_refuses_a_menu_boot_before_booting(fx):
 def test_no_xorriso_refuses_a_kernel_boot_before_booting(fx):
     rc, out, calls, left = fx.run("--kernel")
     check("no xorriso, --kernel: fails", rc, 1)
-    check("...saying what it reads", "the kernel and initramfs" in out, True)
+    check("...naming the package", "xorriso is not installed (apt-get install xorriso)" in out,
+          True)
     check("...and nothing was booted", calls, [])
+
+
+@case
+def test_structure_without_xorriso_is_refused_before_it_runs(fx):
+    """iso_assert.py lists the image with xorriso. Unchecked, --structure ran it anyway and
+    it died in a traceback, after half its assertions had printed."""
+    rc, out, calls, left = fx.run("--structure")
+    check("no xorriso, --structure: fails", rc, 1)
+    check("...naming the package", "xorriso is not installed (apt-get install xorriso)" in out,
+          True)
+    check("...before iso_assert.py ran", calls, [])
+    check("...with no traceback", "Traceback" in out, False)
+
+
+@case
+def test_no_qemu_is_a_failure_not_a_skip(fx):
+    """The old message said "skipping boot test" and then failed the test."""
+    fx.with_xorriso()
+    fx.without_qemu()
+    rc, out, calls, left = fx.run("--kernel")
+    check("no qemu: fails", rc, 1)
+    check("...naming the package",
+          "qemu-system-x86_64 is not installed (apt-get install qemu-system-x86)" in out, True)
+    check("...not calling it a skip", "skipping" in out, False)
+    check("...and nothing was booted", calls, [])
+
+
+@case
+def test_every_missing_tool_is_named_at_once(fx):
+    """One run names all of it -- not one tool per attempt, each found by trying again."""
+    fx.without_qemu()
+    rc, out, calls, left = fx.run("--structure", "--kernel")
+    check("both missing: fails", rc, 1)
+    check("...names xorriso", "xorriso is not installed" in out, True)
+    check("...and qemu", "qemu-system-x86_64 is not installed" in out, True)
+    check("...each once", out.count("xorriso is not installed"), 1)
+    check("...and runs nothing, structure included", calls, [])
 
 
 @case
@@ -268,6 +312,9 @@ def main():
     try:
         for fn in [test_no_xorriso_refuses_a_menu_boot_before_booting,
                    test_no_xorriso_refuses_a_kernel_boot_before_booting,
+                   test_structure_without_xorriso_is_refused_before_it_runs,
+                   test_no_qemu_is_a_failure_not_a_skip,
+                   test_every_missing_tool_is_named_at_once,
                    test_no_keys_needs_no_xorriso_and_says_why_it_asserts_nothing,
                    test_a_menu_that_will_not_extract_fails_with_xorrisos_reason,
                    test_an_empty_menu_is_not_a_menu_without_the_entry,

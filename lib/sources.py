@@ -57,6 +57,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
+import need  # noqa: E402
 import provenance  # noqa: E402
 
 SCHEMA = "slax-kitchen/sources/v1"
@@ -1029,6 +1030,8 @@ def main(argv: list[str]) -> int:
                     help="a download with no upstream_source, or none pinned by sha256, "
                          "is unresolved rather than a warning")
     a = ap.parse_args(argv[1:])
+    # xorriso lists the image; git archives the source --fetch gathers.
+    need.require(["xorriso"] + (["git"] if a.fetch else []), "kitchen sources")
 
     prov_path = a.provenance or a.iso + ".provenance.json"
     if not os.path.isfile(prov_path):
