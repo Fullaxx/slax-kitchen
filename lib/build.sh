@@ -54,7 +54,9 @@ _serial_keys() {
         2>&1 >/dev/null)
     if [ ! -s "$_sk_d/cfg" ]; then
         rm -rf "$_sk_d"
-        printf '  %scannot read the boot menu: %s would not extract from %s%s\n' \
+        # "missing or empty": an empty menu extracts cleanly, with no FAILURE line to
+        # explain it, and is no more a menu without the entry than a missing one is.
+        printf '  %scannot read the boot menu: %s is missing or empty in %s%s\n' \
             "$R" "$_sk_cfg" "$(basename "$_sk_iso")" "$O" >&2
         # xorriso says why on a FAILURE line -- a missing file, or no ISO at all.
         printf '%s\n' "$_sk_err" | grep 'FAILURE' | head -2 | sed 's/^/    /' >&2

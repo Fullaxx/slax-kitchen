@@ -185,10 +185,22 @@ def test_a_menu_that_will_not_extract_fails_with_xorrisos_reason(fx):
     fx.with_xorriso()
     rc, out, calls, left = fx.run("--bios")
     check("unreadable menu: fails", rc, 1)
-    check("...names the file", "/slax/boot/isolinux.cfg would not extract" in out, True)
+    check("...names the file", "/slax/boot/isolinux.cfg is missing or empty" in out, True)
     check("...and passes on xorriso's own reason", "FAILURE : Cannot determine attributes" in out, True)
     check("...and nothing was booted", calls, [])
     check("...and leaves no scratch", left, [])
+
+
+@case
+def test_an_empty_menu_is_not_a_menu_without_the_entry(fx):
+    """It extracts cleanly -- no FAILURE line -- and there is still nothing to choose from."""
+    fx.with_xorriso()
+    fx.iso_file("/slax/boot/isolinux.cfg", "")
+    rc, out, calls, left = fx.run("--bios")
+    check("empty menu: fails", rc, 1)
+    check("...saying so", "/slax/boot/isolinux.cfg is missing or empty" in out, True)
+    check("...and nothing was booted", calls, [])
+    check("...never that the image has no serial entry", "no serial entry" in out, False)
 
 
 @case
@@ -258,6 +270,7 @@ def main():
                    test_no_xorriso_refuses_a_kernel_boot_before_booting,
                    test_no_keys_needs_no_xorriso_and_says_why_it_asserts_nothing,
                    test_a_menu_that_will_not_extract_fails_with_xorrisos_reason,
+                   test_an_empty_menu_is_not_a_menu_without_the_entry,
                    test_uefi_without_a_grub_menu_points_at_the_recipe,
                    test_a_menu_with_no_serial_entry_still_falls_back_and_says_so,
                    test_a_serial_entry_is_typed_by_name_and_asserted,
