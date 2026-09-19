@@ -315,6 +315,11 @@ def main(argv: list[str]) -> int:
     ap.add_argument("iso", help="the iso/ directory of a work tree")
     ap.add_argument("-q", "--quiet", action="store_true")
     args = ap.parse_args(argv[1:])
+    # `kitchen pack` runs this on every tree: unsquashfs reads each bundle's database, and
+    # mksquashfs writes the merged one. Unchecked, a missing one died in a traceback
+    # halfway through pack -- the one step of it that did not check its tools first.
+    import need
+    need.require(["unsquashfs", "mksquashfs"], "kitchen pack")
     try:
         merge_tree(args.iso, quiet=args.quiet)
     except RuntimeError as e:

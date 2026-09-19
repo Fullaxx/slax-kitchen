@@ -1030,8 +1030,10 @@ def main(argv: list[str]) -> int:
                     help="a download with no upstream_source, or none pinned by sha256, "
                          "is unresolved rather than a warning")
     a = ap.parse_args(argv[1:])
-    # xorriso lists the image; git archives the source --fetch gathers.
-    need.require(["xorriso"] + (["git"] if a.fetch else []), "kitchen sources")
+    # xorriso lists the image. git on every run, not only --fetch: every local input is
+    # looked up at its recorded commit (provenance.git_digest), which the first version of
+    # this check missed -- --fetch was where git was visible, not where it was first used.
+    need.require(["xorriso", "git"], "kitchen sources")
 
     prov_path = a.provenance or a.iso + ".provenance.json"
     if not os.path.isfile(prov_path):

@@ -94,6 +94,7 @@ it cannot read the ISO9660 filesystem the kernel lives on. See
 |---|---|---|
 | `qemu-system-x86_64` | `qemu-system-x86` | boot tests. Works without KVM, 10–20× slower |
 | `qemu-img` | `qemu-utils` | qcow2 disks for [`tools/qemu/boot.py`](../60-testing/qemu.md) |
+| `mkfs.ext4` | `e2fsprogs` | the disk `kitchen test --persistence` boots twice onto, and `boot.py --disk-create ext4`. Lives in `/usr/sbin`, which a non-login PATH can lack; every caller looks there too |
 | — | `ovmf` | UEFI firmware. Copy `OVMF_VARS` to a **private writable** file first; the packaged one is read-only |
 
 ### Gates and plumbing

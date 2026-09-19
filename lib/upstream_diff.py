@@ -200,6 +200,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--write", action="store_true",
                     help="regenerate docs/15-upstream/drift-report.md")
     args = ap.parse_args(argv[1:])
+    import need
+    need.require(["git"], "kitchen upstream-diff")
 
     print("upstream-diff")
     a, b = resolve(args.from_ref, args.to_ref, args.offline)

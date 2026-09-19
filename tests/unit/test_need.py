@@ -3,9 +3,10 @@
 
 WHY THIS EXISTS. The commands that only READ an image -- `kitchen test --structure`
 (iso_assert.py), `diff`, `sources`, `probe`, `fingerprint` -- ran xorriso, unsquashfs, xz,
-cpio and `file` unchecked. A missing one surfaced as a Python traceback from deep inside:
-a line number, not the package that fixes it. Each now calls need.require() first and
-refuses, exit 2, naming the package.
+cpio and `file` unchecked, and so did two more found later: `pack`'s dpkg-database step
+(unsquashfs, mksquashfs) and `upstream-diff` (git). A missing tool surfaced as a Python
+traceback from deep inside: a line number, not the package that fixes it. Each now calls
+need.require() first and refuses, exit 2, naming the package.
 
 Two copies of the tool-to-package table exist -- kitchen's TOOLS (shell, for doctor and
 kitchen test) and need.TOOL_PKG (Python) -- so the test here that they agree is what keeps
@@ -25,14 +26,22 @@ import need  # noqa: E402
 
 FAILURES = []
 
-# Every command that reads an image, with arguments that get it past argparse. Nothing
-# here needs the image to exist: the check comes before the image is opened.
-READERS = [
-    ("kitchen diff", ["lib/diff.py", "a.iso", "b.iso"]),
-    ("kitchen sources", ["lib/sources.py", "a.iso"]),
-    ("kitchen probe", ["lib/probe.py", "a.iso"]),
-    ("kitchen fingerprint", ["lib/fingerprint.py", "a.iso"]),
-    ("iso_assert.py", ["tests/structure/iso_assert.py", "a.iso"]),
+# Every command that used to run its tools unchecked, with arguments that get it past
+# argparse, and every tool it must name when none is installed. Nothing here needs the image
+# to exist: the check comes before the image is opened.
+#
+# The last three were found by the self-review of the change that introduced this file:
+# `sources` runs git on every run (provenance.git_digest), not only for --fetch; `pack`
+# runs dpkgdb.py, which runs unsquashfs and mksquashfs; `upstream-diff` runs git.
+FINGERPRINT = ["xorriso", "unsquashfs", "xz", "cpio", "file"]
+COMMANDS = [
+    ("kitchen diff", ["lib/diff.py", "a.iso", "b.iso"], ["xorriso"]),
+    ("kitchen probe", ["lib/probe.py", "a.iso"], FINGERPRINT),
+    ("kitchen fingerprint", ["lib/fingerprint.py", "a.iso"], FINGERPRINT),
+    ("iso_assert.py", ["tests/structure/iso_assert.py", "a.iso"], ["xorriso"]),
+    ("kitchen sources", ["lib/sources.py", "a.iso"], ["xorriso", "git"]),
+    ("kitchen pack", ["lib/dpkgdb.py", "tree"], ["unsquashfs", "mksquashfs"]),
+    ("kitchen upstream-diff", ["lib/upstream_diff.py"], ["git"]),
 ]
 
 
@@ -78,19 +87,21 @@ def test_missing_names_the_package():
         shutil.rmtree(box, ignore_errors=True)
 
 
-def test_every_reader_refuses_instead_of_crashing():
-    """With nothing on PATH, each command exits 2 and names xorriso's package -- it used to
-    get as far as running it, and died in a traceback."""
+def test_every_command_refuses_instead_of_crashing():
+    """With nothing on PATH, each command exits 2 and names every tool it needs with its
+    package -- it used to get as far as running the first, and died in a traceback."""
     empty = tempfile.mkdtemp(prefix="need-empty-")
     try:
-        for who, args in READERS:
+        for who, args, tools in COMMANDS:
             p = subprocess.run([sys.executable] + [os.path.join(ROOT, args[0])] + args[1:],
                                cwd=empty, env={"PATH": empty, "HOME": empty},
                                capture_output=True, text=True, timeout=60)
             out = p.stdout + p.stderr
             check(f"{who}: exits 2", p.returncode, 2)
-            check(f"{who}: names the package",
-                  f"{who}: xorriso is not installed (apt-get install xorriso)" in out, True)
+            for tool in tools:
+                check(f"{who}: names {tool} and its package",
+                      f"{who}: {tool} is not installed (apt-get install "
+                      f"{need.TOOL_PKG[tool]})" in out, True)
             check(f"{who}: no traceback", "Traceback" in out, False)
     finally:
         shutil.rmtree(empty, ignore_errors=True)
@@ -104,7 +115,7 @@ def main():
     os.environ["TMPDIR"] = box
     try:
         for fn in [test_the_two_tables_agree, test_missing_names_the_package,
-                   test_every_reader_refuses_instead_of_crashing]:
+                   test_every_command_refuses_instead_of_crashing]:
             fn()
         if FAILURES:
             for f in FAILURES:
