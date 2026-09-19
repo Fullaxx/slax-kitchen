@@ -46,6 +46,10 @@ from dataclasses import dataclass, field
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(_REPO, "lib"))
 from isoparse import SECTOR, IsoInfo, IsoReader  # noqa: E402
+# The VNC address rules live with the boot-host configuration that also carries one, so
+# there is a single answer to "is this address safe to bind an unauthenticated VNC server
+# to" rather than two that can disagree.
+import boot_host  # noqa: E402
 
 PROG = "boot.py"
 
@@ -252,6 +256,14 @@ def port_arg(text: str) -> int:
     return int(text)
 
 
+def vnc_arg(text: str) -> tuple:
+    """IP[:PORT], or [v6]:PORT -- the address qemu binds, where qemu runs."""
+    try:
+        return boot_host.parse_vnc(text)
+    except boot_host.ConfigError as e:
+        raise argparse.ArgumentTypeError(str(e).replace("vnc: ", "", 1))
+
+
 def serial_arg(text: str) -> str:
     if text in ("stdio", "vc", "pty", "none"):
         return text
@@ -332,8 +344,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     io = ap.add_argument_group("display and I/O")
     io.add_argument("--display", choices=("vnc", "curses", "none", "gtk", "sdl"), default="vnc",
                     help="default vnc; see the docs for why")
-    io.add_argument("--vnc-addr", default="127.0.0.1", metavar="ADDR",
-                    help="default 127.0.0.1 -- tunnel in, do not expose")
+    io.add_argument("--vnc-addr", type=vnc_arg, default=None, metavar="IP[:PORT]",
+                    help="where the VNC server listens, on the machine running qemu "
+                         "(default 127.0.0.1:5900, or boot-host.ini's vnc) -- tunnel in, "
+                         "do not expose")
+    io.add_argument("--vnc-public", action="store_true",
+                    help="confirm a --vnc-addr outside the private ranges. This server "
+                         "has no password, so it is refused without this")
     io.add_argument("--vga", choices=("std", "virtio", "cirrus", "vmware", "none"), default="std",
                     help="video card (default std)")
     io.add_argument("--serial", type=serial_arg, metavar="MODE",
@@ -349,9 +366,20 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                    help="forward 127.0.0.1:PORT to the guest's port 22")
 
     o = ap.add_argument_group("output")
+    o.add_argument("--local", action="store_true",
+                   help="boot here, even if boot-host.ini names a machine with KVM")
     o.add_argument("--print", dest="print_only", action="store_true",
                    help="print the commands for this boot instead of running them")
-    return ap.parse_args(argv)
+    a = ap.parse_args(argv)
+    # RESOLVED HERE, so a parsed Namespace is COMPLETE. These began life as attributes
+    # that run() attached on the way past, which broke every caller that builds a plan
+    # from parse_args() alone -- tests/unit/test_tools_qemu.py does exactly that, and said
+    # so. A boot host overrides them afterwards, because only then is there another
+    # machine whose address it could be.
+    a.vnc_ip, a.vnc_port, a.vnc_from = (
+        (a.vnc_addr[0], a.vnc_addr[1], "--vnc-addr") if a.vnc_addr
+        else ("127.0.0.1", boot_host.VNC_BASE, "default"))
+    return a
 
 
 # ------------------------------------------------------------------- firmware --
@@ -729,8 +757,19 @@ def build_plan(a: argparse.Namespace, cfg: Config, vars_copy: str, kernel_dir: s
         groups.append(["-nic", nic])
 
     display = ["-vga", a.vga]
-    # to=99: if 5900 is taken qemu walks up and prints the port it got.
-    display += ["-vnc", f"{a.vnc_addr}:0,to=99"] if a.display == "vnc" else ["-display", a.display]
+    # AN EXACT PORT, AND NO WALK-UP. This was `:0,to=99`, so a busy 5900 became 5901 and
+    # qemu printed the port it got. That is a fine answer for someone reading the terminal
+    # and a wrong one for everything else: the ssh tunnel is built for one port before
+    # qemu starts, so a walk-up leaves the viewer connected to a tunnel that reaches
+    # nothing -- or, on a second launch, reaches the PREVIOUS boot, which looks like it
+    # worked. Binding exactly what was asked for means a busy port fails and says so.
+    #
+    # `:d`, not `:port`: qemu's VNC server takes a DISPLAY NUMBER and listens on 5900+d,
+    # so `-vnc 127.0.0.1:5900` would bind 11800. The port is turned into a display here,
+    # which is the one place that conversion belongs.
+    display += (["-vnc", f"{boot_host.bracket(a.vnc_ip)}:"
+                 f"{a.vnc_port - boot_host.VNC_BASE}"]
+                if a.display == "vnc" else ["-display", a.display])
     if cfg.tablet:
         display += ["-device", "usb-tablet,bus=xhci.0"]
     groups.append(display)
@@ -827,12 +866,28 @@ def summary(a: argparse.Namespace, cfg: Config, printing: bool, created: list[st
         out.append(f"  network   {a.nic}, user-mode{ssh}")
     video = "" if a.vga == "std" else f", {a.vga} video"
     if a.display == "vnc":
-        out.append(f"  display   vnc on {a.vnc_addr}:5900{video} "
-                   f"(qemu prints the real port below if taken)")
-        tunnel = a.vnc_addr if a.vnc_addr not in ("127.0.0.1", "localhost", "0.0.0.0") else "127.0.0.1"
+        exposed = "" if boot_host.vnc_is_private(a.vnc_ip) else "  PUBLIC ADDRESS"
+        out.append(f"  display   vnc on {boot_host.bracket(a.vnc_ip)}:{a.vnc_port}"
+                   f"{video}  ({a.vnc_from}){exposed}")
         host = "<kvm-host>" if printing else socket.gethostname()
-        out += ["", "  from your workstation:",
-                f"    ssh -L 5900:{tunnel}:5900 {host}", "    vncviewer localhost:5900"]
+        if os.environ.get("KITCHEN_BOOT_HOST_AGENT"):
+            # Nested inside a remote launch: the driver on the other end built the tunnel
+            # and has already said how to reach it. Repeating the instructions here would
+            # tell the reader to build the one they are already using.
+            pass
+        elif boot_host.vnc_is_loopback(a.vnc_ip):
+            out += ["", "  from your workstation:",
+                    f"    ssh -L {a.vnc_port}:{boot_host.bracket(a.vnc_ip)}"
+                    f":{a.vnc_port} {host}",
+                    f"    vncviewer localhost:{a.vnc_port}"]
+        else:
+            # Already reachable from wherever this is: a tunnel would be a second route
+            # to the same socket, and telling someone to build one is telling them to do
+            # nothing. That is as true of a public address as of a LAN one -- the earlier
+            # rule tested `not 127.*`, so a confirmed --vnc-public address was handed
+            # tunnel instructions that would not have worked.
+            out += ["", "  from your workstation:",
+                    f"    vncviewer {boot_host.bracket(a.vnc_ip)}:{a.vnc_port}"]
     else:
         out.append(f"  display   {a.display}{video}")
 
@@ -1017,8 +1072,86 @@ def launch(a: argparse.Namespace, cfg: Config, notes: list[str]) -> int:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def run(a: argparse.Namespace, env) -> int:
+def refuse_public_vnc(a: argparse.Namespace) -> None:
+    """A VNC server with no password does not go on an address strangers can reach.
+
+    THE ADDRESS IS ON THE MACHINE THAT RUNS QEMU, which is not always this one. A boot
+    host's boot-host.ini carries the answer for that machine; --vnc-addr overrides it for
+    one launch; otherwise it is loopback, which is reachable only through a tunnel and is
+    the right default for a server nobody has to authenticate to.
+    """
+    ip = a.vnc_ip
+    # Only when something is actually listening. --display none binds nothing, and
+    # refusing an address nobody will use would be a refusal about nothing.
+    if a.display == "vnc" and not boot_host.vnc_is_private(ip) and not a.vnc_public:
+        raise Refusal(
+            f"--vnc-addr {ip} is NOT a private address.\n"
+            f"  A VNC server there is reachable from outside your network, and this one "
+            f"has no password: anyone who can reach it has the keyboard and mouse of the "
+            f"machine under test.\n"
+            f"  Private means 127.0.0.0/8, ::1, 10/8, 172.16/12, 192.168/16 or fc00::/7.\n"
+            f"  If you really mean it, pass --vnc-public as well -- and every launch will "
+            f"say so.")
+
+
+def remote_argv(argv: list[str], iso_local: str, iso_remote: str,
+                ip: str, port: int) -> list[str]:
+    """This command line, as it must read on the boot host.
+
+    FORWARDED, not rebuilt -- unlike `kitchen test`'s hook, which has to keep half its
+    flags for itself. The same parser runs at the other end, so every option means the
+    same thing there; only the things that are true HERE and not THERE are rewritten: the
+    image's path, and the choice of where to run.
+    """
+    out: list[str] = []
+    i, swapped = 0, False
+    while i < len(argv):
+        t = argv[i]
+        if t in ("--local", "--vnc-public"):
+            i += 1
+        elif t == "--vnc-addr":
+            i += 2                                  # re-added below, resolved
+        elif t.startswith("--vnc-addr="):
+            i += 1
+        elif t == iso_local and not swapped:
+            # The first bare occurrence is the positional. An option VALUE that happened
+            # to equal the image path would be rewritten too, which is why only the first
+            # one is taken -- argparse has already told us there is exactly one image.
+            out.append(iso_remote)
+            swapped = True
+            i += 1
+        else:
+            out.append(t)
+            i += 1
+    if not swapped:
+        out.append(iso_remote)
+    out += ["--vnc-addr", f"{boot_host.bracket(ip)}:{port}"]
+    if not boot_host.vnc_is_private(ip):
+        out.append("--vnc-public")                  # already confirmed here
+    return out + ["--local"]
+
+
+def run(a: argparse.Namespace, env, argv_in: list | None = None) -> int:
     notes: list[str] = []
+    argv_in = sys.argv[1:] if argv_in is None else argv_in
+    # WHERE QEMU WILL RUN, decided before anything is checked, because almost every check
+    # below is a question about that machine. --print writes a script for somebody else's
+    # machine and --local says to stay here; both skip the question.
+    host = None
+    if not a.print_only and not a.local:
+        try:
+            host = boot_host.load()
+        except boot_host.ConfigError as e:
+            raise Refusal(str(e))
+    if host is not None and a.vnc_addr is None:
+        a.vnc_ip, a.vnc_port, a.vnc_from = (host.vnc_ip, host.vnc_port,
+                                            boot_host.CONFIG_NAME)
+    refuse_public_vnc(a)
+    if host is not None:
+        return boot_host.launch(
+            host, a,
+            lambda iso_remote, ip, port: remote_argv(argv_in, a.iso, iso_remote, ip, port))
+
     if not a.print_only and not os.path.isfile(a.iso):
         raise Refusal(f"no such file: {a.iso}")
     cfg = resolve(a, env, a.print_only, notes)
@@ -1049,6 +1182,19 @@ def main(argv: list[str]) -> int:
     except Refusal as e:
         print(f"{PROG}: {e}", file=sys.stderr)
         return 2
+    except boot_host.Unavailable as e:
+        # The boot host could not be used. Caught HERE because this file calls
+        # boot_host.launch() directly, past the handler boot_host's own CLI has -- so
+        # without this a busy VNC port, an unreachable machine or a failed pre-run check
+        # arrived as a traceback, which is the shape of failure this toolkit spent four
+        # commits removing.
+        print(f"\n{PROG}: boot host unavailable: {e}", file=sys.stderr)
+        print(f"  nothing was run. To boot here instead: {PROG} ... --local",
+              file=sys.stderr)
+        return boot_host.EXIT_UNAVAILABLE
+    except KeyboardInterrupt:
+        print(f"\n{PROG}: interrupted", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":

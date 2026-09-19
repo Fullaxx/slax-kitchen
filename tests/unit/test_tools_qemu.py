@@ -613,6 +613,124 @@ def test_existing_disk_format_is_read_not_guessed():
         check("raw despite the name", f"if=none,id=disk1,format=raw,file={r}" in argv, True)
 
 
+# ------------------------------------------------------------------ the VNC seat --
+# Where the framebuffer is offered, and to whom. This server has no password, so the
+# address it binds is a security decision and not a preference -- and the port it binds
+# has to be the one asked for, because an ssh tunnel is built for one port before qemu
+# starts.
+
+
+def test_the_vnc_port_is_the_one_asked_for():
+    """No walk-up. `:0,to=99` let a busy 5900 become 5901, which is a fine answer for
+    someone reading the terminal and a wrong one for a tunnel built before qemu ran: the
+    viewer then reaches nothing, or -- on a second launch -- the PREVIOUS boot."""
+    with tempfile.TemporaryDirectory() as t:
+        iso = make_iso(os.path.join(t, "s.iso"))
+        rc, argv, err = printed([iso, "--bios"])
+        check("default binds display 0", after(argv, "-vnc"), ["-vnc", "127.0.0.1:0"])
+        check("and does not walk up", "to=" in " ".join(argv), False)
+        # qemu's VNC server takes a DISPLAY NUMBER and listens on 5900+d, so a port has
+        # to be converted here -- `-vnc 127.0.0.1:5903` would bind 11803.
+        rc, argv, err = printed([iso, "--bios", "--vnc-addr", "127.0.0.1:5903"])
+        check("5903 is display 3", after(argv, "-vnc"), ["-vnc", "127.0.0.1:3"])
+        rc, argv, err = printed([iso, "--bios", "--vnc-addr", "[fd00::1]:5902"])
+        check("a bracketed v6 address is accepted", rc, 0)
+        # ...and a v6 literal is bracketed, or the colons of the address run into the
+        # colon before the display number and qemu cannot parse either.
+        check("v6 is bracketed", after(argv, "-vnc"), ["-vnc", "[fd00::1]:2"])
+
+
+def test_a_public_vnc_address_is_refused_until_confirmed():
+    with tempfile.TemporaryDirectory() as t:
+        iso = make_iso(os.path.join(t, "s.iso"))
+        for addr in ("0.0.0.0", "8.8.8.8", "[::]", "100.64.0.1"):
+            rc, out, err = run_main([iso, "--bios", "--print", "--vnc-addr", addr])
+            check(f"{addr}: refused", rc, 2)
+            check(f"{addr}: says it is not private", "NOT a private address" in err, True)
+            check(f"{addr}: names the confirmation", "--vnc-public" in err, True)
+            check(f"{addr}: no traceback", "Traceback" in err, False)
+            rc, out, err = run_main([iso, "--bios", "--print", "--vnc-addr", addr,
+                                     "--vnc-public"])
+            check(f"{addr}: accepted when confirmed", rc, 0)
+            # ...and every launch says so, which is the other half of the bargain.
+            # The banner is on stderr; stdout carries the script itself.
+            check(f"{addr}: and is called public", "PUBLIC ADDRESS" in err, True)
+        for addr in ("127.0.0.1", "10.1.2.3", "172.17.0.1", "192.168.1.5", "[fd00::1]"):
+            rc, out, err = run_main([iso, "--bios", "--print", "--vnc-addr", addr])
+            check(f"{addr}: private, so no confirmation needed", rc, 0)
+            check(f"{addr}: and is not called public", "PUBLIC ADDRESS" in err, False)
+        # --display none binds nothing, so there is no address to be exposed and a
+        # refusal would be a refusal about nothing.
+        rc, out, err = run_main([iso, "--bios", "--print", "--display", "none",
+                                 "--vnc-addr", "0.0.0.0"])
+        check("no vnc server, no refusal", rc, 0)
+
+
+def test_a_bad_vnc_address_is_refused_by_the_parser():
+    with tempfile.TemporaryDirectory() as t:
+        iso = make_iso(os.path.join(t, "s.iso"))
+        for addr, why in (("kvmbox", "not an IP address"),
+                          ("127.0.0.1:vnc", "not a port number"),
+                          # qemu listens on 5900+display, so it cannot offer port 22.
+                          ("127.0.0.1:22", "below 5900"),
+                          ("[::1", "unclosed"),
+                          # Both a valid address and a plausible "address, port" --
+                          # so it is refused rather than silently read as one of them.
+                          ("fe80::1:5900", "in brackets"),
+                          ("fd00::1", "in brackets")):
+            rc, out, err = run_main([iso, "--bios", "--print", "--vnc-addr", addr])
+            check(f"{addr}: refused", rc != 0, True)
+            check(f"{addr}: says why", why in err, True)
+
+
+def test_the_viewer_is_told_the_route_that_works():
+    with tempfile.TemporaryDirectory() as t:
+        iso = make_iso(os.path.join(t, "s.iso"))
+        # Loopback is reachable only from the machine qemu runs on: tunnel.
+        rc, out, err = run_main([iso, "--bios", "--print", "--vnc-addr", "127.0.0.1:5905"])
+        check("loopback gets a tunnel", "ssh -L 5905:127.0.0.1:5905" in err, True)
+        check("...and a local viewer", "vncviewer localhost:5905" in err, True)
+        # Anything else already answers where it is. Telling someone to build a tunnel to
+        # an address they can already reach is telling them to do nothing -- and the rule
+        # that tested `not 127.*` handed exactly that advice to a --vnc-public address.
+        rc, out, err = run_main([iso, "--bios", "--print", "--vnc-addr", "172.17.0.1"])
+        check("a routable address is direct", "vncviewer 172.17.0.1:5900" in err, True)
+        check("...with no tunnel to build", "ssh -L" in err, False)
+        rc, out, err = run_main([iso, "--bios", "--print", "--vnc-addr", "8.8.8.8",
+                                 "--vnc-public"])
+        check("a public address is direct too", "vncviewer 8.8.8.8:5900" in err, True)
+        check("...and not tunnelled", "ssh -L" in err, False)
+
+
+def test_the_command_line_sent_to_a_boot_host():
+    """What boot.py becomes on the other machine.
+
+    FORWARDED, not rebuilt: the same parser runs there, so every option means the same
+    thing. Only what is true HERE and not THERE is rewritten -- the image's path, and the
+    choice of where to run.
+    """
+    got = boot.remote_argv(
+        ["out/x.iso", "--bios", "--local", "--mem", "4G", "--vnc-addr", "127.0.0.1:5999"],
+        "out/x.iso", "/srv/s/boot-host/runs/r1/x.iso", "127.0.0.1", 5900)
+    check("the image is the one over there", got[0], "/srv/s/boot-host/runs/r1/x.iso")
+    check("ordinary options are carried", after(got, "--mem"), ["--mem", "4G"])
+    check("the firmware choice is carried", "--bios" in got, True)
+    # Resolved once, here, and stated exactly: the tunnel is built for this port.
+    check("the address is the resolved one", after(got, "--vnc-addr"),
+          ["--vnc-addr", "127.0.0.1:5900"])
+    check("only one of them", got.count("--vnc-addr"), 1)
+    # ...and the far side must not go looking for a boot host of its own.
+    check("it is told to boot where it is", got[-1], "--local")
+    check("...once", got.count("--local"), 1)
+    # A confirmed public address has to travel, or the same rule refuses it over there.
+    pub = boot.remote_argv(["out/x.iso", "--bios"], "out/x.iso", "/r/x.iso",
+                           "8.8.8.8", 5900)
+    check("a public address carries its confirmation", "--vnc-public" in pub, True)
+    priv = boot.remote_argv(["out/x.iso", "--bios"], "out/x.iso", "/r/x.iso",
+                            "10.0.0.5", 5900)
+    check("a private one does not", "--vnc-public" in priv, False)
+
+
 def main():
     for fn in [test_firmware_must_be_chosen,
                test_arch_selects_the_binary,
@@ -635,7 +753,12 @@ def main():
                test_serial_and_monitor_never_both_claim_stdio,
                test_accelerators,
                test_ovmf_search_matches_the_harness,
-               test_existing_disk_format_is_read_not_guessed]:
+               test_existing_disk_format_is_read_not_guessed,
+               test_the_vnc_port_is_the_one_asked_for,
+               test_a_public_vnc_address_is_refused_until_confirmed,
+               test_a_bad_vnc_address_is_refused_by_the_parser,
+               test_the_viewer_is_told_the_route_that_works,
+               test_the_command_line_sent_to_a_boot_host]:
         # One test crashing must not stop the rest: the count of failures is only honest if
         # every test ran.
         try:

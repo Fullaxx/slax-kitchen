@@ -83,6 +83,15 @@ REFUSALS = [
     ("vnc is a hostname", GOOD + "vnc = kvmbox\n",                   "not an IP address"),
     ("vnc port is words", GOOD + "vnc = 127.0.0.1:vnc\n",            "not a port number"),
     ("vnc port is zero",  GOOD + "vnc = 127.0.0.1:0\n",              "not a port number"),
+    # qemu's VNC server takes a display number and listens on 5900+display, so a port
+    # below 5900 is one it cannot offer -- and `-vnc <addr>:5900` would bind 11800.
+    ("vnc port below 5900", GOOD + "vnc = 127.0.0.1:22\n",           "below 5900"),
+    # `fe80::1:5900` reads as "fe80::1, port 5900" and is ALSO a valid address on its
+    # own, so accepting it bare would silently pick a different machine. Refused, not
+    # guessed at.
+    ("a bare IPv6 address", GOOD + "vnc = fd00::1\n",                "in brackets"),
+    ("an IPv6 address that looks like a port",
+     GOOD + "vnc = fe80::1:5900\n",                                  "in brackets"),
     ("vnc_public is not a boolean", GOOD + "vnc_public = maybe\n",   "must be yes or no"),
 ]
 
@@ -185,8 +194,8 @@ def test_the_private_address_table():
 
 def vnc_spec(ip):
     """How an address is written in the file. A v6 literal is full of colons, so the
-    port separator only means anything inside brackets -- `:::5900` is not an address
-    with a port, it is a typo, and parse_vnc says so."""
+    port separator only means anything inside brackets -- and an unbracketed one is
+    refused rather than read as an address nobody asked for."""
     return f"[{ip}]:5900" if ":" in ip else f"{ip}:5900"
 
 
@@ -315,6 +324,38 @@ def test_the_agent_refuses_a_name_that_is_a_path():
         check("an op before `open` is refused", "accepted", "RuntimeError")
     except RuntimeError as e:
         check("...saying why", "out of order" in str(e), True)
+
+
+def test_a_port_another_server_holds_is_refused():
+    """...before anything is sent, which is the whole point of asking early.
+
+    FOUND BY BEING CAUGHT BY IT. The container this was built in already runs a VNC
+    desktop on 5901, bound to 0.0.0.0. A launch aimed at that port was refused -- and the
+    probe checking the launch then connected to the port, got a perfectly good
+    `RFB 003.008` from the OTHER server, and reported success. That is exactly the
+    confusion the check exists to prevent: a viewer pointed at a port someone else owns
+    looks like it worked.
+    """
+    import socket as sk
+    held = sk.socket(sk.AF_INET, sk.SOCK_STREAM)
+    held.setsockopt(sk.SOL_SOCKET, sk.SO_REUSEADDR, 1)
+    try:
+        held.bind(("127.0.0.1", 0))               # whatever port the OS hands out
+        port = held.getsockname()[1]
+        held.listen(1)
+        why = boot_host._tunnel_port_busy(port)
+        check("a held port is refused", bool(why), True)
+        check("...naming it", str(port) in why, True)
+        check("...and saying it is in use", "already in use" in why, True)
+    finally:
+        held.close()
+    # ...and a free one is not. Without this the check could refuse everything and the
+    # test above would still pass.
+    free = sk.socket(sk.AF_INET, sk.SOCK_STREAM)
+    free.bind(("127.0.0.1", 0))
+    spare = free.getsockname()[1]
+    free.close()
+    check("a free port is allowed", boot_host._tunnel_port_busy(spare), "")
 
 
 def test_the_ssh_command_never_prompts():
@@ -561,6 +602,7 @@ def main():
                    test_the_template_and_the_parser_agree,
                    test_a_missing_option_value_is_refused_not_crashed,
                    test_the_agent_refuses_a_name_that_is_a_path,
+                   test_a_port_another_server_holds_is_refused,
                    test_the_ssh_command_never_prompts,
                    test_a_failure_is_blamed_on_the_right_thing,
                    test_the_agent_is_verified_before_it_runs,

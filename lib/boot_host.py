@@ -34,6 +34,7 @@ is reported as a host that must accept key-based login.
 from __future__ import annotations
 
 import configparser
+import errno
 import fcntl
 import hashlib
 import ipaddress
@@ -120,14 +121,13 @@ class Config:
 
     @property
     def vnc(self) -> str:
-        return f"[{self.vnc_ip}]:{self.vnc_port}" if ":" in self.vnc_ip \
-            else f"{self.vnc_ip}:{self.vnc_port}"
+        return f"{bracket(self.vnc_ip)}:{self.vnc_port}"
 
     @property
     def tunnelled(self) -> bool:
         """Loopback on the boot host is only reachable from the boot host, so a viewer
         here needs an ssh tunnel. Any other address is reachable directly."""
-        return ipaddress.ip_address(self.vnc_ip).is_loopback
+        return vnc_is_loopback(self.vnc_ip)
 
 
 # Private, listed explicitly rather than taken from ipaddress.is_private, which is a
@@ -141,6 +141,27 @@ def vnc_is_private(ip: str) -> bool:
         return any(a in ipaddress.ip_network(n) for n in
                    ("127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
     return a == ipaddress.ip_address("::1") or a in ipaddress.ip_network("fc00::/7")
+
+
+def bracket(ip: str) -> str:
+    """An address as it must be written where a colon already separates the port.
+
+    `ssh -L 5900:::1:5900` and `-vnc ::1:0` are not merely ugly, they do not parse: an
+    IPv6 literal is full of colons, so every place that puts one next to a port has to
+    bracket it. Three places did not, which is one rule written three times and got wrong
+    three times -- so it is written once, here.
+    """
+    return f"[{ip}]" if ":" in ip else ip
+
+
+def vnc_is_loopback(ip: str) -> bool:
+    """Only reachable from the machine it is bound on, so a viewer here needs a tunnel.
+
+    One function, used by the banner, by the tunnel decision and by Config.tunnelled --
+    because "127.0.0.1" is not the only loopback address and a string comparison against
+    it quietly gets 127.0.1.5 and ::1 wrong.
+    """
+    return ipaddress.ip_address(ip).is_loopback
 
 
 def parse_vnc(value: str) -> tuple:
@@ -164,6 +185,17 @@ def parse_vnc(value: str) -> tuple:
     elif text.count(":") == 1:
         host, _, p = text.partition(":")
         port = _port(p, value)
+    elif ":" in text:
+        # AN IPv6 LITERAL MUST BE BRACKETED, and this is not pedantry. `fe80::1:5900`
+        # means "address fe80::1, port 5900" to a person and is ALSO a perfectly valid
+        # address in its own right, so accepting it bare parses it as that address on the
+        # default port -- a different machine than the one asked for, chosen silently.
+        # There is no way to tell the two readings apart, so the ambiguous spelling is
+        # refused rather than guessed at.
+        raise ConfigError(
+            f"{value!r}: write an IPv6 address in brackets, so the port cannot be "
+            f"confused with the address -- e.g. [{text.rsplit(':', 1)[0]}]:{port} "
+            f"or [{text}]")
     else:
         host = text
     try:
@@ -175,10 +207,23 @@ def parse_vnc(value: str) -> tuple:
     return host, port
 
 
+# qemu's VNC server takes a DISPLAY NUMBER, not a port: `-vnc <addr>:d` listens on
+# 5900+d, so `-vnc 127.0.0.1:5900` would bind port 11800. Nobody means that. A port is
+# accepted here because a port is what a viewer is told to connect to, and it is turned
+# into a display number where qemu is called -- which is why it cannot be below 5900.
+VNC_BASE = 5900
+
+
 def _port(text: str, whole: str) -> int:
     if not text.isdigit() or not 1 <= int(text) <= 65535:
         raise ConfigError(f"vnc: {text!r} is not a port number, in {whole!r}")
-    return int(text)
+    port = int(text)
+    if port < VNC_BASE:
+        raise ConfigError(
+            f"vnc: port {port} is below {VNC_BASE}, in {whole!r}. qemu's VNC server takes "
+            f"a display number and listens on {VNC_BASE}+display, so {VNC_BASE} is the "
+            f"lowest port it can offer.")
+    return port
 
 
 def local_reason(env=None) -> str | None:
@@ -332,7 +377,8 @@ def ssh_argv(cfg: Config, tty: bool = False, tunnel: tuple | None = None) -> lis
         # ExitOnForwardFailure: without it ssh reports the busy port on stderr and carries
         # on, so the viewer here quietly attaches to whatever already owns that port --
         # which, for a second launch, is the PREVIOUS boot.
-        a += ["-o", "ExitOnForwardFailure=yes", "-L", f"{lport}:{rhost}:{rport}"]
+        a += ["-o", "ExitOnForwardFailure=yes",
+              "-L", f"{lport}:{bracket(rhost)}:{rport}"]
     return a
 
 
@@ -923,6 +969,175 @@ def _problems(cfg: Config, chk: dict) -> str:
     return "\n".join(lines)
 
 
+def _tunnel_port_busy(port: int) -> str:
+    """Why ssh cannot bind this port here, or "" when it can.
+
+    NAMED FOR WHAT IT RETURNS. As `_tunnel_port_free` the call site read
+    `busy = _tunnel_port_free(port)`, which says the opposite of what it means.
+
+    ASKED BEFORE ANYTHING IS SENT. Without it, a second launch against a busy port does
+    the whole session -- check, sweep, a run directory, the tree, and up to 422 MiB of
+    image -- and only then hits "bind [127.0.0.1]:5900: Address already in use" from ssh,
+    reports 255, and by then has already printed cheerful instructions to point a viewer
+    at the port belonging to the OTHER boot.
+
+    SO_REUSEADDR because ssh sets it too: the question is what ssh will manage, not what
+    this process would manage with different options. A refused IPv6 bind only counts
+    when it is EADDRINUSE -- a machine with IPv6 switched off is not a busy port.
+    """
+    for family, addr in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+        try:
+            sock = socket.socket(family, socket.SOCK_STREAM)
+        except OSError:
+            continue
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((addr, port))
+        except OSError as e:
+            if family == socket.AF_INET6 and e.errno != errno.EADDRINUSE:
+                continue
+            return f"{bracket(addr)}:{port} is already in use here ({e.strerror})"
+        finally:
+            sock.close()
+    return ""
+
+
+def launch(cfg: Config, a, make_argv) -> int:
+    """tools/qemu/boot.py, run on the boot host with a window onto it from here.
+
+    TWO CONNECTIONS, DELIBERATELY. The control session opened below owns the run: it holds
+    the lock, sends the heartbeat and removes the directory afterwards. The interactive
+    ssh is a second connection carrying a terminal and, for a loopback VNC address, the
+    tunnel. So if the interactive half dies -- a closed laptop, a dropped link -- the
+    control half notices in the ordinary way and the guest goes down with it, rather than
+    a qemu being left running on somebody else's machine with a VNC port open.
+
+    Unlike `kitchen test`, nothing is copied back: this mode asserts nothing and produces
+    no evidence. A person looked at it, which is the whole point, and that does not fit in
+    a file.
+
+    `make_argv(iso_remote, ip, port)` is the caller's -- it owns the parser that produced
+    the command line, and this module has no business knowing what boot.py's options mean.
+    """
+    # boot.py's own import of this module means the rules are shared, so the address has
+    # already been resolved and any public one confirmed before we get here.
+    ip, port = a.vnc_ip, a.vnc_port
+    tunnelled = vnc_is_loopback(ip) and a.display == "vnc"
+    if tunnelled:
+        busy = _tunnel_port_busy(port)
+        if busy:
+            raise Unavailable(
+                f"the VNC tunnel cannot be opened: {busy}.\n"
+                f"  Another boot is probably already using it -- its viewer is on that "
+                f"port, so taking it would point yours at the wrong guest.\n"
+                f"  Quit that one, or pick another port:  "
+                f"--vnc-addr {bracket(ip)}:{port + 1}")
+    with Session(cfg, echo=_echo) as s:
+        chk = s.check(uefi=(a.firmware == "uefi"))
+        if not chk.get("ok"):
+            raise Unavailable(_problems(cfg, chk))
+        f = chk.get("facts", {})
+        _echo(f"  {os.path.basename(a.iso)} -> {cfg.host}"
+              f"  ({f.get('node', cfg.host)}, qemu {f.get('qemu', '?')}, "
+              f"{'KVM' if f.get('kvm') else 'no KVM'})")
+        s.sweep()
+        run = s.open_run()
+        run_dir = run["dir"]
+        n = s.push_tree()
+        iso_remote, sent = s.push_iso(a.iso)
+        _echo(f"  {D}sent {n} files"
+              + (f" and {sent // 1048576} MiB of image" if sent
+                 else " (image already cached)") + O)
+
+        # The command line is built by the caller, because the caller owns the parser
+        # that produced it: this module knows about ssh and run directories, not about
+        # what boot.py's options mean.
+        args = make_argv(iso_remote, ip, port)
+        # `cd <base>/disks`, so a relative --disk path lands in a directory that belongs
+        # to this tool and survives `boot-host clean` -- rather than in the login
+        # directory of the account on that machine, which is not ours to litter.
+        # KITCHEN_BOOT_HOST_AGENT: the copy over there is nested inside this session, so
+        # it must not look for a boot host of its own AND must not repeat the advice this
+        # side has already given -- it was printing "ssh -L 5900:127.0.0.1:5900 hydra",
+        # telling the reader to build the tunnel they are already looking through.
+        remote = (f"cd {shlex.quote(cfg.base)}/disks && "
+                  f"KITCHEN_BOOT_HOST=local KITCHEN_BOOT_HOST_AGENT=1 exec python3 "
+                  f"{shlex.quote(run_dir)}/tree/tools/qemu/boot.py "
+                  + " ".join(shlex.quote(x) for x in args))
+        tunnel = (port, ip, port) if tunnelled else None
+        if a.display != "vnc":
+            # Nothing is being served, so there is nowhere to point a viewer. The earlier
+            # version said "vncviewer <addr> (direct)" for --display none, which is advice
+            # to connect to a socket that was never opened.
+            _echo(f"\n  {D}--display {a.display}: no VNC server, the terminal below is "
+                  f"the guest{O}")
+        elif tunnelled:
+            _echo(f"\n  {B}vncviewer localhost:{port}{O}  "
+                  f"{D}(tunnelled to {bracket(ip)}:{port} on {cfg.host} "
+                  f"for this session){O}")
+        else:
+            _echo(f"\n  {B}vncviewer {bracket(ip)}:{port}{O}  "
+                  f"{D}(direct to {cfg.host}){O}")
+            if not vnc_is_private(ip):
+                _echo(f"  {R}that address is public and this server has no password{O}")
+        ssh = ssh_argv(cfg, tty=True, tunnel=tunnel) + ["--", cfg.host, remote]
+        # Terminal inherited: this IS the qemu monitor, and -tt gives it a pty on the far
+        # side so Ctrl-a and a hangup reach qemu exactly as they would locally.
+        rc = _interactive(ssh)
+    if rc == 255:
+        # ssh's own "something went wrong", not the guest's status. The port check above
+        # catches the common cause before any work; anything else reaching here is worth
+        # naming as a transport failure rather than passing off as a boot result.
+        _echo(f"  {R}the session to {cfg.host} ended in an ssh error{O}")
+        return EXIT_UNAVAILABLE
+    return rc
+
+
+def _interactive(argv: list) -> int:
+    """Run the interactive ssh, and do not outlive it or let it outlive us.
+
+    MEASURED, NOT ASSUMED. With a plain subprocess.call, a SIGTERM to this process left
+    behind: an ssh still listening on the local VNC port, a boot.py still running on the
+    boot host, and a qemu still booting an image out of a run directory the agent had
+    already deleted underneath it. Python's default SIGTERM ends the process without
+    unwinding, so nothing closed the child and nothing ran __exit__.
+    """
+    proc = subprocess.Popen(argv)
+    stopped = []
+
+    def forward(signum, _frame):
+        # Closing ssh is what matters: its pty hangs up, the boot host's boot.py takes
+        # the SIGHUP and passes it to qemu, which is exactly the local behaviour.
+        stopped.append(signum)
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            pass
+
+    # SIGINT is NOT forwarded and not caught. ssh -tt puts the terminal in raw mode and
+    # sends Ctrl-C to the far side as a character, so the guest gets it -- the same rule
+    # tools/qemu/boot.py applies to a local qemu.
+    previous = {}
+    for signum in (signal.SIGTERM, signal.SIGHUP):
+        previous[signum] = signal.signal(signum, forward)
+    try:
+        rc = proc.wait()
+        # ASKED FOR, NOT BROKEN. ssh exits 255 when it is terminated, so a deliberate
+        # teardown looked exactly like a transport failure and was announced as "ended in
+        # an ssh error" -- on every ordinary Ctrl-C of a remote launch. Report what was
+        # actually asked for: the shell's own convention for a process ended by a signal.
+        return 128 + stopped[0] if stopped else rc
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
 def cmd_check(cfg: Config, verbose: bool = False) -> int:
     _echo(f"{B}boot host{O}  {cfg.host}")
     _echo(f"  workdir  {cfg.base}  {D}(everything this writes lives here){O}")
@@ -1413,6 +1628,11 @@ class Agent:
         self.kill_child()
         if not self.run_dir:
             return
+        # BEFORE the directory goes, and whether or not it goes. kill_child covers what
+        # the agent itself started; this covers what a separate login session started for
+        # the same run -- the interactive launcher's qemu, which otherwise carried on
+        # booting an image out of a directory that had just been deleted.
+        _kill_orphans(self.run_dir)
         if keep:
             try:
                 open(os.path.join(self.run_dir, ".keep"), "w").close()
@@ -1449,24 +1669,34 @@ def _locked(path: str):
 
 
 def _kill_orphans(run_dir: str) -> list:
-    """Kill what this abandoned run left running -- and only that.
+    """Kill what this run left running -- and only that.
 
-    /proc/<pid>/cmdline must name the run directory. Never pkill qemu: a boot host is
-    somebody's machine, and a sweep that takes out their other virtual machines is a
-    far worse bug than a leaked guest.
+    THE RUN DIRECTORY'S PATH IS THE TEST, and it is enough: that path is unique to this
+    run, it appears in the command line of everything the run started (qemu is given the
+    image inside it, boot.py is run from the tree inside it), and it appears in nothing
+    else on the machine. Never pkill qemu: a boot host is somebody's machine, and on the
+    one this was built against that would have taken out a libvirt guest with a graphics
+    card passed through to it.
+
+    NOT ONLY THE PID FILES. `kitchen test` writes one per boot, so the pid files used to
+    be the whole story; the interactive launcher does not write any, because its guest is
+    started by a login session of its own rather than by the agent. Measured: killing the
+    driver left a qemu running out of a run directory that had already been deleted.
+    Scanning /proc covers both, and costs a few milliseconds once per session.
     """
     killed = []
-    piddir = os.path.join(run_dir, "out", "pids")
-    for pf in sorted(os.listdir(piddir)) if os.path.isdir(piddir) else []:
-        try:
-            pid = int(open(os.path.join(piddir, pf)).read().strip())
-        except (OSError, ValueError):
+    me = os.getpid()
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        if pid == me:
             continue
         try:
             with open(f"/proc/{pid}/cmdline", "rb") as f:
                 cmd = f.read().replace(b"\0", b" ").decode(errors="replace")
         except OSError:
-            continue
+            continue                               # gone, or not ours to look at
         if run_dir in cmd:
             try:
                 os.kill(pid, signal.SIGKILL)

@@ -45,7 +45,7 @@ $ tools/qemu/boot.py out/slax-boot-matrix-debian-64bit-12.2.0.iso --bios
   firmware  SeaBIOS (legacy)
   accel     TCG (no writable /dev/kvm -- 10-20x slower)
   network   e1000, user-mode
-  display   vnc on 127.0.0.1:5900 (qemu prints the real port below if taken)
+  display   vnc on 127.0.0.1:5900  (default)
 
   from your workstation:
     ssh -L 5900:127.0.0.1:5900 <kvm-host>
@@ -67,10 +67,63 @@ asks for `-accel kvm -accel tcg` and lets qemu fall back, rather than deciding f
 do not appear.
 
 It binds **127.0.0.1** on purpose. An unauthenticated VNC server on a public interface is a remote
-console for anyone who finds it; tunnelling costs one flag. Override with `--vnc-addr` only if you
-know why. QEMU is given `to=99`, so if 5900 is busy it walks up and prints the port it took — trust
-its line over the banner's. Measured: with one instance on 5900 and another VNC server already on
-5901, a second instance printed `VNC server running on …:5902`.
+console for anyone who finds it; tunnelling costs one flag. `--vnc-addr IP[:PORT]` overrides it, and
+anything outside `127.0.0.0/8`, `::1`, `10/8`, `172.16/12`, `192.168/16` and `fc00::/7` is **refused
+unless you also pass `--vnc-public`** — after which every launch says `PUBLIC ADDRESS` out loud.
+An address that is private but routable, such as a docker bridge or a LAN address, is accepted
+without ceremony and the banner tells you to connect to it directly rather than to build a tunnel
+to somewhere you can already reach.
+
+**The port is the one you asked for, and there is no walk-up.** QEMU used to be given `to=99`, so a
+busy 5900 became 5901 and qemu printed the port it took. That is a good answer for someone reading
+the terminal and a wrong one for everything else: with a [boot host](boot-host.md) the ssh tunnel is
+built for one port *before* qemu starts, so a walk-up leaves the viewer connected to a tunnel that
+reaches nothing — or, on a second launch, reaches the previous boot, which looks like it worked. A
+busy port now fails and says which one.
+
+`--vnc-addr` takes a port, not a display number, and refuses one below 5900: qemu's VNC server
+listens on `5900 + display`, so `-vnc 127.0.0.1:5900` would bind port 11800. The conversion happens
+where qemu is called, once.
+
+**IPv6 works, and must be bracketed** — `[::1]:5900`, `[fd00::1]:5902`. An unbracketed literal is
+refused rather than guessed at, because `fe80::1:5900` reads as "`fe80::1`, port 5900" to a person
+and is *also* a valid address in its own right: accepting it bare would silently bind a different
+machine. `::1` and `fc00::/7` count as private; a link-local `fe80::` address does not, because
+reaching one needs a zone index this does not carry, so it asks for `--vnc-public` like any other
+address it cannot vouch for. Verified end to end against a KVM host: qemu bound `[::1]:5900`, the
+tunnel carried it, and `vncviewer localhost:5900` reached the guest.
+
+## Booting on a machine that has KVM
+
+With a [`boot-host.ini`](boot-host.md), the launcher runs qemu **there** and brings the window
+here. The image is sent (once per content), the guest starts on that machine, and the VNC server it
+binds is reached over an ssh tunnel that lasts exactly as long as the session:
+
+```console
+$ tools/qemu/boot.py out/slax-boot-matrix-debian-64bit-12.2.0.iso --bios
+  slax-boot-matrix-debian-64bit-12.2.0.iso -> kvmbox  (kvmbox, qemu 8.2.2, KVM)
+  sent 301 files (image already cached)
+
+  vncviewer localhost:5900  (tunnelled to 127.0.0.1:5900 on kvmbox for this session)
+```
+
+The terminal is still the qemu monitor — `-tt` gives the far side a pty, so `Ctrl-a c`, `Ctrl-a x`
+and `Ctrl-C` behave exactly as they do locally. `--local` boots here instead.
+
+**The guest does not outlive the launcher.** Two connections are used: a control session that owns
+the run directory and sends a heartbeat, and the interactive one carrying the terminal and the
+tunnel. Killing the launcher — with `SIGTERM` or with `SIGKILL` — takes down the local listener, the
+remote `boot.py` and the guest, and removes the run directory. Both were measured; before the
+control session learned to kill by run directory rather than only by pid file, a `SIGKILL` left a
+qemu running out of a directory that had already been deleted.
+
+A relative `--disk` path lands in `<scratch>/boot-host/disks/` on that machine, which
+`kitchen boot-host clean` never touches. Paths other than the image are paths over there.
+
+Starting a boot on a port already in use is refused **before anything is sent**, in about a tenth of
+a second, naming the port and suggesting the next one. That is not only about a second launch: the
+dev container this was built in already runs its own VNC desktop on 5901, and a viewer pointed at a
+port somebody else owns answers `RFB 003.008` quite happily — it looks like it worked.
 
 With `vnc`, `gtk` or `sdl` the pointer is a USB tablet (`--no-tablet` removes it, `--tablet` adds it
 to the others). A VNC client sends absolute positions, which a tablet takes as they are; through a
@@ -392,7 +445,7 @@ qemu-system-x86_64 \
     -drive if=none,id=iso,media=cdrom,readonly=on,format=raw,file=out/slax-boot-matrix-debian-64bit-12.2.0.iso \
     -device ide-cd,bus=ide.1,unit=0,drive=iso,bootindex=0 \
     -nic user,model=e1000 \
-    -vga std -vnc 127.0.0.1:0,to=99 -device usb-tablet,bus=xhci.0 \
+    -vga std -vnc 127.0.0.1:0 -device usb-tablet,bus=xhci.0 \
     -serial mon:stdio
 ```
 
@@ -480,7 +533,9 @@ them, and instead lists what the machine that runs its commands will need.
 | `--disk-create qcow2\|raw\|ext4` | how a missing disk is created, default `qcow2` |
 | `--boot-disk` | boot the first disk rather than the ISO |
 | `--display vnc\|curses\|none\|gtk\|sdl` | default `vnc` |
-| `--vnc-addr ADDR` | default `127.0.0.1` |
+| `--vnc-addr IP[:PORT]` | where the VNC server listens **on the machine running qemu**; default `127.0.0.1:5900`, or `boot-host.ini`'s `vnc`. An IP literal, bracketed if v6 |
+| `--vnc-public` | confirm a `--vnc-addr` outside the private ranges; refused without it |
+| `--local` | boot here even if `boot-host.ini` names a machine with KVM |
 | `--vga std\|virtio\|cirrus\|vmware\|none` | video card, default `std` |
 | `--serial stdio\|vc\|pty\|none\|file:PATH` | default `stdio`, shared with the monitor |
 | `--tablet`, `--no-tablet` | USB tablet; default on for `vnc`, `gtk` and `sdl` |

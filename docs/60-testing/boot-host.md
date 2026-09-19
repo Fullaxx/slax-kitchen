@@ -25,11 +25,10 @@ boot kernel: slax-boot-matrix-debian-64bit-12.2.0.iso   (KVM)
 
 Nothing else changes and nothing else knows: [`kitchen test`](../90-reference/cli.md) is
 the one funnel every boot goes through, so `kitchen build`'s profile tests and
-[`ci/tier-c.sh`](tier-c.md) follow it there without a line of their own. The exception is
-`--structure`, which reads the image rather than booting it and stays here.
-
-> [The interactive launcher](qemu.md) does not use the boot host yet — `boot.py` and its
-> VNC rules are the next change. It still boots locally.
+[`ci/tier-c.sh`](tier-c.md) follow it there without a line of their own, and so does
+[the interactive launcher](qemu.md), which brings its VNC window back over an ssh tunnel.
+The exception is `--structure`, which reads the image rather than booting it and stays
+here.
 
 ## Setting one up
 
@@ -60,7 +59,7 @@ scratch = <absolute path on that host>
 |---|---|
 | `host` | **required.** A hostname, an IP, or an alias from your `~/.ssh/config` — which is where a username, port or identity file belongs, because ssh already reads it. |
 | `scratch` | **required.** An absolute path on that machine this account can write. Everything lives under `<scratch>/boot-host/`; nothing outside it is touched. |
-| `vnc` | `IP[:PORT]` the interactive launcher's VNC server binds there. Default `127.0.0.1:5900`, reached through an ssh tunnel. |
+| `vnc` | `IP[:PORT]` the interactive launcher's VNC server binds there. Default `127.0.0.1:5900`, reached through an ssh tunnel. An IP literal, never a name; IPv6 must be bracketed (`[::1]:5900`). The port is a port, not a display number, and cannot be below 5900 — qemu listens on `5900 + display`. |
 | `vnc_public` | `yes` to confirm a `vnc` outside the private ranges. Required, because that server has no password. |
 
 [`boot-host.example.ini`](../../boot-host.example.ini) is the committed template and names
@@ -224,6 +223,8 @@ Every refusal names what to go and do. The ones worth knowing in advance:
 | `is in group kvm ... but this session was not granted it` | the group was added after the session started. Same fix, without the `usermod`. |
 | `scratch is N characters and the longest that works is M` | qemu's QMP socket lives under it and a unix socket path stops at 108 bytes. Choose a shorter path. |
 | `vnc = <addr> is NOT a private address` | that server has no password. Add `vnc_public = yes` if you mean it. |
+| `write an IPv6 address in brackets` | `fe80::1:5900` is both "`fe80::1` port 5900" and a valid address on its own. Write `[fe80::1]:5900`. |
+| `the VNC tunnel cannot be opened: ... already in use` | another launch holds that port; its viewer is on it. Quit that one, or `--vnc-addr <ip>:<port+1>`. |
 
 ## See also
 
