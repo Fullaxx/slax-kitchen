@@ -202,9 +202,15 @@ Everything else is removed, including two things that used to leak: the QMP sock
 directory (27 stale `/tmp/qb-*` had accumulated in one container, 7 on a build host) and
 the 540 KB OVMF variables copy each UEFI run wrote into the evidence directory.
 
-**And the cleanup can fail.** `ci/tier-c.sh` counts `/tmp/qb-*` and its own scratch before
+**And the cleanup can fail.** `ci/tier-c.sh` counts `qb-*` and its own scratch before
 and after, and exits non-zero if the run leaked. A cleanup nobody checks is the same
 defect as a check that cannot fail.
+
+It counts where the harness puts them. That is Python's temporary directory, so `$TMPDIR` if it
+is set, not `/tmp` whatever happens. It used to count `/tmp/qb-*`, so with `TMPDIR` set anywhere
+else it compared two counts of nothing and printed "clean" over a real leak.
+[`tests/unit/test_tier_c_run.py`](../../tests/unit/test_tier_c_run.py) leaks one there on
+purpose and requires the run to fail.
 
 There is a `trap`, which matters more than it looks: this is normally driven over ssh, and
 a dropped connection would otherwise leave a live QEMU behind. It kills only pids this run

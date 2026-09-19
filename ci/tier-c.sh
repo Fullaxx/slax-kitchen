@@ -171,7 +171,15 @@ cleanup() {
 trap 'cleanup' EXIT INT TERM
 
 # ------------------------------------------------------- what is here already ----
-QB_BEFORE=$(ls -d /tmp/qb-* 2>/dev/null | wc -l | tr -d ' ')
+# WHERE THE HARNESS PUTS THEM, which is not necessarily /tmp. qemu_boot.py makes its qmp
+# socket directory with tempfile.mkdtemp(prefix="qb-"), and tempfile honours $TMPDIR, then
+# $TEMP and $TMP. This counted /tmp/qb-* regardless, so with any of those pointing elsewhere
+# it compared two counts of nothing and printed "clean" over a real leak --
+# tests/unit/test_tier_c_run.py reproduces exactly that. Asking Python is the one way to
+# name the directory Python will choose.
+QB_DIR=$(python3 -c 'import tempfile; print(tempfile.gettempdir())') \
+    || die "python3 could not name its temporary directory, so leaks cannot be counted"
+QB_BEFORE=$(ls -d "$QB_DIR"/qb-* 2>/dev/null | wc -l | tr -d ' ')
 OUT_BEFORE=$(du -sk out 2>/dev/null | cut -f1)
 
 say ""
@@ -288,14 +296,14 @@ PY
 if [ "$KEEP" != 1 ] && [ "$rc" = 0 ]; then
     rm -rf "$OUT/perch"
 fi
-QB_AFTER=$(ls -d /tmp/qb-* 2>/dev/null | wc -l | tr -d ' ')
+QB_AFTER=$(ls -d "$QB_DIR"/qb-* 2>/dev/null | wc -l | tr -d ' ')
 say ""
 if [ "$QB_AFTER" -gt "$QB_BEFORE" ]; then
-    say "${R}LEAK${O} /tmp/qb-* went from $QB_BEFORE to $QB_AFTER: the harness left"
+    say "${R}LEAK${O} $QB_DIR/qb-* went from $QB_BEFORE to $QB_AFTER: the harness left"
     say "     qmp socket directories behind."
     rc=1
 else
-    say "${G}clean${O} no qmp socket directories leaked (still $QB_AFTER)"
+    say "${G}clean${O} no qmp socket directories leaked in $QB_DIR (still $QB_AFTER)"
 fi
 if [ "$KEEP" = 1 ]; then
     say "${Y}kept${O}  $OUT (--keep)"
