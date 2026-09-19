@@ -5,6 +5,15 @@
 *.DNC.md
 
 # ---------------------------------------------------------------------------
+# Your boot host. Names a machine, an account's scratch path and a VNC address —
+# all of them yours, none of them anyone else's business. The committed template is
+# boot-host.example.ini; this is the copy you fill in.
+# Also hard-rejected by the pre-commit gate (ci/checks/10-no-dnc.sh), because a fork
+# that committed one would send every cloner's ISOs to the fork author's machine.
+# ---------------------------------------------------------------------------
+/boot-host.ini
+
+# ---------------------------------------------------------------------------
 # Base ISOs and build artifacts. NEVER commit these.
 # `isos/` is a download cache populated by `kitchen fetch`.
 # Also hard-rejected by the pre-commit gate (ci/checks/00-no-binaries.sh).

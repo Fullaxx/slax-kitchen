@@ -76,6 +76,30 @@ three markers in the serial log. `--expect STRING` adds your own requirements, r
 with the [`testkit`](../50-cookbook/testkit.md) recipe, which prints facts about the assembled
 union just before `change_root`, and a structural claim becomes a boot assertion.
 
+## `boot-host [check|clean|show]` — the machine boot tests run on
+
+A `boot-host.ini` in the repository root names a machine with KVM to run the boot modes
+above on, with the evidence landing here as usual. `--structure` is never sent: it reads
+the image, and the image is already here.
+
+```sh
+cp boot-host.example.ini boot-host.ini && chmod 600 boot-host.ini
+./kitchen boot-host check       # can it run the tests? names anything missing
+./kitchen boot-host clean       # remove cached images, finished runs and old agents
+./kitchen boot-host show        # what the file says, without connecting
+```
+
+**`kitchen test` does not consult it yet** — the hook that routes the boot modes through it
+is the next change. Today the mechanism is reachable through `kitchen boot-host` and through
+`lib/boot_host.py test` directly.
+
+The file is gitignored and refused by the commit gates, because it names a machine that
+would then receive every cloner's images. A configured host that cannot be used **fails the
+command** — exit 2 for a configuration this will not act on, exit 3 for a host it could not
+reach or that is missing something — and never falls back to a local boot, which would turn
+a broken ssh key into the symptom "my tests got slower". `KITCHEN_BOOT_HOST=local` boots
+here regardless. See [the boot host](../60-testing/boot-host.md).
+
 ## `unpack <iso> [-o DIR]`
 
 Explodes an ISO into `DIR/iso` (default `work/`) using xorriso's osirrox mode, which preserves Rock

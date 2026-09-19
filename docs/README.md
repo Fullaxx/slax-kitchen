@@ -55,7 +55,7 @@ container, which is the environment the measurements in these pages were taken o
 | `30-inventory/` | [Software inventory](30-inventory/) + [known upstream issues](30-inventory/known-upstream-bugs.md) | **current** |
 | `40-workflow/` | [How to change an ISO](40-workflow/): tools, unpack, edit, repack, write to USB | **current** |
 | `50-cookbook/` | [35 recipes](50-cookbook/), incl. [uefi-bootable](50-cookbook/uefi-bootable.md) and [firmware-refresh](50-cookbook/firmware-refresh.md) | good |
-| `60-testing/` | [CI](60-testing/ci.md) · [Tier C](60-testing/tier-c.md) · [QEMU by hand](60-testing/qemu.md) | **current** |
+| `60-testing/` | [CI](60-testing/ci.md) · [Tier C](60-testing/tier-c.md) · [QEMU by hand](60-testing/qemu.md) · [the boot host](60-testing/boot-host.md) | **current** |
 | `70-compat/` | [Fingerprints and `kitchen probe`](70-compat/fingerprints.md) | partial |
 | `90-reference/` | [CLI](90-reference/cli.md) · [all 23 verbs](90-reference/verbs.md) · profile format | partial |
 

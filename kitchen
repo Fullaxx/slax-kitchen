@@ -59,6 +59,7 @@ ${B}COMMANDS${O}
   pack [-o FILE|DIR]         rebuild an ISO from a work tree      (default: ./out/<name>-custom.iso)
   build <profile>            unpack -> apply -> pack -> test, from one profile
   test <iso> [--structure] [--kernel] [--bios] [--uefi] [--usb] [--persistence]
+  boot-host [check|clean]    the machine boot tests run on (see boot-host.example.ini)
   shell <bundle|work>        chroot into a bundle for exploration
   diff <isoA> <isoB>         structural + per-file diff
   sources <iso>              what is in a built ISO, and where each part's source lives
@@ -539,6 +540,7 @@ H
 help_for() {
     case "$1" in
       unpack|pack|build|test|doctor|selftest|version) usage_cmd "$1" ;;
+      boot-host)           exec python3 "$REPO_ROOT/lib/boot_host.py" --help ;;
       probe|apply|validate|fetch|fingerprint) exec "$REPO_ROOT/lib/$1.py" --help ;;
       status|diff|shell|sources) exec python3 "$REPO_ROOT/lib/$1.py" --help ;;
       upstream-diff)       exec python3 "$REPO_ROOT/lib/upstream_diff.py" --help ;;
@@ -569,6 +571,7 @@ case "$cmd" in
     pack)          kitchen_pack "$@" ;;
     build)         kitchen_build "$@" ;;
     test)          kitchen_test "$@" ;;
+    boot-host)     python3 "$REPO_ROOT/lib/boot_host.py" "$@" ;;
     status)        python3 "$REPO_ROOT/lib/status.py" "$@" ;;
     diff)          python3 "$REPO_ROOT/lib/diff.py" "$@" ;;
     sources)       python3 "$REPO_ROOT/lib/sources.py" "$@" ;;
