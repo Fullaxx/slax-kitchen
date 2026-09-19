@@ -54,6 +54,10 @@ boot-info-table consistency, squashfs parameters on every bundle, and required f
 It expects the volume id `slax` unless `--volid` says otherwise; `kitchen build` passes whatever the
 profile's recipes asked `pack` for, read through the same hint reader `pack` uses.
 
+The required files are found in the same listing `diff` and `sources` use, by exact path. An image
+whose files cannot be listed gets one failure saying so, not five claiming the kernel and bootloader
+are missing. An image with no `/slax/boot` gets one failure saying it is not a Slax image.
+
 `--bios` / `--uefi` boot the ISO in QEMU and capture a serial log plus a screenshot into
 `<iso-dir>/boot-tests/`. Without `/dev/kvm` these run under TCG and are slow; the command says so
 rather than appearing to hang.
@@ -295,6 +299,9 @@ $ kitchen diff isos/slax-64bit-debian-12.2.0.iso out/custom.iso
 ```
 
 Exit status is **0 when identical, 1 when different**, like `diff(1)`, so it drops into a script.
+It is **2 when an image cannot be listed**. xorriso does not always say so itself: 1.5.6 lists a
+file that is not an ISO as `/` alone and exits 0. So a listing with no files in it is refused, where
+it used to diff as an empty image, with every file of the other reported removed.
 
 **Nothing is extracted.** xorriso reports each file's start LBA and size, so content hashes come
 from reading those extents straight out of the image — comparing two 416 MiB ISOs takes about two
@@ -371,7 +378,12 @@ way the isohybrid MBR does. So is compiled code copied in that way, committed or
 nothing records its source.
 
 Exit status: **0** when everything is classified, **1** when anything is unresolved, **2** when the
-image has no provenance sidecar (it was packed by an older kitchen, or by something else).
+image has no provenance sidecar (it was packed by an older kitchen, or by something else), or when
+its files cannot be listed.
+
+That last case used to pass. Classification accounts for the files it is given, and xorriso 1.5.6
+lists a file it cannot read as an ISO as `/` alone and exits 0. So an unreadable image came out
+"unresolved 0", exit 0, under `--strict` too: a pass for an image nothing had examined.
 
 | Option | Effect |
 |---|---|

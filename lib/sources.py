@@ -1044,15 +1044,24 @@ def main(argv: list[str]) -> int:
     sources_yaml = yaml.safe_load(open(os.path.join(REPO, "compat", "sources.yaml"))) or {}
     target, info = base_target(prov, sources_yaml)
     stock = stock_index(target, os.path.join(REPO, "docs", "30-inventory", "manifests"))
-    files = iso_files(a.iso)
-    check_local_inputs(prov)
-    # Unpack the initramfs only when there is something to learn: it is not the stock one
-    # (an untouched initrfs.img is answered by its own sha256) and this target has a
-    # manifest to compare it against. Otherwise the xz is work whose result is unusable.
-    irfs = files.get("slax/boot/initrfs.img")
-    members = (initramfs_members(a.iso)
-               if irfs and stock["initramfs"]
-               and stock["files"].get("slax/boot/initrfs.img") != irfs else None)
+    # A LISTING THAT FAILED IS NOT AN IMAGE WITH NOTHING IN IT. classify() accounts for the
+    # files it is given, so an empty listing -- xorriso 1.5.6 exits 0 on a file it cannot
+    # read as an ISO -- used to come out "unresolved 0" and pass, --strict included: a
+    # pass for an image nobody had examined. diff._entries() now refuses such a listing.
+    import diff
+    try:
+        files = iso_files(a.iso)
+        check_local_inputs(prov)
+        # Unpack the initramfs only when there is something to learn: it is not the stock
+        # one (an untouched initrfs.img is answered by its own sha256) and this target has a
+        # manifest to compare it against. Otherwise the xz is work whose result is unusable.
+        irfs = files.get("slax/boot/initrfs.img")
+        members = (initramfs_members(a.iso)
+                   if irfs and stock["initramfs"]
+                   and stock["files"].get("slax/boot/initrfs.img") != irfs else None)
+    except diff.ListingError as e:
+        print(f"kitchen sources: {e} -- so nothing in it can be accounted for", file=sys.stderr)
+        return 2
     doc = classify(files, stock, prov, target, info, a.allow_dirty, a.strict,
                    initramfs=members)
     if ((prov.get("pack") or {}).get("iso") or {}).get("sha256") not in (None, _sha256(a.iso)):

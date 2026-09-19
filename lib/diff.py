@@ -40,11 +40,6 @@ SECTOR = 2048
 BIT_LEN = 64
 
 
-def _run(*args: str) -> str:
-    r = subprocess.run(args, capture_output=True, text=True)
-    return r.stdout
-
-
 def _human(n: float) -> str:
     """Bytes as something a person can compare at a glance."""
     for unit in ("B", "KiB", "MiB", "GiB"):
@@ -75,21 +70,50 @@ def parse_lsdl(line: str):
     return path, ent
 
 
+class ListingError(RuntimeError):
+    """xorriso could not list an image -- which is not the same as an image with no files."""
+
+
+def _xorriso(iso: str, action: str) -> str:
+    """One `-find / -exec <action>` pass, refused rather than returned when it failed.
+
+    The exit status alone does not say so: measured on xorriso 1.5.6, listing a file that
+    is not an ISO at all exits 0, prints no FAILURE line, and lists only `/`. So a failure
+    is a non-zero exit OR a FAILURE/SORRY line, and emptiness is judged by the caller.
+    """
+    r = subprocess.run(["xorriso", "-indev", iso, "-find", "/", "-exec", action, "--"],
+                       capture_output=True, text=True)
+    said = [ln.strip() for ln in r.stderr.splitlines() if "FAILURE" in ln or "SORRY" in ln]
+    if r.returncode != 0 or said:
+        raise ListingError(f"xorriso could not list {os.path.basename(iso)}: "
+                           + (said[0] if said else f"it exited {r.returncode}"))
+    return r.stdout
+
+
 def _entries(iso: str) -> dict:
     """path -> dict(type, mode, size, lba). One xorriso pass for each of the two facts.
 
     `lsdl` gives type/mode/size for everything including directories and symlinks;
     `report_lba` gives the extent, and only for files. Directories have no extent of
     their own worth comparing, so they carry lba=None and are compared by existence.
+
+    RAISES ListingError rather than returning a listing nobody can trust. This returned
+    whatever parsed -- so a listing that failed read as an image with no files, and
+    `kitchen sources --strict`, which accounts for the files it is given, passed an image
+    it had examined none of: "unresolved 0", exit 0. An image with no regular file at all
+    is refused the same way; no image this toolkit reads is one.
     """
     out: dict = {}
-    for line in _run("xorriso", "-indev", iso, "-find", "/", "-exec", "lsdl", "--").splitlines():
+    for line in _xorriso(iso, "lsdl").splitlines():
         parsed = parse_lsdl(line)
         if parsed:
             path, ent = parsed
             out[path] = ent
+    if not any(e["type"] == "file" for e in out.values()):
+        raise ListingError(f"xorriso listed no files in {os.path.basename(iso)}: "
+                           f"it could not be read, or it is not an ISO image")
 
-    lba_out = _run("xorriso", "-indev", iso, "-find", "/", "-exec", "report_lba", "--")
+    lba_out = _xorriso(iso, "report_lba")
     for line in lba_out.splitlines():
         if not line.startswith("File data lba:"):
             continue
@@ -150,6 +174,9 @@ def diff(a: str, b: str, show_bundles: bool = False, limit: int = 20) -> int:
         if not os.path.isfile(p):
             print(f"no such file: {p}", file=sys.stderr)
             return 2
+    # Listed before anything is printed, so an image that cannot be listed is refused
+    # outright rather than halfway through a report about it.
+    ea, eb = _entries(a), _entries(b)
 
     print(f"diff  {a}\n   -> {b}\n")
 
@@ -208,7 +235,6 @@ def diff(a: str, b: str, show_bundles: bool = False, limit: int = 20) -> int:
             print(f"  {'boot' if i == 0 else '':<11} {f:<15} {va} -> {vb}")
 
     # --- files ------------------------------------------------------------------
-    ea, eb = _entries(a), _entries(b)
     _hash_all(a, ea)
     _hash_all(b, eb)
 
@@ -308,7 +334,13 @@ def main(argv: list[str]) -> int:
                     help="max changed paths to print (default 20)")
     args = ap.parse_args(argv[1:])
     need.require(["xorriso"] + (["unsquashfs"] if args.bundles else []), "kitchen diff")
-    return diff(args.a, args.b, args.bundles, args.limit)
+    try:
+        return diff(args.a, args.b, args.bundles, args.limit)
+    except ListingError as e:
+        # An image that could not be listed used to diff as an image with no files --
+        # every file of the other reported removed, or added.
+        print(f"kitchen diff: {e}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

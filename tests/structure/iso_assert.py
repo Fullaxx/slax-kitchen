@@ -15,6 +15,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import need  # noqa: E402
+# By these names, not `import diff`: main() has a local `diff` of its own.
+from diff import ListingError, _entries as image_entries  # noqa: E402
 from isoparse import IsoReader  # noqa: E402
 
 # Every stock bundle on all four reference ISOs has exactly these parameters, and so must
@@ -130,12 +132,16 @@ def main(argv: list[str]) -> int:
                 "; ".join(bad[:2]))
 
         # --- required files ------------------------------------------------
-        present = {n for n, _s in r_listdir(a.iso, "/slax/boot")}
-        for req in REQUIRED:
-            t.check(os.path.basename(req) in present, f"{req} present")
-        for extra in a.require:
-            found = os.path.basename(extra) in present or _iso_has(a.iso, extra)
-            t.check(found, f"{extra} present")
+        # The listing `kitchen diff` and `kitchen sources` use, which refuses one it cannot
+        # trust. This had its own `xorriso -lsl` and regex, ignoring the exit status: a
+        # listing that parsed to nothing reported the kernel, the initramfs and the
+        # bootloader missing from an image that held all three.
+        try:
+            paths = set(image_entries(a.iso))
+        except ListingError as e:
+            t.check(False, "the image's files can be listed", str(e))
+        else:
+            check_files(t, paths, a.require)
 
     if a.max_size_mib:
         mib = os.path.getsize(a.iso) / 1048576
@@ -145,24 +151,24 @@ def main(argv: list[str]) -> int:
     return 1 if t.fail else 0
 
 
-def r_listdir(iso: str, path: str) -> list[tuple[str, int]]:
-    import re
-    import subprocess
-    out = subprocess.run(["xorriso", "-indev", iso, "-lsl", path + "/", "--"],
-                         capture_output=True, text=True).stdout
-    res = []
-    for line in out.splitlines():
-        m = re.match(r"^[-d]\S+\s+\d+\s+\S+\s+\S+\s+(\d+)\s+.*'(.+)'$", line.strip())
-        if m:
-            res.append((m.group(2), int(m.group(1))))
-    return res
+def check_files(t: Asserter, paths: set, extras: list) -> None:
+    """The required files, and any --require, by exact path in the image's listing.
 
+    EXACT PATHS. --require compared only the basename, and against /slax/boot's listing,
+    so `--require /EFI/BOOT/isolinux.cfg` passed on an image with no /EFI at all, because
+    /slax/boot has an isolinux.cfg.
 
-def _iso_has(iso: str, path: str) -> bool:
-    import subprocess
-    r = subprocess.run(["xorriso", "-indev", iso, "-lsl", path, "--"],
-                       capture_output=True, text=True)
-    return "FAILURE" not in r.stderr and bool(r.stdout.strip())
+    ONE FAILURE FOR ONE FACT. Without /slax/boot this is not a Slax image, and checking its
+    five files would only restate that five times as five false specifics.
+    """
+    if "/slax/boot" not in paths:
+        t.check(False, "/slax/boot is in the image",
+                "it is not there -- this is not a Slax image, so its files were not checked")
+        return
+    for req in REQUIRED:
+        t.check("/" + req in paths, f"{req} present")
+    for extra in extras:
+        t.check("/" + extra.lstrip("/") in paths, f"{extra} present")
 
 
 if __name__ == "__main__":
