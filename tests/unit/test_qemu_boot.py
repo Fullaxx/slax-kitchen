@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for the boot harness's wait logic.
+"""Unit tests for the boot harness's wait logic, and for what one boot's ledger row records.
 
 `_wait` used to be `time.sleep(seconds)`. That made `--seconds` not a timeout but a bill:
 CI paid 240 + 120 + 120 = 480 s per run regardless of what the guest did, and the duration
@@ -13,11 +13,13 @@ green and do it faster.
 Seconds of real time, not milliseconds, because the thing under test is a clock.
 """
 import importlib.util
+import json
 import os
 import sys
 import tempfile
 import threading
 import time
+import types
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location(
@@ -105,6 +107,44 @@ def test_a_missing_serial_file_is_not_a_crash():
     check("waited rather than raising", took >= 1.9, True)
 
 
+def test_qemu_version_is_what_the_binary_says():
+    """Asked of the qemu that ran, so a ledger row can name it. Found by pattern rather than
+    by word position, and "unknown" -- never a guess -- when it cannot be read."""
+    d = tempfile.mkdtemp(prefix="qbver-")
+
+    def stub(name, body):
+        p = os.path.join(d, name)
+        with open(p, "w") as f:
+            f.write("#!/bin/sh\n" + body + "\n")
+        os.chmod(p, 0o755)
+        return p
+
+    check("debian's banner", qb.qemu_version(stub(
+        "a", 'echo "QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.17)"; '
+             'echo "Copyright (c) 2003-2023 Fabrice Bellard"')), "8.2.2")
+    check("a bare one", qb.qemu_version(stub("b", 'echo "QEMU emulator version 9.1.0"')), "9.1.0")
+    check("no version in it", qb.qemu_version(stub("c", 'echo "not qemu"')), "unknown")
+    check("no such binary", qb.qemu_version(os.path.join(d, "absent")), "unknown")
+
+
+def test_a_record_names_the_qemu_that_booted():
+    """The row beside `accel`: both are facts about the machine that ran the boot, and
+    ci/tier-c.sh now takes them from here rather than measuring its own."""
+    d = tempfile.mkdtemp(prefix="qbrec-")
+    iso = os.path.join(d, "slax.iso")
+    with open(iso, "w") as f:
+        f.write("x")
+    rec = os.path.join(d, "runs.jsonl")
+    a = types.SimpleNamespace(label=None, seconds=30, expect=["Live Kit done"], run_tag=None)
+    r = {"serial_text": "Live Kit done", "mode": "kernel", "iso": iso, "kvm": True,
+         "waited": 4.0, "screenshot_bytes": 0, "qemu": "8.2.2"}
+    qb.record(rec, r, a, 0, "match")
+    with open(rec) as f:
+        row = json.loads(f.read())
+    check("the row names its qemu", row.get("qemu"), "8.2.2")
+    check("...beside its accel", row.get("accel"), "kvm")
+
+
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
     # both of this file's mkdtemp() calls had no cleanup, so running this file by hand left
@@ -133,7 +173,9 @@ def main():
                    test_a_missing_expectation_still_burns_the_whole_ceiling,
                    test_a_partial_match_does_not_satisfy,
                    test_no_expectations_keeps_the_flat_sleep,
-                   test_a_missing_serial_file_is_not_a_crash]:
+                   test_a_missing_serial_file_is_not_a_crash,
+                   test_qemu_version_is_what_the_binary_says,
+                   test_a_record_names_the_qemu_that_booted]:
             fn()
         if FAILURES:
             for f in FAILURES:

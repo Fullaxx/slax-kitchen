@@ -369,6 +369,48 @@ def test_tier_c_claim_follows_the_evidence():
     shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_tier_c_claim_names_each_sitting():
+    """The ledger merges by target, so its top-level commit, date, accel and qemu describe
+    only the LAST invocation that wrote it -- and the claim used to print them as if they
+    covered every target. Two targets booted days apart, at two commits, one of them under
+    TCG, came out as one sentence naming the last run's commit and qemu for both.
+
+    Rows carry their own commit, date, accel and qemu. The claim reads those, and falls
+    back to the top level only for a row that predates them -- which is what
+    test_tier_c_claim_follows_the_evidence's fixture is, and why its sentence is unchanged.
+    """
+    def rows(target, commit, date, accel, qemu):
+        return [{"accel": accel, "golden": "match", "iso_bytes": 1, "iso_name": "slax.iso",
+                 "markers": ["Live Kit done"], "missing": [], "path": path,
+                 "profile": "boot-matrix", "result": "pass", "target": target,
+                 "commit": commit, "date": date, "qemu": qemu}
+                for path in ("bios", "uefi")]
+    ledger = {
+        # What tier-c.sh leaves at the top after its LAST invocation: the slackware one.
+        "kitchen": "0.1.0-dev", "commit": "def5678", "qemu": "9.1.0", "accel": "tcg",
+        "date": "2026-09-18",
+        "runs": rows("debian-64bit-12.2.0", "abc1234", "2026-09-16", "kvm", "8.2.2")
+        + rows("slackware-64bit-15.0.4", "def5678", "2026-09-18", "tcg", "9.1.0"),
+    }
+    tmp = tempfile.mkdtemp(prefix="tierc-")
+    try:
+        path = os.path.join(tmp, "tier-c.json")
+        with open(path, "w") as fh:
+            json.dump(ledger, fh)
+        out = notes("v9.9.9", env={"TIERC_LEDGER": path})
+        check_in("says there were two runs", "in 2 separate runs", out)
+        check_in("the debian run as it was",
+                 "`debian-64bit-12.2.0` at commit `abc1234` on 2026-09-16, under KVM with "
+                 "QEMU 8.2.2", out)
+        check_in("the slackware run as it was",
+                 "`slackware-64bit-15.0.4` at commit `def5678` on 2026-09-18, under TCG with "
+                 "QEMU 9.1.0", out)
+        check("never one commit for both",
+              "`slackware-64bit-15.0.4`** at commit `def5678`" in out, False)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_notes_never_truncate_silently():
     """A changelog cut at the cap with no marker is quiet data loss."""
     with tempfile.TemporaryDirectory() as tmp:

@@ -20,8 +20,9 @@
 # facts about the artifact rather than about the machine that booted it:
 #
 #   the ledger   one row per boot: which path, image name and size, which markers were
-#                seen, how long it took. ci/release-notes.sh reads it, so the release
-#                claim about Tier C stops being a hardcoded sentence.
+#                seen, how long it took, and the accelerator and qemu version it booted
+#                under -- what it ran on, never which machine. ci/release-notes.sh reads
+#                it, so the release claim about Tier C stops being a hardcoded sentence.
 #   the goldens  the testkit block each boot produced. ONE golden per image, not per
 #                path, which asserts something stronger than a regression: every boot
 #                path must assemble an identical filesystem. A GRUB cmdline that drifts
@@ -204,9 +205,9 @@ for path in $PATHS; do
 done
 
 # ------------------------------------------------------------------- ledger ----
-python3 - "$JSONL" "$LEDGER" "$TARGET" "$PROFILE" "$ACCEL" <<'PY' || rc=1
+python3 - "$JSONL" "$LEDGER" "$TARGET" "$PROFILE" <<'PY' || rc=1
 import json, os, subprocess, sys, datetime
-jsonl, ledger, target, profile, accel = sys.argv[1:6]
+jsonl, ledger, target, profile = sys.argv[1:5]
 
 def sh(*a):
     try:
@@ -227,8 +228,21 @@ if not rows:
     print("  no runs recorded -- nothing to write", file=sys.stderr)
     raise SystemExit(1)
 
-qemu = sh("qemu-system-x86_64", "--version").splitlines()
-qemu = qemu[0].split()[3] if qemu and len(qemu[0].split()) > 3 else "unknown"
+# THE MACHINE THAT BOOTED, read from what it wrote. The accelerator and the qemu version
+# used to be measured HERE -- `-w /dev/kvm` above, and `qemu-system-x86_64 --version` on
+# this machine's PATH -- which describe the machine running this script, not necessarily
+# the one that booted. Every row carries both, from qemu_boot.py, the process that ran
+# qemu. accel is kvm only if every row of this run is: one TCG boot makes it a TCG run.
+accels = {r.get("accel") for r in rows}
+qemus = {r.get("qemu") for r in rows}
+if len(qemus) != 1 or not next(iter(qemus)) or next(iter(qemus)) == "unknown":
+    print("  refusing to write the ledger: the rows do not name one qemu version\n"
+          f"  ({', '.join(sorted(str(q) for q in qemus))}). A row without one came from a\n"
+          "  qemu_boot.py older than this script, or from a qemu that would not say.",
+          file=sys.stderr)
+    raise SystemExit(1)
+qemu = qemus.pop()
+accel = "kvm" if accels == {"kvm"} else "tcg"
 # A ledger that cannot say WHICH tree it tested is not evidence, it is a rumour. git
 # refuses a repository owned by another user ("dubious ownership"), which is exactly the
 # case when a host account boots images built inside a root-owned container clone -- and
@@ -272,7 +286,7 @@ doc = {
     "kitchen": sh("./kitchen", "version").replace("kitchen ", "").split()[0] or "unknown",
     "commit": commit,
     "qemu": qemu,
-    "accel": accel.lower(),
+    "accel": accel,
     "date": datetime.date.today().isoformat(),
     "runs": sorted(merged, key=lambda r: (r["target"], r["path"], r.get("run_tag", ""))),
 }

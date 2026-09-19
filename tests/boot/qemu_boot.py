@@ -58,6 +58,23 @@ TESTKIT_BEGIN = "### TESTKIT BEGIN"
 TESTKIT_END = "### TESTKIT END"
 
 
+def qemu_version(binary: str) -> str:
+    """What `binary --version` says it is -- "8.2.2" -- or "unknown".
+
+    Asked here, by the process that runs qemu, so a ledger row names the qemu that booted
+    it. ci/tier-c.sh used to ask instead, of whatever qemu-system-x86_64 the machine
+    running tier-c.sh had: right only while the two are one machine, and "unknown" when
+    that machine has none -- which the ledger gate let through.
+    """
+    try:
+        out = subprocess.run([binary, "--version"], capture_output=True, text=True,
+                             timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    m = re.search(r"\bversion (\d+(?:\.\d+)+)", out)
+    return m.group(1) if m else "unknown"
+
+
 def find_ovmf() -> tuple[str, str]:
     code = os.environ.get("OVMF_CODE", "")
     varsf = os.environ.get("OVMF_VARS", "")
@@ -315,9 +332,11 @@ def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
         cmd[1:1] = ["-drive", f"if=pflash,format=raw,readonly=on,file={ovmf_code}",
                     "-drive", f"if=pflash,format=raw,file={vars_copy}"]
 
+    # Asked before the guest starts, so the question never overlaps the boot being timed.
+    version = qemu_version(cmd[0])
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     result = {"iso": iso, "mode": mode, "serial": serial, "screenshot": shot,
-              "kvm": "-enable-kvm" in cmd, "died": False}
+              "kvm": "-enable-kvm" in cmd, "qemu": version, "died": False}
     try:
         try:
             q = Qmp(qmp)
@@ -394,6 +413,9 @@ def record(path: str, r: dict, a, rc: int, golden: str) -> None:
         "iso_name": os.path.basename(r["iso"]),
         "iso_bytes": os.path.getsize(r["iso"]) if os.path.exists(r["iso"]) else 0,
         "accel": "kvm" if r["kvm"] else "tcg",
+        # Beside accel, and for the same reason: both are facts about the machine that ran
+        # this boot, and this is the only process that knows them first-hand.
+        "qemu": r.get("qemu", "unknown"),
         "waited_s": round(r.get("waited", 0), 1),
         "seconds_ceiling": a.seconds,
         "markers": [w for w in a.expect if w in text],

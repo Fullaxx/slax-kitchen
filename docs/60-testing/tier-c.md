@@ -177,7 +177,7 @@ Two files, both facts about the artifact:
 
 | | |
 |---|---|
-| `tests/boot/tier-c.json` | one row per boot: path, image name and size, markers seen, duration, result. [`ci/release-notes.sh`](ci.md#releases) reads it, so a release's Tier C claim is derived rather than asserted |
+| `tests/boot/tier-c.json` | one row per boot: path, image name and size, markers seen, duration, result, and the accelerator and qemu version that booted it. [`ci/release-notes.sh`](ci.md#releases) reads it, so a release's Tier C claim is derived rather than asserted |
 | `tests/boot/golden/<profile>-<target>.testkit` | the testkit block the image produces. One per **image**, not per path |
 
 Nothing about the machine goes in either, and that is gated rather than trusted:
@@ -190,6 +190,22 @@ The ledger also refuses to be written without a commit. The first run recorded
 ("dubious ownership") — and said nothing. A ledger that cannot name the tree it tested is
 not evidence, so that is now fatal, with the `git config --global --add safe.directory`
 line printed for you.
+
+**The accelerator and the qemu version come from the rows.** `qemu_boot.py` records both beside
+the qemu it ran, because it is the only process that knows them first-hand.
+- They used to be measured by `ci/tier-c.sh` on its own machine. That was right only while
+  that machine was the one that booted, and gave "unknown" for qemu when it had none, which the
+  gate let through.
+- The top-level `accel` is `kvm` only if every row of the run is.
+- A run whose rows don't name one qemu version writes no ledger at all.
+- The gate refuses "unknown" wherever a qemu is recorded.
+
+**The release claim reads the rows too.** The ledger merges by target, so its top-level fields
+describe only the last run. The claim used to print those as if they covered every target: two
+targets booted days apart, at two commits and on two qemus, came out as one sentence with the
+last run's commit and version. It now groups targets by what their own rows say, and states one
+sentence per group. Rows written before rows carried these fields fall back to the top level,
+which is why the claim about the ledger committed today reads exactly as it did.
 
 ## Cleanup
 

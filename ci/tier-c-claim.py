@@ -19,6 +19,36 @@ ALL_TARGETS = {
 }
 
 
+def _field(run: dict, doc: dict, key: str) -> str:
+    """A run's own value, or the document's for a row written before runs carried it."""
+    value = run.get(key)
+    return value if value else doc.get(key, "")
+
+
+def sittings(doc: dict, runs: list) -> dict:
+    """Targets grouped by when and on what they ran: (commit, date, accel, qemu) -> targets.
+
+    FROM THE ROWS, not the document. The ledger merges by target, so its top-level fields
+    describe only the last invocation that wrote it -- and this used to print them as if
+    they covered every target. Four targets booted at two commits, or on two machines,
+    were one sentence naming one of each. Rows carry their own commit and date for exactly
+    this reason, and nothing here read them.
+    """
+    by_target: dict = {}
+    for r in runs:
+        by_target.setdefault(r["target"], []).append(r)
+    groups: dict = {}
+    for target in sorted(by_target):
+        rs = by_target[target]
+        key = (", ".join(sorted({_field(r, doc, "commit") for r in rs})),
+               ", ".join(sorted({_field(r, doc, "date") for r in rs})),
+               # KVM only if every boot of the target was: one TCG boot is a TCG run.
+               "kvm" if all(_field(r, doc, "accel") == "kvm" for r in rs) else "tcg",
+               ", ".join(sorted({_field(r, doc, "qemu") for r in rs})))
+        groups.setdefault(key, []).append(target)
+    return groups
+
+
 def claim(doc: dict) -> str:
     runs = doc.get("runs", [])
     if not runs:
@@ -29,12 +59,24 @@ def claim(doc: dict) -> str:
     missing = sorted(ALL_TARGETS - set(targets))
     goldens = {r.get("golden") for r in runs}
 
-    out = [
-        "**Tier C ran on {}** at commit `{}` on {}, under {} with QEMU {}: {} boots "
-        "across {}.".format(
-            ", ".join(f"`{t}`" for t in targets), doc["commit"], doc["date"],
-            doc["accel"].upper(), doc["qemu"], len(runs), ", ".join(paths))
-    ]
+    groups = sittings(doc, runs)
+    if len(groups) == 1:
+        (commit, date, accel, qemu), = groups
+        out = [
+            "**Tier C ran on {}** at commit `{}` on {}, under {} with QEMU {}: {} boots "
+            "across {}.".format(
+                ", ".join(f"`{t}`" for t in targets), commit, date, accel.upper(), qemu,
+                len(runs), ", ".join(paths))
+        ]
+    else:
+        out = [
+            "**Tier C ran on {}**, {} boots across {}, in {} separate runs: {}.".format(
+                ", ".join(f"`{t}`" for t in targets), len(runs), ", ".join(paths),
+                len(groups), "; ".join(
+                    "{} at commit `{}` on {}, under {} with QEMU {}".format(
+                        ", ".join(f"`{t}`" for t in ts), commit, date, accel.upper(), qemu)
+                    for (commit, date, accel, qemu), ts in groups.items()))
+        ]
     # Only claim the cross-path invariant when every run actually checked it. When some
     # did not -- a boot that wedges emits no testkit block at all -- say how many did
     # rather than going silent, because silence reads as "none of them were checked",

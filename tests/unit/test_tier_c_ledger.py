@@ -83,6 +83,36 @@ def test_a_separator_anywhere_is_refused_by_name():
         check(f"...and the gate names {field}", f"ledger.{field}:" in out, True)
 
 
+def test_qemu_must_name_a_version():
+    """qemu is a fact about the machine that booted, so it has to be one.
+
+    The top level recorded "unknown" whenever the machine running tier-c.sh had no qemu of
+    its own, and this gate let it through. Rows now carry their own `qemu`, from the process
+    that ran it: allowed, and held to the same rule.
+    """
+    if not os.path.isfile(LEDGER):
+        print("  tests/boot/tier-c.json absent - nothing to test against")
+        return
+    base = json.load(open(LEDGER))
+
+    doc = copy.deepcopy(base)
+    doc["runs"][0]["qemu"] = "8.2.2"
+    rc, out = run(doc)
+    check("a run may name its own qemu", rc, 0)
+
+    doc = copy.deepcopy(base)
+    doc["qemu"] = "unknown"
+    rc, out = run(doc)
+    check("an unknown qemu at the top fails", rc, 1)
+    check("...by name", "qemu: a ledger that cannot say which qemu booted" in out, True)
+
+    doc = copy.deepcopy(base)
+    doc["runs"][0]["qemu"] = "unknown"
+    rc, out = run(doc)
+    check("an unknown qemu in a run fails", rc, 1)
+    check("...by name", "runs[0].qemu:" in out, True)
+
+
 def main():
     # One box for every fixture, removed afterwards: the convention of #25.
     box = tempfile.mkdtemp(prefix="test_tier_c_ledger-")
@@ -91,6 +121,7 @@ def main():
     os.environ["TMPDIR"] = box
     try:
         test_a_separator_anywhere_is_refused_by_name()
+        test_qemu_must_name_a_version()
         if FAILURES:
             for f in FAILURES:
                 print(f"FAIL {f}", file=sys.stderr)

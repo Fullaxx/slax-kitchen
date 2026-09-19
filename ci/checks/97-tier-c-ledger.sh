@@ -33,7 +33,12 @@ RUN_KEYS = {"accel": str, "golden": str, "iso_bytes": int, "iso_name": str,
             "markers": list, "missing": list, "path": str, "profile": str,
             "result": str, "screenshot_bytes": int, "seconds_ceiling": int,
             "target": str, "waited_s": (int, float), "run_tag": str,
-            "busybox": str, "commit": str, "date": str}
+            "busybox": str, "commit": str, "date": str, "qemu": str}
+# A per-run `qemu` is not REQUIRED: rows recorded before qemu_boot.py wrote one are still
+# true, and the top-level `qemu` speaks for them. What is refused is a value that says
+# nothing -- the top level recorded "unknown" whenever tier-c.sh's machine had no qemu of
+# its own, and this gate let it through.
+UNSAID = ("", "unknown")
 REQUIRED_RUN = {"accel", "commit", "iso_bytes", "iso_name", "markers", "missing",
                 "path", "profile", "result", "target"}
 PATHS = {"bios", "uefi", "usb", "persistence", "kernel"}
@@ -66,6 +71,8 @@ if isinstance(doc.get("date"), str) and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d
     bad.append(f"date: {doc['date']!r} is not YYYY-MM-DD")
 if doc.get("commit") in ("", "unknown", None):
     bad.append("commit: a ledger that cannot say which tree it tested is not evidence")
+if doc.get("qemu") in UNSAID:
+    bad.append("qemu: a ledger that cannot say which qemu booted is not evidence")
 
 for i, r in enumerate(doc.get("runs", [])):
     where = f"runs[{i}]"
@@ -89,6 +96,8 @@ for i, r in enumerate(doc.get("runs", [])):
         bad.append(f"{where}.iso_bytes: should be a real size")
     if r.get("commit") in ("", "unknown"):
         bad.append(f"{where}.commit: a run that cannot name its tree is not evidence")
+    if "qemu" in r and r["qemu"] in UNSAID:
+        bad.append(f"{where}.qemu: a run that cannot name its qemu is not evidence")
 
 # NO SEPARATORS, ANYWHERE. Every string in a ledger is a name, a version, a boot marker or
 # one of a closed set -- an image by basename, a target, a qemu version, `match` -- so a `/`
