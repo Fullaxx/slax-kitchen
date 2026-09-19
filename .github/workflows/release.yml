@@ -77,7 +77,7 @@ jobs:
           fi
 
   # ---------------------------------------------------------------- verify --
-  # The whole of ci.yml: twelve gates, the reference container, four targets with
+  # The whole of ci.yml: every commit gate, the reference container, four targets with
   # the recipe matrix and round-trip, and the TCG boot test. Roughly 17 minutes.
   verify:
     needs: guard

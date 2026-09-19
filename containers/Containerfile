@@ -19,7 +19,7 @@
 # toolkit has: two absolute paths are hardcoded -- /usr/lib/ISOLINUX/isohdpfx.bin
 # and /usr/share/OVMF/OVMF_*_4M.fd -- and they are Debian-family spellings, which
 # rules out Fedora and Alpine but NOT Debian. CI builds both ubuntu:24.04 and
-# debian:12 and runs `doctor --strict` plus all eleven gates in each, so that is a
+# debian:12 and runs `doctor --strict` plus every commit gate in each, so that is a
 # tested claim rather than an assumption.
 #
 # The default is ubuntu:24.04 for exactly one reason: it is what `runs-on` gives
