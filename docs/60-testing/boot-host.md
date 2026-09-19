@@ -10,10 +10,9 @@ A **boot host** closes that gap. One small file says "use that machine", and the
 there with the evidence landing here, in the same place, under the same names.
 
 ```console
-$ python3 lib/boot_host.py test --iso out/slax-boot-matrix-debian-64bit-12.2.0.iso \
-      --out out/boot-tests -- --kernel
+$ ./kitchen test out/slax-boot-matrix-debian-64bit-12.2.0.iso --kernel
   slax-boot-matrix-debian-64bit-12.2.0.iso -> kvmbox  (kvmbox, qemu 8.2.2, KVM)
-  sent 300 files (image already cached), 1.2s
+  sent 301 files (image already cached), 1.2s
 * kernel boot  (direct, bypasses the bootloader)
 boot kernel: slax-boot-matrix-debian-64bit-12.2.0.iso   (KVM)
   waited     : 4s of a 60s ceiling (all expectations seen)
@@ -24,13 +23,13 @@ boot kernel: slax-boot-matrix-debian-64bit-12.2.0.iso   (KVM)
   evidence in out/boot-tests
 ```
 
-> **What is wired today.** The configuration, `kitchen boot-host`, and the driver above —
-> which is the whole mechanism, verified end to end against a real KVM host. What is *not*
-> yet wired is the hook that makes [`kitchen test`](../90-reference/cli.md) call it by
-> itself, and with it `kitchen build`'s profile tests, [`ci/tier-c.sh`](tier-c.md) and
-> [the interactive launcher](qemu.md). Until that lands, those four still boot locally.
-> This note is here because a page describing behaviour the tree does not have is the one
-> kind of error this project treats as real.
+Nothing else changes and nothing else knows: [`kitchen test`](../90-reference/cli.md) is
+the one funnel every boot goes through, so `kitchen build`'s profile tests and
+[`ci/tier-c.sh`](tier-c.md) follow it there without a line of their own. The exception is
+`--structure`, which reads the image rather than booting it and stays here.
+
+> [The interactive launcher](qemu.md) does not use the boot host yet — `boot.py` and its
+> VNC rules are the next change. It still boots locally.
 
 ## Setting one up
 
@@ -100,7 +99,10 @@ ready  boots run on kvmbox
 `KITCHEN_BOOT_HOST=local` wins over the file, for one command or for a shell:
 
 ```sh
-KITCHEN_BOOT_HOST=local ./kitchen boot-host check
+KITCHEN_BOOT_HOST=local ./kitchen test out/x.iso --kernel
+./kitchen test out/x.iso --kernel --local     # the same thing, per command
+./kitchen build example --local
+ci/tier-c.sh --local
 ```
 
 **A configured host that cannot be used fails the command.** It never quietly falls back
@@ -190,8 +192,9 @@ tool's bookkeeping.
 | 2 | the configuration was refused, before anything connected |
 | 3 | it could not be run: unreachable, the pre-run check failed, or the session was lost |
 
-On 2 or 3 nothing ran. Once the hook lands, `ci/tier-c.sh` will stop on either
-**without writing a ledger**, because a ledger row is a claim about a boot that happened.
+On 2 or 3 nothing ran, and `ci/tier-c.sh` stops on either **without writing a ledger**,
+because a ledger row is a claim about a boot that happened. `kitchen build` says the ISO
+could not be tested, rather than that its tests failed — those are different states.
 
 ## What it costs
 
@@ -201,7 +204,7 @@ the same network:
 | | |
 |---|---|
 | `kitchen boot-host check` | 0.7 s |
-| `--kernel`, image not yet cached | 7.3 s total, of which 2.6 s is sending 300 files and the image |
+| `--kernel`, image not yet cached | 7.3 s total, of which 2.6 s is sending 301 files and the image |
 | `--kernel`, image cached | 5.9 s total, of which 1.2 s is sending the tree |
 | the boot itself | 4–5 s under KVM |
 | the same test locally | impossible here — no qemu is installed in this container |

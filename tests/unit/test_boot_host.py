@@ -522,7 +522,20 @@ def test_active_answers_with_a_status():
         r = active()
         check("a config: boots go there", r.returncode, 0)
         check("...and it names the host", r.stdout.strip(), "kvmbox")
-        check("local wins", active({"KITCHEN_BOOT_HOST": "local"}).returncode, 1)
+        r = active({"KITCHEN_BOOT_HOST": "local"})
+        check("local wins", r.returncode, 1)
+        # SAID OUT LOUD, and on stderr. Someone with a boot host configured who sees a
+        # slow local boot needs to know the override is why; and lib/build.sh reads
+        # stdout in a $(...), so a note printed there would be swallowed by the
+        # substitution that discards it -- announcing nothing, to nobody.
+        check("...and says so", "this boot stays here" in r.stderr, True)
+        check("...on stderr, not stdout", r.stdout.strip(), "")
+        # ...except when the agent set it. The copy of kitchen running inside a remote
+        # boot has already said where it is; relaying "this boot stays here" from there
+        # reads as though the boot never left.
+        quiet = active({"KITCHEN_BOOT_HOST": "local", "KITCHEN_BOOT_HOST_AGENT": "1"})
+        check("the nested agent says nothing", quiet.stderr.strip(), "")
+        check("...but still answers 1", quiet.returncode, 1)
         write_cfg(repo, "[boot-host]\nhost = a\nscratch = relative\n")
         r = active()
         check("a broken config is its own answer", r.returncode, 2)

@@ -65,6 +65,25 @@ fi
 # KEPT WHEN THE TEST FAILS, and the path printed: a failure is exactly when the fixtures
 # are worth having, and a red gate blocks the commit, so they cannot pile up. The leak then
 # only happens when someone is already looking for it.
+
+# AND THE BOOT HOST IS OFF, FOR THE SAME REASON, IN THE SAME PLACE.
+#
+# A boot-host.ini is one developer's machine, it is untracked, and it changes what the code
+# under test DOES: `kitchen test` hands its boot modes to ssh, and ci/tier-c.sh then checks
+# for ssh and rsync rather than qemu and mkfs.ext4. A gate whose answer depends on an
+# untracked file in the tester's working tree is not a gate.
+#
+# HONEST ABOUT ITS OWN WEIGHT: every test here builds its own fixture checkout, which has
+# no boot-host.ini, so all of them pass without this line today -- measured, not assumed.
+# It is here for the test not written yet, the one that drives the real `kitchen` from the
+# real root, and because the alternative is remembering.
+#
+# It is not free, and that is the point: test_tier_c_run's remote-path case has to clear
+# it again, in its own body, saying why. A test that means to exercise the boot host has
+# to say so where someone reading that test can see it.
+KITCHEN_BOOT_HOST=local
+export KITCHEN_BOOT_HOST
+
 for t in "$REPO_ROOT"/tests/unit/test_*.py; do
     [ -f "$t" ] || continue
     _tmp=$(mktemp -d) || { fail "$(basename "$t"): cannot create its TMPDIR"; continue; }

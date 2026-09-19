@@ -13,6 +13,7 @@
 #   --paths "a b c"    subset of: bios uefi usb persistence
 #   --keep             keep scratch artifacts instead of cleaning up
 #   --allow-dirty      run against a modified tree (the ledger is then not evidence)
+#   --local            boot here, ignoring boot-host.ini
 #
 # WHAT THIS IS FOR. CI has no /dev/kvm, so it can exercise this harness but can never
 # be the evidence. This runs on any KVM-capable Linux host with qemu, qemu-img, xorriso,
@@ -56,6 +57,9 @@ while [ $# -gt 0 ]; do
         --paths)      PATHS=$2; shift 2 ;;
         --keep)       KEEP=1; shift ;;
         --allow-dirty) ALLOW_DIRTY=1; shift ;;
+        # Reaches the boots through kitchen test, which is the one place that decides
+        # where a boot runs. Exported, so the whole sweep agrees.
+        --local)      KITCHEN_BOOT_HOST=local; export KITCHEN_BOOT_HOST; shift ;;
         -h|--help)    sed -n '2,31p' "$0"; exit 0 ;;
         *) echo "tier-c.sh: unknown option $1" >&2; exit 2 ;;
     esac
@@ -71,7 +75,26 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # that out, and it hides mkfs.ext4 rather than reporting it missing.
 case ":$PATH:" in *:/usr/sbin:*) ;; *) PATH="$PATH:/usr/sbin:/sbin" ;; esac
 export PATH
-for t in qemu-system-x86_64 xorriso python3 mkfs.ext4; do
+# WHAT IS NEEDED HERE DEPENDS ON WHERE THE BOOTS HAPPEN. With a boot host configured,
+# qemu and mkfs.ext4 are checked on that machine by its own pre-run check, and demanding
+# them here would refuse a sweep that does not use them -- on the dev container, every
+# sweep. `boot_host.py active` answers 0 configured, 1 boots stay here, 2 the file is
+# broken and has already been explained.
+BOOT_HOST=""
+_bh_rc=1
+if [ -f boot-host.ini ] && [ -f lib/boot_host.py ]; then
+    BOOT_HOST=$(python3 lib/boot_host.py active)
+    _bh_rc=$?
+fi
+# NOT `|| true`: that resets $? to 0 and the refusal below could never fire.
+[ "$_bh_rc" = 2 ] && exit 2
+[ "$_bh_rc" = 0 ] || BOOT_HOST=""
+if [ -n "$BOOT_HOST" ]; then
+    NEED="python3 ssh rsync git"
+else
+    NEED="qemu-system-x86_64 xorriso python3 mkfs.ext4"
+fi
+for t in $NEED; do
     have "$t" || die "$t not installed -- see docs/60-testing/qemu.md for the package list"
 done
 
@@ -104,7 +127,14 @@ if have git; then
     --ledger /tmp/scratch.json --golden-dir /tmp/scratch-golden" ;;
     esac
 fi
-if [ -w /dev/kvm ]; then ACCEL=KVM; else
+if [ -n "$BOOT_HOST" ]; then
+    # THIS MACHINE'S /dev/kvm SAYS NOTHING ABOUT THE BOOTS. They happen on the boot
+    # host, which refuses to run without a writable /dev/kvm of its own, so reading the
+    # local one here would print "every boot below runs under TCG" over a sweep that is
+    # about to run entirely under KVM somewhere else. The banner says where it will be
+    # decided; the ledger rows still carry what each boot actually got.
+    ACCEL="on $BOOT_HOST"
+elif [ -w /dev/kvm ]; then ACCEL=KVM; else
     ACCEL=TCG
     say "${Y}no writable /dev/kvm: every boot below runs under TCG, 10-20x slower.${O}"
     say "${Y}That is fine for checking the harness still works and wrong for producing${O}"
@@ -200,8 +230,21 @@ for path in $PATHS; do
         kernel)        flag="--kernel" ;;
         *) die "unknown path: $path (want bios, uefi, usb, persistence or kernel)" ;;
     esac
+    t_rc=0
     ./kitchen test "$ISO" "$flag" --out "$OUT" --seconds "$SECONDS_CEIL" \
-        --golden "$GOLDEN" --record "$JSONL" || rc=1
+        --golden "$GOLDEN" --record "$JSONL" || t_rc=$?
+    # STOP BEFORE THE LEDGER. 2 and 3 mean the boot host could not be used -- a broken
+    # configuration, or a machine that could not be reached -- so no boot happened and
+    # there is nothing to record. Carrying on would run the remaining paths against the
+    # same unusable machine and then write a ledger whose rows are a claim about boots
+    # that never took place, which is the one thing this file exists not to do.
+    if [ "$t_rc" -ge 2 ]; then
+        say ""
+        say "${R}$path could not be run on the boot host (exit $t_rc).${O}"
+        say "${R}No ledger was written: a row is a claim about a boot that happened.${O}"
+        exit "$t_rc"
+    fi
+    [ "$t_rc" = 0 ] || rc=1
 done
 
 # ------------------------------------------------------------------- ledger ----
@@ -312,7 +355,14 @@ if [ "$KEEP" != 1 ] && [ "$rc" = 0 ]; then
 fi
 QB_AFTER=$(ls -d "$QB_DIR"/qb-* 2>/dev/null | wc -l | tr -d ' ')
 say ""
-if [ "$QB_AFTER" -gt "$QB_BEFORE" ]; then
+if [ -n "$BOOT_HOST" ]; then
+    # COUNTING THIS MACHINE'S /tmp WOULD BE A CHECK THAT CANNOT FAIL. No qemu ran here, so
+    # the count is 0 before and 0 after however badly the boots behaved, and the line would
+    # print "clean" over anything. The real check moved WITH the boots and got stricter on
+    # the way: each run on the boot host has a TMPDIR of its own, so a leak there is named
+    # rather than counted, and it fails that run instead of this summary.
+    say "${G}clean${O} each boot checked its own temporary directory on $BOOT_HOST"
+elif [ "$QB_AFTER" -gt "$QB_BEFORE" ]; then
     say "${R}LEAK${O} $QB_DIR/qb-* went from $QB_BEFORE to $QB_AFTER: the harness left"
     say "     qmp socket directories behind."
     rc=1

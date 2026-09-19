@@ -89,9 +89,10 @@ cp boot-host.example.ini boot-host.ini && chmod 600 boot-host.ini
 ./kitchen boot-host show        # what the file says, without connecting
 ```
 
-**`kitchen test` does not consult it yet** — the hook that routes the boot modes through it
-is the next change. Today the mechanism is reachable through `kitchen boot-host` and through
-`lib/boot_host.py test` directly.
+`--local` on `kitchen test`, `kitchen build` and `ci/tier-c.sh` boots here for one command;
+`KITCHEN_BOOT_HOST=local` does it for a shell. With a boot host in use, `kitchen test` checks
+for `ssh`, `rsync` and `git` here rather than qemu and `mkfs.ext4`, which are checked on the
+boot host by the boot host before it starts.
 
 The file is gitignored and refused by the commit gates, because it names a machine that
 would then receive every cloner's images. A configured host that cannot be used **fails the

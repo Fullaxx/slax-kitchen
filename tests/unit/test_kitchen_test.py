@@ -41,6 +41,23 @@ with open(os.environ["STUB_HARNESS_LOG"], "a") as f:
     f.write(json.dumps(sys.argv[1:]) + "\n")
 '''
 
+# Stands in for lib/boot_host.py. `active` answers the question kitchen_test asks before
+# every boot -- 0 a boot host, 1 boots stay here -- and `test` records the rebuilt flags
+# and returns whatever the case wants, which is how exit 2 and 3 get exercised without a
+# host to be unreachable.
+STUB_BOOT_HOST = r'''#!/usr/bin/env python3
+import json, os, sys
+argv = sys.argv[1:]
+if argv[:1] == ["active"]:
+    if os.environ.get("KITCHEN_BOOT_HOST") == "local":
+        raise SystemExit(1)
+    print(os.environ.get("STUB_BH_HOST", "kvmbox"))
+    raise SystemExit(0)
+with open(os.environ["STUB_BH_LOG"], "a") as f:
+    f.write(json.dumps(argv) + "\n")
+raise SystemExit(int(os.environ.get("STUB_BH_RC", "0")))
+'''
+
 STUB_XORRISO = r'''#!/bin/sh
 rc=0
 while [ $# -gt 0 ]; do
@@ -119,6 +136,27 @@ class Fixture:
         self.box = os.path.join(tmp, "tmpdir")
         os.makedirs(self.box)
         self.log = os.path.join(tmp, "harness.jsonl")
+        self.bhlog = os.path.join(tmp, "boot-host.jsonl")
+        self.bh_rc = "0"
+
+    def with_boot_host(self):
+        """A configured boot host: the file kitchen_test looks for, and the driver.
+
+        BOTH, because the hook checks the file exists before spending a python start --
+        and because `python3 <missing file>` also exits 2, which is the code that means
+        "the configuration was refused".
+        """
+        write(os.path.join(self.repo, "boot-host.ini"),
+              "[boot-host]\nhost = kvmbox\nscratch = /srv/s\n")
+        write(os.path.join(self.repo, "lib", "boot_host.py"), STUB_BOOT_HOST, 0o755)
+        # What a remote boot needs HERE, stubbed. They are never invoked -- the driver
+        # above is a stub too -- but kitchen_test checks they exist before handing over,
+        # and on this closed PATH nothing exists unless it is put here.
+        for t in ("ssh", "rsync", "git"):
+            write(os.path.join(self.bin, t), "#!/bin/sh\nexit 0\n", 0o755)
+
+    def without_ssh(self):
+        os.unlink(os.path.join(self.bin, "ssh"))
 
     def with_xorriso(self):
         write(os.path.join(self.bin, "xorriso"), STUB_XORRISO, 0o755)
@@ -131,11 +169,14 @@ class Fixture:
 
     def run(self, *args):
         open(self.log, "w").close()
+        open(self.bhlog, "w").close()
         env = {"PATH": self.bin, "HOME": self.tmp, "TMPDIR": self.box, "NO_COLOR": "1",
-               "STUB_HARNESS_LOG": self.log, "STUB_ISO_TREE": self.tree}
+               "STUB_HARNESS_LOG": self.log, "STUB_ISO_TREE": self.tree,
+               "STUB_BH_LOG": self.bhlog, "STUB_BH_RC": self.bh_rc}
         p = subprocess.run(["sh", os.path.join(self.repo, "kitchen"), "test", self.iso] + list(args),
                            cwd=self.tmp, env=env, capture_output=True, text=True, timeout=60)
         calls = [json.loads(ln) for ln in open(self.log) if ln.strip()]
+        self.sent = [json.loads(ln) for ln in open(self.bhlog) if ln.strip()]
         # kitchen_test's own scratch -- the menu and kernel extraction -- goes in TMPDIR,
         # and every exit path has to take it away again, the new early refusals included.
         left = os.listdir(self.box)
@@ -303,6 +344,138 @@ def test_uefi_counts_menuentries_inside_the_grub_timeout(fx):
     check("...asserted", opt(calls[0], "--expect"), MARKERS)
 
 
+# --------------------------------------------------------------- the boot host ----
+# These assert the SEAM, not the ssh: `kitchen test` decides where a boot runs, rebuilds
+# the boot half's flags and hands them over. lib/boot_host.py is a stub here, so a wrong
+# flag shows up as a wrong argument list rather than as a boot that behaved oddly on
+# somebody's machine half an hour later.
+
+
+@case
+def test_a_boot_host_takes_the_boot_and_not_the_structure_check(fx):
+    fx.with_boot_host()
+    fx.with_xorriso()
+    fx.iso_file("/slax/boot/vmlinuz", "k")
+    fx.iso_file("/slax/boot/initrfs.img", "i")
+    rc, out, calls, left = fx.run("--structure", "--kernel")
+    check("it succeeds", rc, 0)
+    # --structure reads the image, and the image is already here. Sending it would copy
+    # 400+ MiB across a network to answer a question xorriso can answer locally.
+    check("the structure check ran here", any(c[:1] == ["iso_assert"] for c in calls), True)
+    check("...and nothing was booted here", [c for c in calls if c[:1] != ["iso_assert"]], [])
+    check("the boot went to the boot host", len(fx.sent), 1)
+    check("...as a `test` call", fx.sent[0][0], "test")
+    check("...leaving no scratch", left, [])
+
+
+@case
+def test_the_flags_the_boot_host_gets_are_the_ones_that_were_asked_for(fx):
+    fx.with_boot_host()
+    fx.with_xorriso()
+    rc, out, calls, left = fx.run("--bios", "--uefi", "--persistence", "--seconds", "77",
+                                  "--mem", "3072", "--no-keys", "--perch-device", "/dev/sdb",
+                                  "--out", "/tmp/ev", "--golden", "/tmp/g", "--record",
+                                  "/tmp/r.jsonl", "--expect", "one two", "--expect", "three")
+    check("it succeeds", rc, 0)
+    check("one handover for the whole set", len(fx.sent), 1)
+    sent = fx.sent[0]
+    for want in ("--bios", "--uefi", "--persistence"):
+        check(f"{want} is carried", want in sent, True)
+    check("--kernel was not invented", "--kernel" in sent, False)
+    check("--structure never travels", "--structure" in sent, False)
+    check("the paths are named options", opt(sent, "--iso"), [fx.iso])
+    check("...as is the evidence directory", opt(sent, "--out"), ["/tmp/ev"])
+    check("...the golden", opt(sent, "--golden"), ["/tmp/g"])
+    check("...and the ledger", opt(sent, "--record"), ["/tmp/r.jsonl"])
+    # Resolved values, not the raw command line: kitchen_test's parser has already
+    # applied the defaults, and forwarding "$@" would lose them.
+    check("--seconds is carried", opt(sent, "--seconds"), ["77"])
+    check("--mem is carried", opt(sent, "--mem"), ["3072"])
+    check("--perch-device is carried", opt(sent, "--perch-device"), ["/dev/sdb"])
+    check("--no-keys is carried", "--no-keys" in sent, True)
+    # Repeatable, and each one contains a space -- so a list that is joined and re-split
+    # anywhere along the way arrives as five expectations instead of two.
+    check("every --expect arrives intact", opt(sent, "--expect"), ["one two", "three"])
+
+
+@case
+def test_a_default_run_carries_the_default_seconds_and_no_key_choice(fx):
+    fx.with_boot_host()
+    fx.with_xorriso()
+    rc, out, calls, left = fx.run("--bios")
+    sent = fx.sent[0]
+    check("the parser's default ceiling travels", opt(sent, "--seconds"), ["32"])
+    # auto_keys means "read the image's own menu", which happens over there against the
+    # image that is over there. Sending --keys would freeze a decision this side cannot make.
+    check("no key choice is imposed", "--keys" in sent or "--no-keys" in sent, False)
+    check("no --mem when none was asked for", "--mem" in sent, False)
+
+
+@case
+def test_a_remote_boot_does_not_need_qemu_here(fx):
+    """The whole point. This container has no qemu, and that must stop being fatal."""
+    fx.with_boot_host()
+    fx.with_xorriso()
+    fx.without_qemu()
+    rc, out, calls, left = fx.run("--kernel")
+    check("it runs", rc, 0)
+    check("...without asking for qemu", "qemu-system-x86" in out, False)
+    check("...and the boot went over", len(fx.sent), 1)
+    # What IS needed here is what carries it there.
+    fx.bh_rc = "0"
+
+
+@case
+def test_a_remote_boot_checks_what_IT_needs_here(fx):
+    """Different modes, different tools -- and the list moved with the boot.
+
+    Without a boot host this asks for qemu. With one it asks for what carries the work
+    there instead, and says so with the package, before anything is sent.
+    """
+    fx.with_boot_host()
+    fx.with_xorriso()
+    fx.without_ssh()
+    rc, out, calls, left = fx.run("--kernel")
+    check("no ssh: refused", rc, 1)
+    check("...naming the package", "apt-get install openssh-client" in out, True)
+    check("...and nothing was sent", fx.sent, [])
+    check("...nor booted here", calls, [])
+    # The point of the split: it must NOT demand the tools the boot host provides.
+    check("...and qemu was not demanded", "qemu-system-x86" in out, False)
+
+
+@case
+def test_local_beats_the_configured_host(fx):
+    fx.with_boot_host()
+    fx.with_xorriso()
+    fx.without_qemu()
+    rc, out, calls, left = fx.run("--kernel", "--local")
+    check("--local boots here", fx.sent, [])
+    check("...and here there is no qemu, so it fails as it always did", rc, 1)
+    check("...naming the package", "apt-get install qemu-system-x86" in out, True)
+
+
+@case
+def test_the_boot_hosts_own_failures_are_not_test_results(fx):
+    """2 and 3 travel out of `kitchen test` unchanged.
+
+    ci/tier-c.sh reads them to decide whether to write a ledger, and a ledger row is a
+    claim about a boot that happened. Flattened to 1 they would be indistinguishable from
+    an image that failed to boot, which is the opposite conclusion.
+    """
+    fx.with_boot_host()
+    fx.with_xorriso()
+    for code, what in (("2", "a refused configuration"), ("3", "a host that could not run")):
+        fx.bh_rc = code
+        rc, out, calls, left = fx.run("--kernel")
+        check(f"{what} arrives as {code}", rc, int(code))
+        check(f"{what}: nothing booted here", calls, [])
+        check(f"{what}: no scratch left", left, [])
+    fx.bh_rc = "1"
+    rc, out, calls, left = fx.run("--kernel")
+    check("a failed boot is still just a failure", rc, 1)
+
+
 def main():
     # One box for every fixture, removed afterwards: the convention of #25.
     box = tempfile.mkdtemp(prefix="test_kitchen_test-")
@@ -322,7 +495,14 @@ def main():
                    test_a_menu_with_no_serial_entry_still_falls_back_and_says_so,
                    test_a_serial_entry_is_typed_by_name_and_asserted,
                    test_a_label_that_cannot_be_typed_is_not_a_missing_entry,
-                   test_uefi_counts_menuentries_inside_the_grub_timeout]:
+                   test_uefi_counts_menuentries_inside_the_grub_timeout,
+                   test_a_boot_host_takes_the_boot_and_not_the_structure_check,
+                   test_the_flags_the_boot_host_gets_are_the_ones_that_were_asked_for,
+                   test_a_default_run_carries_the_default_seconds_and_no_key_choice,
+                   test_a_remote_boot_does_not_need_qemu_here,
+                   test_a_remote_boot_checks_what_IT_needs_here,
+                   test_local_beats_the_configured_host,
+                   test_the_boot_hosts_own_failures_are_not_test_results]:
             fn()
         if FAILURES:
             for f in FAILURES:

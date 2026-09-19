@@ -33,6 +33,9 @@ TOOL_PKG = {
     "isohybrid": "syslinux-utils", "extlinux": "extlinux", "syslinux": "syslinux",
     "qemu-system-x86_64": "qemu-system-x86", "chroot": "coreutils",
     "file": "file", "git": "git", "mkfs.ext4": "e2fsprogs",
+    # Only a boot host needs these, and only on the machine driving one; kitchen test
+    # asks for them instead of qemu when boot-host.ini is in play.
+    "ssh": "openssh-client", "rsync": "rsync",
 }
 
 # mkfs.* lives in /usr/sbin, which a non-login PATH -- an ssh command, a CI step -- can

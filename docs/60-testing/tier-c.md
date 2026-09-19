@@ -62,6 +62,18 @@ Everything here runs on **any KVM-capable Linux host** with `qemu-system-x86_64`
 `qemu-img`, `xorriso`, `e2fsprogs` and OVMF. Nothing is specific to a particular machine,
 and nothing about the machine ends up in the repository.
 
+**That host need not be the one with the checkout.** With a
+[boot host](boot-host.md) configured, `ci/tier-c.sh` sends each boot there and the
+evidence comes back here — a full four-path sweep measured at 52 s from a container with
+no qemu at all. The rows still record what each boot actually got, because
+`qemu_boot.py` writes `accel` and `qemu` first-hand on the machine that booted; the
+banner says `accel  on <host>` rather than reading a `/dev/kvm` that has nothing to do
+with where the boots happen. `--local` ignores the file and boots here.
+
+If the boot host cannot be used, the sweep **stops without writing a ledger** — exit 2
+for a configuration it will not act on, 3 for a host it could not reach. A row is a claim
+about a boot that happened, and no boot happened.
+
 ## The four paths, and what each one proves
 
 | path | how | what only this one catches |

@@ -45,6 +45,13 @@ case "$1" in
     test) ;;
     *) echo "stub kitchen: unexpected $*" >&2; exit 2 ;;
 esac
+# $STUB_TEST_RC: what `kitchen test` returns. 2 and 3 are what a boot host that could not
+# be used gives back, and they must stop the sweep before any row is recorded -- so this
+# exits BEFORE writing to --record, exactly as a run that never happened would.
+if [ -n "${STUB_TEST_RC:-}" ] && [ "${STUB_TEST_RC}" != 0 ]; then
+    echo "stub kitchen: exiting ${STUB_TEST_RC}" >&2
+    exit "${STUB_TEST_RC}"
+fi
 shift
 iso="" path="" record=""
 while [ $# -gt 0 ]; do
@@ -79,6 +86,18 @@ def check(name, got, want):
         FAILURES.append(f"{name}: got {got!r}, want {want!r}")
 
 
+# Stands in for lib/boot_host.py, which tier-c.sh asks where the boots will happen.
+STUB_BOOT_HOST = """#!/usr/bin/env python3
+import os, sys
+if sys.argv[1:2] == ["active"]:
+    if os.environ.get("KITCHEN_BOOT_HOST") == "local":
+        raise SystemExit(1)
+    print("kvmbox")
+    raise SystemExit(0)
+raise SystemExit(0)
+"""
+
+
 def write(path, text, mode=0o644):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as fh:
@@ -86,7 +105,7 @@ def write(path, text, mode=0o644):
     os.chmod(path, mode)
 
 
-def fixture(tmp):
+def fixture(tmp, boot_host=False):
     """A committed, clean repository holding tier-c.sh and the stub kitchen, an image to
     name, and a bin/ of stub tools. Its own repository, so the dirty-tree guard reads a tree
     this test controls rather than whatever the developer has uncommitted."""
@@ -106,12 +125,26 @@ def fixture(tmp):
     write(iso, "not an image\n")
     bindir = os.path.join(tmp, "bin")
     for name, body in STUB_TOOLS.items():
+        # WITH A BOOT HOST, THE BOOT TOOLS ARE NOT HERE. Writing them anyway would make
+        # the tool-check test unfailable: tier-c.sh could go on demanding qemu locally
+        # and still pass, because the fixture had quietly provided it. This container is
+        # the real case -- no qemu at all -- and the fixture now matches it.
+        if boot_host:
+            continue
         write(os.path.join(bindir, name), body, 0o755)
+    if boot_host:
+        # Committed with the rest, so the tree stays clean and the dirty-tree guard --
+        # which runs before any of this -- is not what fails the case.
+        write(os.path.join(repo, "boot-host.ini"),
+              "[boot-host]\nhost = kvmbox\nscratch = /srv/s\n")
+        write(os.path.join(repo, "lib", "boot_host.py"), STUB_BOOT_HOST, 0o755)
+        subprocess.run(["git", "add", "-A"], **q)
+        subprocess.run(["git", "commit", "-qm", "boot host"], **q)
     return repo, iso, bindir
 
 
-def run_tier_c(tmp, env_extra, paths="kernel"):
-    repo, iso, bindir = fixture(tmp)
+def run_tier_c(tmp, env_extra, paths="kernel", boot_host=False):
+    repo, iso, bindir = fixture(tmp, boot_host)
     out = os.path.join(tmp, "evidence")
     env = dict(os.environ, PATH=bindir + ":" + os.environ.get("PATH", ""), **env_extra)
     p = subprocess.run(
@@ -216,6 +249,64 @@ def test_a_run_that_leaks_nothing_is_clean():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+@in_a_box
+def test_a_boot_host_that_could_not_run_writes_no_ledger(tmp, _box):
+    """Exit 2 and 3 from `kitchen test` mean no boot happened.
+
+    A ledger row is a claim about a boot. Treating "the host was unreachable" as a failed
+    boot would record four rows saying an image did not boot, when nothing ever tried --
+    and ci/release-notes.sh reads those rows to make a public claim about Tier C.
+    """
+    for code in ("2", "3"):
+        # A fixture per case: fixture() git-inits and commits, so a second one in the
+        # same directory has nothing to commit and dies rather than testing anything.
+        one = os.path.join(tmp, "case" + code)
+        os.makedirs(one)
+        rc, out = run_tier_c(one, {"STUB_TEST_RC": code}, paths="bios uefi")
+        check(f"exit {code} travels out of the sweep", rc, int(code))
+        check(f"exit {code}: no ledger is written", ledger_of(one), None)
+        check(f"exit {code}: it says why", "No ledger was written" in out, True)
+        # The second path must not be attempted: it would ask the same unusable machine
+        # the same question and produce a second identical failure.
+        check(f"exit {code}: it stopped at the first path", out.count("exiting"), 1)
+
+
+@in_a_box
+def test_an_ordinary_failure_still_records(tmp, _box):
+    """...and 1 is unchanged: a boot that happened and failed IS evidence."""
+    rc, out = run_tier_c(tmp, {}, paths="bios")
+    check("a passing sweep still writes a ledger", ledger_of(tmp) is not None, True)
+    check("...and exits 0", rc, 0)
+
+
+@in_a_box
+def test_with_a_boot_host_the_local_tool_check_asks_for_the_transport(tmp, _box):
+    """qemu is not needed here when the boots are not here.
+
+    Demanding it would refuse every sweep on the machine this feature exists for. The
+    modes' own tools are checked on the boot host, by the boot host, before it starts.
+    """
+    # No qemu, no xorriso, no mkfs.ext4 anywhere on this PATH.
+    #
+    # KITCHEN_BOOT_HOST is cleared here ON PURPOSE. ci/checks/80-unit.sh sets it to
+    # `local` for every test, so that a boot-host.ini in the developer's own tree cannot
+    # change what the gate measures; this is the one case that means to exercise the
+    # remote path, so it says so, here, where it is visible.
+    rc, out = run_tier_c(tmp, {"KITCHEN_BOOT_HOST": ""}, paths="bios", boot_host=True)
+    check("the sweep runs", rc, 0)
+    check("...on a machine with no qemu at all",
+          "qemu-system-x86_64 not installed" in out, False)
+    check("...nor xorriso", "xorriso not installed" in out, False)
+    # THIS machine's /dev/kvm says nothing about boots that happen elsewhere, so the
+    # banner must not report it -- the container this runs in has none, and the line
+    # would announce TCG over a sweep running entirely under KVM somewhere else.
+    check("...and does not claim TCG", "runs under TCG" in out, False)
+    check("...saying where instead", "on kvmbox" in out, True)
+    # The local qmp count would be 0 before and 0 after however badly the boots behaved.
+    check("the leak check moved with the boots",
+          "checked its own temporary directory on kvmbox" in out, True)
+
+
 def main():
     # One box for every fixture, removed afterwards: the convention of #25.
     box = tempfile.mkdtemp(prefix="test_tier_c_run-")
@@ -227,7 +318,10 @@ def main():
                    test_a_run_that_leaks_nothing_is_clean,
                    test_the_ledger_names_the_machine_that_booted,
                    test_one_tcg_boot_makes_a_tcg_run,
-                   test_a_run_that_cannot_name_its_qemu_writes_no_ledger]:
+                   test_a_run_that_cannot_name_its_qemu_writes_no_ledger,
+                   test_a_boot_host_that_could_not_run_writes_no_ledger,
+                   test_an_ordinary_failure_still_records,
+                   test_with_a_boot_host_the_local_tool_check_asks_for_the_transport]:
             fn()
         if FAILURES:
             for f in FAILURES:

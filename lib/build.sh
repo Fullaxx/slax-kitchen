@@ -125,6 +125,42 @@ _serial_keys() {
     printf '%s,ret\n' "$_sk_k"
 }
 
+# Hand the boot half of `kitchen test` to the boot host.
+#
+# THE FLAGS ARE REBUILT, NOT FORWARDED. kitchen_test's parser has already resolved them --
+# `--uefi-boot` became want_uefi, an absent --seconds became 32 -- and passing "$@" through
+# would send the boot host a second copy of the flags this side must keep for itself
+# (--structure, --expect-uefi, --volid) while losing the defaults.
+#
+# It lives HERE, immediately above that parser, so that adding a boot flag to one and
+# forgetting the other is visible in a single screen rather than being two files apart.
+# Only the four path options are named; everything else is a tail lib/boot_host.py passes
+# through to the copy of `kitchen` it runs over there.
+_boot_remote() {
+    set -- --iso "$iso" --out "$outdir"
+    [ -n "$golden" ] && set -- "$@" --golden "$golden"
+    [ -n "$record" ] && set -- "$@" --record "$record"
+    set -- "$@" --
+    [ "$want_kernel" = 1 ] && set -- "$@" --kernel
+    [ "$want_bios" = 1 ]   && set -- "$@" --bios
+    [ "$want_uefi" = 1 ]   && set -- "$@" --uefi
+    [ "$want_usb" = 1 ]    && set -- "$@" --usb
+    [ "$want_perch" = 1 ]  && set -- "$@" --persistence --perch-device "$perchdev"
+    set -- "$@" --seconds "$secs"
+    [ -n "$mem" ] && set -- "$@" --mem "$mem"
+    # Only when the caller actually chose. auto_keys=1 means "read the image's own menu",
+    # which is the default and is done over there, against the image that is over there.
+    if [ "$auto_keys" = 0 ]; then
+        if [ -n "$keys" ]; then set -- "$@" --keys "$keys"
+        else set -- "$@" --no-keys; fi
+    fi
+    _oifs=$IFS; IFS='
+'
+    for _e in $expects; do [ -n "$_e" ] && set -- "$@" --expect "$_e"; done
+    IFS=$_oifs
+    python3 "$REPO_ROOT/lib/boot_host.py" test "$@"
+}
+
 kitchen_test() {
     iso="" want_structure=0 want_bios=0 want_uefi=0 want_kernel=0
     want_usb=0 want_perch=0
@@ -149,6 +185,11 @@ kitchen_test() {
             --golden)       golden=$2; shift 2 ;;
             --record)       record=$2; shift 2 ;;
             --perch-device) perchdev=$2; shift 2 ;;
+            # Boot here, whatever boot-host.ini says. Exported rather than kept in a
+            # variable because everything downstream -- lib/boot_host.py, and the copy of
+            # `kitchen` that a boot host runs inside its own run directory -- reads the
+            # same environment variable, so there is one answer to the question.
+            --local)        KITCHEN_BOOT_HOST=local; export KITCHEN_BOOT_HOST; shift ;;
             # Evidence normally lands beside the ISO. An explicit --out lets a driver
             # keep a run's artifacts together, and lets someone test an ISO that lives
             # somewhere they cannot write.
@@ -169,6 +210,29 @@ kitchen_test() {
     outdir=${outdir_opt:-"$(dirname "$iso")/boot-tests"}
     mkdir -p "$outdir" || die "test: cannot write to $outdir"
 
+    # WHERE THE BOOT MODES RUN. `boot_host.py active` answers with a status rather than
+    # something to parse: 0 a boot host is configured and its name is on stdout, 1 boots
+    # stay here, 2 the configuration is broken and has already been explained. Asked only
+    # when a boot was actually requested, so `kitchen test --structure` -- which reads the
+    # image that is already here -- never pays for it and never needs a host at all.
+    #
+    # The file first, and not only to save a python start on every boot test for the many
+    # people who have no boot host. `python3 <missing file>` ALSO exits 2, which is the
+    # code meaning "the configuration was refused" -- so without this gate a tree with no
+    # lib/boot_host.py refuses to boot at all, citing a configuration that does not exist.
+    # tests/unit/test_kitchen_test.py found that, being exactly such a tree.
+    boot_host=""
+    if [ "$want_kernel$want_bios$want_uefi$want_usb$want_perch" != "00000" ] \
+       && [ -f "$REPO_ROOT/boot-host.ini" ] && [ -f "$REPO_ROOT/lib/boot_host.py" ]; then
+        boot_host=$(python3 "$REPO_ROOT/lib/boot_host.py" active)
+        _bh_rc=$?
+        # Refused, not ignored. A broken boot-host.ini is a question for the person who
+        # wrote it, and booting here instead would answer it by silently doing something
+        # else -- see lib/boot_host.py's load().
+        [ "$_bh_rc" = 2 ] && return 2
+        [ "$_bh_rc" = 0 ] || boot_host=""
+    fi
+
     # EVERY TOOL THE REQUESTED MODES NEED, checked before any mode runs. This was two partial
     # checks made mid-run: qemu, whose message said "skipping boot test" and then failed the
     # test, and xorriso for the boot modes only -- while --structure ran iso_assert.py, which
@@ -182,11 +246,19 @@ kitchen_test() {
     _need="python3"
     [ "$want_structure" = 1 ] && _need="$_need xorriso"
     if [ "$want_kernel$want_bios$want_uefi$want_usb$want_perch" != "00000" ]; then
-        _need="$_need qemu-system-x86_64"
-        { [ "$want_kernel" = 1 ] || [ "$want_perch" = 1 ]; } && _need="$_need xorriso"
-        [ "$want_perch" = 1 ] && _need="$_need mkfs.ext4"
-        [ "$want_bios$want_uefi$want_usb" != 000 ] && [ "$auto_keys" = 1 ] \
-            && _need="$_need xorriso"
+        if [ -n "$boot_host" ]; then
+            # The boot happens on another machine, so what is needed HERE is only what
+            # carries it there. Asking for qemu would refuse to run a test that does not
+            # need it -- on this container, every boot test. The modes' own tools are
+            # checked on the boot host, by the boot host, before it starts.
+            _need="$_need ssh rsync git"
+        else
+            _need="$_need qemu-system-x86_64"
+            { [ "$want_kernel" = 1 ] || [ "$want_perch" = 1 ]; } && _need="$_need xorriso"
+            [ "$want_perch" = 1 ] && _need="$_need mkfs.ext4"
+            [ "$want_bios$want_uefi$want_usb" != 000 ] && [ "$auto_keys" = 1 ] \
+                && _need="$_need xorriso"
+        fi
     fi
     _miss=""
     for _t in $_need; do
@@ -206,6 +278,22 @@ kitchen_test() {
     if [ "$want_structure" = 1 ]; then
         printf '%s* structure%s\n' "$B" "$O"
         _test_structure "$iso" "$expect_uefi" "$expect_hybrid" "$expect_volid" || rc=1
+    fi
+
+    # THE ONE HOOK. Every boot in this toolkit funnels through the block below, so
+    # diverting it here covers `kitchen build`'s profile tests, ci/tier-c.sh and CI without
+    # any of them knowing that ssh exists.
+    if [ -n "$boot_host" ] \
+       && [ "$want_kernel$want_bios$want_uefi$want_usb$want_perch" != "00000" ]; then
+        _boot_remote
+        _brc=$?
+        # 2 and 3 are NOT test results. "the configuration is wrong" and "the host could
+        # not be reached" are answers about the machinery, and a caller that flattened
+        # them to 1 would let ci/tier-c.sh write a ledger row for a boot that never
+        # happened. They travel out of `kitchen test` unchanged.
+        [ "$_brc" -ge 2 ] && return "$_brc"
+        [ "$_brc" = 0 ] || rc=1
+        return $rc
     fi
 
     if [ "$want_kernel$want_bios$want_uefi$want_usb$want_perch" != "00000" ]; then
@@ -374,6 +462,9 @@ kitchen_build() {
             # identical profile files to keep in sync -- and the Tier C matrix covered
             # exactly the one target boot-matrix happened to name.
             --base)      bld_base=$2; shift 2 ;;
+            # Reaches the profile's boot tests through the environment, because those go
+            # through kitchen_test, which is the one place that decides where a boot runs.
+            --local)     KITCHEN_BOOT_HOST=local; export KITCHEN_BOOT_HOST; shift ;;
             -h|--help)      usage_cmd build; return 0 ;;
             -*) die "build: unknown option $1" ;;
             *)  profile=$1; shift ;;
@@ -460,17 +551,28 @@ kitchen_build() {
         # failed reported "build ok" as long as the boot passed.
         bld_rc=$rc
         for t in $TESTS; do
+            _t_rc=0
             case "$t" in
                 structure) kitchen_test "out/$OUTPUT_NAME" --structure \
                              ${_eu:+--expect-uefi} ${_eh:+--expect-hybrid} \
-                             ${_ev:+--volid "$_ev"} || bld_rc=1 ;;
-                kernel-boot) kitchen_test "out/$OUTPUT_NAME" --kernel || bld_rc=1 ;;
-                bios-boot) kitchen_test "out/$OUTPUT_NAME" --bios || bld_rc=1 ;;
-                uefi-boot) kitchen_test "out/$OUTPUT_NAME" --uefi || bld_rc=1 ;;
-                usb)       kitchen_test "out/$OUTPUT_NAME" --usb || bld_rc=1 ;;
-                persistence) kitchen_test "out/$OUTPUT_NAME" --persistence || bld_rc=1 ;;
+                             ${_ev:+--volid "$_ev"} || _t_rc=$? ;;
+                kernel-boot) kitchen_test "out/$OUTPUT_NAME" --kernel || _t_rc=$? ;;
+                bios-boot) kitchen_test "out/$OUTPUT_NAME" --bios || _t_rc=$? ;;
+                uefi-boot) kitchen_test "out/$OUTPUT_NAME" --uefi || _t_rc=$? ;;
+                usb)       kitchen_test "out/$OUTPUT_NAME" --usb || _t_rc=$? ;;
+                persistence) kitchen_test "out/$OUTPUT_NAME" --persistence || _t_rc=$? ;;
                 *) printf '  %sskip%s unknown test %s\n' "$Y" "$O" "$t" ;;
             esac
+            # 2 and 3 mean the boot host could not be used, which is not a verdict on the
+            # image. Running the remaining modes would ask the same unreachable machine the
+            # same question four more times and report four more failures about it.
+            if [ "$_t_rc" -ge 2 ]; then
+                printf '  %scould not run %s on the boot host; the remaining tests were not attempted%s\n' \
+                    "$R" "$t" "$O"
+                bld_rc=$_t_rc
+                break
+            fi
+            [ "$_t_rc" = 0 ] || bld_rc=1
         done
         rc=$bld_rc
     fi
@@ -479,6 +581,11 @@ kitchen_build() {
     echo
     if [ "$rc" = 0 ]; then
         printf '%sbuild ok%s  out/%s\n' "$G" "$O" "$OUTPUT_NAME"
+    elif [ "$rc" -ge 2 ]; then
+        # "the tests failed" would be a claim about the image, and nothing was learned
+        # about the image. The ISO is fine and untested, and those are different states.
+        printf '%sbuild produced an ISO; it could not be tested on the boot host%s  out/%s\n' \
+            "$R" "$O" "$OUTPUT_NAME"
     else
         printf '%sbuild produced an ISO but tests failed%s  out/%s\n' "$R" "$O" "$OUTPUT_NAME"
     fi

@@ -1279,6 +1279,10 @@ class Agent:
 
         env = dict(os.environ)
         env["KITCHEN_BOOT_HOST"] = "local"         # the tree over there must not recurse
+        # ...and it should not ANNOUNCE that, either. The copy of `kitchen` running here
+        # is nested inside a remote boot that has already said where it is; its "this boot
+        # stays here" note, relayed home, reads as though the boot never left.
+        env["KITCHEN_BOOT_HOST_AGENT"] = "1"
         env["TMPDIR"] = os.path.join(run_dir, "tmp")
         env["PATH"] = env.get("PATH", "") + ":/usr/sbin:/sbin"
         env["NO_COLOR"] = "1"
@@ -1599,10 +1603,14 @@ def main(argv: list) -> int:
     # configured, 1 boots stay here, 2 the configuration is broken. A shell caller needs
     # a status, not a parse.
     if cmd == "active":
+        # STDOUT CARRIES THE ANSWER, STDERR CARRIES THE NOTE. lib/build.sh reads this in a
+        # `$(...)`, so anything else printed to stdout becomes part of the host name --
+        # and the "booting here" note would have been swallowed by the substitution that
+        # discards it, which is the opposite of saying so.
         if cfg is None:
             why = local_reason()
-            if why:
-                print(f"  {D}{why}: booting here{O}")
+            if why and not os.environ.get("KITCHEN_BOOT_HOST_AGENT"):
+                print(f"  {D}{why}: this boot stays here{O}", file=sys.stderr)
             return 1
         print(cfg.host)
         return 0
@@ -1633,6 +1641,14 @@ def main(argv: list) -> int:
         print(f"  {D}nothing was run. To boot here instead: KITCHEN_BOOT_HOST=local{O}",
               file=sys.stderr)
         return EXIT_UNAVAILABLE
+    except BrokenPipeError:
+        # `kitchen test ... | head` closes the pipe under us. Python then fails to flush
+        # stdout at shutdown, prints "BrokenPipeError ignored" and exits 120 -- a code
+        # that looks like a real failure and is unique in this toolkit (the other
+        # commands give 1 or 141 here). Point the remaining output at /dev/null and
+        # report what a program killed by SIGPIPE reports.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 141
     except KeyboardInterrupt:
         # The session's __exit__ has already told the agent to stop, which is what takes
         # the remote qemu down. Saying so matters: a Ctrl-C that leaves a guest running on

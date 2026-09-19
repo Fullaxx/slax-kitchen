@@ -97,6 +97,15 @@ it cannot read the ISO9660 filesystem the kernel lives on. See
 | `mkfs.ext4` | `e2fsprogs` | the disk `kitchen test --persistence` boots twice onto, and `boot.py --disk-create ext4`. Lives in `/usr/sbin`, which a non-login PATH can lack; every caller looks there too |
 | — | `ovmf` | UEFI firmware. Copy `OVMF_VARS` to a **private writable** file first; the packaged one is read-only |
 
+**All four are needed where the boot happens, which need not be here.** With a
+[boot host](../60-testing/boot-host.md) configured, they are required on that machine and
+checked there before it starts; what this machine needs instead is the row below.
+
+| | package | |
+|---|---|---|
+| `ssh` | `openssh-client` | reach the boot host. Key-based login only — nothing ever prompts |
+| `rsync` | `rsync` | send the tree and the image there, and bring the evidence back |
+
 ### Gates and plumbing
 
 | | package | |
@@ -104,7 +113,7 @@ it cannot read the ISO9660 filesystem the kernel lives on. See
 | `shellcheck` | `shellcheck` | commit gate 30 |
 | `yamllint` | `yamllint` | commit gate 40 |
 | `python3-yaml`, `python3-jsonschema` | — | recipe and profile validation |
-| `jq`, `curl`, `file`, `git` | — | JSON, `kitchen fetch`, artifact identification, submodules |
+| `jq`, `curl`, `file`, `git` | — | JSON, `kitchen fetch`, artifact identification, submodules. `git` is also what lists the files sent to a boot host |
 
 ## Two installation gotchas
 

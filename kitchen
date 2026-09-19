@@ -96,6 +96,9 @@ grub-mkstandalone|grub-efi-amd64-bin|build BOOTX64.EFI for UEFI boot
 qemu-system-x86_64|qemu-system-x86|boot tests
 qemu-img|qemu-utils|qcow2 disks for tools/qemu/boot.py
 mkfs.ext4|e2fsprogs|persistence test disks
+git|git|provenance, upstream-diff, and the file list sent to a boot host
+ssh|openssh-client|reach the boot host (boot-host.example.ini)
+rsync|rsync|send the tree and image to the boot host
 shellcheck|shellcheck|commit gate
 yamllint|yamllint|commit gate
 jq|jq|JSON handling
@@ -190,7 +193,24 @@ doctor_tier() {
         printf '  %sd%s  bundle.packages .................. %sno%s  needs chroot + mknod\n' "$B" "$O" "$R" "$O"
     fi
 
-    if cap kvm; then
+    # THE BOOT HOST ANSWERS THIS QUESTION FIRST, because when one is configured the local
+    # /dev/kvm and the local qemu have nothing to do with where a boot test runs -- and
+    # reporting "no qemu" on a machine whose boots all succeed elsewhere is a true fact
+    # about the wrong machine. Bounded by a timeout: doctor must stay fast and must not
+    # hang on an unreachable host, so a slow answer becomes "could not be reached" rather
+    # than a wait. The detail lives in `kitchen boot-host check`.
+    _bh=$(python3 "$REPO_ROOT/lib/boot_host.py" active 2>/dev/null)
+    if [ -n "$_bh" ]; then
+        if _bhc=$(timeout 20 python3 "$REPO_ROOT/lib/boot_host.py" check 2>&1); then
+            _bhq=$(printf '%s\n' "$_bhc" | awk '/qemu-system-x86_64 /{print $NF; exit}')
+            printf '  %sk%s  boot tests ....................... %sKVM on %s%s (qemu %s)\n' \
+                "$B" "$O" "$G" "$_bh" "$O" "${_bhq:-?}"
+        else
+            printf '  %sk%s  boot tests ....................... %sboot host %s unusable%s\n' \
+                "$B" "$O" "$R" "$_bh" "$O"
+            printf '       %srun `kitchen boot-host check` for the reason%s\n' "$D" "$O"
+        fi
+    elif cap kvm; then
         printf '  %sk%s  boot tests ....................... %sKVM (fast)%s\n' "$B" "$O" "$G" "$O"
     elif have qemu-system-x86_64 && [ -e /dev/kvm ]; then
         printf '  %sk%s  boot tests ....................... %sTCG only%s (/dev/kvm is here but not writable by this account)\n' "$B" "$O" "$Y" "$O"
@@ -236,11 +256,23 @@ doctor_tier() {
             printf '  %sunder TCG. Its mode (%s) lets no group write it; the usual setup is 0660%s\n' "$D" "$_km" "$O"
             printf '  %sroot:kvm, from the distribution'"'"'s udev rule, with the account in group kvm.%s\n' "$D" "$O"
         fi
+    elif [ -n "$_bh" ]; then
+        # NOT the note below. "only the full boot matrix is blocked here" and "adding
+        # --device /dev/kvm turns 5-15 min into ~30 s" are both false on a machine whose
+        # boots already run on a KVM host: nothing is blocked and nothing would get
+        # faster. Saying it anyway would send someone to reconfigure a container to fix a
+        # problem they do not have.
+        printf '\n  %sNote:%s this machine has no KVM and does not need one -- boot tests%s\n' \
+            "$D" "$O" "$O"
+        printf '  %srun on %s (boot-host.ini). `kitchen test --local` boots here instead.%s\n' \
+            "$D" "$_bh" "$O"
     elif ! cap kvm; then
         printf '\n  %sNote:%s only the full boot matrix is blocked here. Adding%s\n' "$D" "$O" "$O"
         printf '  %s  --device /dev/kvm%s\n' "$D" "$O"
         printf '  %sturns a 5-15 min boot-to-desktop run into ~30 s. Everything else,%s\n' "$D" "$O"
         printf '  %sbundle.packages included, already runs here.%s\n' "$D" "$O"
+        printf '  %sOr point boot tests at a machine that has KVM: boot-host.example.ini.%s\n' \
+            "$D" "$O"
     fi
 }
 
@@ -457,6 +489,7 @@ kitchen build <profile> [options]  unpack -> apply -> pack -> test
   --keep               keep the work tree afterwards
   --force              rebuild from scratch, overwriting the work tree and ISO
   --no-test            skip the profile's test list
+  --local              run the profile's boot tests here, not on the boot host
 
 <profile> is a name under profiles/ or a path to a Profile YAML.
 H
@@ -500,6 +533,12 @@ missing one is named with its package: xorriso for --structure, the kernel and t
 menu; qemu for every boot; mkfs.ext4 for --persistence.
 
 Logs and screenshots land in <dir of iso>/boot-tests/.
+
+  --local              boot here even if boot-host.ini names a machine with KVM
+
+With a boot-host.ini in the repository root, every boot mode above runs on the machine
+it names and the evidence still lands here. --structure always runs here: it reads the
+image, and the image is already here. See docs/60-testing/boot-host.md.
 H
         ;;
       doctor) cat <<'H'
