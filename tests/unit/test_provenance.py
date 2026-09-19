@@ -141,6 +141,22 @@ def test_the_builders_own_places_are_refused():
         shutil.rmtree(proj, ignore_errors=True)
 
 
+def test_a_directory_counts_only_where_a_path_can_begin():
+    """A short directory is the tail of many longer paths. The reference container mounts the
+    checkout at /work, and the first version of this rule matched it anywhere in a string --
+    so the sibling case above failed in CI, and the image's own
+    `slax/rootcopy/root/work/notes` was "inside /work". A shape rule again, with the
+    checkout's name for the shape. Every other case in this file used a long checkout path,
+    which is why nothing here saw it."""
+    with env(HOME="/root", PROJECT_ROOT="/work"):
+        for value in ("/srv/somebuilder/work/imgs/x", "slax/rootcopy/root/work/notes",
+                      "opt/app/work/x", "/workshop/x", "/work.bak/x"):
+            check(f"not inside /work: {value}", hits({"vars": {"v": value}}), [])
+        for value in ("/work", "/work/assets/x.tar.gz", "file:///work/debs",
+                      "copied from /work/assets/x", "PATH=/usr/bin:/work/bin"):
+            check(f"inside /work: {value}", bool(hits({"vars": {"v": value}})), True)
+
+
 def test_the_gaps_are_decisions():
     """What this rule does not catch, and the one thing it refuses wrongly -- asserted, so
     each is a decision rather than a surprise. build_machine_hits' docstring says why."""
@@ -152,6 +168,9 @@ def test_the_gaps_are_decisions():
     with env(HOME="/home/guest", PROJECT_ROOT=None):
         check("building as guest refuses the image's own /home/guest/...",
               bool(hits({"vars": {"v": "/home/guest/.config/app"}})), True)
+    with env(HOME="/root", PROJECT_ROOT="/work"):
+        check("with the checkout at /work, the image's own /work/... is refused",
+              bool(hits({"vars": {"v": "/work/data"}})), True)
 
 
 def test_a_local_input_is_recorded_relative_to_its_checkout():
@@ -321,6 +340,7 @@ def main():
     try:
         for fn in [test_the_image_is_not_the_builder,
                    test_the_builders_own_places_are_refused,
+                   test_a_directory_counts_only_where_a_path_can_begin,
                    test_the_gaps_are_decisions,
                    test_a_local_input_is_recorded_relative_to_its_checkout,
                    test_append_records_and_finalize_decides,

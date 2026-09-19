@@ -27,6 +27,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -78,7 +79,7 @@ def build_machine_paths(work: str | None = None) -> list[str]:
 
 
 def build_machine_hits(obj, work: str | None = None, where: str = "") -> list[str]:
-    """Every string in obj that is, or contains a path under, one of build_machine_paths().
+    """Every string in obj that names one of build_machine_paths(), or a path under it.
 
     Only a place this build is really using counts. A string's shape is never evidence,
     because the image is a Linux system too, and its only user is root.
@@ -108,17 +109,29 @@ def build_machine_hits(obj, work: str | None = None, where: str = "") -> list[st
     `kitchen sources` looks every local input up in git at the recorded commit, so a forged
     path is unresolved and a release refuses it.
 
+    WHERE A DIRECTORY COUNTS: only where a path can begin -- at the start of the string, or
+    after a character no path component contains (a space, a quote, `=`, `:`, the last `/`
+    of file://). Anywhere else it is the tail of some longer path. The first version matched
+    it anywhere, and the reference container mounts the checkout at /work (containers/
+    README.md, ci.yml), so `/srv/somebuilder/work/imgs/x` and the image's own
+    `slax/rootcopy/root/work/notes` were both "inside /work" -- a shape rule again, with the
+    checkout's name for the shape. CI caught it; this file had been tested only with long
+    checkout paths.
+
     THE GAPS, stated rather than discovered:
       - $HOME is /root (this container, most Docker builds): a var naming a builder file
         under /root but outside the checkout is recorded as written. It cannot be told apart
         from the image's own /root. Used as a `src:`, the file is recorded as `outside` and
         `kitchen sources` marks it unresolved, so a release still refuses it.
       - A builder directory that is none of these, such as /opt/somebuilder, passes.
-      - The one false positive this rule can make: a builder whose home directory also
-        exists in the image. Build as `guest`, and the image's /home/guest/... values are
-        refused, by a message that names $HOME.
+      - The one false positive this rule can make: a directory of this build that is also a
+        path in the image, named from its start. Build as `guest`, and the image's
+        /home/guest/... values are refused; keep the checkout at /work, as the reference
+        container does, and an image path under /work is. The message names the directory.
     """
-    roots = build_machine_paths(work)
+    roots = [(r.rstrip("/"), re.compile(r"(?<![\w.~+-])" + re.escape(r.rstrip("/"))
+                                        + r"(?![\w.~+-])"))
+             for r in build_machine_paths(work)]
     out: list[str] = []
 
     def walk(o, at: str) -> None:
@@ -129,9 +142,9 @@ def build_machine_hits(obj, work: str | None = None, where: str = "") -> list[st
             for i, v in enumerate(o):
                 walk(v, f"{at}[{i}]")
         elif isinstance(o, str):
-            for root in roots:
-                if o == root.rstrip("/") or root in o:
-                    out.append(f"{at}: {o!r} (inside {root.rstrip('/')})")
+            for root, pattern in roots:
+                if pattern.search(o):
+                    out.append(f"{at}: {o!r} (inside {root})")
                     break
 
     walk(obj, where)
