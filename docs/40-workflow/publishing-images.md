@@ -11,7 +11,7 @@ decides whether to.
 
 ```sh
 sudo ./kitchen build myproject                       # out/myproject.iso + .provenance.json
-./kitchen sources out/myproject.iso                  # every file accounted for, or exit 1
+./kitchen sources out/myproject.iso                  # every file accounted for, or it fails
 ci/release-assets.sh out/myproject.iso out/release   # the set that travels with the image
 ci/release-verify.py out/release                     # check the set before anything leaves
 ci/redistribution-claim.py out/release > redistribution.md

@@ -79,11 +79,14 @@ def _xorriso(iso: str, action: str) -> str:
 
     The exit status alone does not say so: measured on xorriso 1.5.6, listing a file that
     is not an ISO at all exits 0, prints no FAILURE line, and lists only `/`. So a failure
-    is a non-zero exit OR a FAILURE/SORRY line, and emptiness is judged by the caller.
+    is a non-zero exit OR any line at SORRY or above on xorriso's ladder -- SORRY, MISHAP,
+    FAILURE, FATAL, ABORT -- and emptiness is judged by the caller. MISHAP matters: it sits
+    below the default abort threshold (FAILURE), so xorriso can report one and exit 0.
     """
     r = subprocess.run(["xorriso", "-indev", iso, "-find", "/", "-exec", action, "--"],
                        capture_output=True, text=True)
-    said = [ln.strip() for ln in r.stderr.splitlines() if "FAILURE" in ln or "SORRY" in ln]
+    said = [ln.strip() for ln in r.stderr.splitlines()
+            if re.search(r"\b(SORRY|MISHAP|FAILURE|FATAL|ABORT)\b", ln)]
     if r.returncode != 0 or said:
         raise ListingError(f"xorriso could not list {os.path.basename(iso)}: "
                            + (said[0] if said else f"it exited {r.returncode}"))

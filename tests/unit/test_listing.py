@@ -174,6 +174,14 @@ def test_entries_refuses_a_listing_it_cannot_trust(tmp):
                                           err="xorriso : SORRY : a later read failed\n"), iso)
     check("a full listing with a SORRY beside it: refused", err is not None, True)
 
+    # MISHAP sits between SORRY and FAILURE, below the default abort threshold, so xorriso
+    # can report one and exit 0. The first version of the rule matched SORRY and FAILURE by
+    # name and let it through.
+    got, err = entries_or_error(stub.says(lsdl_text, lba_text,
+                                          err="libisofs: MISHAP : a directory was skipped\n"),
+                                iso)
+    check("a full listing with a MISHAP beside it, exit 0: refused", err is not None, True)
+
     got, err = entries_or_error(stub.says(lsdl_text, lba_text), iso)
     check("a real listing: no error", err, None)
     check("...every file listed", sorted(p for p, e in (got or {}).items() if e["type"] == "file"),

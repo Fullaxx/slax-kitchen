@@ -28,7 +28,7 @@ the resulting ISO in QEMU and reading the console.
 | preflight | ✅ every tool/file/capability the plan needs checked up front; `build` checks before unpacking |
 | `kitchen build` | ✅ whole pipeline from one profile, ~4 s for four recipes; derives test expectations from the recipe list |
 | `kitchen test` | ✅ `--structure` (18 assertions, ~1 s), `--bios`, `--uefi` |
-| `kitchen sources` | ✅ every file in a built image matched by sha256 to the stock image or to the step that produced it, from the provenance `pack` writes beside the ISO; exit 1 on anything it cannot account for, and `--fetch` gathers the source of what was built |
+| `kitchen sources` | ✅ every file in a built image matched by sha256 to the stock image or to the step that produced it, from the provenance `pack` writes beside the ISO; exit 1 on anything it cannot account for, 2 on an image it cannot list at all, and `--fetch` gathers the source of what was built |
 
 ### Recipes
 
