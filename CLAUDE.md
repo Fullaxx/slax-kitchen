@@ -3,6 +3,17 @@
 Pointers, not rules. Everything here lives somewhere else in the repo; this file only says
 **when to go and read it**. A rule copied into two places is how the two drift — the argument
 this project makes about regexes, counts and package databases applies to its own conventions.
+The exceptions are about the session rather than the tree, and have no other copy to drift from.
+
+## Before committing or pushing anything
+
+Don't, until the user has inspected the work and asked. Stop where the commit would go, with the
+work uncommitted, and hand it over: what changed, what you verified and how, and the commit
+message you would use. Approving a plan is not approving its commits, asking for one commit is not
+asking for the next, and a request to commit is not a request to push.
+
+Sessions committed and pushed on their own while the framework was being built. That stage is
+over: from 2026-09-19 the user inspects every change before it is committed.
 
 ## Before committing anything that answers an issue
 
