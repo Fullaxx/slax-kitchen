@@ -15,8 +15,15 @@ _test_structure() {
 }
 
 # Derive the keystrokes that select a boot entry with console=ttyS on it, by reading the
-# ISO's OWN menu rather than hardcoding a count. Prints a --keys spec, or fails if the
-# image has no such entry -- in which case the caller keeps today's evidence-only boot.
+# ISO's OWN menu rather than hardcoding a count. Prints a --keys spec and returns 0; or
+# returns 1 when the menu was read and has no such entry, and the caller falls back to an
+# evidence-only boot; or returns 2, having said why on stderr, when the menu could not be
+# read or the entry cannot be selected.
+#
+# 1 AND 2 ARE DIFFERENT CLAIMS. They used to be one status, so a machine without xorriso, an
+# image whose menu would not extract, and an entry whose label cannot be typed were all
+# reported as "no serial entry in this ISO". The caller then booted with nothing to assert,
+# and the boot passed on a screenshot while blaming the image.
 #
 # Counting arrow presses was the obvious approach and it is wrong twice over. The Slax
 # isolinux menu sets MENU ROWS 5, so the sixth entry that `serial-console` appends is not
@@ -32,16 +39,29 @@ _test_structure() {
 # shared count would have selected memtest under UEFI.)
 _serial_keys() {
     _sk_iso=$1 _sk_mode=$2
-    have xorriso || return 1
+    if ! have xorriso; then
+        printf '  %scannot read the boot menu: xorriso is not installed (apt-get install xorriso)%s\n' \
+            "$R" "$O" >&2
+        return 2
+    fi
     _sk_d=$(mktemp -d "${TMPDIR:-/tmp}/kitchen-menu.XXXXXX")
     if [ "$_sk_mode" = uefi ]; then
         _sk_cfg=/boot/grub/grub.cfg
     else
         _sk_cfg=/slax/boot/isolinux.cfg
     fi
-    xorriso -osirrox on -indev "$_sk_iso" -extract "$_sk_cfg" "$_sk_d/cfg" -- \
-        >/dev/null 2>&1
-    [ -s "$_sk_d/cfg" ] || { rm -rf "$_sk_d"; return 1; }
+    _sk_err=$(xorriso -osirrox on -indev "$_sk_iso" -extract "$_sk_cfg" "$_sk_d/cfg" -- \
+        2>&1 >/dev/null)
+    if [ ! -s "$_sk_d/cfg" ]; then
+        rm -rf "$_sk_d"
+        printf '  %scannot read the boot menu: %s would not extract from %s%s\n' \
+            "$R" "$_sk_cfg" "$(basename "$_sk_iso")" "$O" >&2
+        # xorriso says why on a FAILURE line -- a missing file, or no ISO at all.
+        printf '%s\n' "$_sk_err" | grep 'FAILURE' | head -2 | sed 's/^/    /' >&2
+        [ "$_sk_mode" = uefi ] && printf '    %s\n' \
+            "--uefi boots GRUB, whose menu the uefi-bootable recipe writes there" >&2
+        return 2
+    fi
 
     if [ "$_sk_mode" = uefi ]; then
         _sk_n=$(awk '/^menuentry /{i++} /console=ttyS/{print i-1; exit}' "$_sk_d/cfg")
@@ -86,8 +106,16 @@ _serial_keys() {
     rm -rf "$_sk_d"
     [ -n "$_sk_lbl" ] || return 1
     # Only a-z0-9 can be typed as qcodes without a translation table. Anything else and
-    # we would be guessing at key names, so say we cannot rather than send nonsense.
-    case "$_sk_lbl" in *[!a-z0-9]*) return 1 ;; esac
+    # we would be guessing at key names, so say we cannot rather than send nonsense --
+    # and say it as what it is. The image HAS a serial entry; it is this harness that
+    # cannot reach it.
+    case "$_sk_lbl" in
+        *[!a-z0-9]*)
+            printf '  %sthe serial entry is LABEL %s, and only a-z and 0-9 can be typed at the%s\n' \
+                "$R" "$_sk_lbl" "$O" >&2
+            printf '    boot: prompt -- rename the label, or pass --keys to select it yourself\n' >&2
+            return 2 ;;
+    esac
     _sk_k="1s,esc,0.5s,esc,0.5s"
     for _sk_c in $(printf '%s' "$_sk_lbl" | sed 's/./& /g'); do
         _sk_k="$_sk_k,$_sk_c"
@@ -155,6 +183,22 @@ kitchen_test() {
             printf '  %snote: /dev/kvm is not writable by this account, running under TCG -- this is slow%s\n' \
                 "$D" "$O"
         fi
+        # xorriso is how a boot reads the image: the kernel and initramfs for --kernel and
+        # --persistence, the boot menu for a menu mode choosing its own entry. Checked here,
+        # before anything boots, because without it the two kinds of mode failed in two
+        # different ways -- and the menu modes did not fail at all: they fell back to a
+        # screenshot and passed, reporting "no serial entry in this ISO". ci/tier-c.sh has
+        # refused to start without xorriso all along; this is the same rule for everyone.
+        _xneed=""
+        { [ "$want_kernel" = 1 ] || [ "$want_perch" = 1 ]; } && _xneed="the kernel and initramfs"
+        [ "$want_bios$want_uefi$want_usb" != 000 ] && [ "$auto_keys" = 1 ] \
+            && _xneed="${_xneed:+$_xneed and }the boot menu"
+        if [ -n "$_xneed" ] && ! have xorriso; then
+            printf '  %sFAIL%s xorriso is not installed (apt-get install xorriso): it reads %s\n' \
+                "$R" "$O" "$_xneed"
+            printf '       out of the image, so nothing was booted\n'
+            return 1
+        fi
     fi
 
     # Direct kernel boot and the persistence pair both need the kernel and initramfs
@@ -192,9 +236,20 @@ kitchen_test() {
     [ "$want_uefi" = 1 ] && modes="$modes uefi"
     [ "$want_usb" = 1 ]  && modes="$modes usb"
     for mode in $modes; do
-        mkeys=$keys
+        mkeys=$keys why="--no-keys: the menu was not touched"
         if [ "$auto_keys" = 1 ]; then
-            mkeys=$(_serial_keys "$iso" "$mode") || mkeys=""
+            mkeys=$(_serial_keys "$iso" "$mode")
+            case $? in
+                0) ;;
+                1) mkeys="" why="no serial entry in this ISO" ;;
+                *)
+                    # _serial_keys said why, above. Booting anyway would be a boot with
+                    # nothing to assert, passing on a screenshot -- the defect this replaced.
+                    printf '%s* %s boot%s  %sFAIL%s not booted: no entry could be chosen, for the reason above\n' \
+                        "$B" "$mode" "$O" "$R" "$O"
+                    rc=1
+                    continue ;;
+            esac
         fi
         if [ -n "$mkeys" ]; then
             printf '%s* %s boot%s  %s(bootloader; selects the serial entry and asserts on it)%s\n' \
@@ -204,11 +259,12 @@ kitchen_test() {
                 --expect 'Mounting bundles' \
                 --expect 'Live Kit done, starting slax' || rc=1
         else
-            # No entry names ttyS0 last, so nothing this boot produces can be read. Say
-            # so: "I could not check" and "I checked and it is fine" are different claims,
-            # and for four CI runs this mode reported the second while meaning the first.
-            printf '%s* %s boot%s  %s(bootloader; screenshot only -- no serial entry in this ISO)%s\n' \
-                "$B" "$mode" "$O" "$Y" "$O"
+            # No entry names ttyS0 last, or the caller asked for the menu to be left alone,
+            # so nothing this boot produces can be read. Say which: "I could not check" and
+            # "I checked and it is fine" are different claims, and for four CI runs this mode
+            # reported the second while meaning the first.
+            printf '%s* %s boot%s  %s(bootloader; screenshot only -- %s)%s\n' \
+                "$B" "$mode" "$O" "$Y" "$why" "$O"
             use_golden=0 _boot_run "$mode" || rc=1
         fi
     done

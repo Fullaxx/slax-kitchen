@@ -459,6 +459,10 @@ found by reading the ISO's own menu -- because /dev/console is the last console=
 everything init prints goes there. Apply `serial-console` to get such an entry. On an
 ISO without one these modes fall back to screenshot evidence and say so.
 
+A menu that cannot be read is not a menu without the entry: without xorriso, with a
+menu that will not extract, or with an entry whose label cannot be typed, those modes
+fail and boot nothing. --kernel and --persistence need xorriso too, for the kernel.
+
 Logs and screenshots land in <dir of iso>/boot-tests/.
 H
         ;;

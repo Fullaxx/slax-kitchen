@@ -52,6 +52,14 @@ profile's recipes asked `pack` for, read through the same hint reader `pack` use
 `<iso-dir>/boot-tests/`. Without `/dev/kvm` these run under TCG and are slow; the command says so
 rather than appearing to hang.
 
+They choose their boot entry by reading the ISO's own menu with `xorriso`. **A menu that cannot
+be read is not a menu without the entry.** Without `xorriso`, or when the menu will not extract,
+or when the serial entry's label cannot be typed at the `boot:` prompt, the mode fails and boots
+nothing, saying which of the three it was. It used to report all three as "no serial entry in
+this ISO" and pass on a screenshot of an unasserted boot. On a machine without `xorriso` that was
+the normal outcome. Only an image that really has no serial entry falls back to screenshot
+evidence, and `--no-keys` does the same when asked.
+
 `--kernel` boots the kernel directly, bypassing the bootloader. It is the mode that can actually
 fail on its own, because it puts the kernel on `ttyS0` by construction and requires livekit's
 three markers in the serial log. `--expect STRING` adds your own requirements, repeatably — pair it
