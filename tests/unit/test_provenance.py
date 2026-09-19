@@ -1,20 +1,28 @@
 #!/usr/bin/env python3
-"""The provenance guard: what counts as a path on the build machine, and where.
+"""The provenance guard: what counts as a place on the build machine, and where it is checked.
 
 WHY THIS EXISTS. `lib/provenance.py` refuses to record anything that names a place on the
 builder, which is right and is the same rule the Tier C ledger enforces. But the rule was
-one regex applied everywhere, and `^/` was one of its alternatives -- so ANY absolute path
-was evidence, including one describing the image.
+one regex applied everywhere, HOSTISH, and `^/` was one of its alternatives -- so ANY
+absolute path was evidence, including one describing the image.
 
 That stopped `profiles/boot-matrix.yaml`, which sets `marker: /var/lib/kitchen-perch-marker`
 because `testkit` builds the path by concatenation and a relative value would resolve to
 `/unionvar/lib/...`. And boot-matrix is what `ci.yml` builds for the weekly Tier C job, so
 the weekly run was broken. Issue #20.
 
-Nothing caught it because nothing tested this file: `grep -rl hostish_values tests/`
-returned nothing before this. A guard with no test is how a rule that stops your own
-profiles ships green.
+#20 took `^/` out for vars and kept the rest, and the rest was the image's own paths too.
+Slax runs as root, so recipes write under /root/ and /home/guest/, and a local input staged
+as a tree that mirrors its destination -- `x.files/root/.config/demo`, relative to the
+checkout -- was refused. It was refused AFTER the recipe had built its bundle, which stayed
+in slax/modules/ unrecorded and shipped. Issue #26. The tests #20 added covered vars, the
+field that had failed, and not the class: nothing drove a local input, an artifact or an
+output through the guard. So this file tests the image's ordinary paths wherever they land.
+
+HOSTISH is gone. The rule compares against the places this build is actually using, which
+cannot mistake the image for the host, and it runs on vars before anything is built.
 """
+import contextlib
 import io
 import json
 import os
@@ -29,173 +37,307 @@ import provenance as P  # noqa: E402
 
 FAILURES = []
 
+# A work tree, as a string. Never created: the rule only compares against it.
+WORK = "/srv/somebuilder/work/img"
+
 
 def check(name, got, want):
     if got != want:
         FAILURES.append(f"{name}: got {got!r}, want {want!r}")
 
 
-def flagged(value, work=None):
-    """Is `value` refused when it sits in a recipe's vars?"""
-    return bool(P.hostish_values({"recipe": "r", "vars": {"m": value}},
-                                 image_paths_ok=("vars",), work=work))
-
-
-def test_an_in_image_absolute_var_is_not_a_host_path():
-    """The exact value that broke the weekly job, and the shapes that still must not pass."""
-    check("boot-matrix's marker is accepted",
-          flagged("/var/lib/kitchen-perch-marker"), False)
-    check("an absolute in-image binary path is accepted",
-          flagged("/usr/local/bin/tor-browser"), False)
-    check("a relative path is accepted", flagged("var/lib/marker"), False)
-    check("a URL is accepted", flagged("https://example.invalid/x"), False)
-
-    # Every shape signal survives. These are the leaks the guard exists for, and none of
-    # them stopped being evidence just because `^/` did.
-    for leak in ("/home/someone/build", "/root/code/thing", "/Users/someone/build",
-                 "~/build/out", "C:\\\\Users\\\\someone"):
-        check(f"still refused in vars: {leak}", flagged(leak), True)
-
-
-def test_a_path_this_build_used_is_refused_even_without_a_shape():
-    """The half that is not a guess.
-
-    A builder working somewhere the shape rules know nothing about -- /opt, /srv, /build --
-    is only catchable by comparing against where this build actually is. That is why
-    build_machine_paths derives the repo root from this file's own location and takes the
-    work tree from append_recipe, rather than reading environment variables: an earlier
-    draft read KITCHEN_WORK and KITCHEN_REPO_ROOT, which nothing in the tree sets, so this
-    half would have been dead code that passed every test written against it.
-    """
-    work = "/opt/somebuilder/work/img"
-    check("a value under this build's work tree is refused",
-          flagged(work + "/iso/slax", work=work), True)
-    check("...while a sibling path that merely looks similar is not",
-          flagged("/opt/somebuilder/workshop/notes", work=work), False)
-
-    repo = ROOT
-    check("a value under the repo root is refused", flagged(repo + "/lib/apply.py"), True)
-    check("the repo root is derived, not configured",
-          any(p.rstrip("/") == repo for p in P.build_machine_paths()), True)
-
-    # The accepted gap, asserted so it is a decision rather than a surprise: an unusual
-    # builder path that is neither a known shape nor this build's own is not caught.
-    check("the documented gap: an unrelated absolute path passes",
-          flagged("/opt/someoneelse/artifacts"), False)
-
-
-def test_hostish_is_unchanged_outside_vars():
-    """release-verify and the ledger gate import this. They must keep their teeth.
-
-    `ci/checks/97-tier-c-ledger.sh` uses HOSTISH directly to refuse an absolute `iso_name`,
-    and `ci/release-verify.py` runs hostish_values over a whole published record. Relaxing
-    the rule for vars must not relax it for either.
-    """
-    check("an absolute path outside vars is still a leak",
-          bool(P.hostish_values({"iso_name": "/abs/path.iso"})), True)
-    check("...and still is when vars are exempted elsewhere in the same document",
-          bool(P.hostish_values({"iso_name": "/abs/path.iso", "vars": {"m": "/var/lib/x"}},
-                                image_paths_ok=("vars",))), True)
-    check("HOSTISH still matches a bare absolute path",
-          bool(P.HOSTISH.search("/anything")), True)
-
-
-def test_a_refused_recipe_leaves_no_provenance():
-    """append_recipe writes nothing when it refuses.
-
-    Paired with the ordering in apply_recipe: provenance is written BEFORE the journal, so a
-    refusal leaves neither. Written the other way round, a refused apply left a journal
-    entry saying the recipe had been applied -- and check_plan_order's _built_before reads
-    that journal, so the next run believed it had already happened.
-    """
-    tmp = tempfile.mkdtemp(prefix="prov-")
+@contextlib.contextmanager
+def env(**kv):
+    """Set environment variables for one block, then put them back. HOME and PROJECT_ROOT
+    decide what counts as this build machine, so a test that depends on them sets them
+    rather than inheriting whatever the machine running it has."""
+    saved = {k: os.environ.get(k) for k in kv}
     try:
-        meta = os.path.join(tmp, "work", ".kitchen")
-        os.makedirs(meta)
-        raised = False
-        try:
-            P.append_recipe(meta, {"recipe": "r", "vars": {"m": "/root/code/leak"}})
-        except RuntimeError:
-            raised = True
-        check("a leaking var is refused", raised, True)
-        check("...and nothing was recorded",
-              os.path.exists(os.path.join(meta, P.WORK_FILE)), False)
-
-        # Caught rather than propagated: an uncaught raise here aborts the whole suite and
-        # hides every later check. Collect it like any other failure.
-        try:
-            P.append_recipe(meta,
-                            {"recipe": "r", "vars": {"m": "/var/lib/kitchen-perch-marker"}})
-        except RuntimeError as e:                      # noqa: BLE001
-            FAILURES.append(f"an in-image var was refused: {e}")
-            return
-        doc = json.load(io.open(os.path.join(meta, P.WORK_FILE), encoding="utf-8"))
-        check("an in-image var is recorded", len(doc["recipes"]), 1)
-        check("...with the leading slash intact, because that is what the image uses",
-              doc["recipes"][0]["vars"]["m"], "/var/lib/kitchen-perch-marker")
-
-        # THROUGH append_recipe, not hostish_values directly: the exemption list lives at
-        # the call site, so a test that only drives the helper cannot see it widen. Adding
-        # "iso_name" to that tuple was a mutation this file did not catch until now.
-        raised = False
-        try:
-            P.append_recipe(meta, {"recipe": "r", "iso_name": "/abs/path.iso", "vars": {}})
-        except RuntimeError:
-            raised = True
-        check("append_recipe still refuses an absolute path outside vars", raised, True)
+        for k, v in kv.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        yield
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
-def test_both_validation_sites_exempt_vars():
-    """Every place that validates a record must exempt `vars`, or the two drift.
+def hits(record, work=WORK):
+    return P.build_machine_hits(record, work=work)
 
-    THIS IS THE TEST THAT WAS MISSING. hostish_values is called twice in provenance.py to
-    refuse a record: append_recipe, at apply time, and finalize, at pack time. Fixing only
-    the first left `kitchen build boot-matrix` failing at the very last step -- the ISO
-    written, and then "could not write ...provenance.json" -- while every unit test here
-    passed, because none of them went through finalize.
 
-    Checked structurally rather than by driving finalize, which needs a whole work tree: the
-    property is "both call sites agree", and that is visible in the source. Same shape as
-    test_all_root_is_per_verb and test_both_chroot_verbs_use_one_staging_loop, which exist
-    for the same reason -- two places that must not diverge.
+# Every value here is ordinary on Slax, and HOSTISH refused every one of them -- boot-matrix's
+# marker only at release, after #20 had exempted it at apply. Each is recorded the way the
+# engine records it.
+IMAGE = [
+    ("#26: a local input staged as a tree mirroring /root",
+     {"steps": [{"verb": "bundle.files", "local_inputs": [
+         {"root": "project", "path": "recipes/local/root-demo.files/root/.config/demo"}]}]}),
+    # docs/90-reference/verbs.md, as written: rootcopy.files records slax/rootcopy<dest>,
+    # and iso.files records its dest exactly as the recipe spells it.
+    ("the verb reference's rootcopy.files example",
+     {"artifacts": ["slax/rootcopy/root/.bashrc"]}),
+    ("the verb reference's iso.files example",
+     {"artifacts": ["/README.txt", "/LICENSE", "/autorun.sh", "/docs"]}),
+    ("rootcopy.files into guest's home",
+     {"artifacts": ["slax/rootcopy/home/guest/.config/app"]}),
+    ("a bundle.files output under a nested home/",
+     {"steps": [{"verb": "bundle.files", "output": "opt/app/home/defaults.cfg"}]}),
+    ("a var naming a file in root's home in the image",
+     {"vars": {"conf": "/root/.config/app.conf"}}),
+    ("testkit's own report default, restated in a profile",
+     {"vars": {"report": "/etc/hostname /etc/slax-version /etc/timezone /etc/localtime "
+                         "/root/.xinitrc"}}),
+    ("boot-matrix's marker, #20's value",
+     {"vars": {"marker": "/var/lib/kitchen-perch-marker"}}),
+    ("prose that mentions /root/",
+     {"redistribution": {"allowed": False,
+                         "why": "installs a licensed runtime under /root/.wine"}}),
+]
+
+
+def test_the_image_is_not_the_builder():
+    """Nothing in IMAGE names this machine, whoever's home the build runs in."""
+    for home in ("/root", "/home/somebuilder"):
+        with env(HOME=home, PROJECT_ROOT=None):
+            for name, record in IMAGE:
+                check(f"HOME={home}: recorded as the image: {name}", hits(record), [])
+
+
+def test_the_builders_own_places_are_refused():
+    """The rule's whole job: a value inside a directory this build is really using, in any
+    field -- there are no exempt fields left to forget at a call site."""
+    proj = tempfile.mkdtemp(prefix="proj-")
+    try:
+        with env(HOME="/home/somebuilder", PROJECT_ROOT=proj):
+            for name, value in (
+                    ("the work tree", WORK + "/iso/slax/modules/40-x.sb"),
+                    ("the work tree itself", WORK),
+                    ("the kitchen checkout", os.path.join(ROOT, "recipes", "local", "x.tar.gz")),
+                    ("the project checkout", os.path.join(proj, "assets", "x.tar.gz")),
+                    ("the builder's home", "/home/somebuilder/Downloads/x.tar.gz"),
+                    # URLISH let this one through: it was a URL, so it could not be a path.
+                    ("a file:// URL into the checkout", "file://" + os.path.join(ROOT, "debs")),
+                    ("the checkout inside prose", f"copied from {ROOT}/assets/x"),
+            ):
+                check(f"refused in vars: {name}", bool(hits({"vars": {"v": value}})), True)
+            check("refused outside vars too",
+                  bool(hits({"steps": [{"output": os.path.join(ROOT, "x")}]})), True)
+            check("a sibling that only shares a prefix is not the work tree",
+                  hits({"vars": {"v": "/srv/somebuilder/work/imgs/x"}}), [])
+
+            # DERIVED, NOT CONFIGURED: see build_machine_paths.
+            paths = [p.rstrip("/") for p in P.build_machine_paths()]
+            check("the kitchen checkout is derived from the code's own location",
+                  ROOT in paths, True)
+            check("the project checkout comes from project_root()",
+                  os.path.realpath(proj) in [os.path.realpath(p) for p in paths], True)
+    finally:
+        shutil.rmtree(proj, ignore_errors=True)
+
+
+def test_the_gaps_are_decisions():
+    """What this rule does not catch, and the one thing it refuses wrongly -- asserted, so
+    each is a decision rather than a surprise. build_machine_hits' docstring says why."""
+    with env(HOME="/root", PROJECT_ROOT=None):
+        check("HOME=/root: a builder file under /root, outside the checkout, is recorded",
+              hits({"vars": {"v": "/root/Downloads/app.tar.gz"}}), [])
+        check("a builder directory that is none of this build's is not caught",
+              hits({"vars": {"v": "/opt/someoneelse/artifacts/x"}}), [])
+    with env(HOME="/home/guest", PROJECT_ROOT=None):
+        check("building as guest refuses the image's own /home/guest/...",
+              bool(hits({"vars": {"v": "/home/guest/.config/app"}})), True)
+
+
+def test_a_local_input_is_recorded_relative_to_its_checkout():
+    """root_relative() is why a local input can never name the builder: it records a path
+    inside the kitchen or project checkout, or only a basename. Tested where the promise is
+    made rather than policed after it.
+
+    #26's input is the case that matters. Staged as a tree mirroring its destination, it has
+    a directory called `root` inside the checkout -- a name, not a place on this machine.
     """
-    import ast
-    src = io.open(os.path.join(ROOT, "lib", "provenance.py"), encoding="utf-8").read()
-    tree = ast.parse(src)
+    proj = tempfile.mkdtemp(prefix="proj-")
+    outside = tempfile.mkdtemp(prefix="outside-")
+    try:
+        staged = os.path.join(proj, "recipes", "local", "root-demo.files", "root", ".config",
+                              "demo")
+        os.makedirs(os.path.dirname(staged))
+        with open(staged, "w") as f:
+            f.write("demo\n")
+        target = os.path.join(outside, "elsewhere")
+        with open(target, "w") as f:
+            f.write("x\n")
+        link = os.path.join(proj, "linked")
+        os.symlink(target, link)
+        with env(PROJECT_ROOT=proj):
+            check("a kitchen file",
+                  P.root_relative(os.path.join(ROOT, "lib", "provenance.py")),
+                  {"root": "kitchen", "path": "lib/provenance.py"})
+            check("#26's input", P.root_relative(staged),
+                  {"root": "project", "path": "recipes/local/root-demo.files/root/.config/demo"})
+            check("a symlink out of the checkout is judged by where it points",
+                  P.root_relative(link), None)
+            check("outside both, only a basename is kept",
+                  P.local_input(target).get("outside"), "elsewhere")
+            check("...and recorded, #26's input names nothing on this machine",
+                  hits({"steps": [{"local_inputs": [P.local_input(staged)]}]}), [])
+    finally:
+        shutil.rmtree(proj, ignore_errors=True)
+        shutil.rmtree(outside, ignore_errors=True)
 
-    # A call is "validating" when its result feeds a refusal: `bad = hostish_values(...)`.
-    sites = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign):
-            continue
-        if not (isinstance(node.value, ast.Call)
-                and getattr(node.value.func, "id", "") == "hostish_values"):
-            continue
-        names = [t.id for t in node.targets if isinstance(t, ast.Name)]
-        if "bad" in names:
-            sites.append((node.lineno, {k.arg for k in node.value.keywords}))
 
-    check("both validation sites found", len(sites), 2)
-    for lineno, kwargs in sites:
-        check(f"provenance.py:{lineno} exempts vars", "image_paths_ok" in kwargs, True)
-        check(f"provenance.py:{lineno} passes the work tree", "work" in kwargs, True)
+def fake_work(tmp, entries):
+    """The least of a work tree finalize() reads -- .kitchen/provenance.json, written through
+    append_recipe the way apply writes it -- and an image to hash."""
+    meta = os.path.join(tmp, "work", ".kitchen")
+    os.makedirs(meta)
+    for e in entries:
+        P.append_recipe(meta, e)
+    iso = os.path.join(tmp, "out.iso")
+    with open(iso, "wb") as f:
+        f.write(b"not really an image\n")
+    return os.path.join(tmp, "work"), iso
+
+
+def test_append_records_and_finalize_decides():
+    """Nothing is refused mid-apply any more. append_recipe runs after the recipe has built
+    its bundle, and a refusal there stranded it -- in slax/modules/, with no journal entry and
+    no provenance, and `kitchen pack` shipped it. Issue #26. So append_recipe writes down what
+    it is given, and the record is judged whole when it is finalized for publishing.
+
+    Driven through finalize() rather than asserted from its source. The test that stood here
+    checked by AST that both call sites passed the same exemption tuple; there is no tuple
+    any more, so there is nothing for two sites to disagree about.
+    """
+    with env(HOME="/root", PROJECT_ROOT=None):
+        tmp = tempfile.mkdtemp(prefix="fin-")
+        try:
+            work, iso = fake_work(tmp, [dict({"recipe": f"r{i}"}, **record)
+                                        for i, (_n, record) in enumerate(IMAGE)])
+            try:
+                dest = P.finalize(work, iso, "genisoimage", None)
+            except RuntimeError as e:
+                FAILURES.append(f"finalize refused the image's own paths: {e}")
+                return
+            doc = json.load(io.open(dest, encoding="utf-8"))
+            check("every record reaches the sidecar", len(doc["recipes"]), len(IMAGE))
+            check("...#26's input intact",
+                  doc["recipes"][0]["steps"][0]["local_inputs"][0]["path"],
+                  "recipes/local/root-demo.files/root/.config/demo")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+        # The work tree, because it is the one directory only finalize's caller knows: a
+        # refusal here proves finalize passes it on, which is what the AST test was for.
+        # The other directories are the same rule, tested through build_machine_hits above.
+        tmp = tempfile.mkdtemp(prefix="fin-")
+        try:
+            leak = os.path.join(tmp, "work", "iso", "slax", "x")
+            try:
+                work, iso = fake_work(tmp, [{"recipe": "r", "vars": {"v": leak}}])
+            except RuntimeError as e:
+                FAILURES.append(f"append_recipe refused mid-apply: {e}")
+                return
+            raised = False
+            try:
+                P.finalize(work, iso, "genisoimage", None)
+            except RuntimeError:
+                raised = True
+            check("finalize refuses a var inside the work tree it was given", raised, True)
+            check("...and writes no sidecar", os.path.exists(iso + ".provenance.json"), False)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+PROFILE = """\
+apiVersion: slax-kitchen/v1
+kind: Profile
+metadata:
+  name: p
+  summary: one recipe and one var
+base:
+  flavour: debian
+  arch: 64bit
+  version: "12.2.0"
+recipes:
+  - name: testkit
+    vars:
+      marker: {marker}
+"""
+
+
+def preflight(marker):
+    """`kitchen build`'s first pass, with build.sh's arguments: the profile, --preflight-only.
+
+    In-process rather than a subprocess. A fresh interpreter importing apply.py was a
+    quarter of a second per call, measured, and this gate runs at every commit and push.
+    main() takes argv and returns the exit status, so nothing is lost."""
+    import apply
+    d = tempfile.mkdtemp(prefix="profile-")
+    try:
+        path = os.path.join(d, "p.yaml")
+        with open(path, "w") as f:
+            f.write(PROFILE.format(marker=json.dumps(marker)))
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = apply.main(["apply.py", "--profile", path, "--preflight-only",
+                             "--facts", "flavour=debian,arch=64bit"])
+        return rc, out.getvalue(), err.getvalue()
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_a_var_is_refused_before_anything_is_built():
+    """The one input no producer shapes is checked first. kitchen build runs this pass before
+    it unpacks the base image, so a refusal leaves nothing behind -- where #26's came after
+    the recipe had built its bundle, and left the bundle there.
+
+    Only the refusal is asserted, not the exit status of the in-image case: past this check
+    the preflight looks for testkit's tools, which a lint container may not have."""
+    rc, out, err = preflight(os.path.join(ROOT, "leak"))
+    check("a var inside this checkout exits 2", rc, 2)
+    check("...naming the recipe and the var", "testkit.marker" in err, True)
+    check("...before the preflight starts", "preflight" in out, False)
+    rc, out, err = preflight("/root/.config/kitchen-marker")
+    check("an in-image var under /root is not refused",
+          "a place on this build machine" in err, False)
+    check("...and gets as far as the preflight", out.startswith("preflight "), True)
 
 
 def main():
-    for fn in [test_an_in_image_absolute_var_is_not_a_host_path,
-               test_a_path_this_build_used_is_refused_even_without_a_shape,
-               test_hostish_is_unchanged_outside_vars,
-               test_a_refused_recipe_leaves_no_provenance,
-               test_both_validation_sites_exempt_vars]:
-        fn()
-    if FAILURES:
-        for f in FAILURES:
-            print(f"FAIL {f}", file=sys.stderr)
-        return 1
-    print("tests/unit/test_provenance.py: all checks passed")
-    return 0
+    # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY -- for the reasons
+    # test_release_assets.py gives (#25). tempfile.tempdir steers this process and TMPDIR the
+    # apply.py it runs, and both are put back so an importer is not left pointing at nothing.
+    box = tempfile.mkdtemp(prefix="test_provenance-")
+    tempfile.tempdir = box
+    _tmpdir = os.environ.get("TMPDIR")
+    os.environ["TMPDIR"] = box
+    try:
+        for fn in [test_the_image_is_not_the_builder,
+                   test_the_builders_own_places_are_refused,
+                   test_the_gaps_are_decisions,
+                   test_a_local_input_is_recorded_relative_to_its_checkout,
+                   test_append_records_and_finalize_decides,
+                   test_a_var_is_refused_before_anything_is_built]:
+            fn()
+        if FAILURES:
+            for f in FAILURES:
+                print(f"FAIL {f}", file=sys.stderr)
+            return 1
+        print("tests/unit/test_provenance.py: all checks passed")
+        return 0
+    finally:
+        tempfile.tempdir = None
+        os.environ.pop("TMPDIR", None)
+        if _tmpdir is not None:
+            os.environ["TMPDIR"] = _tmpdir
+        shutil.rmtree(box, ignore_errors=True)
 
 
 if __name__ == "__main__":

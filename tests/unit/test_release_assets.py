@@ -298,8 +298,17 @@ def test_the_content_scan_runs_even_when_the_records_are_broken():
 
 
 def test_no_host_paths_and_no_renamed_names():
-    with Fixture(prov_extra={"note": "/home/someone/build"}) as d:
-        check("a host path", mentions(verify_mod.verify(d), "path on the build machine"), True)
+    # A place on THIS machine: the rule compares against where the machine publishing really
+    # is, not against what a path looks like. #26 retired the shape rule this used to test.
+    with Fixture(prov_extra={"note": os.path.join(ROOT, "build", "x.iso")}) as d:
+        check("a host path", mentions(verify_mod.verify(d), "names a place on this machine"), True)
+    # ...and the image's own paths are not one. The shape rule refused this var here even
+    # after #20 had exempted it at apply time, so boot-matrix could never have been released.
+    in_image = [{"recipe": "testkit", "vars": {"marker": "/var/lib/kitchen-perch-marker"}},
+                {"recipe": "r", "artifacts": ["slax/rootcopy/root/.bashrc"]}]
+    with Fixture(prov_extra={"recipes": in_image}) as d:
+        check("an in-image path is not a host path",
+              mentions(verify_mod.verify(d), "names a place on this machine"), False)
     with Fixture(extra={"a~b.txt": (b"x", "source")}) as d:
         check("a name GitHub renames", mentions(verify_mod.verify(d), "a~b.txt: GitHub would rename"), True)
 

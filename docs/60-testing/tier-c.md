@@ -182,7 +182,8 @@ Two files, both facts about the artifact:
 
 Nothing about the machine goes in either, and that is gated rather than trusted:
 `ci/checks/97-tier-c-ledger.sh` validates the ledger against a closed key set and rejects
-any string that looks like a path or a home directory. Add a hostname field and it fails.
+any string containing a path separator: every field is a name, a version, a marker or one of
+a fixed set. Add a hostname field and it fails.
 
 The ledger also refuses to be written without a commit. The first run recorded
 `"commit": "unknown"` because git will not read a repository owned by another user

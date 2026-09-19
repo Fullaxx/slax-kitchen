@@ -16,7 +16,8 @@ What it refuses:
   - a project archive whose submodules are missing, or differ from the recorded pins
   - an asset of 2 GiB or more, more than 1000 assets (GitHub's limits), or a name GitHub
     would rename
-  - a path on the build machine in any of the three records
+  - in any of the three records, a place inside this machine's kitchen or project checkout
+    or its home directory -- the same rule `kitchen pack` applies to the provenance
   - with an image attached: Slax's firmware bundle without the copyright files of its Debian
     firmware packages, which firmware-refresh reinstalls (the b43 files in that bundle never
     had a license text, and are kept)
@@ -42,7 +43,7 @@ import tarfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "lib"))
 
-from provenance import hostish_values  # noqa: E402
+from provenance import build_machine_hits  # noqa: E402
 
 MAX_ASSET = 2 * 1024 ** 3
 MAX_ASSETS = 1000
@@ -232,9 +233,12 @@ def verify(outdir: str, assert_no_images: bool = False) -> list[str]:
             if n in files:
                 check_tree_archive(os.path.join(outdir, n), n, state, bad)
 
-    for label, doc in (("provenance", prov), ("sources manifest", src), ("release-index.json", index)):
-        for hit in hostish_values(doc):
-            bad(f"{label} names a path on the build machine: {hit}")
+    # Checked against where this machine really is, not against how a path looks: an
+    # image's own /root/... and /var/lib/... are ordinary, and a shape rule refused them.
+    # See build_machine_hits. One walk over all three, so those places are found once.
+    for hit in build_machine_hits({"provenance": prov, "sources manifest": src,
+                                   "release-index.json": index}):
+        bad(f"a record names a place on this machine: {hit}")
 
     fw = src.get("firmware") or {}
     if image.get("attached") and fw.get("stock_bundle") and not fw.get("license_texts"):

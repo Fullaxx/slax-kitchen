@@ -14,11 +14,12 @@ So verbs call ctx.prov(...) while they run, apply_recipe appends each recipe's r
 <work>/.kitchen/provenance.json, and `kitchen pack` finalizes that into
 <iso>.provenance.json NEXT TO THE ISO, where it survives the work tree.
 
-NOTHING ABOUT THE HOST. The same rule as the Tier C ledger, enforced the same way: files
-are named by basename or by their path inside the image (no leading slash), and any
-string that looks like a place on the build machine is refused. URLs are not host paths
-and are allowed. HOSTISH lives here and ci/checks/97-tier-c-ledger.sh imports it, so the
-two cannot drift.
+NOTHING ABOUT THE HOST, by construction first. Every producer names a file by its basename,
+by its path inside the kitchen or project checkout, or by its path inside the image, and
+`kitchen sources` looks every local input up in git at the recorded commit. The one input
+no producer shapes -- a profile's vars -- is checked against the places this build actually
+uses before anything is built, and the finished record is checked the same way at pack and
+at release. See build_machine_hits, including for the regex this replaced.
 """
 from __future__ import annotations
 
@@ -26,31 +27,12 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
 
 SCHEMA = "slax-kitchen/provenance/v1"
 WORK_FILE = "provenance.json"
-
-# A value that names a place on somebody's disk.
-#
-# BELT AND BRACES, not the thing doing the work. Audited 2026-09-18: every producer already
-# records the right thing at the point of recording -- `source=` is os.path.basename() for a
-# local file and the URL for a remote one (apply.py:548, :1526, :1908), and the Tier C
-# ledger's row builder drops paths deliberately ("recorded by basename and size, which are
-# facts about the artifact"). So this regex sits underneath code that is already explicit,
-# and in the session that produced it its only catch was a FALSE POSITIVE -- issue #20,
-# which stopped the weekly job.
-#
-# The exception, and the reason it is still here: `vars` is a passthrough of arbitrary
-# recipe-author strings, produced by no call site, so no producer-side discipline reaches
-# it. That is why vars has its own narrower rule in hostish_values rather than this one.
-# Kept rather than relaxed because the Tier C ledger it guards IS committed to git, and
-# removing redundancy from a working guard trades real risk for no benefit.
-HOSTISH = re.compile(r"(^/|/home/|/root/|/Users/|~/|\\\\)")
-URLISH = re.compile(r"^[a-z][a-z0-9+.-]*://")
 
 
 def sha256(path: str) -> str:
@@ -62,86 +44,97 @@ def sha256(path: str) -> str:
 
 
 def in_image(path: str) -> str:
-    """A path inside the image, written without a leading slash so it is not host-ish."""
+    """A path inside the image, without its leading slash: `kitchen sources` keys every file
+    in an image that way, and looks recorded outputs up against those keys as they are."""
     return (path or "").lstrip("/")
 
 
-# A build-machine location by SHAPE, without the bare "absolute" alternative. Used for a
-# recipe's `vars`, where an absolute path is usually describing the image rather than the
-# builder -- see hostish_values.
-HOSTISH_SHAPE = re.compile(r"(/home/|/root/|/Users/|~/|\\\\)")
-
-
 def build_machine_paths(work: str | None = None) -> list[str]:
-    """Prefixes this build actually used, as opposed to paths that merely look host-ish.
-
-    The shape rules are guesses about somebody else's filesystem layout. These are not
-    guesses -- they are where this build is happening, so a value starting with one of them
-    names the builder however innocent it looks.
+    """The directories this build is actually using: its work tree, the kitchen checkout, the
+    project checkout when there is one, and the home directory of whoever is running it.
 
     DERIVED, NOT CONFIGURED. An earlier draft read KITCHEN_WORK and KITCHEN_REPO_ROOT from
-    the environment, which nothing sets: the half of the rule that is supposed to catch the
-    leaks a shape cannot would have been dead code, and would have passed every test written
-    against it. The repo root is this file's own grandparent and the work tree is handed to
-    append_recipe; both are facts at the moment of the check.
+    the environment, which nothing sets: the rule would have been dead code, and would have
+    passed every test written against it. The kitchen checkout is this file's own
+    grandparent, the project checkout is project_root(), and the work tree is handed in by
+    the caller; all of them are facts at the moment of the check.
+
+    The project checkout was missing until #26. A kitchen vendored into a project --
+    vendor/slax-kitchen, the way slax-wine uses it -- is its own checkout, so a var naming a
+    file in the project was caught only if $HOME happened to contain it.
+
+    A bare /root, /home or /Users is left out even as $HOME. It says nothing about THIS
+    machine that the image does not share: Slax runs as root, so /root is the image's home
+    directory too.
     """
-    out = []
+    out: list[str] = []
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    for p in (work, repo, os.environ.get("HOME")):
+    for p in (work, repo, project_root(), os.environ.get("HOME")):
         if p and p.startswith("/") and p.rstrip("/") not in ("", "/home", "/root", "/Users"):
-            out.append(p.rstrip("/") + "/")
+            p = p.rstrip("/") + "/"
+            if p not in out:
+                out.append(p)
     return out
 
 
-def hostish_values(obj, where: str = "", image_paths_ok: tuple = (),
-                   work: str | None = None) -> list[str]:
-    """Every string in obj that names a place on a disk. URLs are allowed.
+def build_machine_hits(obj, work: str | None = None, where: str = "") -> list[str]:
+    """Every string in obj that is, or contains a path under, one of build_machine_paths().
 
-    `image_paths_ok` names top-level keys whose values describe the IMAGE, where a leading
-    slash is ordinary and not evidence of anything. Only `vars` is passed today.
+    Only a place this build is really using counts. A string's shape is never evidence,
+    because the image is a Linux system too, and its only user is root.
 
-    WHY vars NEEDS ITS OWN RULE. A var is a recipe author's string and the engine cannot
-    know what it means; `testkit` takes `marker: /var/lib/kitchen-perch-marker` and builds
-    the path by concatenation, so a relative value would resolve to /unionvar/lib/... The
-    blanket `^/` rule refused that, which stopped profiles/boot-matrix.yaml and with it the
-    weekly Tier C job. Issue #20.
+    WHY NOT A PATTERN. Until #26 this was HOSTISH, a regex of home-directory shapes -- a
+    leading slash, /home/, /root/, /Users/, ~/ or a doubled backslash -- run over every
+    string in a record. It caught two things in its life, and both were false:
 
-    The two fixes suggested there were both worse. Recording vars through in_image() would
-    strip the leading slash, and HOSTISH's /root/ alternative needs a LEADING slash -- so
-    `/root/code/x` would become `root/code/x` and sail through, fixing the false positive by
-    blinding the guard to the commonest leak. Flagging only paths that exist on the builder
-    is wrong in both directions: /etc/hostname exists here AND is a legitimate image path,
-    while a leak naming a path this machine does not have would pass.
+      #20  boot-matrix's `marker: /var/lib/kitchen-perch-marker`, an absolute path in the
+           image. That stopped the weekly Tier C job. The fix exempted vars from `^/` and
+           kept the rest, and never reached ci/release-verify.py, which still refused it.
+      #26  a local input staged as a tree mirroring its destination,
+           `recipes/local/x.files/root/.config/demo`. That is checkout-relative by
+           construction and could never name the builder. It was refused after the recipe
+           had built its bundle, which stayed in slax/modules/ with no journal entry and no
+           provenance, and `kitchen pack` shipped it.
 
-    So: keep every shape signal except "absolute", and add the paths this build actually
-    used, which are facts rather than guesses. HOSTISH itself is untouched, because
-    ci/release-verify.py and ci/checks/97-tier-c-ledger.sh depend on it -- an absolute
-    iso_name really is a leak.
+    Neither was an accident of those two fields. The image's ordinary paths have exactly
+    those shapes: /root/... and /home/guest/... are where a Slax recipe writes, and an
+    absolute path is how the verb reference spells a destination. So its own rootcopy.files
+    example (`dest: /root/.bashrc`) and iso.files example (`dest: /README.txt`) were both
+    refused as written. Each exemption left the same false positive in the next field. And
+    it missed what it was for: an apt source `file:///home/...` passed as a URL.
 
-    THE GAP, stated rather than discovered: a builder that works somewhere unusual, say
-    /opt/somebuilder/artifacts, is not caught by shape, and is only caught by the second
-    half if that path is this build's work tree or repo root. Narrower than a guard that
-    stops a shipped profile, and the leaks that actually occur here are under $HOME, /root
-    or the work tree.
+    The work it claimed to do is done elsewhere, by construction. Producers record
+    basenames, checkout-relative paths and in-image paths (root_relative, in_image), and
+    `kitchen sources` looks every local input up in git at the recorded commit, so a forged
+    path is unresolved and a release refuses it.
+
+    THE GAPS, stated rather than discovered:
+      - $HOME is /root (this container, most Docker builds): a var naming a builder file
+        under /root but outside the checkout is recorded as written. It cannot be told apart
+        from the image's own /root. Used as a `src:`, the file is recorded as `outside` and
+        `kitchen sources` marks it unresolved, so a release still refuses it.
+      - A builder directory that is none of these, such as /opt/somebuilder, passes.
+      - The one false positive this rule can make: a builder whose home directory also
+        exists in the image. Build as `guest`, and the image's /home/guest/... values are
+        refused, by a message that names $HOME.
     """
+    roots = build_machine_paths(work)
     out: list[str] = []
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            sub = f"{where}.{k}" if where else str(k)
-            out += hostish_values(v, sub,
-                                  ("",) if k in image_paths_ok else image_paths_ok, work)
-    elif isinstance(obj, list):
-        for i, v in enumerate(obj):
-            out += hostish_values(v, f"{where}[{i}]", image_paths_ok, work)
-    elif isinstance(obj, str) and not URLISH.match(obj):
-        # "" in image_paths_ok marks "we are inside a subtree that describes the image".
-        if "" in image_paths_ok:
-            hit = HOSTISH_SHAPE.search(obj) or any(
-                obj.startswith(pre) for pre in build_machine_paths(work))
-        else:
-            hit = HOSTISH.search(obj)
-        if hit:
-            out.append(f"{where}: {obj!r}")
+
+    def walk(o, at: str) -> None:
+        if isinstance(o, dict):
+            for k, v in o.items():
+                walk(v, f"{at}.{k}" if at else str(k))
+        elif isinstance(o, list):
+            for i, v in enumerate(o):
+                walk(v, f"{at}[{i}]")
+        elif isinstance(o, str):
+            for root in roots:
+                if o == root.rstrip("/") or root in o:
+                    out.append(f"{at}: {o!r} (inside {root.rstrip('/')})")
+                    break
+
+    walk(obj, where)
     return out
 
 
@@ -343,14 +336,10 @@ def load_work(meta: str) -> dict:
 
 def append_recipe(meta: str, entry: dict) -> None:
     """Add one applied recipe's records to <work>/.kitchen/provenance.json."""
-    # `vars` describes the image, not the builder: see hostish_values. `meta` is
-    # <work>/.kitchen, so its parent is the work tree -- the one build-machine path that
-    # cannot be guessed from shape and is exactly where a leak would come from. Issue #20.
-    bad = hostish_values(entry, image_paths_ok=("vars",),
-                         work=os.path.dirname(os.path.abspath(meta)))
-    if bad:
-        raise RuntimeError("provenance would record a path on the build machine:\n  "
-                           + "\n  ".join(bad))
+    # NO REFUSAL HERE, deliberately. This runs after the recipe has built its bundles, so a
+    # refusal here left them in slax/modules/ with no journal entry and no provenance, and
+    # `kitchen pack` shipped them (#26). The profile vars are checked by apply.py before
+    # anything is built, and the whole record again by finalize().
     doc = load_work(meta)
     doc.setdefault("recipes", []).append(entry)
     _write_atomic(os.path.join(meta, WORK_FILE), doc)
@@ -418,14 +407,14 @@ def finalize(work: str, iso: str, backend: str, mbr: str | None) -> str:
     if mbr:
         out["pack"]["mbr"] = {"file": os.path.basename(mbr), "sha256": sha256(mbr),
                               "package": host_package(mbr)}
-    # SAME EXEMPTION AS append_recipe, and it has to be here too: this re-validates the
-    # whole document at pack time, recipes[].vars included. Fixing only append_recipe left
-    # `kitchen build boot-matrix` failing at the very last step -- the ISO written, then
-    # "could not write ...provenance.json" -- which the unit tests could not see and only a
-    # real build did. `work` is this build's work tree, which is the point of passing it.
-    bad = hostish_values(out, image_paths_ok=("vars",), work=os.path.abspath(work))
+    # THE RECORD THAT GETS PUBLISHED, checked whole. This sidecar is what somebody publishing
+    # by hand ships, and ci/release-verify.py only sees images that go through
+    # ci/release-assets.sh. Producers cannot write these directories and apply.py checked the
+    # vars before the build, so what this stops is a regression in either. `work` is this
+    # build's work tree, which release-verify cannot know.
+    bad = build_machine_hits(out, work=os.path.abspath(work))
     if bad:
-        raise RuntimeError("provenance would record a path on the build machine:\n  "
+        raise RuntimeError("provenance would record a place on this build machine:\n  "
                            + "\n  ".join(bad))
     dest = iso + ".provenance.json"
     _write_atomic(dest, out)

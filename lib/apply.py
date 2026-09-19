@@ -3459,13 +3459,16 @@ def apply_recipe(path: str, work: str, dry: bool = False,
         if overrides:
             entry["vars"] = dict(overrides)
 
-        # PROVENANCE FIRST, because it is the one that can refuse. It validates what it is
-        # about to record and raises on a build-machine path; written the other way round, a
-        # refusal left a journal entry saying the recipe had been applied while provenance
+        # PROVENANCE FIRST, because it is the one that can fail. Written the other way round,
+        # a failure left a journal entry saying the recipe had been applied while provenance
         # held nothing -- and check_plan_order's _built_before reads the journal, so the
         # next run believed it had already happened. Safe to reorder: append_recipe is
         # handed list(ctx.changes) and never reads the journal file, whatever its comment
         # about "from the journal" suggests. Issue #20.
+        #
+        # It no longer refuses what it is given. By now the recipe has run, and a refusal
+        # here stranded the bundle it built (#26). main() checks the vars before anything is
+        # built instead.
         provenance.append_recipe(ctx.meta, {
             "recipe": name,
             "recipe_sha256": sha256(path),
@@ -3601,6 +3604,16 @@ def main(argv: list[str]) -> int:
             return 2
         if not names:
             print(f"error: {a.profile} lists no recipes", file=sys.stderr)
+            return 2
+        # A profile's vars go into the image's provenance exactly as written, and they are
+        # the one input no producer shapes. So they are checked here, against the places
+        # this build is actually using, before anything is unpacked or built -- which in
+        # `kitchen build` is the --preflight-only pass. Checked after a recipe had run, a
+        # refusal left its bundle in slax/modules/ unrecorded, and pack shipped it (#26).
+        bad = provenance.build_machine_hits(var_overrides, work=os.path.abspath(a.work))
+        if bad:
+            print(f"error: {a.profile}: a var would put a place on this build machine into "
+                  "the image's provenance:\n  " + "\n  ".join(bad), file=sys.stderr)
             return 2
     else:
         dup = duplicate_recipes(names)

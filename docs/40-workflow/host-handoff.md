@@ -182,9 +182,9 @@ git add tests/boot/golden tests/boot/tier-c.json && git commit && git push
 > **This table used to say "TAP output".** Nothing in this repository has ever produced or
 > consumed TAP — the in-guest self-test emits `key: value` lines — and
 > `tests/boot/golden/` did not exist. It does now, and so does a gate on what may go in
-> it: `ci/checks/97-tier-c-ledger.sh` rejects any string in the ledger that looks like a
-> path or a home directory, because results are facts about the artifact and the machine
-> that produced them is nobody's business.
+> it: `ci/checks/97-tier-c-ledger.sh` rejects any string in the ledger that contains a
+> path separator, because results are facts about the artifact and the machine that
+> produced them is nobody's business.
 
 Remember to copy the `*.DNC.md` files back too if you ticked anything off on the host — they are the
 only state git will not carry for you.

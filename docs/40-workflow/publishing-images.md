@@ -40,7 +40,9 @@ alongside the kitchen's.
 - something built here has no source among the assets
 - a project archive is missing a submodule, or holds different pins than the build recorded
 - an asset is 2 GiB or more, or there are more than 1000 (GitHub's limits)
-- any record names a path on the build machine
+- any record names a place inside this machine's kitchen or project checkout, or its home
+  directory. The rule is where the machine really is, not what a path looks like: an image's
+  own `/root/...` is ordinary.
 - an attached image carries Slax's firmware bundle without the copyright files of its Debian
   firmware packages
 
