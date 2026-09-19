@@ -482,7 +482,10 @@ doctor saying `KVM (fast)` about boots that ran under TCG. When the device is pr
 writable, doctor now says why:
 - the account is not in a group that can write it, so join that group and log in again;
 - the device's mode lets no group write it;
-- even root is refused, which is a container's device cgroup.
+- its permissions already allow the account (it is root, anyone may write the node, it owns it,
+  or the session is in a group that can write it), and it is refused anyway. That is not a
+  permission bit at all: usually a container's device cgroup, which admits only what
+  `--device` passed in.
 
 In that case doctor no longer suggests `--device /dev/kvm`.
 

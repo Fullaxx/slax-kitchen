@@ -131,10 +131,11 @@ doctor_caps() {
     else echo "mount=no"; fi
     if unshare -U true >/dev/null 2>&1; then echo "userns=yes"; else echo "userns=no"; fi
     # WRITABLE, not readable. KVM is driven through ioctls on a read-write descriptor, and
-    # every boot path decides with a write check -- qemu_boot.py's -enable-kvm, tier-c.sh's
-    # accel, tools/qemu/boot.py's banner. This was -r, so a /dev/kvm the account could read
-    # but not write (a 0644 node) had doctor reporting "KVM (fast)" about runs that went to
-    # TCG. Reproduced with such a node as uid 65534: "ok kvm", "KVM (fast)", "kvm=yes".
+    # every boot path decides or reports with a write check -- qemu_boot.py's -enable-kvm,
+    # and so every ledger row's accel; tier-c.sh's and tools/qemu/boot.py's banners. This
+    # was -r, so a /dev/kvm the account could read but not write (a 0644 node) had doctor
+    # reporting "KVM (fast)" about runs that went to TCG. Reproduced with such a node as
+    # uid 65534: "ok kvm", "KVM (fast)", "kvm=yes".
     if [ -c /dev/kvm ] && [ -w /dev/kvm ]; then echo "kvm=yes"; else echo "kvm=no"; fi
     if mknod "$probe_dir/n" c 1 3 >/dev/null 2>&1; then echo "mknod=yes"; rm -f "$probe_dir/n"
     else echo "mknod=no"; fi
@@ -188,15 +189,28 @@ doctor_tier() {
     # or to join a group that cannot write it either, sends them after the wrong thing.
     if ! cap kvm && [ -e /dev/kvm ]; then
         printf '\n  %sNote:%s /dev/kvm is here, but this account cannot write it, so boots run%s\n' "$D" "$O" "$O"
-        if [ "$(id -u)" = 0 ]; then
-            # Root failing a write check on a device is not a permission bit. Measured in an
-            # unprivileged Docker container: a /dev/kvm node made there with mknod, mode 0666,
-            # refused root and everyone else -- the device cgroup admits Docker's default set
-            # and whatever was passed with --device, and nothing made afterwards.
-            printf '  %sunder TCG. Even root is refused, which is not a permission bit: usually a%s\n' "$D" "$O"
-            printf '  %scontainer device cgroup, which admits only --device /dev/kvm at start.%s\n' "$D" "$O"
+        _kg=$(stat -c %G /dev/kvm 2>/dev/null) || _kg=kvm
+        # Would the permission bits let this session write it? Root; a mode anyone may
+        # write; the owner's bit, for its owner; the group's, for a session in that group.
+        # If they would and the write is still refused, no permission bit is the cause --
+        # and "join the group" is wrong advice for an account already in it, which is how
+        # the first version of this note read.
+        _kb=no
+        if [ "$(id -u)" = 0 ] \
+            || [ -n "$(find /dev/kvm -maxdepth 0 -perm -002 2>/dev/null)" ] \
+            || [ -n "$(find /dev/kvm -maxdepth 0 -perm -200 -user "$(id -u)" 2>/dev/null)" ] \
+            || { [ -n "$(find /dev/kvm -maxdepth 0 -perm -020 2>/dev/null)" ] \
+                 && id -Gn 2>/dev/null | tr ' ' '\n' | grep -Fqx "$_kg"; }; then
+            _kb=yes
+        fi
+        if [ "$_kb" = yes ]; then
+            # Measured in an unprivileged Docker container: a /dev/kvm node made there with
+            # mknod, mode 0666, refused root and everyone else -- the device cgroup admits
+            # Docker's default set and whatever was passed with --device, and nothing made
+            # afterwards.
+            printf '  %sunder TCG. Its permissions allow this account, so something else refuses%s\n' "$D" "$O"
+            printf '  %sit: usually a container device cgroup, which admits only --device /dev/kvm.%s\n' "$D" "$O"
         elif [ -n "$(find /dev/kvm -maxdepth 0 -perm -020 2>/dev/null)" ]; then
-            _kg=$(stat -c %G /dev/kvm 2>/dev/null) || _kg=kvm
             printf '  %sunder TCG. Add the account to group %s (usermod -aG %s <user>) and log in%s\n' "$D" "$_kg" "$_kg" "$O"
             printf '  %sagain: a session keeps the groups it started with.%s\n' "$D" "$O"
         else
