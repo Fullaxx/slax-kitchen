@@ -191,10 +191,11 @@ Same assertions, 20 seconds instead of 240. Two properties make that safe, and b
 - **It waits for `all`, not `any`.** `Live Kit done` is the last marker livekit prints, so stopping
   at the first would skip the stages this test exists to cover.
 
-Modes with no expectations keep the flat sleep: `--bios` and `--uefi` produce an **empty** serial
-log, so there is nothing a poll could ever satisfy.
+Only a boot with no expectations keeps the flat sleep. That is a menu mode on an image with no
+serial entry, or one given `--no-keys`: its serial log stays empty, so there is nothing a poll
+could ever satisfy.
 
-**`--kernel` is the one that can fail.** It boots `vmlinuz` + `initrfs.img` directly with
+**`--kernel` needs no help to assert.** It boots `vmlinuz` + `initrfs.img` directly with
 `console=ttyS0`, bypassing the bootloader, so the whole of livekit init lands in a machine-readable
 serial log and is checked for markers:
 
@@ -207,14 +208,22 @@ ok   serial contains 'Live Kit done, starting slax'
 A failure names the stage it stopped at, which is far more useful than "it did not boot". Under TCG
 it reaches a `slax login:` prompt in about 150 s.
 
-**`--bios` and `--uefi` cannot assert on serial**, and it is worth understanding why: the default
-menu entry carries no `console=ttyS0`, so once the loader hands off, every kernel message goes to
-the video console and the serial log stays empty. Those modes prove the *bootloader* works, via a
-QMP screenshot — which is the only way to see GRUB or isolinux at all, since they draw to video.
+**`--bios`, `--uefi` and `--usb` assert only through the serial entry**, and it is worth
+understanding why. A stock menu entry carries no `console=ttyS0`, so once the loader hands off,
+every kernel message goes to the video console and the serial log stays empty. So `kitchen test`
+reads the ISO's own menu and selects the entry [`serial-console`](../50-cookbook/serial-console.md)
+adds.
+- **No such entry:** the mode falls back to a QMP screenshot and says so. A screenshot is the only
+  way to see GRUB or isolinux at all, since they draw to video.
+- **A menu it cannot read:** that is not a menu without the entry. Without `xorriso`, with a menu
+  that will not extract, or with an entry whose label cannot be typed at `boot:`, the mode fails,
+  boots nothing, and says which.
 
-This was a real gap. For four CI runs the boot job reported success while passing no `--expect` at
-all, so its only assertion was "a screenshot exists" — a check that could not fail. The BIOS serial
-log was 0 bytes and nothing noticed.
+Both were real gaps. For four CI runs the boot job reported success while passing no `--expect` at
+all, so its only assertion was "a screenshot exists", a check that could not fail. The BIOS serial
+log was 0 bytes and nothing noticed. Later, a machine without `xorriso` took the same path as an
+image without the entry: "no serial entry in this ISO", a screenshot, and a pass. That was the
+normal outcome there, and it blamed the image.
 
 ## Boot tests are slow, and that is a runner limitation
 

@@ -440,10 +440,10 @@ Pure logic — anything that does not need an ISO — belongs in `tests/unit/tes
 as one of the thirteen gates. Every case in that file is a bug that actually shipped.
 
 **Seconds, not milliseconds, and it is worth knowing where they go.** The whole unit gate is about
-17.5 s, and 12.5 s of that is `tests/unit/test_qemu_boot.py` alone — it drives a poller, so real
+18 s, and 12.5 s of that is `tests/unit/test_qemu_boot.py` alone — it drives a poller, so real
 sleeps *are* the thing under test, and its own docstring says so. Everything else together is about
-5 s, the next slowest being `test_apply.py` at 1.3 s. That cost is paid at **both** `pre-commit` and
-`pre-push`.
+5 s, the next slowest being `test_apply.py` at about 1 s. That cost is paid at **both** `pre-commit`
+and `pre-push`.
 
 **The gate runs your test in a sandbox, and has opinions about what you leave in it.** Three rules,
 each of which came from something that shipped — the measurements and the failures behind them are

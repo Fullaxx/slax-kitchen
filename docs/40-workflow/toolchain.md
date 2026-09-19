@@ -60,7 +60,7 @@ Version matters less than you would expect: the format is squashfs 4.0 with xz, 
 
 | | package | |
 |---|---|---|
-| `xorriso` | `xorriso` | the default backend. Only one of the two that can add a second El Torito entry, so UEFI needs it |
+| `xorriso` | `xorriso` | the default backend. Only one of the two that can add a second El Torito entry, so UEFI needs it. **Boot tests need it too, wherever they run.** It takes the kernel out of the image for `--kernel` and `--persistence`, and reads the boot menu for `--bios`, `--uefi` and `--usb`. Without it they refuse rather than boot |
 | `genisoimage` | `genisoimage` | upstream's own tool; kept so a rebuild can be byte-compared against theirs |
 | `isohybrid` | `syslinux-utils` | MBR + GPT so the ISO can be `dd`'d |
 | `7z` | `p7zip-full` | reads ISO9660 and squashfs without mounting. **Do not unpack with it** — it drops Rock Ridge modes |
