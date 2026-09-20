@@ -466,6 +466,59 @@ fidelity test that compared a tree against itself; a boot test whose only assert
 screenshot exists"; a verb that reported "cmdline updated on 2 entries" while changing nothing. If
 you add a test, **make it fail on purpose once** and check it says something useful.
 
+### What a test here is for
+
+A new test should be able to answer four questions. If it cannot answer the first two, it is
+probably someone else's test.
+
+**1. Whose behaviour is the subject?** If it is a program we did not write, stop. We do not test
+that xorriso lists files, that `unsquashfs` extracts, that git commits, or that ssh connects. Those
+projects have their own tests, and a copy of their behaviour kept here would only go stale.
+
+**2. But what do we do with what it hands back?** The subject becomes ours the moment a tool's
+*output* reaches our code. "Does xorriso work" is not our test. "Does our listing code notice that
+xorriso exited 0 and listed nothing" is — and that one shipped: `kitchen sources --strict` exited 0
+having accounted for nothing at all.
+
+This matters here more than in most projects, because neither side holds still:
+
+- **the input moves** — every recipe change produces a different ISO, and a new Slax base arrives
+  from upstream on someone else's schedule;
+- **the tool moves too** — [`containers/Containerfile`](containers/Containerfile) pins a base
+  image, and bumping it, or building the same tree on the other supported base, brings a different
+  xorriso, squashfs-tools, qemu and git. They can answer the same question differently.
+  [`containers/README.md`](containers/README.md) already expects that divergence.
+
+So what is worth pinning is that **we still read the answer correctly when either side changes**.
+That is the test a base-ISO bump or a container bump should be able to run and believe.
+
+**3. Will this path change?** A test earns its seconds by guarding code that gets edited. A tool's
+settled behaviour is not such a path; our handling of it is.
+
+**4. What went wrong?** The best justification is an incident — a bug that shipped, an issue, a trap
+someone fell into. A test written from an incident has a failure to point at; one written for
+completeness usually has only a shape. Say which in the docstring: every file in `tests/unit/`
+already opens by saying why it exists, and most name a numbered issue.
+
+Three notes that follow from question 2, all of which the tree already does somewhere:
+
+- **A test that freezes a tool's output names the version it came from.** A frozen transcript keeps
+  passing while the tool it models moves out from under it — *the test cannot detect its own decay*.
+  So write the source beside it, as a line a grep can find:
+
+  ```
+  # Captured from: xorriso 1.5.6
+  ```
+
+  Then `grep -rn 'Captured from:' tests/` is the list to re-derive when the base image moves. The
+  versions to diff against are already recorded per build in `/etc/slax-kitchen-toolchain.txt`.
+  A convention and a grep, deliberately **not** a gate: it costs nothing at commit time.
+- **A guard that only proves the fixture is sound is allowed, and says so.** Asserting that `git
+  submodule add` really produced a gitlink is git's behaviour, not ours — worth having so a broken
+  fixture reads as broken, but label it, so it never reads as a claim about this project.
+- **Cost is part of the argument.** See the timings above: the unit gate is paid at **both**
+  `pre-commit` and `pre-push`, so a test that sleeps, spawns or waits spends that twice per change.
+
 ---
 
 ## 6. Writing a recipe: the parts that surprise people

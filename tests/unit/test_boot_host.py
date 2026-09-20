@@ -385,6 +385,7 @@ def test_a_failure_is_blamed_on_the_right_thing():
     that is how the mkdir got far enough to fail.
 
     Both strings below are what ssh 9.6 and rsync 3.2.7 actually printed.
+    Captured from: OpenSSH 9.6p1, rsync 3.2.7
     """
     cfg = boot_host.Config("kvmbox", "/srv/s", "127.0.0.1", 5900, False, "x")
     s = boot_host.Session.__new__(boot_host.Session)     # no connection, just the rule

@@ -119,6 +119,7 @@ def test_qemu_version_is_what_the_binary_says():
         os.chmod(p, 0o755)
         return p
 
+    # Captured from: qemu-system-x86_64 8.2.2 (Debian packaging) and 9.1.0 (upstream)
     check("debian's banner", qb.qemu_version(stub(
         "a", 'echo "QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.17)"; '
              'echo "Copyright (c) 2003-2023 Fabrice Bellard"')), "8.2.2")

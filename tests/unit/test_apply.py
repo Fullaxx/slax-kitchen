@@ -249,6 +249,7 @@ def test_parse_lsdl():
                                     "..", "..", "lib"))
     import diff  # noqa: E402
 
+    # Captured from: xorriso 1.5.6
     cases = [
         ("-rw-r--r--    1 0        0             823 Oct  9  2023 '/readme.txt'",
          "/readme.txt", "file", 823),

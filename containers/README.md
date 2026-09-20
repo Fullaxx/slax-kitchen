@@ -109,6 +109,12 @@ into `Containerfile.Ubuntu.24.04` and `Containerfile.Debian.12`, and point the C
 files. A Containerfile that branches on its own base is two Containerfiles wearing a trench coat,
 and it hides the divergence instead of recording it.
 
+**Moving the base moves the tools, and some tests hold a copy of what a tool printed.** Those
+name the version they were captured from, so `grep -rn 'Captured from:' tests/` is the list to
+re-derive after a bump — checked against the toolchain list above, which records what each build
+actually had. The reasoning is in
+[what a test here is for](../CONTRIBUTING.md#what-a-test-here-is-for).
+
 ### What the base actually changes in the ISO
 
 Three things from this container can end up inside the shipped image. Two run before the kernel:

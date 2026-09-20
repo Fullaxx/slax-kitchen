@@ -33,6 +33,7 @@ def check(name, got, want):
 
 
 # (mode, uid, gid, path) exactly as entries() yields them from `unsquashfs -lln`.
+# Captured from: unsquashfs 4.6.1
 TOR_DIR = ("drwx--S---", 104, 110, "squashfs-root/var/lib/tor")
 SU = ("-rwsr-xr-x", 0, 0, "squashfs-root/usr/bin/su")
 VENDOR = ("-rwsr-xr-x", 1000, 1000, "squashfs-root/opt/vendor/helper")

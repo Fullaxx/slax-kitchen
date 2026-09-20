@@ -58,6 +58,7 @@ with open(os.environ["STUB_BH_LOG"], "a") as f:
 raise SystemExit(int(os.environ.get("STUB_BH_RC", "0")))
 '''
 
+# Captured from: xorriso 1.5.6 -- the exit 5 and the FAILURE line below are that version's.
 STUB_XORRISO = r'''#!/bin/sh
 rc=0
 while [ $# -gt 0 ]; do

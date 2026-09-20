@@ -80,6 +80,11 @@ works; building `ubuntu:24.04` and `debian:12` on every push is what turns that 
 into a tested statement. Both legs are under a minute and run beside the eight-minute build jobs,
 so the second one costs nothing.
 
+Because those bases move, so do the tools in them — which is half the reason a test here asserts
+what *we* do with a tool's output rather than whether the tool works. The rule for writing one, and
+what to re-check when a base is bumped, is
+[what a test here is for](../../CONTRIBUTING.md#what-a-test-here-is-for).
+
 ## Run any of it locally
 
 ```sh

@@ -48,6 +48,8 @@ FIVE = ["vmlinuz", "initrfs.img", "isolinux.bin", "isolinux.cfg", "syslinux.cfg"
 
 # Serves $STUB_DIR/lsdl for `-exec lsdl`, $STUB_DIR/lba for `-exec report_lba`, anything in
 # $STUB_DIR/err on stderr, and exits with $STUB_DIR/rc.
+# Captured from: xorriso 1.5.6 -- the listing shapes and the FAILURE/SORRY/MISHAP wording
+# the cases below feed it are that version's.
 STUB_XORRISO = r'''#!/bin/sh
 for a in "$@"; do
     case "$a" in
