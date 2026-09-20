@@ -46,7 +46,9 @@ ISO was built from, and the ledger identifies the image by name and size with no
 For evidence produced and consumed on one machine that is sufficient. It stops being
 sufficient at the first release tag, when the notes describe an artifact to somebody else.
 
-Measured, both ways, on the same image:
+Measured 2026-09-16 at `b601bc7`, both ways, on the same image. **This table is the only copy
+of these figures** — four other pages restated them and would have been left behind by the next
+re-measure, the way `docs/30-inventory/README.md` was. Re-measure with `time ./ci/tier-c.sh`:
 
 | | KVM host | unaccelerated container, TCG |
 |---|---|---|
@@ -64,7 +66,7 @@ and nothing about the machine ends up in the repository.
 
 **That host need not be the one with the checkout.** With a
 [boot host](boot-host.md) configured, `ci/tier-c.sh` sends each boot there and the
-evidence comes back here — a full four-path sweep measured at 52 s from a container with
+evidence comes back here — a full four-path sweep measured 2026-09-19 at 52 s from a container with
 no qemu at all. The rows still record what each boot actually got, because
 `qemu_boot.py` writes `accel` and `qemu` first-hand on the machine that booted; the
 banner says `accel  on <host>` rather than reading a `/dev/kvm` that has nothing to do
@@ -279,9 +281,8 @@ produce the ledger, so it writes one to a scratch path and uploads it as an arti
 it *does* own is the golden diff: if a recipe change alters the assembled filesystem, the
 weekly run goes red against the committed block.
 
-Measured on a GitHub runner: **2 m 07 s** for the build and all five boots, inside a boot
-job of 3 m 21 s. That job was eight minutes before this work, so it now does four more
-boots in less than half the time — the screenshot modes it replaced spent 240 seconds
+What the weekly job costs is in [ci.md](ci.md), which holds the only copy. It was eight minutes
+before this work, so it now does four more boots in less than half the time — the screenshot modes it replaced spent 240 seconds
 asleep and could only fail on a zero-byte PNG.
 
 It is off the per-push path. Four boots is four boots, and the last trimming pass took

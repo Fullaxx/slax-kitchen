@@ -29,7 +29,11 @@ All four targets are present: `{debian,slackware}` × `{32bit,64bit}`.
 ci/gen-manifests.sh isos/slax-*.iso
 ```
 
-About sixteen seconds for all four images, most of it hashing the bundles for `isofiles`. Read-only
+About sixteen seconds for all four images — measured 2026-09-17 at `9c5a45a`, the commit that added
+the `isofiles` hashing which is most of it. It cost three seconds before that. **This paragraph is
+the only copy of that number**: [`../README.md`](../README.md) restated the older figure and nobody
+updated it when this got slower. Re-measure with `time ci/gen-manifests.sh isos/slax-*.iso`.
+Read-only
 and unprivileged throughout: `xorriso -osirrox` for the
 ISO9660 tree, `unsquashfs -o <offset>` to read bundles **in place** without extracting them, and
 `xz | cpio` for the initramfs. No loop devices and nothing mounted — the same constraints the dev

@@ -229,8 +229,8 @@ could not be tested, rather than that its tests failed — those are different s
 
 ## What it costs
 
-Measured against a 422 MiB image, from a container with no qemu at all to a KVM host on
-the same network:
+Measured 2026-09-20 at `5f1b2e4` against a 422 MiB image, from a container with no qemu at all to
+a KVM host on the same network:
 
 | | |
 |---|---|

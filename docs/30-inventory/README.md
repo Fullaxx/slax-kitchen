@@ -26,8 +26,9 @@ afternoon.
 ci/gen-manifests.sh isos/slax-*.iso
 ```
 
-Three seconds for all four images, read-only and unprivileged: bundles are read in place with
-`unsquashfs -o <offset>` rather than extracted. Committing the diff is how a new upstream release
+Read-only and unprivileged for all four images: bundles are read in place with
+`unsquashfs -o <offset>` rather than extracted. What it costs is in
+[manifests/README.md](manifests/README.md#regenerating), which is the only copy of that number. Committing the diff is how a new upstream release
 gets adopted.
 
 Run it as root — the initramfs contains seven device nodes, and a non-root `cpio` turns them into

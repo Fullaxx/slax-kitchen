@@ -67,7 +67,8 @@ Two traps when writing such a probe, both hit during implementation:
 
 That third one is worth knowing: `unsquashfs -o` takes a byte offset, so you can pull
 `/etc/slax-version` out of a 122 MB bundle **without ever extracting the bundle** — `lib/isoparse.py`
-supplies the offset, and the read takes about 20 ms.
+supplies the offset. What the read costs is in
+[iso-container](../10-anatomy/iso-container.md).
 
 Whole run: ~3.5 s per ISO.
 

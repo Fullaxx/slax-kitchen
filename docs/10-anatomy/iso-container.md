@@ -95,7 +95,8 @@ Two consequences:
   drive and nothing on anything else.
 - **Bundles start at a fixed LBA 67 on every image**, i.e. byte offset `0x21800`. That is why
   `unsquashfs -o 137216 <iso>` reads `01-core.sb` in place without extracting anything, which is how
-  `kitchen probe` inspects a bundle in about 20 ms.
+  `kitchen probe` inspects a bundle in about 20 ms — measured 2026-09-13, and the only copy of
+  that number.
 
 ## Per-image differences
 

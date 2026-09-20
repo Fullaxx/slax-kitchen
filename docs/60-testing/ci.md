@@ -237,7 +237,8 @@ seconds instead of four. The boot job is therefore kept to one target and off th
 the `boot-test` label to a PR to opt in. `kitchen test` says which mode it is using rather than
 appearing to hang.
 
-Measured on a GitHub runner, the whole boot job:
+Measured 2026-09-16 at `1463570` on a GitHub runner, the whole boot job. **This table is the only
+copy of these figures:**
 
 | step | | |
 |---|---|---|
@@ -271,7 +272,7 @@ MATRIX_SKIP= ./ci/recipe-matrix.sh debian-64bit-12.2.0 isos/slax-64bit-debian-12
 ```
 
 **The Tier C boot matrix** — BIOS, UEFI, USB device and persistence across two boots.
-About 45 seconds for all four with KVM, or 128 s under TCG:
+What it costs, on both accelerators, is in [Tier C](tier-c.md), which holds the only copy:
 
 ```sh
 ./kitchen build boot-matrix

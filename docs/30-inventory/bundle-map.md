@@ -194,5 +194,5 @@ xorriso -indev isos/slax-64bit-debian-12.2.0.iso -find /slax/modules -exec repor
 unsquashfs -o 137216 -d /tmp/x isos/slax-64bit-debian-12.2.0.iso etc/slax-version
 ```
 
-Nothing is extracted and nothing is mounted; `unsquashfs -o <offset>` reads the image in place in
-about 20 ms.
+Nothing is extracted and nothing is mounted; `unsquashfs -o <offset>` reads the image in place —
+what that costs is in [iso-container](../10-anatomy/iso-container.md).
