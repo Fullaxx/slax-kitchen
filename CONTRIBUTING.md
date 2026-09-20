@@ -458,6 +458,32 @@ two were measured months apart and drifted to 18 s and 16 s, neither of them wro
 written. Re-measure rather than trust the figure above — `time sh ci/checks/80-unit.sh` — and when
 it moves, change it here and nowhere else.
 
+### A number that names this tree is gated or dated, never bare
+
+That paragraph is one instance of a rule worth stating on its own, because every number in this
+repository is one of two kinds and they need opposite treatment.
+
+**Derivable from the tree → gate it.** A machine can count `ci/checks/*.sh` or the `kind:
+Fingerprint` files in `compat/`, so prose that states those counts is checkable, and
+[`ci/checks/90-doc-coverage.sh`](ci/checks/90-doc-coverage.sh) checks four of them. The failure it
+prevents is not hypothetical: adding the thirteenth gate made six shipped files wrong in one
+commit, and the build-matrix count was stated on 45 lines across 31 files before anything read one
+of them.
+
+**Not derivable → date it.** A timing cannot be gated; it varies by machine, so a gate asserting
+the 18 s above would fail on a slow runner. Neither can a count that describes a past incident — "five of the
+fifteen tests here" was exactly right at `6e4470e` on 2026-09-18 and is not now. Dating turns a
+claim about *now* into a fact about a day, which stays true, and costs nothing at commit time.
+Say when, on what, and how to re-measure.
+
+**And state it once.** `ci/gen-manifests.sh` was timed in two files, at three seconds and at
+sixteen. Both were right when written — the script gained `isofiles` hashing in between — and
+nobody updated the older copy because there was another copy. Where a second page wants the
+figure, it cites the page that holds it.
+
+The tell for a number that has gone stale is the word *here*, or *this tree*, in the present
+tense. If you are writing one, either a gate can check it or it needs a date.
+
 **The gate runs your test in a sandbox, and has opinions about what you leave in it.** Three rules,
 each of which came from something that shipped — the measurements and the failures behind them are
 in [`ci/checks/80-unit.sh`](ci/checks/80-unit.sh)'s header:
