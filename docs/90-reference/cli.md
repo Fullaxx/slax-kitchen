@@ -350,13 +350,26 @@ Two cases get special handling, because the naive answer is confidently wrong:
 | | |
 |---|---|
 | `isolinux.bin` | bytes 8–63 are the boot-info-table, written **after** the file is placed, so two functionally identical builds differ there whenever the extent moves. Compared past byte 64, with the checksum verified separately and the LBA move reported. See [el-torito.md](../10-anatomy/el-torito.md). |
-| `*.sb` bundles | a squashfs is a container: "content changed" on a 79 MiB bundle is true and useless. `--bundles` lists which paths inside it moved, read at an offset without unpacking. |
+| `*.sb` bundles | a squashfs is a container with its own creation time, and it stores an mtime per file — so **two builds of the same tree differ in bytes while every file in them is identical**. "content changed" on a 79 MiB bundle is true and useless. `--bundles` compares what is *inside*: type, mode, owner, size, link target and sha256 per entry, with mtimes deliberately excluded. |
 
 ```
   inside /slax/modules/07-branding.sb   5 -> 4 entries
-    +  squashfs-root/etc/motd
-    -  squashfs-root/etc/issue
+    +  etc/motd
+    -  etc/issue
+    ~  etc/hostname                                    content
 ```
+
+When a bundle's bytes differ but nothing inside it does — a plain rebuild — it says so
+rather than leaving you to guess:
+
+```
+  inside /slax/modules/08-ssh.sb   6 -> 6 entries
+    (identical content -- only the squashfs container differs: its creation time, and the mtimes it stores)
+```
+
+This is the one place `diff` extracts, and only for a bundle whose bytes already differ: a
+content hash of a file inside a squashfs cannot be read from the ISO's extents. A bundle
+that cannot be read is refused with exit 2, not reported as a bundle with no files.
 
 The El Torito boot catalog is compared **by meaning** — platforms and bootable flags — not by bytes.
 It has no file extent of its own, so a byte comparison could not see it at all.

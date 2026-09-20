@@ -6,11 +6,16 @@ fingerprints in compat/. This answers the different question "what is the differ
 between THESE two images?", for the case where both are yours: a stock ISO and your
 build of it, or two of your builds a recipe apart.
 
-NOTHING IS EXTRACTED. xorriso reports each file's start LBA and size, so the content
-hash comes from reading that extent straight out of the image. Extracting two 416 MiB
-ISOs to compare 38 files would move ~830 MiB through the filesystem to answer a question
-that needs ~830 MiB of *reads* and no writes at all. On this machine the difference is
-about 40 s versus about 6 s, and it needs no scratch space.
+NOTHING IS EXTRACTED, except one case that says so. xorriso reports each file's start
+LBA and size, so the content hash comes from reading that extent straight out of the
+image. Extracting two 416 MiB ISOs to compare 38 files would move ~830 MiB through the
+filesystem to answer a question that needs ~830 MiB of *reads* and no writes at all. On
+this machine the difference is about 40 s versus about 6 s, and it needs no scratch
+space.
+
+The exception is bundle_manifest(), under --bundles only: a content hash of a file INSIDE
+a squashfs cannot be read from the ISO's extents, and comparing the file list instead is
+what made two builds of one tree indistinguishable from two that really differ.
 
 TWO SPECIAL CASES, both of which would otherwise produce a confidently wrong answer:
 
@@ -20,13 +25,17 @@ TWO SPECIAL CASES, both of which would otherwise produce a confidently wrong ans
                 differ there whenever the file lands at a different extent. Compared
                 past byte 64, with the checksum verified separately.
 
-  *.sb bundles  a squashfs is a container. "content changed" on a 79 MiB bundle is true
-                and useless, so --bundles lists which paths inside it moved.
+  *.sb bundles  a squashfs is a container with a creation time of its own, and it stores
+                an mtime per file -- so two builds of the same tree differ in BYTES while
+                every file in them is identical. "content changed" on a 79 MiB bundle is
+                true and useless, so --bundles compares what is INSIDE: type, mode, owner,
+                size, link target and sha256 per entry, mtimes deliberately excluded.
 """
 import argparse
 import hashlib
 import os
 import re
+import stat
 import subprocess
 import sys
 
@@ -159,17 +168,106 @@ def _hash_all(iso: str, ents: dict) -> None:
                 e["head"] = _sha256_extent(fh, e["lba"], skip)
 
 
-def _bundle_paths(iso: str, lba: int) -> set:
-    """File list inside a squashfs that lives at `lba` in `iso`, or an empty set.
+def bundle_manifest(container: str, offset: int = 0) -> dict:
+    """Every entry inside a squashfs, by what it IS: type, mode, owner, size, link target
+    and the sha256 of its content. Mtimes are deliberately absent.
 
-    unsquashfs reads an offset into a larger file, which is exactly the shape here --
-    the bundle never has to be carved out of the ISO first.
+    WHY CONTENT AND NOT THE FILE LIST. A squashfs is a container with a creation time of
+    its own, and it stores an mtime per file, so two builds of the same tree differ in
+    BYTES while every file in them is identical. This compared the file LIST and printed
+    "(same file list; contents differ)" whenever the lists matched -- the one answer that
+    is true whether or not anything changed. Measured: one stock tree, `enable-ssh`
+    applied to two copies, packed; the bundles differed in the superblock's "Creation or
+    last append time" and nothing else, and diff called it DIFFERENT. Downstream, two
+    builds whose only difference was two comment lines named four bundles as "contents
+    differ", three of them identical inside (#30).
+
+    Mtimes are left out for the same reason: they are when the tree was packed, not what
+    is in it.
+
+    THIS ONE EXTRACTS, unlike everything else in this module, because a content hash of a
+    file inside a squashfs cannot be read from the ISO's extents. Only under --bundles,
+    and only for a bundle whose bytes already differ -- but it is not free, and the
+    biggest bundle is the one most likely to have changed: 01-core of the stock 64-bit
+    Debian ISO is 122.3 MiB and 18,670 entries, and this took 2.75 s for it on
+    2026-09-20. Re-measure rather than trusting that; it is a fact about a machine.
+
+    RAISES ListingError rather than returning an empty manifest. A bundle that could not
+    be read is not a bundle with no files -- the same rule _entries() states, and the same
+    bug: this used to answer an empty set, and the caller then either skipped the bundle
+    in silence or, where only one side failed, reported every file in it as added.
     """
-    r = subprocess.run(["unsquashfs", "-o", str(lba * SECTOR), "-l", iso],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        return set()
-    return {ln.strip() for ln in r.stdout.splitlines() if ln.startswith("squashfs-root")}
+    import shutil
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="kitchen-diff-")
+    root = os.path.join(tmp, "x")
+    try:
+        r = subprocess.run(["unsquashfs", "-q", "-n", "-o", str(offset), "-d", root,
+                            container], capture_output=True, text=True)
+        if r.returncode != 0:
+            why = (r.stderr or r.stdout).strip().splitlines()
+            raise ListingError(
+                f"unsquashfs could not read the bundle at offset {offset} in "
+                f"{os.path.basename(container)}: "
+                + (why[0] if why else f"it exited {r.returncode}"))
+        out: dict = {}
+        for dirpath, dirnames, filenames in os.walk(root):
+            for n in sorted(dirnames + filenames):
+                full = os.path.join(dirpath, n)
+                st = os.lstat(full)
+                # BY st_mode, never by "not a directory, so a file". A bundle may carry
+                # device nodes and fifos -- bundle.fromTarball admits them under
+                # privilege: mknod -- and hashing one would read from the device: a fifo
+                # with no writer blocks forever, and /dev/zero never ends.
+                if stat.S_ISLNK(st.st_mode):
+                    kind = "link"
+                elif stat.S_ISDIR(st.st_mode):
+                    kind = "dir"
+                elif stat.S_ISREG(st.st_mode):
+                    kind = "file"
+                elif stat.S_ISCHR(st.st_mode):
+                    kind = f"chr {os.major(st.st_rdev)}:{os.minor(st.st_rdev)}"
+                elif stat.S_ISBLK(st.st_mode):
+                    kind = f"blk {os.major(st.st_rdev)}:{os.minor(st.st_rdev)}"
+                elif stat.S_ISFIFO(st.st_mode):
+                    kind = "fifo"
+                else:
+                    kind = "socket" if stat.S_ISSOCK(st.st_mode) else "other"
+                digest = ""
+                if kind == "file":
+                    h = hashlib.sha256()
+                    with open(full, "rb") as fh:
+                        for chunk in iter(lambda: fh.read(1 << 20), b""):
+                            h.update(chunk)
+                    digest = h.hexdigest()
+                out[os.path.relpath(full, root)] = {
+                    "type": kind,
+                    "mode": stat.S_IMODE(st.st_mode),
+                    "owner": (st.st_uid, st.st_gid),
+                    "size": st.st_size if kind == "file" else 0,
+                    "link target": os.readlink(full) if kind == "link" else "",
+                    "content": digest,
+                }
+        return out
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def manifest_changes(ma: dict, mb: dict) -> tuple[list, list, list]:
+    """(added, removed, changed) between two manifests. `changed` names WHAT differs.
+
+    The words come from the manifest's own keys, so a field added there is reported
+    without a second list here needing to learn about it.
+    """
+    added = sorted(set(mb) - set(ma))
+    removed = sorted(set(ma) - set(mb))
+    changed = []
+    for q in sorted(set(ma) & set(mb)):
+        va, vb = ma[q], mb[q]
+        if va == vb:
+            continue
+        changed.append((q, ", ".join(k for k in va if va[k] != vb[k])))
+    return added, removed, changed
 
 
 def diff(a: str, b: str, show_bundles: bool = False, limit: int = 20) -> int:
@@ -308,17 +406,22 @@ def diff(a: str, b: str, show_bundles: bool = False, limit: int = 20) -> int:
     if show_bundles:
         bundles = [p for p, _ in changed if p.endswith(".sb")]
         for p in bundles:
-            pa, pb = _bundle_paths(a, ea[p]["lba"]), _bundle_paths(b, eb[p]["lba"])
-            if not pa and not pb:
-                continue
-            ina, inb = sorted(pb - pa), sorted(pa - pb)
-            print(f"\n  inside {p}   {len(pa)} -> {len(pb)} entries")
-            for q in ina[:limit]:
+            ma = bundle_manifest(a, ea[p]["lba"] * SECTOR)
+            mb = bundle_manifest(b, eb[p]["lba"] * SECTOR)
+            gained, lost, edited = manifest_changes(ma, mb)
+            print(f"\n  inside {p}   {len(ma)} -> {len(mb)} entries")
+            for q in gained[:limit]:
                 print(f"    +  {q}")
-            for q in inb[:limit]:
+            for q in lost[:limit]:
                 print(f"    -  {q}")
-            if not ina and not inb:
-                print("    (same file list; contents differ)")
+            for q, why in edited[:limit]:
+                print(f"    ~  {q:<48} {why}")
+            if not gained and not lost and not edited:
+                # The bundle's bytes differ and nothing in it does. Say which, because
+                # this is what two builds of one tree look like and the old message --
+                # "(same file list; contents differ)" -- asserted the opposite.
+                print("    (identical content -- only the squashfs container differs:"
+                      " its creation time, and the mtimes it stores)")
 
     print()
     print("  identical" if not differs else "  DIFFERENT")
