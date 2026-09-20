@@ -138,3 +138,31 @@ file_size() {
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# python3 is required, and a gate that needs it refuses rather than standing down.
+#
+# A MISSING TOOL IS NORMALLY A `warn` AND exit 0, and often that is right: 30-shellcheck
+# stands down without shellcheck because a linter is not the only thing keeping the tree
+# honest. An interpreter that every remaining line of a gate depends on is not that. `exit 0`
+# makes run-checks.sh print `ok` in green and count the gate in "N checks passed", so it
+# reports success having examined nothing -- the shape this file already refuses above for a
+# git that will not answer and a stat that will not measure.
+#
+# Measured 2026-09-20 with python3 off PATH, rather than reasoned about: 40-schema ALREADY
+# failed, incidentally -- lib/validate.py's `#!/usr/bin/env python3` cannot exec and its
+# `|| fail` fires once per file -- and 45-doc-yaml alone went green. It was the odd one out,
+# not the rule. 60-links was about to carry its own copy of the same four lines; one helper
+# called by both is what keeps them from drifting apart later.
+#
+# NOT THE SAME QUESTION as whether yaml and jsonschema import. Those are third-party, a venv
+# python3 legitimately cannot see apt's copies, and `kitchen doctor` probes for exactly that
+# by name -- so 45-doc-yaml goes on standing down for them, and only for them.
+#
+# $1 says what goes unchecked in the gate's own words: "python3 is missing" does not tell a
+# reader what they have just lost.
+require_python3() {
+    have python3 && return 0
+    fail "python3 is not installed, so $1"
+    printf '      Refusing to pass: this gate would examine nothing and report ok.\n' >&2
+    exit 1
+}

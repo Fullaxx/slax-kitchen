@@ -42,32 +42,13 @@
 # tree-wide before any link can be resolved anyway.
 . "$(dirname "$0")/../lib.sh"
 
-# NOT A SKIP WHEN python3 IS ABSENT. Measured 2026-09-20 with python3 off PATH rather than
-# reasoned about: 40-schema ALREADY fails this way, incidentally rather than by design -- it
-# has no interpreter guard, so lib/validate.py's shebang fails to exec and every file reports
-# -- and 45-doc-yaml is the only gate of the three that stands down green. Its SECOND guard
-# is the well-founded one: yaml and jsonschema may legitimately be missing from a venv
-# python3 that cannot see apt's packages, and `kitchen doctor` probes for exactly that. Its
-# interpreter guard is the odd one out, not this.
-#
-# `kitchen doctor --strict` does refuse a machine with no python3 -- but by way of that
-# yaml/jsonschema assertion, NOT the floor: python3 is not in the TOOLS table at all, and the
-# floor line answers "python3 >= 3.9: unknown (python3 did not run)", which contains no ': NO'
-# and so does not trip --strict. Worth knowing, because it means the floor is not what is
-# holding the requirement up.
-#
-# WHAT DECIDES IT IS WHAT STANDING DOWN WOULD COST. 45-doc-yaml giving up loses the doc
-# EXAMPLES, while 40-schema goes on validating every real recipe against the same schemas.
-# Nothing else in this tree looks at a link, so this gate giving up loses all 707 of them.
-# And before the rewrite it was sh and grep and needed no python3 at all: standing down would
-# turn a gate that worked on such a machine into one that prints ok having read nothing, as a
-# side effect of a refactor. That is the one thing this repo refuses.
-have python3 || {
-    fail "python3 is not installed, so no internal link is checked at all"
-    printf '      Refusing to pass: this gate would examine 0 links and report ok.\n' >&2
-    check_result
-    exit
-}
+# WHY THIS REFUSES RATHER THAN STANDS DOWN is ci/lib.sh's require_python3, stated once
+# there. What is specific to this gate is the size of the hole: nothing else in this tree
+# looks at a link, so there is no second gate to degrade to. And before the rewrite this one
+# was sh and grep and wanted no python3 at all -- standing down would have turned a gate that
+# worked on such a machine into one that prints ok having read nothing, as a side effect of a
+# refactor.
+require_python3 "no internal link is checked at all"
 [ -f "$REPO_ROOT/ci/md-links.py" ] || { fail "ci/md-links.py is missing"; check_result; exit; }
 
 python3 "$REPO_ROOT/ci/md-links.py" > /tmp/.kitchen-links.$$ 2> /tmp/.kitchen-links-n.$$

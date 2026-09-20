@@ -155,10 +155,51 @@ def test_a_stat_without_c_still_refuses_to_run():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_require_python3_refuses_instead_of_standing_down():
+    """A gate that needs the interpreter must not report ok without it.
+
+    45-doc-yaml stood down green on a machine with no python3 at all, while 40-schema next
+    door failed on the same machine -- so "python3 missing" meant two different things
+    depending on which gate you asked. `exit 0` makes run-checks.sh print `ok` and count the
+    gate in "N checks passed", which is the same shape as the git and stat guards above:
+    success reported over nothing examined. Measured 2026-09-20.
+    """
+    tmp = tempfile.mkdtemp(prefix="cipy-")
+    try:
+        binp = os.path.join(tmp, "bin")
+        os.makedirs(binp)
+        # Everything ci/lib.sh needs to source, and deliberately not python3.
+        for t in ("git", "stat", "sed", "sh", "cat", "grep", "tr"):
+            found = shutil.which(t)
+            if found:
+                os.symlink(os.path.realpath(found), os.path.join(binp, t))
+        check("the fixture really has no python3", shutil.which("python3", path=binp), None)
+
+        script = f'. "{LIB}"; require_python3 "NOTHING AT ALL is checked"; echo reached'
+        p = subprocess.run(["sh", "-c", script], cwd=ROOT, capture_output=True, text=True,
+                           env=dict(os.environ, PATH=binp, NO_COLOR="1"))
+        out = p.stdout + p.stderr
+        check("the gate refuses", p.returncode != 0, True)
+        check("...saying python3 is the reason", "python3 is not installed" in out, True)
+        check("...and what was lost, in the caller's words",
+              "NOTHING AT ALL is checked" in out, True)
+        check("...and never reached the rest of the gate", "reached" in p.stdout, False)
+
+        # And it does not fire when the interpreter is there: a guard that always refuses
+        # would be the same defect wearing the other face.
+        p = subprocess.run(["sh", "-c", script], cwd=ROOT, capture_output=True, text=True,
+                           env=dict(os.environ, NO_COLOR="1"))
+        check("with python3 present it returns", p.returncode, 0)
+        check("...and the gate carries on", "reached" in p.stdout, True)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     for fn in [test_a_staged_submodule_measures_zero_not_missing,
                test_the_size_rule_still_has_teeth,
-               test_a_stat_without_c_still_refuses_to_run]:
+               test_a_stat_without_c_still_refuses_to_run,
+               test_require_python3_refuses_instead_of_standing_down]:
         fn()
     if FAILURES:
         for f in FAILURES:

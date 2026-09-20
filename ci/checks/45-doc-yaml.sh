@@ -21,7 +21,13 @@
 
 [ -d "$REPO_ROOT/schema" ] || { note "schema/ not present yet - skipping"; exit 0; }
 [ -f "$REPO_ROOT/ci/doc-yaml.py" ] || { note "ci/doc-yaml.py not present - skipping"; exit 0; }
-have python3 || { note "python3 not installed - skipping doc YAML validation"; exit 0; }
+# REFUSES WITHOUT python3, AND STANDS DOWN WITHOUT yaml/jsonschema, and the two are not the
+# same question. This gate used to treat them alike and go green for either, so on a machine
+# with no python3 at all it reported ok having validated nothing -- while 40-schema, next
+# door, failed on the same machine. See ci/lib.sh's require_python3 for the argument and the
+# measurement. The import check below stays a skip: those two are third-party, a venv python3
+# legitimately cannot see apt's copies, and `kitchen doctor` probes for exactly that.
+require_python3 "no YAML block in any document is checked at all"
 python3 -c 'import yaml, jsonschema' 2>/dev/null || {
     note "python3 yaml/jsonschema not importable - skipping (see kitchen doctor)"
     exit 0
