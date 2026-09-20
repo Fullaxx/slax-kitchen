@@ -29,6 +29,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dpkgdb  # noqa: E402
+import fingerprint  # noqa: E402
 import provenance  # noqa: E402
 from validate import validate_file  # noqa: E402
 
@@ -2974,6 +2975,34 @@ def _detect_flavour(tree: str) -> str:
     return "debian"
 
 
+def _detect_arch(tree: str) -> str | None:
+    """The tree's architecture, read from an ELF in 01-core -- or None if it cannot be.
+
+    Delegates to fingerprint.arch_from_extract(), the probe `kitchen probe` calls
+    authoritative, so the fact a recipe branches on and the fact a fingerprint records are
+    THE SAME FACT, decided in one place. Two probes that agree today are two probes.
+
+    One unsquashfs of four small paths, beside the `unsquashfs -l` _detect_flavour already
+    runs. Measured on the stock 64-bit Debian 01-core, 2026-09-20: 0.02 s.
+    """
+    import tempfile
+    mods = os.path.join(tree, "slax", "modules")
+    cores = sorted(n for n in os.listdir(mods) if n.startswith("01-core")) \
+        if os.path.isdir(mods) else []
+    if not cores:
+        return None
+    tmp = tempfile.mkdtemp(prefix="kitchen-arch.")
+    try:
+        cx = os.path.join(tmp, "core")
+        # offset 0: in a work tree the bundle is a file of its own, not a region of an ISO.
+        fingerprint.squash_extract(os.path.join(mods, cores[0]), 0, cx,
+                                   list(fingerprint.ARCH_CANDIDATES))
+        hit = fingerprint.arch_from_extract(cx)
+        return hit[0] if hit else None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _apt_would_remove(root: str, argv: list, packages) -> list[str]:
     """Which packages apt wanted to remove, asked in simulate mode.
 
@@ -3252,12 +3281,35 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
 # ------------------------------------------------------------- engine --------
 
 def _tree_facts(work: str, tree: str) -> dict:
-    """Facts a recipe can branch on with `when:`."""
+    """Facts a recipe can branch on with `when:` -- facts about the TREE.
+
+    `arch` was a substring test over origin.yaml's source_iso, the ABSOLUTE path the ISO
+    was unpacked from, so where a file happened to be stored decided what the tree was
+    (#27). Measured on one stock 64-bit ISO reached three ways:
+
+      isos/slax-64bit-debian-12.2.0.iso        64bit   right
+      slax-32bit-and-64bit/<same file>         32bit   memtest86plus installed the i586
+                                                       build into a 64-bit image
+      downloads/slax.iso                       unknown BOTH payload steps skipped, and the
+                                                       bootloader still gained a LABEL
+                                                       pointing at a file nobody installed
+
+    Now it is read from the tree. The ISO's own NAME is the fallback when there is no
+    01-core to read -- never the directory it sits in, which is the whole bug.
+
+    `flavour` IS NOT SYMMETRICAL WITH THIS, and the difference is worth knowing before
+    trusting it: _detect_flavour() answers "debian" for a tree it could not read, where
+    arch answers "unknown". So an unreadable tree asserts a flavour it never measured,
+    and `when: flavour==debian` runs on it. Left alone here deliberately -- changing that
+    default decides whether guarded steps run at all, which is a product change needing
+    its own evidence, not a rider on this one.
+    """
     import yaml
-    facts = {"flavour": _detect_flavour(tree), "arch": "unknown"}
+    facts = {"flavour": _detect_flavour(tree), "arch": _detect_arch(tree) or "unknown"}
     origin = os.path.join(work, ".kitchen", "origin.yaml")
-    if os.path.isfile(origin):
-        src = str((yaml.safe_load(open(origin)) or {}).get("source_iso", ""))
+    if facts["arch"] == "unknown" and os.path.isfile(origin):
+        src = os.path.basename(
+            str((yaml.safe_load(open(origin)) or {}).get("source_iso", "")))
         if "32bit" in src:
             facts["arch"] = "32bit"
         elif "64bit" in src:
@@ -3331,18 +3383,25 @@ def resolve(names: list[str], search: list[str]) -> list[str]:
     return out
 
 
-def check_compat(doc: dict, work: str) -> list[str]:
-    """Warn (not fail) when a recipe does not declare support for this base."""
-    import yaml
+def check_compat(doc: dict, work: str, facts: dict) -> list[str]:
+    """Warn (not fail) when a recipe does not declare support for this base.
+
+    HANDED THE FACTS THE STEPS RAN WITH, rather than deriving its own. It used to
+    substring-match origin.yaml's source_iso independently, so a misread tree got the
+    wrong steps AND a warning agreeing with them -- a 64-bit tree kept under a directory
+    named "...32bit..." was told "recipe declares arch=['64bit'] but the base looks like
+    32bit" while memtest86plus quietly installed the i586 build into it (#27).
+
+    Deriving them again here would fix that case and leave the shape: two readings of one
+    tree, correct together until something makes them disagree. One value cannot.
+    """
     origin = os.path.join(work, ".kitchen", "origin.yaml")
     if not os.path.isfile(origin):
         return []
-    info = yaml.safe_load(open(origin)) or {}
-    src = str(info.get("source_iso", ""))
     compat = doc.get("compat", {}) or {}
     warn = []
-    flav = "slackware" if "slackware" in src else "debian" if "debian" in src else None
-    arch = "32bit" if "32bit" in src else "64bit" if "64bit" in src else None
+    flav = facts["flavour"]
+    arch = None if facts["arch"] == "unknown" else facts["arch"]
     if flav and compat.get("flavours") and flav not in compat["flavours"]:
         warn.append(f"recipe declares flavours={compat['flavours']} but the base looks like {flav}")
     if arch and compat.get("arch") and arch not in compat["arch"]:
@@ -3397,7 +3456,7 @@ def apply_recipe(path: str, work: str, dry: bool = False,
     ctx = Ctx(work, os.path.dirname(os.path.abspath(path)), name, dry)
     ctx.facts = facts
     print(f"  {name}: {doc['metadata']['summary']}")
-    for w in check_compat(doc, work):
+    for w in check_compat(doc, work, facts):
         print(f"    warning: {w}", file=sys.stderr)
 
     # The journal already knows this recipe ran. Saying so beats letting the user

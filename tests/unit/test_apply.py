@@ -1781,6 +1781,102 @@ def test_every_file_writing_verb_records_what_it_wrote():
         check(f"{v} records what it writes", reaches(fn, "ctx.record"), True)
 
 
+def test_arch_is_a_fact_about_the_tree():
+    """`when: arch==` reads the TREE, not the path the ISO was stored under.
+
+    _tree_facts substring-matched origin.yaml's source_iso -- the ABSOLUTE path the ISO was
+    unpacked from -- so where a file was kept decided what the tree was. Measured on one
+    stock 64-bit ISO reached three ways (#27): under a directory named
+    "slax-32bit-and-64bit" it read 32bit and memtest86plus installed the i586 build into a
+    64-bit image; saved as "slax.iso" it read unknown, which skipped BOTH payload steps and
+    still let the bootloader gain a LABEL pointing at a file nobody installed.
+
+    The last two cases are about fingerprint.resolve_within: Slackware's 01-core reaches
+    its real binaries through symlinks, and one of them is ABSOLUTE. Followed by the host's
+    resolver that leaves the extract entirely -- measured on the 32-bit Slackware image,
+    `file -bL usr/bin/bash` answered with THIS machine's bash.
+    """
+    import subprocess
+    import tempfile
+    if not shutil.which("mksquashfs"):
+        # A REQUIRED TOOL, so its absence is a named failure and not a silent pass:
+        # `kitchen doctor` asserts it, and a check that cannot fail is worse than none.
+        FAILURES.append("mksquashfs is not installed, so the arch probe cannot be tested "
+                        "(it is a required tool -- see kitchen doctor)")
+        return
+
+    def elf(path, bits):
+        with open(path, "wb") as f:
+            f.write(b"\x7fELF" + bytes([bits]) + bytes(59))
+
+    def tree(source_iso, *, core="64", link=None):
+        """A work tree. core: '64'/'32' ELF at usr/bin/ls, or None for no 01-core.
+
+        link='rel' puts usr/bin/ls -> ../../bin/ls with the real ELF at bin/ls, which is
+        Slackware's shape. link='abs' makes it -> /bin/ls, the shape that escapes: bin/ls
+        inside is 32-bit while this host's /bin/ls is not, so a probe that followed the
+        link out would answer with the host and this case would fail.
+        """
+        work = tempfile.mkdtemp()
+        mods = os.path.join(work, "iso", "slax", "modules")
+        os.makedirs(mods)
+        if core:
+            src = tempfile.mkdtemp()
+            os.makedirs(os.path.join(src, "usr", "bin"))
+            os.makedirs(os.path.join(src, "etc"))
+            open(os.path.join(src, "etc", "debian_version"), "w").write("12.2\n")
+            bits = 2 if core == "64" else 1
+            if link:
+                os.makedirs(os.path.join(src, "bin"))
+                elf(os.path.join(src, "bin", "ls"), bits)
+                os.symlink("../../bin/ls" if link == "rel" else "/bin/ls",
+                           os.path.join(src, "usr", "bin", "ls"))
+            else:
+                elf(os.path.join(src, "usr", "bin", "ls"), bits)
+            subprocess.run(["mksquashfs", src, os.path.join(mods, "01-core.sb"),
+                            "-noappend", "-no-progress", "-all-root"],
+                           capture_output=True, check=True)
+        os.makedirs(os.path.join(work, ".kitchen"))
+        with open(os.path.join(work, ".kitchen", "origin.yaml"), "w") as f:
+            f.write(f"source_iso: {source_iso}\n")
+        return work
+
+    for label, kw, src, want in (
+            ("a directory named 32bit does not flip a 64-bit tree", {"core": "64"},
+             "/srv/slax-32bit-and-64bit/slax-64bit-debian-12.2.0.iso", "64bit"),
+            ("a plain ISO name still reads the tree", {"core": "64"},
+             "/srv/downloads/slax.iso", "64bit"),
+            ("a 32-bit tree under a directory named 64bit", {"core": "32"},
+             "/srv/64bit/slax-32bit-debian-12.2.0.iso", "32bit"),
+            ("no 01-core: the ISO's own NAME decides", {"core": None},
+             "/srv/64bit/slax-32bit-debian-12.2.0.iso", "32bit"),
+            ("no 01-core, and the DIRECTORY is never read", {"core": None},
+             "/srv/slax-32bit-and-64bit/slax.iso", "unknown"),
+            ("a relative symlink, which is Slackware's shape", {"core": "32", "link": "rel"},
+             "/srv/slax.iso", "32bit"),
+            ("an absolute symlink resolves inside the image, not on this host",
+             {"core": "32", "link": "abs"}, "/srv/slax.iso", "32bit")):
+        work = tree(src, **kw)
+        check(f"arch: {label}",
+              apply._tree_facts(work, os.path.join(work, "iso"))["arch"], want)
+
+    # check_compat is handed the facts the steps ran with, so it cannot warn about a base
+    # they never saw. This tree was told "the base looks like 32bit" while the 64-bit
+    # steps ran on it.
+    def facts_of(w):
+        return apply._tree_facts(w, os.path.join(w, "iso"))
+
+    work = tree("/srv/slax-32bit-and-64bit/slax-64bit-debian-12.2.0.iso", core="64")
+    check("check_compat agrees with the steps that ran",
+          apply.check_compat({"compat": {"arch": ["64bit"]}}, work, facts_of(work)), [])
+    # ...AND STILL WARNS WHERE THERE IS A REAL DISAGREEMENT. Silencing the false warning
+    # by silencing the warning is the failure mode this half exists to catch.
+    w32 = tree("/srv/slax.iso", core="32")
+    check("check_compat still warns on a real mismatch",
+          apply.check_compat({"compat": {"arch": ["64bit"]}}, w32, facts_of(w32)),
+          ["recipe declares arch=['64bit'] but the base looks like 32bit"])
+
+
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
     # 17 of this file's 25 mkdtemp() calls had no cleanup on 2026-09-18, so running it by hand left
@@ -1838,7 +1934,8 @@ def main():
                    test_relax_modes_widens_without_granting,
                    test_apt_reinstall_is_opt_in,
                    test_every_file_writing_verb_records_what_it_wrote,
-                   test_status_removals_is_a_transition_not_a_scan]:
+                   test_status_removals_is_a_transition_not_a_scan,
+                   test_arch_is_a_fact_about_the_tree]:
             fn()
         if FAILURES:
             for f in FAILURES:

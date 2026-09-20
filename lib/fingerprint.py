@@ -76,6 +76,69 @@ def squash_extract(iso: str, offset: int, dest: str, members: list[str]) -> bool
     return r.returncode == 0
 
 
+# The four places a real ELF lives in 01-core, in the order they are tried. busybox is
+# deliberately NOT one of them: it is i386 on all four ISOs by design, so it would answer
+# 32bit for every base.
+ARCH_CANDIDATES = ("usr/bin/ls", "bin/ls", "usr/bin/bash", "bin/bash")
+
+
+def resolve_within(root: str, rel: str, hops: int = 10) -> str | None:
+    """Resolve `rel` under `root`, following symlinks but NEVER leaving `root`.
+
+    An extracted bundle is an image's filesystem sitting in a temporary directory, and its
+    symlinks were written for the image's root, not ours. Slackware's 01-core has both
+    kinds: `usr/bin/ls -> ../../bin/ls`, relative, which lands where you expect -- and
+    `usr/bin/bash -> /bin/bash`, ABSOLUTE, which the host's resolver follows straight out
+    of the extract. Measured on the 32-BIT Slackware image, 2026-09-20: `file -bL` on that
+    path answered "ELF 64-bit LSB pie executable, x86-64", which is this machine's
+    /bin/bash and not the image's -- in the probe this project calls authoritative about
+    arch, in a tree that spent four commits (#20, #26) getting host paths out of
+    provenance.
+
+    So an absolute target is re-rooted at `root`, a relative one is joined, and anything
+    still climbing out is refused rather than followed. None for a dangling link, an
+    escape, a loop, or a path that is not there.
+    """
+    cur = rel.lstrip("/")
+    for _ in range(hops):
+        if cur == ".." or cur.startswith("../"):
+            return None
+        p = os.path.join(root, cur)
+        if not os.path.islink(p):
+            return p if os.path.exists(p) else None
+        target = os.readlink(p)
+        cur = (target.lstrip("/") if os.path.isabs(target)
+               else os.path.normpath(os.path.join(os.path.dirname(cur), target)))
+    return None
+
+
+def arch_from_extract(cx: str) -> tuple[str, str] | None:
+    """(arch, which candidate answered), read from an ELF header in an extracted 01-core.
+
+    THE ONE AUTHORITY ON ARCH. `kitchen probe` and `kitchen apply`'s `when: arch==` both
+    come here, so a fingerprint and a recipe guard cannot disagree about the same tree.
+
+    Why a binary rather than a label: every cheaper source lies or is missing on at least
+    one of the four bases. /etc/slax-version says "Slax 12.2.0 64bit" on the genuine
+    32-BIT Debian ISO -- upstream mislabelled it. dpkg's status file is clean on Debian
+    (247 i386 against 247 amd64) and does not exist on Slackware at all. And the ISO's own
+    filename is whatever somebody saved it as, which was issue #27.
+
+    Nothing is executed. Byte 4 of an ELF header is EI_CLASS, the field whose whole job is
+    to declare the binary's width.
+    """
+    for cand in ARCH_CANDIDATES:
+        p = resolve_within(cx, cand)
+        if not p or not os.path.isfile(p):
+            continue
+        with open(p, "rb") as fh:
+            head = fh.read(5)
+        if head[:4] != b"\x7fELF" or head[4:5] not in (b"\x01", b"\x02"):
+            continue
+        return ("32bit" if head[4:5] == b"\x01" else "64bit"), cand
+    return None
+
+
 def kernel_banner(vmlinuz: str) -> tuple[str, str]:
     """Recover 'Linux version ...' from a bzImage.
 
@@ -239,7 +302,7 @@ def fingerprint(iso: str, name: str | None = None) -> dict:
             squash_extract(iso, bundles[core]["offset"], cx,
                            ["etc/slax-version", "etc/os-release", "etc/debian_version",
                             "etc/slackware-version", "usr/lib/os-release",
-                            "usr/bin/ls", "bin/ls", "usr/bin/bash", "bin/bash"])
+                            *ARCH_CANDIDATES])
             for key, rel_ in (("slax_version_file", "etc/slax-version"),
                               ("debian_version", "etc/debian_version"),
                               ("slackware_version", "etc/slackware-version")):
@@ -255,22 +318,17 @@ def fingerprint(iso: str, name: str | None = None) -> dict:
                         if line.startswith("PRETTY_NAME="):
                             ident["os_release_pretty"] = line.split("=", 1)[1].strip().strip('"')
                     break
-            # Authoritative arch: probe a real ELF. /etc/slax-version LIES on the
-            # 32-bit Debian ISO -- it says "64bit" while the userland is i386.
-            # Note busybox is NOT usable here: it is i386 on all four ISOs by design.
-            # Use file -L: on Slackware /usr/bin/ls is a symlink to ../../bin/ls, and an
-            # unresolved "symbolic link to ..." string contains no bitness at all.
-            for cand in ("usr/bin/ls", "bin/ls", "usr/bin/bash", "bin/bash"):
-                p = os.path.join(cx, cand)
-                if not os.path.exists(p):
-                    continue
-                out = run(["file", "-bL", p]).stdout
-                if "ELF" not in out:
-                    continue
-                ident["arch_probe_file"] = cand
-                ident["arch_probe_result"] = out.strip().split(",")[0]
-                ident["arch"] = "32bit" if "32-bit" in out else "64bit"
-                break
+            # Authoritative arch, decided by arch_from_extract() -- the same probe
+            # `kitchen apply` reads `when: arch==` from, so a fingerprint and a recipe
+            # guard cannot disagree about one tree. `file` is still asked, but ONLY for
+            # the human-readable line: the answer is EI_CLASS, in one place.
+            hit = arch_from_extract(cx)
+            if hit:
+                ident["arch_probe_file"] = hit[1]
+                real = resolve_within(cx, hit[1])
+                ident["arch_probe_result"] = run(
+                    ["file", "-b", real]).stdout.strip().split(",")[0]
+                ident["arch"] = hit[0]
         if "arch" not in ident and (fp.get("kernel") or {}).get("release", "").endswith("-smp"):
             ident["arch"] = "32bit"       # 32-bit Slax kernels carry LOCALVERSION=-smp
         claimed = ident.get("slax_version_file", "")
