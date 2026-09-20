@@ -168,6 +168,12 @@ a profile to an existing tree took whatever `-w` pointed at, so a 64-bit profile
 a 32-bit tree and every `when: arch==` step would build the other architecture's half. A tree whose
 architecture cannot be read is *not* a disagreement, and `--facts` still overrides.
 
+`--facts k=v,k=v` overrides what `when:` guards see, **merged over the facts read from the tree** —
+naming one leaves the rest measured, so `--facts flavour=debian` does not blank `arch` out from
+under a step guarding on it. It reaches the steps that actually run, which it did not before: the
+override used to change only the preflight plan, so one invocation could plan one set of steps and
+apply another.
+
 ```
 $ kitchen apply --profile profiles/minimal.yaml -w work-32
 error: the profile is for arch 64bit, but this work tree is 32bit

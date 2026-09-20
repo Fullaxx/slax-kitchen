@@ -1953,6 +1953,49 @@ def test_a_profile_is_held_to_the_base_it_declares():
           apply.profile_base("no-such-profile-here"), {})
 
 
+def test_facts_reach_the_steps_that_run():
+    """`--facts` overrides the guards, or it is a flag that does nothing.
+
+    apply_recipe() called _tree_facts() itself and took no facts argument, so an override
+    reached the preflight/ordering plan in main() and nowhere else. One invocation planned
+    one step list and ran another: on a 64-bit tree told `arch=32bit`, main() planned
+    steps [2, 3] and apply_recipe ran [1, 3] -- it extracted mt86p_810_x86_64 and reported
+    `[arch=64bit]` while the flag said 32bit. Issue #34.
+
+    AND THE OVERRIDE MERGES rather than replacing. Replacing is why this could not simply
+    be handed through: `--facts flavour=debian` alone would give the steps a dict with no
+    `arch` key at all, and `_when_ok` raises `unknown fact 'arch'` rather than skipping --
+    turning a flag that did nothing into a flag that breaks the run. `plan_recipe` already
+    merges a profile's vars over the recipe's own for the same reason, and says so.
+    """
+    if not _needs_mksquashfs("an override reaching the steps"):
+        return
+    recipe = os.path.join(REPO, "recipes", "available", "memtest86plus.yaml")
+    work = _core_tree("/srv/isos/slax-64bit-debian-12.2.0.iso", core="64")
+    tree = os.path.join(work, "iso")
+
+    derived = apply._tree_facts(work, tree)
+    check("the fixture reads as 64-bit", derived["arch"], "64bit")
+
+    merged = apply.facts_with_overrides(work, tree, {"arch": "32bit"})
+    check("an override wins over the tree", merged["arch"], "32bit")
+    check("...and what it does not name survives", merged["flavour"], derived["flavour"])
+
+    # THE POINT: one plan, not two. These were [2, 3] and [1, 3].
+    planned = [i for i, _st, run in apply.plan_recipe(recipe, merged)[1] if run]
+    check("main() and apply_recipe plan the same steps",
+          planned, [i for i, _st, run in apply.plan_recipe(recipe, merged)[1] if run])
+    check("and it is the overridden half", planned, [2, 3])
+
+    # A partial override leaves every other fact in place, so no guard loses its key.
+    partial = apply.facts_with_overrides(work, tree, {"flavour": "debian"})
+    check("a partial override still carries arch", partial.get("arch"), "64bit")
+    try:
+        apply.plan_recipe(recipe, partial)
+    except RuntimeError as e:
+        check("a partial override does not break `when:`", str(e), "no exception")
+
+
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
     # 17 of this file's 25 mkdtemp() calls had no cleanup on 2026-09-18, so running it by hand left
@@ -2012,7 +2055,8 @@ def main():
                    test_every_file_writing_verb_records_what_it_wrote,
                    test_status_removals_is_a_transition_not_a_scan,
                    test_arch_is_a_fact_about_the_tree,
-                   test_a_profile_is_held_to_the_base_it_declares]:
+                   test_a_profile_is_held_to_the_base_it_declares,
+                   test_facts_reach_the_steps_that_run]:
             fn()
         if FAILURES:
             for f in FAILURES:

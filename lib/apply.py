@@ -3317,6 +3317,25 @@ def _tree_facts(work: str, tree: str) -> dict:
     return facts
 
 
+def facts_with_overrides(work: str, tree: str, override: dict | None) -> dict:
+    """The facts this run uses: read from the tree, with `--facts` MERGED over them.
+
+    MERGED, NOT REPLACING, and that is the whole difficulty of issue #34. `--facts` used to
+    replace the derived dict wholesale, which was survivable only because it reached the
+    preflight plan and nothing else -- `--facts flavour=debian` alone handed that plan no
+    `arch` key at all, and `_when_ok` raises `unknown fact 'arch'` rather than skipping.
+    Handing the same dict to the steps would have turned a flag that did nothing into a
+    flag that breaks the run.
+
+    So an override names the facts it means and leaves the rest measured. It is the choice
+    plan_recipe already made for a profile's `vars:`, for the same reason.
+    """
+    facts = _tree_facts(work, tree)
+    if override:
+        facts.update(override)
+    return facts
+
+
 def _when_ok(expr: str, facts: dict) -> bool:
     """Evaluate a `when:` guard. Deliberately tiny: `key==value` or `key!=value`.
 
@@ -3449,8 +3468,15 @@ def _journal_entry(work: str, recipe: str) -> dict | None:
 
 
 def apply_recipe(path: str, work: str, dry: bool = False,
-                 overrides: dict | None = None) -> int:
-    facts = _tree_facts(work, os.path.join(work, "iso"))
+                 overrides: dict | None = None, facts: dict | None = None) -> int:
+    """Apply one recipe. `facts` are the ones the plan was built from.
+
+    HANDED IN, because deriving them again here is how `--facts` came to be a flag that
+    changed the preflight plan and not the steps: main() planned [2, 3] and this ran
+    [1, 3] on the same tree in the same invocation (#34). The default is kept for a caller
+    that has none of its own, and there is one caller, which passes them.
+    """
+    facts = facts if facts is not None else _tree_facts(work, os.path.join(work, "iso"))
     doc, steps = plan_recipe(path, facts, overrides)
     name = doc["metadata"]["name"]
     ctx = Ctx(work, os.path.dirname(os.path.abspath(path)), name, dry)
@@ -3676,8 +3702,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--preflight-only", action="store_true",
                     help="check requirements and exit; touches nothing")
     ap.add_argument("--facts", metavar="k=v,k=v",
-                    help="override the facts used for `when:` guards. kitchen build uses "
-                         "this to preflight from the profile BEFORE unpacking 400+ MiB")
+                    help="override the facts used for `when:` guards, MERGED over the "
+                         "ones read from the tree -- naming one leaves the rest measured. "
+                         "kitchen build uses this to preflight from the profile BEFORE "
+                         "unpacking 400+ MiB")
     a = ap.parse_args(argv[1:])
     override = {}
     if a.facts:
@@ -3739,7 +3767,7 @@ def main(argv: list[str]) -> int:
     # Derived here rather than below the banner, because the profile's declared base is
     # held against these and a refusal should not arrive under a heading announcing the
     # work has already started.
-    facts = dict(override) if override else _tree_facts(a.work, os.path.join(a.work, "iso"))
+    facts = facts_with_overrides(a.work, os.path.join(a.work, "iso"), override)
 
     # A PROFILE SAYS WHICH BASE IT IS FOR, so hold it to that. Nothing read `base:` at
     # all: `kitchen build` chooses the ISO from it, but `apply --profile` took whatever
@@ -3820,7 +3848,7 @@ def main(argv: list[str]) -> int:
 
     for p in paths:
         try:
-            apply_recipe(p, a.work, a.dry_run, ov(p))
+            apply_recipe(p, a.work, a.dry_run, ov(p), facts)
         except Exception as e:                       # noqa: BLE001
             print(f"error: {os.path.basename(p)}: {e}", file=sys.stderr)
             return 1
