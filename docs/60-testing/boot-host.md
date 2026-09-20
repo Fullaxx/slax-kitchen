@@ -226,6 +226,37 @@ Every refusal names what to go and do. The ones worth knowing in advance:
 | `write an IPv6 address in brackets` | `fe80::1:5900` is both "`fe80::1` port 5900" and a valid address on its own. Write `[fe80::1]:5900`. |
 | `the VNC tunnel cannot be opened: ... already in use` | another launch holds that port; its viewer is on it. Quit that one, or `--vnc-addr <ip>:<port+1>`. |
 
+## What is checked by a gate, and what is not
+
+**Checked on every commit.** `lib/boot_host.py`'s own decisions are unit-tested and need no
+host: every configuration refusal, the private-address table, the bracket rule for IPv6, the
+ssh argument list (`BatchMode=yes` is one word in one list, and that is what keeps it there),
+the agent being verified before it runs, which files the tree transfer sends, and the rewriting
+of remote paths back to local ones. `kitchen test`'s handover is covered in
+[`test_kitchen_test.py`](../../tests/unit/test_kitchen_test.py) and the sweep's remote mode in
+[`test_tier_c_run.py`](../../tests/unit/test_tier_c_run.py).
+
+**Proven by hand against a real host, and deliberately not automated.** These were exercised
+against a KVM host on 2026-09-19: a four-path Tier C sweep in 52.7 s with every row reporting
+`accel: kvm`; an unreachable host stopping at the first path with no ledger written; teardown
+under `SIGTERM`, under `SIGKILL`, and with the driver suspended — the guest still alive at 20 s
+of silence and swept by 35 s, which is the heartbeat and watchdog doing their job; the stale
+sweep; a TMPDIR leak failing the run by name; and the VNC tunnel, checked by completing an RFB
+handshake through to `ServerInit` rather than by opening a socket, because a tunnel accepts a
+local connection before it knows whether anything is listening at the far end.
+
+There is no end-to-end test of that, and that is a decision rather than an omission. Driving it
+under a fake `ssh` would mostly assert that ssh connects, that rsync transfers and that a viewer
+opens a session — none of which is this project's code, and all of which
+[have their own tests](../../CONTRIBUTING.md#what-a-test-here-is-for). Running qemu somewhere
+else is a convenience for working faster, not a property of the images this repo builds. The
+cost of such a harness would be paid on every push by everyone, including everyone who never
+configures a boot host at all.
+
+So the gap is stated rather than hidden: **if the transport breaks, a gate will not tell you.**
+`kitchen boot-host check` will, in about a second, and it is the first thing to run when a boot
+that used to work stops working.
+
 ## See also
 
 - [QEMU by hand](qemu.md) — the interactive launcher, which uses the same boot host

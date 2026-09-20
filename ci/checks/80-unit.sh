@@ -128,8 +128,14 @@ for t in "$REPO_ROOT"/tests/unit/test_*.py; do
         # PASSED was left behind rather than cleaned up, and removing it quietly is how the
         # four tests in issue #25 went on littering every by-hand run with nothing to say
         # so. Free, because the directory is already in hand: a behavioural census would
-        # re-run the whole suite, and at 16 s dominated by test_qemu_boot's deliberate
-        # sleeps that would double a gate which runs at pre-commit AND pre-push.
+        # re-run the whole suite, and doubling a gate that runs at pre-commit AND
+        # pre-push is not free at all.
+        #
+        # NO NUMBER HERE ON PURPOSE. This used to say what the suite cost, and so did
+        # CONTRIBUTING.md; they were measured at different times and drifted to 16 s and
+        # 18 s without either being wrong when it was written. CONTRIBUTING.md's
+        # "Seconds, not milliseconds" paragraph is the one copy, and it says how to
+        # re-measure. A number kept in two places is a number that disagrees with itself.
         #
         # Only after a PASS. A failing test keeps everything by the branch above, and
         # complaining about its fixtures there would be noise on top of a real failure.
