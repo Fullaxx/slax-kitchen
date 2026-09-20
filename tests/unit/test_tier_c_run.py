@@ -45,13 +45,15 @@ case "$1" in
     test) ;;
     *) echo "stub kitchen: unexpected $*" >&2; exit 2 ;;
 esac
-# $STUB_TEST_RC: what `kitchen test` returns. 2 and 3 are what a boot host that could not
-# be used gives back, and they must stop the sweep before any row is recorded -- so this
-# exits BEFORE writing to --record, exactly as a run that never happened would.
-if [ -n "${STUB_TEST_RC:-}" ] && [ "${STUB_TEST_RC}" != 0 ]; then
-    echo "stub kitchen: exiting ${STUB_TEST_RC}" >&2
-    exit "${STUB_TEST_RC}"
-fi
+# $STUB_TEST_RC: what `kitchen test` returns, and the two cases are NOT the same shape.
+#   2 or 3  a boot host that could not be used. No boot happened, so this exits BEFORE
+#           writing to --record, exactly as a run that never took place would.
+#   1       a boot that RAN and FAILED. The row is still written, saying "fail", because
+#           a failed boot is evidence and tier-c.sh must still record it.
+case "${STUB_TEST_RC:-0}" in
+    0|1) ;;
+    *) echo "stub kitchen: exiting ${STUB_TEST_RC}" >&2; exit "${STUB_TEST_RC}" ;;
+esac
 shift
 iso="" path="" record=""
 while [ $# -gt 0 ]; do
@@ -67,8 +69,11 @@ accel=kvm
 [ "$path" = "${STUB_TCG_PATH:-}" ] && accel=tcg
 qemu=${STUB_QEMU:-8.2.2}
 if [ "$qemu" = - ]; then qemu_field=""; else qemu_field=", \"qemu\": \"$qemu\""; fi
-printf '{"path": "%s", "iso_name": "%s", "iso_bytes": 1, "accel": "%s"%s, "markers": [], "missing": [], "result": "pass"}\n' \
-    "$path" "$(basename "$iso")" "$accel" "$qemu_field" >> "$record"
+result=pass
+[ "${STUB_TEST_RC:-0}" = 1 ] && result=fail
+printf '{"path": "%s", "iso_name": "%s", "iso_bytes": 1, "accel": "%s"%s, "markers": [], "missing": [], "result": "%s"}\n' \
+    "$path" "$(basename "$iso")" "$accel" "$qemu_field" "$result" >> "$record"
+exit "${STUB_TEST_RC:-0}"
 '''
 
 # Found by tier-c.sh's tool check. The qemu answers 9.9.9 when asked its version, which no
@@ -124,6 +129,19 @@ def fixture(tmp, boot_host=False):
     iso = os.path.join(tmp, "slax-stub.iso")
     write(iso, "not an image\n")
     bindir = os.path.join(tmp, "bin")
+    if boot_host:
+        # WHAT tier-c.sh LEGITIMATELY NEEDS HERE, and nothing else. Linked from wherever
+        # this machine keeps them, so the closed PATH in run_tier_c() can be real: qemu,
+        # xorriso and mkfs.ext4 are absent by construction rather than by hoping the
+        # machine running the suite happens not to have them.
+        os.makedirs(bindir, exist_ok=True)
+        for t in ("sh", "python3", "git", "ssh", "rsync", "awk", "sed", "grep", "mkdir",
+                  "mktemp", "rm", "cp", "cat", "dirname", "basename", "head", "tail",
+                  "tr", "cut", "du", "wc", "ls", "env", "id", "stat", "find", "sort",
+                  "date", "expr", "touch", "chmod", "printf", "uname", "sleep"):
+            real = shutil.which(t)
+            if real:
+                os.symlink(real, os.path.join(bindir, t))
     for name, body in STUB_TOOLS.items():
         # WITH A BOOT HOST, THE BOOT TOOLS ARE NOT HERE. Writing them anyway would make
         # the tool-check test unfailable: tier-c.sh could go on demanding qemu locally
@@ -146,7 +164,18 @@ def fixture(tmp, boot_host=False):
 def run_tier_c(tmp, env_extra, paths="kernel", boot_host=False):
     repo, iso, bindir = fixture(tmp, boot_host)
     out = os.path.join(tmp, "evidence")
-    env = dict(os.environ, PATH=bindir + ":" + os.environ.get("PATH", ""), **env_extra)
+    # THE BOOT-HOST CASE GETS A CLOSED PATH, and that is the whole point of it.
+    #
+    # This used to append the ambient PATH in every case. With a boot host the fixture
+    # writes no stub tools at all, so "no xorriso anywhere on this PATH" was a comment
+    # rather than a fact: /usr/bin/xorriso was right there, and the assertion that
+    # tier-c.sh does not demand xorriso could not fail on any machine that has it.
+    # Found 2026-09-20. The ordinary case keeps the ambient PATH -- it plants its own
+    # stub tools and is not making a claim about absence.
+    if boot_host:
+        env = dict(os.environ, PATH=bindir, **env_extra)
+    else:
+        env = dict(os.environ, PATH=bindir + ":" + os.environ.get("PATH", ""), **env_extra)
     p = subprocess.run(
         ["sh", os.path.join(repo, "ci", "tier-c.sh"), "--iso", iso, "--target", "stub-target",
          "--paths", paths, "--out", out, "--ledger", os.path.join(tmp, "ledger.json"),
@@ -273,10 +302,21 @@ def test_a_boot_host_that_could_not_run_writes_no_ledger(tmp, _box):
 
 @in_a_box
 def test_an_ordinary_failure_still_records(tmp, _box):
-    """...and 1 is unchanged: a boot that happened and failed IS evidence."""
-    rc, out = run_tier_c(tmp, {}, paths="bios")
-    check("a passing sweep still writes a ledger", ledger_of(tmp) is not None, True)
-    check("...and exits 0", rc, 0)
+    """...and 1 is unchanged: a boot that happened and failed IS evidence.
+
+    THE BODY DID NOT DO THIS. It ran a PASSING sweep -- `run_tier_c(tmp, {})` -- which
+    two tests above already assert, so the case this test is named for was covered
+    nowhere. Exit 1 has to behave the OPPOSITE way to 2 and 3: those mean no boot
+    happened and must write no ledger, this means a boot happened and must still be
+    recorded. Found 2026-09-20.
+    """
+    rc, out = run_tier_c(tmp, {"STUB_TEST_RC": "1"}, paths="bios")
+    led = ledger_of(tmp)
+    check("a boot that ran and failed still writes a ledger", led is not None, True)
+    check("...with the row it produced", len(led["runs"]) if led else 0, 1)
+    check("...saying the boot failed", led["runs"][0]["result"] if led else None, "fail")
+    check("...and the sweep reports failure", rc != 0, True)
+    check("...without claiming nothing ran", "No ledger was written" in out, False)
 
 
 @in_a_box

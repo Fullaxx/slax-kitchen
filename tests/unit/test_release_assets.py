@@ -283,7 +283,10 @@ def test_anything_that_is_not_a_regular_file_is_refused():
         open(os.path.join(d, "extra", "smuggled.iso"), "wb").write(b"\0" * 0x8001 + b"CD001")
         p = verify_mod.verify(d, assert_no_images=True)
         check("the directory is named", mentions(p, "extra"), True)
-        check("and it fails", len(p) >= 1, True)
+        # `len(p) >= 1` used to stand here, which cannot fail independently: mentions()
+        # is falsy on an empty list, so the line above had already failed. Assert the
+        # count instead -- one problem, for the one thing wrong.
+        check("and it is the only problem", len(p), 1)
 
 
 def test_the_content_scan_runs_even_when_the_records_are_broken():

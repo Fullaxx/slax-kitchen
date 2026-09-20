@@ -206,7 +206,14 @@ def test_a_real_status_does_not_discard_the_fragments_below_it():
     import subprocess
     import tempfile
 
-    if not shutil.which("mksquashfs"):
+    # A BARE `return` HERE PRINTED "all checks passed" HAVING ASSERTED NOTHING, and
+    # unsquashfs was never checked at all though merge_tree calls it. Both are required
+    # tools of this project (kitchen doctor asserts them), so their absence is a named
+    # failure, not a silent pass. Found 2026-09-20.
+    missing = [t for t in ("mksquashfs", "unsquashfs") if not shutil.which(t)]
+    if missing:
+        FAILURES.append(f"{', '.join(missing)} not installed, so merge_tree cannot be "
+                        f"tested (required tools -- see kitchen doctor)")
         return
 
     def sb(path, files):
@@ -272,7 +279,14 @@ def test_a_saved_session_supersedes_the_fragments_below_it():
     import subprocess
     import tempfile
 
-    if not shutil.which("mksquashfs"):
+    # A BARE `return` HERE PRINTED "all checks passed" HAVING ASSERTED NOTHING, and
+    # unsquashfs was never checked at all though merge_tree calls it. Both are required
+    # tools of this project (kitchen doctor asserts them), so their absence is a named
+    # failure, not a silent pass. Found 2026-09-20.
+    missing = [t for t in ("mksquashfs", "unsquashfs") if not shutil.which(t)]
+    if missing:
+        FAILURES.append(f"{', '.join(missing)} not installed, so merge_tree cannot be "
+                        f"tested (required tools -- see kitchen doctor)")
         return
 
     def sb(path, files):

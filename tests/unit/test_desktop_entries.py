@@ -161,15 +161,28 @@ def recipe_files(desktop_path):
 
 
 def test_desktop_files_shipped_by_recipes():
-    """Real .desktop files under recipes/."""
+    """Real .desktop files under recipes/.
+
+    The guard below is the one this file's other test already carries, and the reason is
+    the same: a check with no inputs is a check that cannot fail. Measured 2026-09-20 --
+    this walk finds exactly one .desktop on the tree, that one takes check_entry's
+    absolute-icon branch and reaches no assertion, so deleting every .desktop from
+    recipes/ left this printing "all checks passed". The scan being broken and the tree
+    being clean looked identical.
+    """
+    seen = 0
     for dirpath, _d, names in os.walk(os.path.join(ROOT, "recipes")):
         for n in names:
             if not n.endswith(".desktop"):
                 continue
+            seen += 1
             p = os.path.join(dirpath, n)
             rel = os.path.relpath(p, ROOT)
             with open(p, encoding="utf-8") as fh:
                 check_entry(rel, fh.read(), recipe_files(rel))
+    if not seen:
+        FAILURES.append("no .desktop files found under recipes/ at all -- the walk is "
+                        "broken, not the tree (a check with no inputs cannot fail)")
 
 
 def _walk_steps(doc):

@@ -459,10 +459,40 @@ def test_unknown_override_is_rejected():
 
 
 def test_recipe_search_path():
-    """Every directory under recipes/ is searched, with available/ first."""
-    paths = [os.path.basename(p) for p in apply.recipe_search_path()]
-    check("available/ is present and first", paths[0], "available")
-    check("the removed examples/ is not there", "examples" in paths, False)
+    """Every directory under recipes/ is searched, with available/ first.
+
+    THIS COULD NOT FAIL. It ran against the real tree, where recipes/ holds exactly one
+    directory, so "available/ is first" was true of any implementation that returned it
+    at all, and "examples/ is not there" asserted a directory's absence from disk rather
+    than anything the code does. Found 2026-09-20 auditing the suite.
+
+    A fork keeping its own recipes in recipes/<project>/ is the entire reason the order
+    exists (see recipe_search_path's docstring), so build that shape and assert it.
+    """
+    import tempfile
+    d = tempfile.mkdtemp(prefix="recipedirs-")
+    saved = apply.ROOT
+    try:
+        for sub in ("available", "zzz-fork", "aaa-fork", "tor-browser.files"):
+            os.makedirs(os.path.join(d, "recipes", sub))
+        open(os.path.join(d, "recipes", "loose.yaml"), "w").close()
+        apply.ROOT = d
+        paths = [os.path.basename(p) for p in apply.recipe_search_path()]
+        check("available/ comes first", paths[0], "available")
+        check("...and the forks follow it, sorted", paths,
+              ["available", "aaa-fork", "zzz-fork"])
+        # `.files` directories belong to a recipe; they are not recipe directories.
+        check("a .files directory is not searched", "tor-browser.files" in paths, False)
+        check("a loose file is not searched", "loose.yaml" in paths, False)
+
+        # No recipes/ at all answers with an empty list rather than raising.
+        empty = os.path.join(d, "empty")
+        os.makedirs(empty)
+        apply.ROOT = empty
+        check("no recipes/ directory", apply.recipe_search_path(), [])
+    finally:
+        apply.ROOT = saved
+        shutil.rmtree(d, ignore_errors=True)
 
 
 def test_reserved_bundle_numbers():
@@ -1433,8 +1463,18 @@ def test_bundle_files_refuses_a_setuid_mode():
     bundle.files is privilege: none and now builds with -all-root, so a setuid mode here
     would be a setuid ROOT binary requested by a recipe that looks harmless.
 
+    The mksquashfs guard is not politeness. Without it an absent mksquashfs raised
+    FileNotFoundError out of _make_bundle, past the `except RuntimeError` below, out of
+    main() -- and the FOUR tests registered after this one never ran, with nothing said.
+    A missing required tool is a named failure here, the way test_sources.py handles a
+    missing git.
     """
     import tempfile
+
+    if not shutil.which("mksquashfs"):
+        FAILURES.append("mksquashfs is not installed, so bundle.files cannot be tested "
+                        "(it is a required tool -- see kitchen doctor)")
+        return
 
     work = tempfile.mkdtemp()
     os.makedirs(os.path.join(work, "iso", "slax", "modules"))

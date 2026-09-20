@@ -11,6 +11,12 @@ an over-eager poll would be worse than the sleep it replaced: it would turn a re
 green and do it faster.
 
 Seconds of real time, not milliseconds, because the thing under test is a clock.
+
+But the CEILINGS are this file's choice, not the code's. They were 10/4/3/2/2 and cost
+13 s of a gate paid at both pre-commit and pre-push; `_wait` polls every 0.5 s, so 4/2/1/1
+exercises the same loop and the same predicates. Every "burned the ceiling" assertion is
+`>=`, so a loaded machine overshooting only makes them safer, and both upper bounds keep
+at least a second of margin. Re-checked by mutation after retiming, not assumed.
 """
 import importlib.util
 import json
@@ -53,11 +59,11 @@ def _append_later(path, delay, text):
 def test_returns_as_soon_as_every_expectation_is_present():
     """The point of the change: stop when the guest has said everything we asked for."""
     log = _log()
-    _append_later(log, 0.5, "Looking for slax data\n")
-    _append_later(log, 1.5, "Live Kit done, starting slax\n")
-    took = qb._wait(log, 10, ["Looking for slax data", "Live Kit done"])
-    check("returned early", took < 5, True)
-    check("did not return before the last marker", took >= 1.5, True)
+    _append_later(log, 0.2, "Looking for slax data\n")
+    _append_later(log, 0.7, "Live Kit done, starting slax\n")
+    took = qb._wait(log, 4, ["Looking for slax data", "Live Kit done"])
+    check("returned early", took < 2.5, True)
+    check("did not return before the last marker", took >= 0.7, True)
 
 
 def test_a_missing_expectation_still_burns_the_whole_ceiling():
@@ -79,8 +85,8 @@ def test_a_missing_expectation_still_burns_the_whole_ceiling():
     log = _log()
     with open(log, "w") as f:
         f.write("Looking for slax data\n")
-    took = qb._wait(log, 4, ["Looking for slax data", "this-never-appears"])
-    check("waited the full ceiling", took >= 3.9, True)
+    took = qb._wait(log, 2, ["Looking for slax data", "this-never-appears"])
+    check("waited the full ceiling", took >= 1.9, True)
 
 
 def test_no_expectations_keeps_the_flat_sleep():
@@ -91,15 +97,15 @@ def test_no_expectations_keeps_the_flat_sleep():
     sleeping, or they would return instantly and screendump a black framebuffer.
     """
     log = _log()
-    took = qb._wait(log, 2, [])
-    check("slept", 1.9 <= took <= 3.0, True)
+    took = qb._wait(log, 1, [])
+    check("slept", 0.9 <= took <= 2.0, True)
 
 
 def test_a_missing_serial_file_is_not_a_crash():
     """QEMU creates the log itself; there is a window before it exists."""
     d = tempfile.mkdtemp(prefix="qbwait-")
-    took = qb._wait(os.path.join(d, "never-created.log"), 2, ["anything"])
-    check("waited rather than raising", took >= 1.9, True)
+    took = qb._wait(os.path.join(d, "never-created.log"), 1, ["anything"])
+    check("waited rather than raising", took >= 0.9, True)
 
 
 def test_qemu_version_is_what_the_binary_says():

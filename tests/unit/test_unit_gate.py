@@ -70,6 +70,9 @@ def git(repo, *args):
                           env=clean_env())
 
 
+_LOCAL_ENV_VARS = None
+
+
 def local_env_vars():
     """The names git calls repository-local -- the exact set the gate scrubs.
 
@@ -78,9 +81,18 @@ def local_env_vars():
     friends are not repository-local and are not git's to clear, so a test asserting "no
     GIT_* at all survived" asserts something the fix never promised. This file's first run
     did exactly that and failed on an ambient GIT_EDITOR.
+
+    Asked once. clean_env() calls this and git() calls clean_env(), so the answer was
+    re-derived by a subprocess on every git invocation in this file -- measured
+    2026-09-20 at about 70 processes per run, to recompute a list that cannot change
+    while the interpreter is alive.
     """
-    return subprocess.run(["git", "rev-parse", "--local-env-vars"], capture_output=True,
-                          text=True).stdout.split()
+    global _LOCAL_ENV_VARS
+    if _LOCAL_ENV_VARS is None:
+        _LOCAL_ENV_VARS = subprocess.run(
+            ["git", "rev-parse", "--local-env-vars"],
+            capture_output=True, text=True).stdout.split()
+    return _LOCAL_ENV_VARS
 
 
 def clean_env():

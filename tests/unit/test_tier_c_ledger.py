@@ -55,9 +55,12 @@ def run(doc):
 
 def test_a_separator_anywhere_is_refused_by_name():
     if not os.path.isfile(LEDGER):
-        # The gate passes an absent ledger -- Tier C has not been run -- so there is nothing
-        # here to plant into.
-        print("  tests/boot/tier-c.json absent - nothing to test against")
+        # NOT A SKIP. The gate is allowed to pass an absent ledger -- Tier C may not have
+        # been run -- but THIS file's whole subject is the committed ledger, so without it
+        # both tests here reported success having asserted nothing at all. A check with no
+        # input cannot fail. Found 2026-09-20.
+        FAILURES.append("tests/boot/tier-c.json is absent, so the ledger rules are "
+                        "asserted against nothing")
         return
     base = json.load(open(LEDGER))
     rc, out = run(base)
@@ -91,7 +94,8 @@ def test_qemu_must_name_a_version():
     that ran it: allowed, and held to the same rule.
     """
     if not os.path.isfile(LEDGER):
-        print("  tests/boot/tier-c.json absent - nothing to test against")
+        FAILURES.append("tests/boot/tier-c.json is absent, so the ledger rules are "
+                        "asserted against nothing")
         return
     base = json.load(open(LEDGER))
 

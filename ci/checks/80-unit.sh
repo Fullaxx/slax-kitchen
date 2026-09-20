@@ -84,6 +84,35 @@ fi
 KITCHEN_BOOT_HOST=local
 export KITCHEN_BOOT_HOST
 
+# A TEST NOBODY REGISTERED IS A TEST THAT REPORTS SUCCESS WITHOUT RUNNING.
+#
+# Most files here keep an explicit list of their test functions in main() and call it.
+# That list is hand-maintained, so a function can be written, reviewed and committed
+# while never being called once -- and the file still prints "all checks passed",
+# because nothing ran to disagree. The failure is silent at exactly the moment someone
+# believes they have added coverage.
+#
+# Only ONE file guarded this, and only for itself: test_unit_gate.py asserts its own
+# TESTS list is complete, which leaves the other twenty unguarded. Checked here instead,
+# where one rule covers every file, including the ones not written yet. All the lists
+# were complete when this was added (2026-09-20) -- this is a latch, not a repair.
+#
+# EXEMPT: a file that discovers its tests from globals(). test_release.py does, and that
+# shape CANNOT have this bug: define a function and it runs. It is the better design and
+# the check says so rather than forcing it into the weaker one.
+#
+# Text, not import: importing a test module to inspect it would RUN it -- test_release.py
+# executes at import by design -- so the gate would be running the suite twice and would
+# hang or litter on anything that misbehaves at import time.
+for t in "$REPO_ROOT"/tests/unit/test_*.py; do
+    [ -f "$t" ] || continue
+    grep -q 'globals()' "$t" && continue
+    for _n in $(grep -oE '^def test_[A-Za-z0-9_]+' "$t" | cut -d' ' -f2); do
+        [ "$(grep -cE "\\b$_n\\b" "$t")" -lt 2 ] && \
+            fail "$(basename "$t"): $_n is defined but never registered, so it never runs"
+    done
+done
+
 for t in "$REPO_ROOT"/tests/unit/test_*.py; do
     [ -f "$t" ] || continue
     _tmp=$(mktemp -d) || { fail "$(basename "$t"): cannot create its TMPDIR"; continue; }
