@@ -1134,6 +1134,17 @@ def remote_argv(argv: list[str], iso_local: str, iso_remote: str,
 def run(a: argparse.Namespace, env, argv_in: list | None = None) -> int:
     notes: list[str] = []
     argv_in = sys.argv[1:] if argv_in is None else argv_in
+    # THE IMAGE MUST EXIST BEFORE ANYTHING ELSE IS DECIDED. This check used to sit below
+    # the boot-host dispatch, where a configured host never reached it: the run connected,
+    # swept, opened a run directory and rsync'd the whole tree, and only then hashed the
+    # image and died with a FileNotFoundError traceback out of lib/boot_host.py. The same
+    # typo with --local answered "no such file" in a millisecond. Measured at 2.0 s of
+    # work thrown away, and a traceback is not an answer.
+    #
+    # --print is the exception, and stays one: it writes a script for a machine that is
+    # not this one, and says below that the image's boot records went unchecked.
+    if not a.print_only and not os.path.isfile(a.iso):
+        raise Refusal(f"no such file: {a.iso}")
     # WHERE QEMU WILL RUN, decided before anything is checked, because almost every check
     # below is a question about that machine. --print writes a script for somebody else's
     # machine and --local says to stay here; both skip the question.
@@ -1152,8 +1163,6 @@ def run(a: argparse.Namespace, env, argv_in: list | None = None) -> int:
             host, a,
             lambda iso_remote, ip, port: remote_argv(argv_in, a.iso, iso_remote, ip, port))
 
-    if not a.print_only and not os.path.isfile(a.iso):
-        raise Refusal(f"no such file: {a.iso}")
     cfg = resolve(a, env, a.print_only, notes)
     if a.print_only and not os.path.isfile(a.iso):
         notes.append(f"{a.iso} is not on this machine, so its boot records were not checked")

@@ -714,6 +714,46 @@ def test_the_command_line_sent_to_a_boot_host():
     check("a private one does not", "--vnc-public" in priv, False)
 
 
+def test_a_missing_image_is_refused_before_the_boot_host_is_touched():
+    """A typo in the path is answered here, not after the tree has been sent.
+
+    The check for the image used to sit BELOW the boot-host dispatch, so a configured host
+    never reached it: run() handed straight to boot_host.launch(), which connected, ran the
+    pre-run check, swept, opened a run directory, rsync'd the whole tree, and only then
+    hashed the image -- dying with a FileNotFoundError traceback out of
+    lib/boot_host.py's sha256_file(). 1.6 s of work and somebody else's machine involved,
+    to answer a question this side could answer immediately; with --local the same typo
+    was refused in a millisecond.
+
+    boot_host.load and .launch are BOTH patched. load, because a tester with a real
+    boot-host.ini would otherwise take the remote branch for real -- the test must not
+    depend on an untracked file. launch, because reaching it at all is the failure.
+    """
+    def boom(*_a, **_k):
+        raise AssertionError("the boot host was reached for an image that is not here")
+
+    cfg = boot.boot_host.Config("kvmbox", "/srv/s", "127.0.0.1", 5900, False, "x")
+    with tempfile.TemporaryDirectory() as t:
+        gone = os.path.join(t, "not-here.iso")
+        with patched(boot.boot_host, load=lambda *a, **k: cfg, launch=boom):
+            rc, _out, err = run_main([gone, "--bios", "--display", "none"])
+        check("refused", rc, 2)
+        check("...naming the file", f"no such file: {gone}" in err, True)
+        # The same answer with no host configured: moving the check must not have changed
+        # what the local path says.
+        with patched(boot.boot_host, load=lambda *a, **k: None, launch=boom):
+            rc, _out, err = run_main([gone, "--bios", "--display", "none"])
+        check("the local path answers the same", (rc, f"no such file: {gone}" in err),
+              (2, True))
+        # ...and --print is still the exception. It writes a script for another machine,
+        # so the image is allowed to be absent there.
+        with patched(boot.boot_host, load=lambda *a, **k: cfg, launch=boom):
+            rc, _out, err = run_main([gone, "--bios", "--print"])
+        check("--print still tolerates an absent image", rc, 0)
+        check("...and says the boot records went unchecked",
+              "boot records were not checked" in err, True)
+
+
 def main():
     for fn in [test_firmware_must_be_chosen,
                test_arch_selects_the_binary,
@@ -740,7 +780,8 @@ def main():
                test_the_vnc_port_is_the_one_asked_for,
                test_a_public_vnc_address_is_refused_until_confirmed,
                test_the_viewer_is_told_the_route_that_works,
-               test_the_command_line_sent_to_a_boot_host]:
+               test_the_command_line_sent_to_a_boot_host,
+               test_a_missing_image_is_refused_before_the_boot_host_is_touched]:
         # One test crashing must not stop the rest: the count of failures is only honest if
         # every test ran.
         try:

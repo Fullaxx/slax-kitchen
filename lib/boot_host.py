@@ -840,6 +840,14 @@ def cmd_test(cfg: Config, args: list) -> int:
     if not iso:
         print("boot-host: no --iso", file=sys.stderr)
         return EXIT_CONFIG
+    # ...AND IT HAS TO BE THERE. `kitchen test` checks first (lib/build.sh), so this is
+    # the second lock on the door -- but push_iso() hashes the file with no guard, so
+    # without this the module's own entry point answers a missing image with a
+    # FileNotFoundError traceback, and only after a session has been opened and the tree
+    # sent. Refused here, before any of that, like every other bad argument above.
+    if not os.path.isfile(iso):
+        print(f"boot-host: no such file: {iso}", file=sys.stderr)
+        return EXIT_CONFIG
     out = out or os.path.join(os.path.dirname(iso) or ".", "boot-tests")
     os.makedirs(out, exist_ok=True)
 

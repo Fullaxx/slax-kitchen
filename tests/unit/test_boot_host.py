@@ -283,7 +283,12 @@ def test_the_template_and_the_parser_agree():
 
 
 def test_a_missing_option_value_is_refused_not_crashed():
-    """`--golden` with nothing after it used to be an IndexError and a traceback."""
+    """`--golden` with nothing after it used to be an IndexError and a traceback.
+
+    So was an `--iso` naming a file that is not here: cmd_test carried it all the way to
+    push_iso(), which hashes it with no guard, so the answer was a FileNotFoundError --
+    raised after a session had been opened and the tree sent to another machine.
+    """
     tmp = tempfile.mkdtemp(prefix="bh-args-")
     try:
         repo = new_repo(tmp, "repo")
@@ -301,6 +306,18 @@ def test_a_missing_option_value_is_refused_not_crashed():
             check(f"{' '.join(args)}: no traceback", "Traceback" in r.stderr, False)
             check(f"{' '.join(args)}: says which option",
                   "needs a value" in r.stderr or "no --iso" in r.stderr, True)
+        # An --iso that is not there. The fixture's host does not exist, so an attempt to
+        # use it is visible in the status: 2 is "your arguments are wrong, nothing was
+        # run", 3 is "it was tried and the host could not be reached". The whole point of
+        # checking here is that the second never happens for a file this side can see is
+        # missing.
+        r = subprocess.run([sys.executable, "lib/boot_host.py", "test",
+                            "--iso", os.path.join(repo, "not-here.iso")], cwd=repo,
+                           capture_output=True, text=True, timeout=60,
+                           env=dict(os.environ, KITCHEN_BOOT_HOST=""))
+        check("a missing image is refused before the host is used", r.returncode, 2)
+        check("a missing image: no traceback", "Traceback" in r.stderr, False)
+        check("a missing image: names the file", "no such file" in r.stderr, True)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
