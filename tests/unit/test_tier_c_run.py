@@ -280,10 +280,10 @@ def alive(pid):
     """Running, not merely present in the process table.
 
     os.kill(pid, 0) SUCCEEDS ON A ZOMBIE, so this used to answer True for a guest that had
-    already stopped -- which is the exact opposite of what every caller asks it. Three
-    checks here read "it is not still running" and one reads "the process is STILL
-    RUNNING"; on an unreaped corpse the first three failed and the fourth passed, both for
-    the same wrong reason. Found 2026-09-20 when ci/run-checks.sh went red on a runner and
+    already stopped -- which is the exact opposite of what every caller asks it. The two
+    checks that read "it is not still running" both failed on an unreaped corpse, and the
+    one that reads "the process is STILL RUNNING" passed on one -- both for the same wrong
+    reason. Found 2026-09-20 when ci/run-checks.sh went red on a runner and
     green on the machine it was written on: after sweep_pids' own `kill -9` the orphan is a
     zombie until something reaps it, which under systemd takes microseconds and under a
     pid 1 that reaps nothing takes forever.

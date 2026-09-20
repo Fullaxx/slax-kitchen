@@ -336,8 +336,8 @@ cause, or one would change the other's fix, say so in the issue.
 
 The gates enforce, among other things: no binaries in the repository, no gitignored working files,
 `vendor/linux-live` byte-identical to its pinned commit, shellcheck, schema validation, no
-credentials, every internal link resolves, and **every recipe has a cookbook page and every
-cookbook page has a recipe**.
+credentials, every internal link resolves — `#anchor` included — and **every recipe has a
+cookbook page and every cookbook page has a recipe**.
 
 CI re-runs all of them, so `--no-verify` only defers the failure.
 

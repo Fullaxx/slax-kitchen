@@ -259,6 +259,15 @@ reported and left alone, which is the safe direction to be wrong in.
 [`tests/unit/test_tier_c_run.py`](../../tests/unit/test_tier_c_run.py) plants both kinds and
 requires the foreign one to still be running afterwards.
 
+**And a corpse is not a stranger's guest.** `kill -0` succeeds on a process that has exited
+but has not been reaped, and `/proc/<pid>/cmdline` is *empty* for one — so the ownership test
+above could never match it, however exactly the guest was ours. The sweep announced this run's
+own leftover as somebody else's virtual machine and counted a leak for a guest that had already
+stopped: wrong in both directions at once. The state in `/proc/<pid>/stat` decides now, and `Z`
+means already gone. Wherever init reaps promptly that window is microseconds, which is why this
+was invisible on a developer's machine and deterministic on a GitHub runner — the gates job went
+red on it for two runs before anyone read the state rather than the exit status.
+
 ## What CI does with all this
 
 The weekly job builds `boot-matrix` and runs the same four paths under TCG. It cannot

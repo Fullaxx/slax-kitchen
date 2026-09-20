@@ -22,7 +22,7 @@ caught here:
   9 headings here slug differently between the two.
 
 The rest are shapes this tree actually contains, each with the count that makes it worth a
-test: 51 in-fence lines that satisfy the ATX rule, 193 slugs with `--`, 15 ending in `-`,
+test: 51 in-fence lines that satisfy the ATX rule, 189 slugs with `--`, 15 ending in `-`,
 one duplicate heading, one explicit `<a id>` target, and one link whose text wraps across
 two source lines.
 

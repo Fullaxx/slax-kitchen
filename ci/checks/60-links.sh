@@ -18,6 +18,12 @@
 # point: 9907ed3 touched cli.md and none of the five files that link to it, so a gate
 # reading only the staged files would have passed the commit that broke them.
 #
+# THE GAP THAT LEAVES, written down rather than met later: the file list comes from the
+# index, but the content is read from DISK, so during a partial commit this judges the
+# working tree rather than what is about to be committed, and a file that is not tracked at
+# all is not listed at any stage. 45-doc-yaml makes the same trade for the same reason -- an
+# anchor is broken, or it is not, independently of which commit happens to be in flight.
+#
 # REWRITTEN IN PYTHON RATHER THAN EXTENDED, because the fragment half needs a parser. 51
 # lines inside fenced code blocks in this tree satisfy the ATX heading rule, four of them
 # in untagged fences, so a grep for `^#` invents 51 anchors that do not exist -- the same

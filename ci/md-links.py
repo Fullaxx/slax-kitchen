@@ -35,8 +35,8 @@ THREE THINGS ABOUT THE SLUG, each of which is the common case here and not an ed
    Nothing links to those 9 today, so this changes no current verdict -- which is exactly
    why it is worth writing down now rather than discovering later.
 
-3. HYPHENS ARE NEITHER COLLAPSED NOR TRIMMED. 193 slugs here contain `--`, 15 end in `-`
-   and 6 begin with one, and four live links depend on the trailing form
+3. HYPHENS ARE NEITHER COLLAPSED NOR TRIMMED. 189 slugs here contain `--`, 15 end in `-`
+   and 6 begin with one, and two live links depend on the trailing form
    (`#rootcopyfiles-`, from a heading ending in `○`).
 
 The 50 correct-but-awkward anchors already in the tree are the corpus that proves all of
