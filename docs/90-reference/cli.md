@@ -351,7 +351,10 @@ $ kitchen diff isos/slax-64bit-debian-12.2.0.iso out/custom.iso
   DIFFERENT
 ```
 
-Exit status is **0 when identical, 1 when different**, like `diff(1)`, so it drops into a script.
+Exit status is **0 when identical, 1 when different**, like `diff(1)`, so it drops into a script —
+and **2 when something could not be read**, which is not an answer about the two images. Under
+`--bundles` a bundle nobody can read is named in place and the rest of the report still reaches its
+verdict; one unreadable bundle does not withhold the answer about every other one.
 It is **2 when an image cannot be listed**. xorriso does not always say so itself: 1.5.6 lists a
 file that is not an ISO as `/` alone and exits 0. So a listing with no files in it is refused, where
 it used to diff as an empty image, with every file of the other reported removed.

@@ -145,6 +145,54 @@ def test_a_bundle_that_cannot_be_read_is_refused():
         check("the refusal names the bundle", "a.sb" in str(e), True)
 
 
+def test_an_unreadable_bundle_does_not_abandon_the_report():
+    """One bundle nobody can read must not cost the verdict on everything else.
+
+    bundle_manifest raises rather than answering an empty manifest, which is right -- but
+    the exception went all the way out of diff(), so the file-level report printed and
+    then stopped with no `DIFFERENT` or `identical` line at all. diff()'s own comment says
+    an image that cannot be listed is "refused outright rather than halfway through a
+    report about it", and this was halfway.
+
+    Still exit 2, not 1: the images did differ, and the question was not fully answered.
+    docs/90-reference/cli.md already promised that status for this case.
+    """
+    if not _have_tools("an unreadable bundle inside a report"):
+        return
+    import io
+    import contextlib
+    src = tempfile.mkdtemp()
+    os.makedirs(os.path.join(src, "etc"))
+    with open(os.path.join(src, "etc", "conf"), "w") as f:
+        f.write("one\n")
+    d = tempfile.mkdtemp()
+    a, b = os.path.join(d, "a.sb"), os.path.join(d, "b.sb")
+    _sb(src, a, "1000")
+    _sb(src, b, "2000")
+    # Destroy b's superblock magic: unsquashfs cannot read it, and the ISO-level compare
+    # still sees a .sb whose bytes differ, which is what puts it in the bundle loop.
+    with open(b, "r+b") as fh:
+        fh.write(b"\x00\x00\x00\x00")
+
+    isos = []
+    for name, sb in (("a.iso", a), ("b.iso", b)):
+        root = os.path.join(d, name + ".tree", "slax", "modules")
+        os.makedirs(root)
+        shutil.copy2(sb, os.path.join(root, "08-ssh.sb"))
+        iso = os.path.join(d, name)
+        subprocess.run(["xorriso", "-as", "mkisofs", "-o", iso, "-V", "T",
+                        os.path.join(d, name + ".tree")], capture_output=True)
+        isos.append(iso)
+
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc = kd.diff(isos[0], isos[1], show_bundles=True)
+    text = out.getvalue()
+    check("the run is refused", rc, 2)
+    check("the bundle is named as unreadable", "could not be read" in text, True)
+    check("...and the report still reaches its verdict", "DIFFERENT" in text, True)
+
+
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY. Both the
     # global and the variable: mksquashfs is a child process and reads TMPDIR, which
@@ -156,7 +204,8 @@ def main():
     try:
         for fn in [test_a_rebuild_is_not_a_change,
                    test_a_change_is_named,
-                   test_a_bundle_that_cannot_be_read_is_refused]:
+                   test_a_bundle_that_cannot_be_read_is_refused,
+                   test_an_unreadable_bundle_does_not_abandon_the_report]:
             fn()
         if FAILURES:
             for f in FAILURES:

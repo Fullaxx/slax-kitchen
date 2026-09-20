@@ -287,6 +287,10 @@ def diff(a: str, b: str, show_bundles: bool = False, limit: int = 20) -> int:
           + (f"   ({'+' if delta > 0 else '-'}{_human(abs(delta))})" if delta else "   (same)"))
 
     differs = False
+    # A bundle that could not be read at all. Kept apart from `differs`, because the two
+    # say different things: the images DID differ, and the question was not fully
+    # answered. That is exit 2, the status this file already uses for a refusal.
+    unreadable = False
 
     # --- identity and structure -------------------------------------------------
     ident = []
@@ -406,8 +410,20 @@ def diff(a: str, b: str, show_bundles: bool = False, limit: int = 20) -> int:
     if show_bundles:
         bundles = [p for p, _ in changed if p.endswith(".sb")]
         for p in bundles:
-            ma = bundle_manifest(a, ea[p]["lba"] * SECTOR)
-            mb = bundle_manifest(b, eb[p]["lba"] * SECTOR)
+            # CAUGHT PER BUNDLE. bundle_manifest refuses rather than answering an empty
+            # manifest, which is right -- but letting that out of here printed the whole
+            # file-level report and then stopped with no verdict at all, which is the
+            # "halfway through a report" this function's own opening refuses to do for an
+            # image it cannot list. One bundle nobody can read is not a reason to withhold
+            # the answer about every other one.
+            try:
+                ma = bundle_manifest(a, ea[p]["lba"] * SECTOR)
+                mb = bundle_manifest(b, eb[p]["lba"] * SECTOR)
+            except ListingError as e:
+                print(f"\n  inside {p}   could not be read")
+                print(f"    {e}")
+                unreadable = True
+                continue
             gained, lost, edited = manifest_changes(ma, mb)
             print(f"\n  inside {p}   {len(ma)} -> {len(mb)} entries")
             for q in gained[:limit]:
@@ -432,7 +448,9 @@ def diff(a: str, b: str, show_bundles: bool = False, limit: int = 20) -> int:
 
     print()
     print("  identical" if not differs else "  DIFFERENT")
-    return 1 if differs else 0
+    if unreadable:
+        print("  (one or more bundles could not be read -- see above)")
+    return 2 if unreadable else (1 if differs else 0)
 
 
 def main(argv: list[str]) -> int:
