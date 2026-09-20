@@ -204,6 +204,14 @@ kitchen_test() {
     done
     [ -n "$iso" ] || die "test: need an ISO path"
     [ -f "$iso" ] || die "test: no such file: $iso"
+    # AND THE KEY SPEC, ON THIS SIDE OF THE DISPATCH. A spec this harness cannot read
+    # would otherwise be answered after the tree had been rsync'd to the boot host --
+    # #31's lesson, "a missing image is answered here, not after the tree has been sent".
+    # The grammar lives in qemu_boot.py and is ASKED here rather than copied: a second
+    # copy in shell is how the two drift.
+    if [ "$auto_keys" = 0 ] && [ -n "$keys" ]; then
+        python3 "$REPO_ROOT/tests/boot/qemu_boot.py" --check-keys "$keys" || return 2
+    fi
     [ "$want_structure" = 0 ] && [ "$want_bios" = 0 ] && [ "$want_uefi" = 0 ] \
         && [ "$want_kernel" = 0 ] && [ "$want_usb" = 0 ] && [ "$want_perch" = 0 ] \
         && want_structure=1

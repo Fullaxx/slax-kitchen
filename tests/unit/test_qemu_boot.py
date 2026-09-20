@@ -380,6 +380,69 @@ def test_a_row_records_the_verdict_and_the_golden():
     check("...and names what was missing", row["missing"], ["never-appears"])
 
 
+def test_a_refused_key_is_an_error():
+    """QEMU answers every send-key; a refused name must stop the run, not vanish.
+
+    It used to vanish. Every UEFI boot test in slax-wine ran with
+    '3s,(home,1s)x22,down,down,ret', and two of its cookbook pages described that as
+    pressing Home once a second to hold GRUB's menu open. There is no (...)xN syntax here.
+    QEMU refused '(home' and '1s)x22', send_keys threw both refusals away, and the runs
+    passed on what was left -- a 3-second lead, which happened to suit that host. The
+    documented mechanism had never run.
+
+    A refusal that reaches QEMU looks like a timing problem, because the harness's own
+    message says the SEQUENCE did not select the entry, and the whole --seconds ceiling is
+    spent before it says even that.
+    """
+    # Captured from: qemu-system-x86_64 8.2.2. Re-checked against a live QEMU 8.2.2 on
+    # 2026-09-20: 'enter' really is refused with this text, and 'ret'/'down'/'home' are
+    # accepted. `ret` is Enter; `enter` is not a qcode at all.
+    refusal = "Parameter 'data' does not accept value '%s'"
+
+    sent = []
+
+    class FakeQ:
+        def cmd(self, name, **args):
+            tok = args["keys"][0]["data"]
+            if tok in ("home", "down", "ret"):
+                sent.append(tok)
+                return {"return": {}}
+            return {"error": {"class": "GenericError", "desc": refusal % tok}}
+
+    # The harness's OWN grammar, refused before any machine exists. Not a copy of QEMU's
+    # qcode table -- which words exist is QEMU's to answer, and it is asked below.
+    for spec, bad in (("3s,(home,1s)x22,down,down,ret", "'(home'"),
+                      ("2s,Down,ret", "'Down'"),
+                      ("down,,ret x2", "'ret x2'")):
+        try:
+            qb.parse_keys(spec)
+            check(f"parse_keys refuses {spec!r}", "accepted", "KeysRefused")
+        except qb.KeysRefused as e:
+            check(f"the refusal names {bad}", bad in str(e), True)
+    # ...and the two specs the cookbook actually tells people to use still parse.
+    check("a BIOS spec from the cookbook parses",
+          qb.parse_keys("2s,esc,1s,down,down,0.5s,ret"),
+          [("delay", 2.0), ("key", "esc"), ("delay", 1.0), ("key", "down"),
+           ("key", "down"), ("delay", 0.5), ("key", "ret")])
+
+    real_sleep = qb.time.sleep
+    qb.time.sleep = lambda _s: None
+    try:
+        # 'enter' is shaped like a qcode and is not one. Only QEMU can say so.
+        try:
+            qb.send_keys(FakeQ(), "1s,home,enter,ret")
+            check("a key QEMU refuses raises", "no exception", "KeysRefused")
+        except qb.KeysRefused as e:
+            check("the message names the refused token", "'enter'" in str(e), True)
+            check("and quotes QEMU's own reason", refusal % "enter" in str(e), True)
+        check("nothing after the refused key is sent", sent, ["home"])
+        sent.clear()
+        qb.send_keys(FakeQ(), "2s,home,0.5s,down,ret")
+        check("accepted keys and delays go through", sent, ["home", "down", "ret"])
+    finally:
+        qb.time.sleep = real_sleep
+
+
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
     # both of this file's 2 mkdtemp() calls had no cleanup on 2026-09-18, so running it by hand left
@@ -418,7 +481,8 @@ def main():
                    test_a_golden_needs_a_testkit_block_to_compare,
                    test_the_verdict_ladder,
                    test_a_refusal_is_exit_2_and_not_a_traceback,
-                   test_a_row_records_the_verdict_and_the_golden]:
+                   test_a_row_records_the_verdict_and_the_golden,
+                   test_a_refused_key_is_an_error]:
             fn()
         if FAILURES:
             for f in FAILURES:

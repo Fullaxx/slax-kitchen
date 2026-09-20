@@ -135,6 +135,50 @@ class Qmp:
         self.s.close()
 
 
+class KeysRefused(Exception):
+    """A --keys spec this harness or QEMU will not take.
+
+    Deliberately NOT a RuntimeError: boot() catches those and files them under "qemu
+    died", which is the wrong story -- the machine is fine and the key spec is wrong.
+    main() reports it like any other refusal, exit 2.
+    """
+
+
+# A --keys token is either an Ns delay or a QEMU qcode. Qcodes are lowercase words --
+# down, ret, kp_enter, f1 -- so this is the SHAPE of the language and not a list of which
+# words exist. QEMU owns that list and is asked at send time; a copy of it here is a copy
+# that goes stale on the next QEMU.
+_DELAY = re.compile(r"(\d+(?:\.\d+)?)s\Z")
+_QCODE = re.compile(r"[a-z0-9_-]+\Z")
+
+
+def parse_keys(spec: str) -> list:
+    """Split a --keys spec into ('delay', seconds) and ('key', qcode) steps.
+
+    REFUSES a token that is not in this harness's language at all, and does it before any
+    machine is started. Every UEFI boot test in slax-wine ran with
+    '3s,(home,1s)x22,down,down,ret', and two of its cookbook pages described that as
+    pressing Home once a second to hold GRUB's menu open. There is no (...)xN syntax here
+    and never was. QEMU refused '(home' and '1s)x22', both refusals were discarded, and
+    the runs passed on what was left -- a 3-second lead, which happened to suit that host.
+    The documented mechanism had never run once.
+    """
+    out = []
+    for tok in [t.strip() for t in spec.split(",") if t.strip()]:
+        m = _DELAY.match(tok)
+        if m:
+            out.append(("delay", float(m.group(1))))
+        elif _QCODE.match(tok):
+            out.append(("key", tok))
+        else:
+            raise KeysRefused(
+                f"--keys: {tok!r} is not a key or a delay. A spec is comma-separated "
+                f"QEMU qcodes -- down, ret, esc, home, a..z, 0..9 -- with 'Ns' to wait, "
+                f"as in '3s,down,down,ret'. There is no repetition syntax: write the key "
+                f"out as many times as you mean it.")
+    return out
+
+
 def send_keys(q: "Qmp", spec: str) -> None:
     """Drive a boot menu. spec is comma-separated qcodes, optionally with a delay:
     'down,down,ret' or '2s,down,ret' -- an Ns token waits before the next key.
@@ -142,13 +186,30 @@ def send_keys(q: "Qmp", spec: str) -> None:
     Needed because a bootloader menu is the one thing serial cannot reach: isolinux and
     GRUB draw to the video console, so selecting a non-default entry means synthesising
     real keystrokes.
+
+    QEMU ANSWERS EVERY send-key, and refuses a name it does not know -- 'Down', 'enter', a
+    typo. That answer used to be thrown away, so the key was never pressed and nothing
+    said so: the run continued with fewer keys than it was given and selected the wrong
+    entry, or none. The failure then looks like a timing problem, because the harness's
+    own message says the SEQUENCE did not select the entry, and the whole --seconds
+    ceiling is spent before it says even that.
+
+    Under a boot host this still costs a tree transfer. The spec's SHAPE is checked before
+    anything starts, but which qcodes exist is QEMU's to answer and the QEMU that answers
+    is the one over there. lib/boot_host.py:cmd_test passes boot flags through untouched
+    by design -- "a new boot flag needs no change here" -- and teaching it this one would
+    put the grammar in two places.
     """
-    for tok in [t.strip() for t in spec.split(",") if t.strip()]:
-        m = re.fullmatch(r"(\d+(?:\.\d+)?)s", tok)
-        if m:
-            time.sleep(float(m.group(1)))
+    for kind, val in parse_keys(spec):
+        if kind == "delay":
+            time.sleep(val)
             continue
-        q.cmd("send-key", keys=[{"type": "qcode", "data": tok}])
+        r = q.cmd("send-key", keys=[{"type": "qcode", "data": val}])
+        if "error" in r:
+            raise KeysRefused(
+                f"--keys: QEMU refused {val!r} "
+                f"({r['error'].get('desc', r['error'])}). Key names are QEMU qcodes -- "
+                f"down, ret, home, esc, a..z, 0..9 -- and 'Ns' waits.")
         time.sleep(0.25)
 
 
@@ -254,6 +315,10 @@ def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
                     f"  A stock Slax ISO has none -- that is upstream issue 2. Apply the "
                     f"isohybrid recipe:\n"
                     f"      kitchen apply isohybrid && kitchen pack --hybrid")
+    # ...and the key spec, for the same reason: a spec this harness cannot read is worth
+    # saying before a machine exists to say it to, rather than after the ceiling is spent.
+    if keys:
+        parse_keys(keys)
     os.makedirs(outdir, exist_ok=True)
     # run_tag keeps a two-boot persistence pair from erasing its own first half: the tag
     # is otherwise just (iso, mode), and both artifacts are unlinked on entry below.
@@ -427,7 +492,14 @@ def record(path: str, r: dict, a, rc: int, golden: str) -> None:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="boot an ISO in QEMU and capture evidence")
-    ap.add_argument("iso")
+    # OPTIONAL ONLY FOR --check-keys, which answers a question about the spec and needs
+    # no image; every other path requires it, below.
+    ap.add_argument("iso", nargs="?")
+    ap.add_argument("--check-keys", metavar="SPEC",
+                    help="validate a --keys spec and exit; boots nothing. lib/build.sh "
+                         "calls this before the boot-host dispatch so a spec this "
+                         "harness cannot read is refused here, not after the tree has "
+                         "been sent to somebody else's machine")
     ap.add_argument("--mode", choices=["bios", "uefi", "kernel", "usb"], default="bios")
     ap.add_argument("--kernel", help="vmlinuz for --mode kernel")
     ap.add_argument("--initrd", help="initrfs.img for --mode kernel")
@@ -459,6 +531,15 @@ def main(argv: list[str]) -> int:
                          "livekit at all (TCG flakiness); a boot that reached livekit "
                          "and then failed is never retried")
     a = ap.parse_args(argv[1:])
+    if a.check_keys is not None:
+        try:
+            parse_keys(a.check_keys)
+        except KeysRefused as e:
+            print(e, file=sys.stderr)
+            return 2
+        return 0
+    if not a.iso:
+        ap.error("the following arguments are required: iso")
     if not os.path.isfile(a.iso):
         print(f"no such file: {a.iso}", file=sys.stderr)
         return 2
@@ -477,7 +558,7 @@ def main(argv: list[str]) -> int:
               run_tag=a.run_tag)
     try:
         r = boot(a.iso, a.mode, a.seconds, a.out, **kw)
-    except RuntimeError as e:
+    except (RuntimeError, KeysRefused) as e:
         # A refusal is an answer, not a crash. These messages name the recipe or package
         # that fixes them, and a traceback buries that under a stack.
         print(f"{a.mode}: {e}", file=sys.stderr)

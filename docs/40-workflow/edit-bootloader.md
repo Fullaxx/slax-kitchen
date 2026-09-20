@@ -148,4 +148,15 @@ than just inspected:
 --keys '7s,down,2s,down,1s,ret'             # UEFI: GRUB needs longer before it accepts input
 ```
 
+A spec is **comma-separated QEMU qcodes** — `down`, `ret`, `esc`, `home`, `a`–`z`, `0`–`9` — with
+`Ns` to wait before the next key. There is **no repetition syntax**: write the key out as many times
+as you mean it. Note `ret`, not `enter`; `enter` is not a qcode.
+
+Both halves of that are checked. A spec this harness cannot read is refused before anything boots —
+and before the tree is sent, if you have a [boot host](../60-testing/boot-host.md) — and a name QEMU
+does not know is refused by QEMU, whose answer is reported rather than discarded. It used to be
+discarded, so a mistyped key was simply never pressed: the run spent its whole `--seconds` ceiling
+and then reported that the *sequence* had not selected an entry, which points at timing rather than
+at the typo.
+
 A screenshot comes back via QMP `screendump` — pass `format=png` or you silently get a PPM.
