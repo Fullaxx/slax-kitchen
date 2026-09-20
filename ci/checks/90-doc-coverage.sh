@@ -123,6 +123,63 @@ if [ -n "$want" ]; then
     done
 fi
 
+# ...and the same for the TARGET count, which is the widest of the four. "four targets" is
+# the build matrix, and on 2026-09-20 it was stated on 45 lines across 31 files with nothing
+# checking any of them -- 41 as the words and 4 as the compound "4-target". A fifth target
+# would have falsified 31 files in one commit and said nothing.
+#
+# DERIVED FROM WHAT THE FILES SAY THEY ARE, not from their names: compat/ also holds
+# sources.yaml and upstream-baseline.yaml, curated by hand and not targets, so a *-*.yaml
+# glob would count six. `kind: Fingerprint` is the declaration itself.
+#
+# PLURAL ONLY, and that is this rule's anchor -- it needs no other. The singular is the
+# verification ladder's phrase, "booted on one target", which is not the matrix count and is
+# a true sentence about a different thing. Plural separates the two with no word list to keep
+# in step: measured 2026-09-20, 45 lines gated, 3 singular left alone, no false positives.
+# The first legitimately local "the two targets that use GRUB" will fail this, and that is
+# when to give it an exemption rather than now.
+#
+# BOTH FORMS, because both occur: the word in prose, the digit in "4-target matrix".
+#
+# AND THE NUMBER IS READ, NOT GREPPED FOR. The other two rules ask "does this line mention
+# the right word anywhere", which exempts a line for containing it in an unrelated place --
+# and `\bfour\b` matches inside "Twenty-four". docs/50-cookbook/README.md:116 opens
+# "**Twenty-four of the thirty-five work on all four targets**", so the first draft of this
+# rule read that line, found "four", and passed it whatever the target count said. Caught by
+# planting a wrong number in that exact line rather than by reading the regex. So the token
+# immediately before "targets" is extracted and compared, which is the question being asked.
+# A hyphenated pair is one token: "twenty-four targets" must not read as "four".
+n=$(grep -l '^kind: Fingerprint' "$REPO_ROOT"/compat/*.yaml 2>/dev/null | wc -l | tr -d ' ')
+want=$(numword "$n")
+[ -n "$want" ] || note "90-doc-coverage: no word for $n targets; count check skipped"
+if [ -n "$want" ] && [ "$n" -gt 0 ]; then
+    words='one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty'
+    # ONE grep over every file, not one per file. "targets" is common enough that this rule
+    # has to read all 122 of them, where the rules above narrow to a phrase first. Measured
+    # 2026-09-20, median of three: the gate was 0.556 s with three rules, 0.837 s with this
+    # one written per-file, and 0.639 s written this way -- so the loop cost 0.28 s and the
+    # single grep costs 0.08, on a gate suite of about 35 s.
+    # Absolute paths rather than `cd "$REPO_ROOT"`: a cd here would leak into the
+    # upstream-issue rule below, and `return` outside a function is not a thing in sh.
+    check_files_nl | grep -E '\.md$' | grep -v '^vendor/' \
+        | sed "s|^|$REPO_ROOT/|" > /tmp/.kitchen-tgt-f.$$
+    xargs grep -noiE "(($words)(-($words))?|[0-9]+)([[:space:]]+targets|-targets?)" \
+        < /tmp/.kitchen-tgt-f.$$ > /tmp/.kitchen-tgt.$$ 2>/dev/null || true
+    rm -f /tmp/.kitchen-tgt-f.$$
+    # Read in the MAIN shell, for the reason the two rules above both record: a
+    # `... | while read` runs its body in a subshell and fail()'s _FAILED=1 dies with it.
+    while IFS= read -r h; do
+        [ -n "$h" ] || continue
+        _f=${h%%:*}; _f=${_f#"$REPO_ROOT"/}; _rest=${h#*:}
+        _ln=${_rest%%:*}
+        _said=$(printf '%s' "${_rest#*:}" | sed 's/[[:space:]-]*[Tt]argets\{0,1\}$//' \
+                | tr 'A-Z' 'a-z')
+        [ "$_said" = "$want" ] || [ "$_said" = "$n" ] || \
+            fail "$_f:$_ln: says '$_said targets', but there are $n (want '$want')"
+    done < /tmp/.kitchen-tgt.$$
+    rm -f /tmp/.kitchen-tgt.$$
+fi
+
 # ...and the same for the upstream-issue count, which is the identical failure with a
 # different noun -- and a worse instance. Bugs 13 and 14 were appended months apart while
 # the count lived in prose in four OTHER files, so by 2026-09-16 three files said twelve,
