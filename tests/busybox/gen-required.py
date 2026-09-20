@@ -25,7 +25,7 @@ HEADER = """# Applets that /init, lib/livekitlib and /shutdown actually invoke.
 # Method: words in command position (start of line, or after ; & | ( ` $( then do else
 # if while until), intersected with the stock busybox's own --list. Comments are stripped
 # first -- without that, "# last chance, try to modprobe..." contributes `last`, which is
-# an applet and is never called. That one false positive is why the count here is 54 and
+# an applet and is never called. That one false positive is why the count was 54 on 2026-09-20 and
 # not the 55 the original plan recorded.
 #
 # Gate 1 hard-fails if a candidate busybox is missing any of these.

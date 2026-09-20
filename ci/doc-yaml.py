@@ -47,8 +47,8 @@ FENCE_OPEN = re.compile(r"^```ya?ml\s*$")
 # fails.
 PLACEHOLDER = re.compile(r"^(?:…|\.\.\.|<[^>]*>)$")
 
-# Tried in order against a failing `pattern`; first match wins. There are eight distinct
-# patterns across both schemas and these cover all of them. A future pattern that matches
+# Tried in order against a failing `pattern`; first match wins. Both schemas held eight
+# distinct patterns on 2026-09-20 and these cover all of them. A future pattern that matches
 # none leaves the placeholder in place and the block fails loudly -- the wrong answer here
 # is a silent pass, not a false alarm.
 CANDIDATES = ["0" * 64, "0644", "https://example.invalid/x", "slax/boot/x", "07-x", "x", "0"]

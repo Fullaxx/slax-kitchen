@@ -25,8 +25,8 @@
 # all is not listed at any stage. 45-doc-yaml makes the same trade for the same reason -- an
 # anchor is broken, or it is not, independently of which commit happens to be in flight.
 #
-# REWRITTEN IN PYTHON RATHER THAN EXTENDED, because the fragment half needs a parser. 51
-# lines inside fenced code blocks in this tree satisfy the ATX heading rule, four of them
+# REWRITTEN IN PYTHON RATHER THAN EXTENDED, because the fragment half needs a parser. On
+# 2026-09-20, 51 lines inside fenced code blocks satisfied the ATX heading rule, four of them
 # in untagged fences, so a grep for `^#` invents 51 anchors that do not exist -- the same
 # argument ee69f5d made one commit earlier about a check that prose could switch off.
 # ci/md-links.py says what the slug rules are and which of them this tree exercises.

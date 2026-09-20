@@ -15,8 +15,10 @@ where it used to be. The commit that broke them touched cli.md and none of those
 which is why this is whole-tree by design, like 45-doc-yaml and 95-status-vocab: a
 staged-file gate would have passed that commit without a word.
 
-PARSED, NOT GREPPED, and the numbers say why rather than the principle. 51 lines inside
-fenced code blocks in this tree satisfy the ATX heading rule -- four of them (`### TESTKIT
+PARSED, NOT GREPPED, and the numbers say why rather than the principle. EVERY COUNT IN THIS
+DOCSTRING IS THIS TREE ON 2026-09-20 -- they are the evidence for a design decision, not a
+description of the tree as you find it, and an undated one would be read as the second. 51
+lines inside fenced code blocks then satisfied the ATX heading rule -- four of them (`### TESTKIT
 BEGIN` and `END`, twice each) in *untagged* fences -- so a fence-blind collector invents
 51 anchors that do not exist and a `#testkit-begin-1` duplicate on top. ee69f5d had just
 made the same argument about a grepped check that prose could switch off.

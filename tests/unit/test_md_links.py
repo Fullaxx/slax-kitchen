@@ -9,7 +9,7 @@ the `sources` heading in docs/90-reference/cli.md, which 9907ed3 grew a `[--stri
 The gate had no test at all before this file.
 
 The slug is the whole gate, and it is where a rewrite goes wrong rather than in the link
-scanning. Two of these cases were got wrong in the first draft of ci/md-links.py and
+scanning. Every count below is this tree on 2026-09-20. Two of these cases were got wrong in the first draft of ci/md-links.py and
 caught here:
 
   CODE SPANS BEFORE TAGS. `## `sources <iso> ...`` is one code span, so `<iso>` is text.
