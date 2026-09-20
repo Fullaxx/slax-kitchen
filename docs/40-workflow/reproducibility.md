@@ -168,7 +168,7 @@ actually matters for an ISO that has to boot.
 A rebuilt ISO does not match the published one byte for byte, and nothing here pretends otherwise.
 What a published image carries instead is a record that accounts for every file in it:
 `<iso>.provenance.json` and the sources manifest, checked by
-[`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir). `SHA256SUMS`
+[`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict). `SHA256SUMS`
 checks that a download is the file that was published; the records say what that file is made of.
 
 **The source assets are reproducible, even though the image is not.** `ci/release-assets.sh` writes

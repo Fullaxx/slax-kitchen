@@ -33,7 +33,7 @@ design, which is why they are marked ◐ `chroot`.
 ## Saying where the source is
 
 Verbs record what they fetched and built in the image's provenance, and
-[`kitchen sources`](cli.md#sources-iso---json-f---markdown-f---fetch-dir) turns that into a list
+[`kitchen sources`](cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict) turns that into a list
 of where each part's source lives. Three things the engine cannot work out for itself, a recipe
 states:
 

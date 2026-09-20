@@ -27,7 +27,7 @@ alongside the kitchen's.
 | Step | Refuses |
 |---|---|
 | `kitchen build` | nothing new; `kitchen pack` writes `<iso>.provenance.json` beside the image |
-| [`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir) | a file whose sha256 matches neither the stock image nor a recorded step; an image built from a dirty checkout; a file a recipe copied in that its commit does not hold |
+| [`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict) | a file whose sha256 matches neither the stock image nor a recorded step; an image built from a dirty checkout; a file a recipe copied in that its commit does not hold |
 | `ci/release-assets.sh` | everything `sources` refuses; a kitchen or project checkout with uncommitted changes; an asset name GitHub would rename; a non-empty output directory |
 | `ci/release-verify.py` | see below |
 
