@@ -4,8 +4,8 @@
 WHY THIS EXISTS. That gate carries four prose-count rules and, until this file, no test for
 any of them -- which is an odd gap for the gate whose entire job is catching numbers that
 stopped being true. The target rule is the one worth starting with: on 2026-09-20 the build
-matrix count was stated on 45 lines across 31 files with nothing checking one of them, so a
-fifth target would have falsified 31 files in a single commit in silence.
+matrix count was stated on 45 lines across 33 files with nothing checking one of them, so a
+fifth target would have falsified 33 files in a single commit in silence.
 
 AND THE FIRST DRAFT OF THAT RULE COULD NOT FAIL ON THE LINE THAT MATTERS MOST. It asked
 "does this line mention the right word anywhere", the way the gate and upstream-issue rules
@@ -42,8 +42,12 @@ def git(repo, *args):
     return subprocess.run(["git", "-C", repo] + list(args), capture_output=True, text=True)
 
 
-def run_gate(tmp, fingerprints, prose):
-    """Build a fixture repo with N fingerprints and one doc, and run the real gate in it."""
+def run_gate(tmp, fingerprints, prose, sole_markdown=False):
+    """Build a fixture repo with N fingerprints and one doc, and run the real gate in it.
+
+    sole_markdown puts the prose in the cookbook index instead of a second page, so the file
+    list grep is handed exactly one file -- the case where grep drops the filename prefix.
+    """
     repo = os.path.join(tmp, "repo")
     for d in ("ci/checks", "compat", "recipes/available", "docs/50-cookbook"):
         os.makedirs(os.path.join(repo, d))
@@ -57,10 +61,12 @@ def run_gate(tmp, fingerprints, prose):
             fh.write(FINGERPRINT.format(f"target-{i}"))
     # The bijection rules above the count rules need these two to exist; with no recipes
     # they loop over nothing, and the recipe count is 0, which numword() declines to word.
+    body = prose if prose.endswith("\n") else prose + "\n"
     with open(os.path.join(repo, "docs", "50-cookbook", "README.md"), "w") as fh:
-        fh.write("# Cookbook\n")
-    with open(os.path.join(repo, "docs", "page.md"), "w") as fh:
-        fh.write(prose if prose.endswith("\n") else prose + "\n")
+        fh.write("# Cookbook\n" + (body if sole_markdown else ""))
+    if not sole_markdown:
+        with open(os.path.join(repo, "docs", "page.md"), "w") as fh:
+            fh.write(body)
     git(repo, "add", "-A")
     p = subprocess.run(["sh", "ci/checks/90-doc-coverage.sh"], cwd=repo, capture_output=True,
                        text=True, env=dict(os.environ, KITCHEN_SCOPE="tree",
@@ -128,10 +134,29 @@ def test_the_singular_is_a_different_claim_and_is_left_alone():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_one_markdown_file_is_still_read_correctly():
+    """grep drops the filename when it is handed exactly one file, and the parse splits on it.
+
+    Reachable: a tree holding only docs/50-cookbook/README.md lists one file, and xargs may
+    end a batch on one. Without -H that line parses as file="12", line="four targets", and
+    the rule reports nonsense rather than a finding -- a gate that has stopped working while
+    still exiting non-zero. Found by self-review on 2026-09-20, before it could bite.
+    """
+    tmp = tempfile.mkdtemp(prefix="doccov-")
+    try:
+        rc, out = run_gate(tmp, 5, "Built on all four targets.", sole_markdown=True)
+        check("the finding still appears", rc != 0, True)
+        check("...naming the file it is in", "docs/50-cookbook/README.md:" in out, True)
+        check("...and not a line number in its place", "FAIL 2:" in out, False)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     for fn in [test_the_right_count_passes_and_a_wrong_one_does_not,
                test_a_line_naming_the_right_word_elsewhere_is_still_checked,
-               test_the_singular_is_a_different_claim_and_is_left_alone]:
+               test_the_singular_is_a_different_claim_and_is_left_alone,
+               test_one_markdown_file_is_still_read_correctly]:
         fn()
     if FAILURES:
         for f in FAILURES:

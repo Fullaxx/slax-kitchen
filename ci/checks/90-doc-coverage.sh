@@ -1,6 +1,6 @@
 #!/bin/sh
 # stages: pre-commit pre-push ci
-# desc: Every recipe has a page, is linked from the index, and the prose count is right.
+# desc: Every recipe has a page, is linked from the index, and the prose counts are right.
 #
 # A recipe nobody can find is not shipped, and a page describing a recipe that no
 # longer exists is worse than no page. This gate was added after `serial-console`
@@ -124,9 +124,9 @@ if [ -n "$want" ]; then
 fi
 
 # ...and the same for the TARGET count, which is the widest of the four. "four targets" is
-# the build matrix, and on 2026-09-20 it was stated on 45 lines across 31 files with nothing
+# the build matrix, and on 2026-09-20 it was stated on 45 lines across 33 files with nothing
 # checking any of them -- 41 as the words and 4 as the compound "4-target". A fifth target
-# would have falsified 31 files in one commit and said nothing.
+# would have falsified 33 files in one commit and said nothing.
 #
 # DERIVED FROM WHAT THE FILES SAY THEY ARE, not from their names: compat/ also holds
 # sources.yaml and upstream-baseline.yaml, curated by hand and not targets, so a *-*.yaml
@@ -163,8 +163,21 @@ if [ -n "$want" ] && [ "$n" -gt 0 ]; then
     # upstream-issue rule below, and `return` outside a function is not a thing in sh.
     check_files_nl | grep -E '\.md$' | grep -v '^vendor/' \
         | sed "s|^|$REPO_ROOT/|" > /tmp/.kitchen-tgt-f.$$
-    xargs grep -noiE "(($words)(-($words))?|[0-9]+)([[:space:]]+targets|-targets?)" \
-        < /tmp/.kitchen-tgt-f.$$ > /tmp/.kitchen-tgt.$$ 2>/dev/null || true
+    # -H, because grep OMITS the filename when it is given exactly one file, and the parse
+    # below splits on it. Reachable: a tree holding only docs/50-cookbook/README.md lists one
+    # file, and xargs may end a batch on one. Without -H that line parses as file="12",
+    # line="four targets" and the rule reports nonsense instead of a finding.
+    #
+    # And an empty list is refused rather than passed: ci/lib.sh already FATALs when git will
+    # not answer, so this cannot fire in practice -- which is exactly why it would never be
+    # noticed if it could. A rule that examined no files has not checked anything.
+    if [ -s /tmp/.kitchen-tgt-f.$$ ]; then
+        xargs grep -noHiE "(($words)(-($words))?|[0-9]+)([[:space:]]+targets|-targets?)" \
+            < /tmp/.kitchen-tgt-f.$$ > /tmp/.kitchen-tgt.$$ 2>/dev/null || true
+    else
+        fail "90-doc-coverage: no markdown files in scope, so the target count checked nothing"
+        : > /tmp/.kitchen-tgt.$$
+    fi
     rm -f /tmp/.kitchen-tgt-f.$$
     # Read in the MAIN shell, for the reason the two rules above both record: a
     # `... | while read` runs its body in a subshell and fail()'s _FAILED=1 dies with it.

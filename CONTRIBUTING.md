@@ -467,13 +467,14 @@ repository is one of two kinds and they need opposite treatment.
 Fingerprint` files in `compat/`, so prose that states those counts is checkable, and
 [`ci/checks/90-doc-coverage.sh`](ci/checks/90-doc-coverage.sh) checks four of them. The failure it
 prevents is not hypothetical: adding the thirteenth gate made six shipped files wrong in one
-commit, and the build-matrix count was stated on 45 lines across 31 files before anything read one
+commit, and the build-matrix count was stated on 45 lines across 33 files before anything read one
 of them.
 
 **Not derivable → date it.** A timing cannot be gated; it varies by machine, so a gate asserting
-the 18 s above would fail on a slow runner. Neither can a count that describes a past incident — "five of the
-fifteen tests here" was exactly right at `6e4470e` on 2026-09-18 and is not now. Dating turns a
-claim about *now* into a fact about a day, which stays true, and costs nothing at commit time.
+the 18 s above would fail on a slow runner. Neither can a count describing a past incident —
+"five of the fifteen tests here" was exactly right at `6e4470e` on 2026-09-18 and is not
+now. Dating turns a claim about *now* into a fact about a day, which stays true, and costs
+nothing at commit time.
 Say when, on what, and how to re-measure.
 
 **And state it once.** `ci/gen-manifests.sh` was timed in two files, at three seconds and at
