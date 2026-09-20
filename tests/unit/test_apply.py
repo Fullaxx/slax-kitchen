@@ -1781,6 +1781,58 @@ def test_every_file_writing_verb_records_what_it_wrote():
         check(f"{v} records what it writes", reaches(fn, "ctx.record"), True)
 
 
+def _core_tree(source_iso, *, core="64", link=None):
+    """A work tree carrying a 01-core.sb, for the two tests that need real facts.
+
+    core: '64' or '32' -- the EI_CLASS of the ELF at usr/bin/ls -- or None for a tree with
+    no 01-core at all, which is what makes _tree_facts fall back to the ISO's name.
+
+    link='rel' puts usr/bin/ls -> ../../bin/ls with the real ELF at bin/ls, which is
+    Slackware's shape. link='abs' makes it -> /bin/ls, the shape that escapes: bin/ls
+    inside is 32-bit while this host's /bin/ls is not, so a probe that followed the link
+    out of the extract would answer with the host and the case using it would fail.
+
+    Needs mksquashfs. Callers say so themselves rather than skipping in silence.
+    """
+    import subprocess
+    import tempfile
+    work = tempfile.mkdtemp()
+    mods = os.path.join(work, "iso", "slax", "modules")
+    os.makedirs(mods)
+    if core:
+        src = tempfile.mkdtemp()
+        os.makedirs(os.path.join(src, "usr", "bin"))
+        os.makedirs(os.path.join(src, "etc"))
+        open(os.path.join(src, "etc", "debian_version"), "w").write("12.2\n")
+        bits = 2 if core == "64" else 1
+        elf = b"\x7fELF" + bytes([bits]) + bytes(59)
+        if link:
+            os.makedirs(os.path.join(src, "bin"))
+            open(os.path.join(src, "bin", "ls"), "wb").write(elf)
+            os.symlink("../../bin/ls" if link == "rel" else "/bin/ls",
+                       os.path.join(src, "usr", "bin", "ls"))
+        else:
+            open(os.path.join(src, "usr", "bin", "ls"), "wb").write(elf)
+        subprocess.run(["mksquashfs", src, os.path.join(mods, "01-core.sb"),
+                        "-noappend", "-no-progress", "-all-root"],
+                       capture_output=True, check=True)
+    os.makedirs(os.path.join(work, ".kitchen"))
+    with open(os.path.join(work, ".kitchen", "origin.yaml"), "w") as f:
+        f.write(f"source_iso: {source_iso}\n")
+    return work
+
+
+def _needs_mksquashfs(what: str) -> bool:
+    """True when the test can go on. A REQUIRED TOOL's absence is a named failure, never a
+    silent pass: `kitchen doctor` asserts mksquashfs, and a check that cannot fail is
+    worse than no check."""
+    if shutil.which("mksquashfs"):
+        return True
+    FAILURES.append(f"mksquashfs is not installed, so {what} cannot be tested "
+                    f"(it is a required tool -- see kitchen doctor)")
+    return False
+
+
 def test_arch_is_a_fact_about_the_tree():
     """`when: arch==` reads the TREE, not the path the ISO was stored under.
 
@@ -1796,50 +1848,9 @@ def test_arch_is_a_fact_about_the_tree():
     resolver that leaves the extract entirely -- measured on the 32-bit Slackware image,
     `file -bL usr/bin/bash` answered with THIS machine's bash.
     """
-    import subprocess
-    import tempfile
-    if not shutil.which("mksquashfs"):
-        # A REQUIRED TOOL, so its absence is a named failure and not a silent pass:
-        # `kitchen doctor` asserts it, and a check that cannot fail is worse than none.
-        FAILURES.append("mksquashfs is not installed, so the arch probe cannot be tested "
-                        "(it is a required tool -- see kitchen doctor)")
+    if not _needs_mksquashfs("the arch probe"):
         return
-
-    def elf(path, bits):
-        with open(path, "wb") as f:
-            f.write(b"\x7fELF" + bytes([bits]) + bytes(59))
-
-    def tree(source_iso, *, core="64", link=None):
-        """A work tree. core: '64'/'32' ELF at usr/bin/ls, or None for no 01-core.
-
-        link='rel' puts usr/bin/ls -> ../../bin/ls with the real ELF at bin/ls, which is
-        Slackware's shape. link='abs' makes it -> /bin/ls, the shape that escapes: bin/ls
-        inside is 32-bit while this host's /bin/ls is not, so a probe that followed the
-        link out would answer with the host and this case would fail.
-        """
-        work = tempfile.mkdtemp()
-        mods = os.path.join(work, "iso", "slax", "modules")
-        os.makedirs(mods)
-        if core:
-            src = tempfile.mkdtemp()
-            os.makedirs(os.path.join(src, "usr", "bin"))
-            os.makedirs(os.path.join(src, "etc"))
-            open(os.path.join(src, "etc", "debian_version"), "w").write("12.2\n")
-            bits = 2 if core == "64" else 1
-            if link:
-                os.makedirs(os.path.join(src, "bin"))
-                elf(os.path.join(src, "bin", "ls"), bits)
-                os.symlink("../../bin/ls" if link == "rel" else "/bin/ls",
-                           os.path.join(src, "usr", "bin", "ls"))
-            else:
-                elf(os.path.join(src, "usr", "bin", "ls"), bits)
-            subprocess.run(["mksquashfs", src, os.path.join(mods, "01-core.sb"),
-                            "-noappend", "-no-progress", "-all-root"],
-                           capture_output=True, check=True)
-        os.makedirs(os.path.join(work, ".kitchen"))
-        with open(os.path.join(work, ".kitchen", "origin.yaml"), "w") as f:
-            f.write(f"source_iso: {source_iso}\n")
-        return work
+    tree = _core_tree
 
     for label, kw, src, want in (
             ("a directory named 32bit does not flip a 64-bit tree", {"core": "64"},
@@ -1875,6 +1886,71 @@ def test_arch_is_a_fact_about_the_tree():
     check("check_compat still warns on a real mismatch",
           apply.check_compat({"compat": {"arch": ["64bit"]}}, w32, facts_of(w32)),
           ["recipe declares arch=['64bit'] but the base looks like 32bit"])
+
+
+def test_a_profile_is_held_to_the_base_it_declares():
+    """`apply --profile` used to take any work tree.
+
+    The schema requires base.flavour, base.arch and base.version, and `kitchen build`
+    picks which ISO to fetch from them -- but apply read the recipe list and nothing else,
+    so upstream's own 64-bit `minimal` applied to a 32-bit tree without a word, exit 0,
+    and every `when: arch==` step built the other architecture's half (#29).
+
+    THE FACTS COME FROM REAL TREES HERE, not a hand-made dict, and that is the point
+    rather than thoroughness. This check is only as good as facts["arch"], which until #27
+    was a substring of the path the ISO was unpacked from -- so fed those, the first case
+    below REFUSES a genuinely 64-bit tree for sitting under a directory named
+    "...32bit...", turning a silent wrong build into a confident wrong refusal. If the two
+    are ever separated, this fails.
+    """
+    import tempfile
+    import textwrap
+    if not _needs_mksquashfs("a profile's declared base"):
+        return
+
+    def facts_of(w):
+        return apply._tree_facts(w, os.path.join(w, "iso"))
+
+    debian64 = {"flavour": "debian", "arch": "64bit", "version": "12.2.0"}
+
+    # A 64-bit tree that a path would call 32bit. Must NOT be refused.
+    misfiled = _core_tree("/srv/slax-32bit-and-64bit/slax-64bit-debian-12.2.0.iso",
+                          core="64")
+    check("a 64-bit tree kept under a 32bit directory is not a disagreement",
+          apply.base_mismatch(debian64, facts_of(misfiled)), [])
+
+    # A genuinely 32-bit tree. Must be refused, and say which way round.
+    real32 = _core_tree("/srv/isos/slax-32bit-debian-12.2.0.iso", core="32")
+    check("a tree of the other architecture is named",
+          apply.base_mismatch(debian64, facts_of(real32)),
+          ["the profile is for arch 64bit, but this work tree is 32bit"])
+    check("the base it declares passes",
+          apply.base_mismatch({"flavour": "debian", "arch": "32bit"}, facts_of(real32)), [])
+    check("flavour counts too",
+          apply.base_mismatch({"flavour": "slackware", "arch": "32bit"}, facts_of(real32)),
+          ["the profile is for flavour slackware, but this work tree is debian"])
+
+    # An unreadable tree is a different problem, and not one to refuse a build over.
+    blank = _core_tree("/srv/slax.iso", core=None)
+    check("an unreadable tree is not a disagreement",
+          apply.base_mismatch(debian64, facts_of(blank)), [])
+
+    d = tempfile.mkdtemp(prefix="kitchen-prof-test.")
+    path = os.path.join(d, "p.yaml")
+    with open(path, "w") as f:
+        f.write(textwrap.dedent("""\
+            apiVersion: slax-kitchen/v1
+            kind: Profile
+            metadata: {name: p, summary: A throwaway profile that declares its base}
+            base: {flavour: debian, arch: 64bit, version: "12.2.0"}
+            recipes: [rootcopy-overlay]
+            """))
+    check("the base is read off the profile", apply.profile_base(path), debian64)
+    # ...and off a bare name, the form `kitchen build minimal` uses.
+    check("a profile named rather than pathed still resolves",
+          apply.profile_base("minimal").get("arch"), "64bit")
+    check("a profile that is not there yields no base, rather than raising",
+          apply.profile_base("no-such-profile-here"), {})
 
 
 def main():
@@ -1935,7 +2011,8 @@ def main():
                    test_apt_reinstall_is_opt_in,
                    test_every_file_writing_verb_records_what_it_wrote,
                    test_status_removals_is_a_transition_not_a_scan,
-                   test_arch_is_a_fact_about_the_tree]:
+                   test_arch_is_a_fact_about_the_tree,
+                   test_a_profile_is_held_to_the_base_it_declares]:
             fn()
         if FAILURES:
             for f in FAILURES:

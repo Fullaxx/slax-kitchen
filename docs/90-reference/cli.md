@@ -152,6 +152,19 @@ of naming recipes on the command line; the two forms are mutually exclusive. Thi
 `kitchen build` invokes apply, and it is the supported way to change a shipped recipe's values
 without editing the recipe.
 
+A profile also declares the **base** it is written for, and `--profile` now holds it to that: if
+`base.flavour` or `base.arch` disagrees with the work tree, apply refuses with exit 2 and nothing is
+touched. Previously the base was ignored here — `kitchen build` chose its ISO from it, but applying
+a profile to an existing tree took whatever `-w` pointed at, so a 64-bit profile could be applied to
+a 32-bit tree and every `when: arch==` step would build the other architecture's half. A tree whose
+architecture cannot be read is *not* a disagreement, and `--facts` still overrides.
+
+```
+$ kitchen apply --profile profiles/minimal.yaml -w work-32
+error: the profile is for arch 64bit, but this work tree is 32bit
+  unpack the base the profile names, or pass --facts to override
+```
+
 `-n` / `--dry-run` reports what each step would do without touching anything.
 
 **Order matters for `uefi-bootable`** — it builds the GRUB menu by parsing `isolinux.cfg`, so list it

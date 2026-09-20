@@ -3580,6 +3580,59 @@ def duplicate_recipes(names: list[str]) -> str | None:
             f'drop: "^(05-chromium|01-firmware)\\.sb$".')
 
 
+def profile_path(path: str) -> str:
+    """A profile argument as a file: a path as given, or a name under profiles/.
+
+    Stated once because the recipe list and the declared base are read separately and must
+    resolve the argument the same way -- `kitchen build minimal` names a profile that is
+    not a path, and a base read from the wrong file is worse than one not read at all.
+    """
+    if os.path.isfile(path):
+        return path
+    cand = os.path.join(ROOT, "profiles", path + ".yaml")
+    if os.path.isfile(cand):
+        return cand
+    raise RuntimeError(f"profile not found: {path}")
+
+
+def profile_base(path: str) -> dict:
+    """The base a profile declares: flavour, arch, version.
+
+    schema/profile.schema.json REQUIRES all three, and `kitchen build` picks which ISO to
+    fetch from them (lib/profile.py). `kitchen apply --profile` read the recipe list and
+    nothing else, so the profile was applied to whatever tree -w pointed at (#29).
+    """
+    import yaml
+    try:
+        return (yaml.safe_load(open(profile_path(path))) or {}).get("base") or {}
+    except (OSError, RuntimeError):
+        return {}
+
+
+def base_mismatch(base: dict, facts: dict) -> list[str]:
+    """Where a declared base disagrees with the tree in front of us.
+
+    `unknown` is not a disagreement: it means the tree could not be read, which is a
+    different problem and not one to refuse a build over. Version is not compared -- the
+    facts do not carry one.
+
+    ONLY AS GOOD AS THE FACTS, which is why this could not have landed first. Until #27,
+    `arch` was a substring of the path the ISO was unpacked from: fed those, this check
+    REFUSED a genuinely 64-bit tree that happened to sit under a directory named
+    "...32bit...", turning a silent wrong-arch apply into a confident wrong refusal.
+    _tree_facts reads the tree now.
+
+    `flavour` still answers "debian" for a tree it could not read rather than "unknown"
+    (see _tree_facts), so a flavour disagreement is only as certain as that default.
+    """
+    out = []
+    for key in ("flavour", "arch"):
+        want, got = base.get(key), facts.get(key)
+        if want and got and got != "unknown" and want != got:
+            out.append(f"the profile is for {key} {want}, but this work tree is {got}")
+    return out
+
+
 def read_profile_recipes(path: str) -> tuple[list[str], dict[str, dict]]:
     """Recipe names and per-recipe var overrides from a profile.
 
@@ -3589,12 +3642,7 @@ def read_profile_recipes(path: str) -> tuple[list[str], dict[str, dict]]:
     since before it worked.
     """
     import yaml
-    if not os.path.isfile(path):
-        cand = os.path.join(ROOT, "profiles", path + ".yaml")
-        if os.path.isfile(cand):
-            path = cand
-        else:
-            raise RuntimeError(f"profile not found: {path}")
+    path = profile_path(path)
     problems = validate_file(path)
     if problems:
         raise RuntimeError(f"invalid profile {path}:\n  " + "\n  ".join(problems))
@@ -3687,6 +3735,29 @@ def main(argv: list[str]) -> int:
     # never named, correctly gets none.
     def ov(path: str) -> dict | None:
         return var_overrides.get(os.path.splitext(os.path.basename(path))[0])
+
+    # Derived here rather than below the banner, because the profile's declared base is
+    # held against these and a refusal should not arrive under a heading announcing the
+    # work has already started.
+    facts = dict(override) if override else _tree_facts(a.work, os.path.join(a.work, "iso"))
+
+    # A PROFILE SAYS WHICH BASE IT IS FOR, so hold it to that. Nothing read `base:` at
+    # all: `kitchen build` chooses the ISO from it, but `apply --profile` took whatever
+    # tree -w pointed at, so upstream's own 64-bit `minimal` applied to a 32-bit tree and
+    # exited 0 -- and every `when: arch==` step quietly built the other architecture's
+    # half (#29).
+    #
+    # NOT UNDER --preflight-only: `kitchen build` preflights before it unpacks, so there
+    # is no tree there to disagree with. --facts still wins, since that is somebody
+    # saying they mean it.
+    if a.profile and not a.preflight_only:
+        bad = base_mismatch(profile_base(a.profile), facts)
+        if bad:
+            print("error: " + "; ".join(bad)
+                  + "\n  unpack the base the profile names, or pass --facts to override",
+                  file=sys.stderr)
+            return 2
+
     if a.preflight_only:
         print(f"preflight {len(paths)} recipe(s)"
               + (f"  [{a.facts}]" if a.facts else ""))
@@ -3701,7 +3772,6 @@ def main(argv: list[str]) -> int:
     # tools/capabilities first" -- it is about this MACHINE, and it used to switch off
     # the ordering rule too, because the rule lived inside its guard. Nothing said so,
     # and composing-bundles.md says flatly "This is enforced".
-    facts = dict(override) if override else _tree_facts(a.work, os.path.join(a.work, "iso"))
     plan: list[tuple[str, dict]] = []
     for p in paths:
         try:

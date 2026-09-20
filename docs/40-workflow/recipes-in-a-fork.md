@@ -45,7 +45,9 @@ Three things this will not let you do quietly:
 | **Forget what you used** | `kitchen status` prints the overrides, and they are recorded in `.kitchen/journal.yaml` |
 
 `kitchen apply --profile <profile>` applies a profile's recipes to an existing work tree without
-rebuilding the ISO.
+rebuilding the ISO. The tree has to be the base the profile declares — a mismatched `base.flavour`
+or `base.arch` is refused before anything is touched, since a `when: arch==` step would otherwise
+build the wrong half in silence.
 
 **Only what a recipe exposes as a var can be overridden.** If you want to change something a recipe
 hardcodes, either send us a patch making it a var — that is a good contribution — or copy the
