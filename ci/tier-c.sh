@@ -210,6 +210,13 @@ mkdir -p "$PIDDIR"
 
 # Is this pid one of ours? Linux-only, like the rest of this file's leak checks, and the
 # same question lib/boot_host.py's _kill_orphans asks of the same file.
+#
+# HOW STRONG THIS IS, stated rather than implied. It is a SECOND guard: only pids written
+# into $OUT/pids are ever looked at, and this asks whether the process still there is
+# plausibly the one that wrote it. A recycled pid gets through only if the new process
+# also names qemu and $OUT, so the guard is as specific as $OUT is -- `--out /tmp` on a
+# machine running other people's virtual machines is a weak test, and `out/tier-c` is a
+# strong one. Wrong in this direction means declining to kill, which is the safe way.
 _is_ours() {
     [ -r "/proc/$1/cmdline" ] || return 1
     _cmd=$(tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null) || return 1

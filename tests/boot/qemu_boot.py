@@ -583,12 +583,17 @@ def main(argv: list[str]) -> int:
                 # want` above still fails the run. "differs from" followed by silence is
                 # the one diff a reader cannot act on.
                 if not missing and not extra:
-                    at = next((i for i, (g, w) in enumerate(zip(got, want)) if g != w),
-                              None)
-                    if at is None:
+                    if len(got) != len(want):
+                        # Same set of lines, different counts: one of them is repeated a
+                        # different number of times. Saying "a different order" here
+                        # would be a second wrong answer.
                         print(f"    the same lines, but {len(got)} of them here and "
                               f"{len(want)} in the golden")
                     else:
+                        # Equal length and neither side has a line the other lacks, so
+                        # there is always a first position that differs -- `got == want`
+                        # above already ruled out their being identical.
+                        at = next(i for i, (g, w) in enumerate(zip(got, want)) if g != w)
                         print(f"    the same {len(got)} lines in a different order: "
                               f"line {at + 1} is {got[at]!r}, expected {want[at]!r}")
                 golden_state, rc = "differ", 1

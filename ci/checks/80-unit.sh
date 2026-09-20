@@ -101,17 +101,55 @@ export KITCHEN_BOOT_HOST
 # shape CANNOT have this bug: define a function and it runs. It is the better design and
 # the check says so rather than forcing it into the weaker one.
 #
-# Text, not import: importing a test module to inspect it would RUN it -- test_release.py
-# executes at import by design -- so the gate would be running the suite twice and would
-# hang or litter on anything that misbehaves at import time.
-for t in "$REPO_ROOT"/tests/unit/test_*.py; do
-    [ -f "$t" ] || continue
-    grep -q 'globals()' "$t" && continue
-    for _n in $(grep -oE '^def test_[A-Za-z0-9_]+' "$t" | cut -d' ' -f2); do
-        [ "$(grep -cE "\\b$_n\\b" "$t")" -lt 2 ] && \
-            fail "$(basename "$t"): $_n is defined but never registered, so it never runs"
-    done
-done
+# PARSED, NOT GREPPED, and the first version of this check was grepped -- which gave it
+# two holes, both found by writing them (2026-09-20) rather than by reading it:
+#
+#   - `grep -q "globals()"` matched those words ANYWHERE in the file, so a file could
+#     opt out of this check with a COMMENT saying it does not use globals().
+#   - "the name appears at least twice" counted a mention in prose. The docstrings here
+#     refer to other tests by name constantly, so a test could be registered by being
+#     talked about.
+#
+# An ast.Name node is a reference in CODE: a comment is not one, a docstring is not one,
+# and a call to globals() is a Call node rather than a pair of words. Parsed, not
+# imported -- importing a test module would RUN it (test_release.py executes at import
+# by design), so the gate would run the whole suite an extra time and inherit anything
+# that misbehaves at import.
+python3 - "$REPO_ROOT" > /tmp/.kitchen-reg.$$ 2>&1 <<'REGPY'
+import ast, glob, os, sys
+
+for path in sorted(glob.glob(os.path.join(sys.argv[1], "tests/unit/test_*.py"))):
+    name = os.path.basename(path)
+    try:
+        tree = ast.parse(open(path, encoding="utf-8").read(), path)
+    except SyntaxError as e:
+        print(f"{name}: will not parse, so its tests cannot be accounted for: {e}")
+        continue
+    # Discovery from globals() cannot have this bug: define a function and it runs.
+    if any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+           and n.func.id == "globals" for n in ast.walk(tree)):
+        continue
+    used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_") \
+                and node.name not in used:
+            print(f"{name}: {node.name} is defined but never registered, so it never runs")
+REGPY
+_reg_rc=$?
+if [ "$_reg_rc" != 0 ]; then
+    # Fail closed. A check that could not run must not read like a check that passed --
+    # the same rule ci/lib.sh states for a git that will not answer.
+    fail "the registration check could not run (python3 exited $_reg_rc)"
+    sed 's/^/      /' /tmp/.kitchen-reg.$$ >&2
+else
+    # Read from a file, not a pipe: `... | while read` runs the loop in a subshell, so
+    # fail()'s _FAILED=1 would be set there and lost. ci/checks/10-no-dnc.sh does the
+    # same dance for the same reason.
+    while IFS= read -r _line; do
+        [ -n "$_line" ] && fail "$_line"
+    done < /tmp/.kitchen-reg.$$
+fi
+rm -f /tmp/.kitchen-reg.$$
 
 for t in "$REPO_ROOT"/tests/unit/test_*.py; do
     [ -f "$t" ] || continue
