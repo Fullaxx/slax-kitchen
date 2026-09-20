@@ -125,8 +125,14 @@ def sha256_of(path):
 
 def main():
     if not shutil.which("tar"):
+        # 77, NOT 0, AND THAT IS THE WHOLE POINT OF SAYING SO. A skip is not a pass, and
+        # returning 0 made the two below indistinguishable from tests that ran and agreed
+        # -- to the gate, which only reads the status, and to anyone reading it here.
+        # ci/unit-run.py reads this status: it reports the skip, and waives its "every
+        # test defined here ran" measurement for this run, which would otherwise report
+        # both of them as never having run. Which is true, and not the answer wanted.
         print("tests/unit/test_build_busybox.py: no tar; skipped")
-        return 0
+        return 77
     for fn in [test_a_successful_build_keeps_the_claim_it_wrote,
                test_a_claim_that_cannot_be_written_fails_the_build]:
         fn()
