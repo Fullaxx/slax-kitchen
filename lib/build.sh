@@ -426,10 +426,18 @@ _boot_run() {
     # A pid file per boot, under the evidence directory. qemu_boot.py removes it on the
     # way out, so one still sitting there afterwards means an orphaned guest -- which is
     # exactly what a driver's trap needs to find and kill, and only its own.
+    #
+    # COUNTED, not just mode and pid. The persistence pair calls this TWICE in one
+    # process, both times with mode `kernel`, so `$_br_mode-$$` named the same file for
+    # both boots and the second silently overwrote the first. A guest orphaned by boot 1
+    # disappeared from the directory the moment boot 2 started, and a driver's sweep --
+    # which finds orphans by reading exactly that directory -- had nothing left to find.
+    # --run-tag disambiguates the evidence filenames and never touched this.
+    _br_n=$((${_br_n:-0} + 1))
     mkdir -p "$outdir/pids"
     set -- "$REPO_ROOT/tests/boot/qemu_boot.py" "$iso" --mode "$_br_mode" \
         --seconds "$secs" --out "$outdir" \
-        --pidfile "$outdir/pids/$_br_mode-$$.pid" "$@"
+        --pidfile "$outdir/pids/$_br_mode-$$-$_br_n.pid" "$@"
     [ -n "$mem" ] && set -- "$@" --mem "$mem"
     [ -n "$record" ] && set -- "$@" --record "$record"
     # A golden diff reads the testkit block out of the serial log, so it is meaningless

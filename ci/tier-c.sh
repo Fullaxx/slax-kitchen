@@ -184,19 +184,67 @@ JSONL="$OUT/runs.jsonl"
 # directory and removed here rather than by the harness, which is handed the path and
 # has no business deleting a caller's file.
 #
-# The trap matters more than it looks: this is normally driven over ssh, and a dropped
-# connection would otherwise leave a multi-gigabyte qcow and a live qemu behind.
+# A PID FILE STILL PRESENT WHEN A PATH RETURNS IS A GUEST NOBODY STOPPED. qemu_boot.py
+# unlinks its own on the way out, so one left behind means the boot lost its guest. That
+# is a failure of the run and is reported as one, by name, per path.
+#
+# It used to be handled only by the EXIT trap, which runs AFTER `exit $rc` has fixed the
+# status -- so an orphaned guest was killed in silence and the sweep reported success.
+# lib/boot_host.py's agent has always named its leftovers and failed the run; its
+# docstring says this one "could only ever be a count". Now it is not.
+#
+# AND THE PID IS CHECKED BEFORE IT IS SIGNALLED. "Only pids THIS run wrote" used to mean
+# "whatever number is in the file", killed at exit -- up to minutes after the boot that
+# wrote it, and a pid is exactly what a busy machine recycles. The promise not to touch
+# somebody else's virtual machines was therefore never kept. /proc/<pid>/cmdline must
+# name both qemu and this run's output directory before anything is signalled; anything
+# else is reported and LEFT ALONE, which is the safe direction to be wrong in.
+#
+# MEASURED, so the comment does not outrun the code: the trap is also said to protect a
+# run driven over ssh from a dropped connection. On dash here, both SIGINT and SIGHUP to
+# the process group do run this trap and the guest is reaped -- checked 2026-09-20 with a
+# setsid'd guest, which is what one that outlived its launcher looks like. The signal list
+# is therefore left as it is rather than extended on a story.
 PIDDIR="$OUT/pids"   # written by lib/build.sh, one per boot
 mkdir -p "$PIDDIR"
-cleanup() {
+
+# Is this pid one of ours? Linux-only, like the rest of this file's leak checks, and the
+# same question lib/boot_host.py's _kill_orphans asks of the same file.
+_is_ours() {
+    [ -r "/proc/$1/cmdline" ] || return 1
+    _cmd=$(tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null) || return 1
+    case "$_cmd" in
+        *qemu*) ;;
+        *) return 1 ;;
+    esac
+    case "$_cmd" in
+        *"$OUT"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Answer for every pid file left behind. Non-zero when anything was.
+sweep_pids() {
+    _leaked=0
     for pf in "$PIDDIR"/*.pid; do
         [ -e "$pf" ] || continue
-        pid=$(cat "$pf" 2>/dev/null) || continue
-        # Only pids THIS run wrote. Never pkill qemu: on a shared host that takes out
-        # somebody else's virtual machines.
-        [ -n "$pid" ] && kill "$pid" 2>/dev/null
+        _leaked=1
+        _pid=$(cat "$pf" 2>/dev/null)
+        _name=$(basename "$pf")
         rm -f "$pf"
+        if [ -z "$_pid" ] || ! kill -0 "$_pid" 2>/dev/null; then
+            say "${R}LEAK${O} $_name was left behind; the guest it named is already gone"
+        elif _is_ours "$_pid"; then
+            kill -9 "$_pid" 2>/dev/null
+            say "${R}LEAK${O} a guest was left running ($_name, pid $_pid); it has been killed"
+        else
+            say "${R}LEAK${O} $_name names pid $_pid, which is not this run's; left alone"
+        fi
     done
+    [ "$_leaked" = 0 ]
+}
+cleanup() {
+    sweep_pids || :
     [ "$KEEP" = 1 ] || rm -rf "$PIDDIR"
 }
 trap 'cleanup' EXIT INT TERM
@@ -233,6 +281,11 @@ for path in $PATHS; do
     t_rc=0
     ./kitchen test "$ISO" "$flag" --out "$OUT" --seconds "$SECONDS_CEIL" \
         --golden "$GOLDEN" --record "$JSONL" || t_rc=$?
+    # EACH PATH ANSWERS FOR ITS OWN LEFTOVERS, before the next one starts. One directory
+    # is shared by every path and nothing emptied it, so a file left by the first was
+    # still sitting there when the last finished -- and whatever it named was killed at
+    # exit, under the wrong path's name, if it was noticed at all.
+    sweep_pids || { say "${R}$path left a guest behind.${O}"; rc=1; }
     # STOP BEFORE THE LEDGER. 2 and 3 mean the boot host could not be used -- a broken
     # configuration, or a machine that could not be reached -- so no boot happened and
     # there is nothing to record. Carrying on would run the remaining paths against the

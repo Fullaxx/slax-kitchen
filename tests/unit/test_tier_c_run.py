@@ -22,10 +22,12 @@ Run directly: python3 tests/unit/test_tier_c_run.py
 """
 import json
 import os
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 TIER_C = os.path.join(ROOT, "ci", "tier-c.sh")
@@ -55,15 +57,51 @@ case "${STUB_TEST_RC:-0}" in
     *) echo "stub kitchen: exiting ${STUB_TEST_RC}" >&2; exit "${STUB_TEST_RC}" ;;
 esac
 shift
-iso="" path="" record=""
+iso="" path="" record="" out=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --record) record=$2; shift 2 ;;
-        --out|--seconds|--golden) shift 2 ;;
+        --out) out=$2; shift 2 ;;
+        --seconds|--golden) shift 2 ;;
         --kernel|--bios|--uefi|--usb|--persistence) path=${1#--}; shift ;;
         *) iso=$1; shift ;;
     esac
 done
+[ -n "${STUB_RUNLOG:-}" ] && echo "$path" >> "$STUB_RUNLOG"
+# $STUB_ORPHAN: leave a pid file behind, the way a boot that lost its guest does.
+#
+# setsid, and every fd off the harness's pipes. Both are load-bearing and were found by
+# measuring: a process left in this harness's process group does NOT outlive
+# subprocess.run(capture_output=True), so without them "the process is still running"
+# passed on a corpse and "the sweep killed it" passed without the sweep doing anything.
+# A guest that outlived its launcher is detached in exactly this way, so the fixture is
+# also the more faithful one.
+#   ours    a process whose command line names both qemu and this run's --out. That is
+#           what the sweep has to recognise, kill, and name.
+#   foreign a pid file naming a process that is NOT this run's -- a recycled number, on a
+#           machine shared with other people's virtual machines. It must be reported and
+#           LEFT ALONE, which is the promise the old comment made and never kept.
+if [ -n "${STUB_ORPHAN:-}" ] && [ -n "$out" ]; then
+    mkdir -p "$out/pids" "$out/fakebin"
+    case "$STUB_ORPHAN" in
+        ours)
+            ln -sf "$(command -v sleep)" "$out/fakebin/qemu-system-x86_64"
+            setsid "$out/fakebin/qemu-system-x86_64" 60 >/dev/null 2>&1 </dev/null &
+            echo $! > "$out/pids/$path-$$.pid"; echo $! > "$out/orphan.pid" ;;
+        foreign)
+            # setsid for the same reason as above, and for one more: a process left in
+            # this harness's group does not outlive subprocess.run(capture_output=True)
+            # -- measured -- so without it the test would "pass" on a corpse.
+            setsid sleep 60 >/dev/null 2>&1 </dev/null &
+            echo $! > "$out/pids/$path-$$.pid"; echo $! > "$out/orphan.pid" ;;
+    esac
+fi
+# $STUB_BLOCK: say we started, then block on a fifo until the test signals us. A real
+# boot takes seconds; this takes as long as the test needs and not a millisecond more.
+if [ -n "${STUB_BLOCK:-}" ]; then
+    : > "$STUB_BLOCK.ready"
+    read _x < "$STUB_BLOCK"
+fi
 [ -n "${STUB_LEAK_QB:-}" ] && python3 -c 'import tempfile; tempfile.mkdtemp(prefix="qb-")'
 accel=kvm
 [ "$path" = "${STUB_TCG_PATH:-}" ] && accel=tcg
@@ -182,6 +220,30 @@ def run_tier_c(tmp, env_extra, paths="kernel", boot_host=False):
          "--golden-dir", os.path.join(tmp, "golden")],
         cwd=repo, env=env, capture_output=True, text=True, timeout=120)
     return p.returncode, p.stdout + p.stderr
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def reap(pid):
+    """Leave no stray process behind, whatever the assertions did."""
+    if pid and alive(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
+def orphan_pid(out):
+    try:
+        return int(open(os.path.join(out, "orphan.pid")).read().strip())
+    except (OSError, ValueError):
+        return 0
 
 
 def ledger_of(tmp):
@@ -347,6 +409,143 @@ def test_with_a_boot_host_the_local_tool_check_asks_for_the_transport(tmp, _box)
           "checked its own temporary directory on kvmbox" in out, True)
 
 
+# ----- the pid trap: what a leftover guest means, and whose pid it is -----
+
+@in_a_box
+def test_an_orphaned_guest_fails_the_sweep_and_is_named(tmp, _box):
+    """A pid file still present when a path returns is a guest nobody stopped.
+
+    THIS USED TO PASS SILENTLY. cleanup() ran from the EXIT trap -- after `exit $rc` had
+    already fixed the status -- so an orphan was killed with nothing said and the sweep
+    reported success. lib/boot_host.py's agent gets the remote case right and its own
+    docstring says tier-c's equivalent "could only ever be a count".
+    """
+    out = os.path.join(tmp, "evidence")
+    rc, o = run_tier_c(tmp, {"STUB_ORPHAN": "ours"}, paths="bios")
+    pid = orphan_pid(out)
+    try:
+        check("the orphan was actually created", pid != 0, True)
+        check("an orphaned guest fails the sweep", rc != 0, True)
+        check("...and is named, not counted", "a guest was left running" in o, True)
+        check("...naming the pid file", "bios-" in o, True)
+        check("...and it is not still running", alive(pid), False)
+    finally:
+        reap(pid)
+
+
+@in_a_box
+def test_a_pid_that_is_not_ours_is_reported_and_left_alone(tmp, _box):
+    """The promise the old comment made, now checkable.
+
+    "Only pids THIS run wrote. Never pkill qemu: on a shared host that takes out somebody
+    else's virtual machines." It was not kept: the pid was killed by NUMBER, minutes after
+    the boot that wrote it, and a number is exactly what gets recycled on a busy machine.
+    A pid whose /proc entry does not name this run is somebody else's, and is left alone.
+    """
+    out = os.path.join(tmp, "evidence")
+    rc, o = run_tier_c(tmp, {"STUB_ORPHAN": "foreign"}, paths="bios")
+    pid = orphan_pid(out)
+    try:
+        check("the foreign process was actually created", pid != 0, True)
+        check("a pid file we cannot account for still fails the sweep", rc != 0, True)
+        check("...and says whose it is not", "not this run's" in o, True)
+        check("...and the process is STILL RUNNING", alive(pid), True)
+    finally:
+        reap(pid)
+
+
+@in_a_box
+def test_one_paths_leftovers_do_not_reach_the_next(tmp, _box):
+    """$OUT/pids is one directory shared by every path, and nothing emptied it.
+
+    So a file left by the first path was still there when the last one finished, and the
+    kill happened at exit with the wrong path's name on it -- if it was reported at all.
+    Each path now answers for its own leftovers and hands none on.
+    """
+    out = os.path.join(tmp, "evidence")
+    rc, o = run_tier_c(tmp, {"STUB_ORPHAN": "ours"}, paths="bios uefi")
+    pid = orphan_pid(out)
+    try:
+        check("the sweep fails", rc != 0, True)
+        # Each path leaves one, and each is reported once, against its own name.
+        check("the first path's orphan is named", "bios-" in o, True)
+        check("the second path's orphan is named", "uefi-" in o, True)
+        check("neither is reported twice", o.count("a guest was left running"), 2)
+        left = os.path.join(out, "pids")
+        check("nothing is handed on afterwards",
+              os.listdir(left) if os.path.isdir(left) else [], [])
+    finally:
+        reap(pid)
+
+
+def test_an_interrupt_stops_the_sweep():
+    """Ctrl-C must not start the next boot path, and must not leave the guest running.
+
+    A REGRESSION TEST, NOT A BUG REPORT, and it is worth saying which. An audit expected
+    two failures here -- that cleanup() never calls exit so the sweep carries on into the
+    next path, and that the trap omits HUP, the signal a dropped ssh session delivers.
+    Neither reproduced when it was measured (2026-09-20, dash): an interrupted `kitchen
+    test` returns >= 2, which the loop already stops on before the trap's behaviour can
+    matter, and the EXIT trap does run for both INT and HUP here, so the guest is reaped
+    either way. The signal list was left alone rather than extended on a story.
+
+    What this pins is the outcome a reader actually cares about, in a shape that CAN go
+    red: after an interrupt, the second path has not started and no guest is left behind.
+    The guest is setsid with its fds detached, which is what one that outlived its
+    launcher looks like -- and is also the only way it survives this harness long enough
+    to be asked about.
+
+    No sleeps: the stub says it has started and blocks on a fifo, so the signal goes at
+    exactly the right moment and the test takes as long as that takes and no longer.
+    """
+    tmp = tempfile.mkdtemp(prefix="tierc-int-")
+    proc = None
+    try:
+        repo, iso, bindir = fixture(tmp)
+        out = os.path.join(tmp, "evidence")
+        fifo = os.path.join(tmp, "block")
+        runlog = os.path.join(tmp, "runs")
+        os.mkfifo(fifo)
+        env = dict(os.environ, PATH=bindir + ":" + os.environ.get("PATH", ""),
+                   STUB_BLOCK=fifo, STUB_RUNLOG=runlog, STUB_ORPHAN="ours")
+        proc = subprocess.Popen(
+            ["sh", os.path.join(repo, "ci", "tier-c.sh"), "--iso", iso,
+             "--target", "stub-target", "--paths", "bios uefi", "--out", out,
+             "--ledger", os.path.join(tmp, "ledger.json"),
+             "--golden-dir", os.path.join(tmp, "golden")],
+            cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, start_new_session=True)
+
+        # Wait for the first path to say it is in the boot, then interrupt the whole
+        # process group -- which is what a terminal does on Ctrl-C, and the only thing
+        # that reaches a shell blocked on a foreground child.
+        deadline = time.time() + 30
+        while not os.path.exists(fifo + ".ready") and time.time() < deadline:
+            time.sleep(0.02)
+        check("the first path started", os.path.exists(fifo + ".ready"), True)
+        os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+        o = proc.communicate(timeout=60)[0]
+
+        ran = [ln for ln in open(runlog).read().split() if ln] if os.path.exists(runlog) else []
+        check("only the interrupted path ran", ran, ["bios"])
+        check("...and no ledger claims otherwise", ledger_of(tmp), None)
+        # THE POINT OF THE TRAP. The guest is setsid, the way one that outlived its
+        # launcher is, so the terminal's Ctrl-C never reached it. Only this script can
+        # stop it, and if it does not, an interrupted sweep leaves a VM running.
+        pid = orphan_pid(out)
+        check("the interrupted sweep left a guest to find", pid != 0, True)
+        check("...and did not leave it running", alive(pid), False)
+    finally:
+        reap(orphan_pid(os.path.join(tmp, "evidence")))
+        if proc and proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except OSError:
+                pass
+            proc.wait(timeout=10)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     # One box for every fixture, removed afterwards: the convention of #25.
     box = tempfile.mkdtemp(prefix="test_tier_c_run-")
@@ -361,7 +560,11 @@ def main():
                    test_a_run_that_cannot_name_its_qemu_writes_no_ledger,
                    test_a_boot_host_that_could_not_run_writes_no_ledger,
                    test_an_ordinary_failure_still_records,
-                   test_with_a_boot_host_the_local_tool_check_asks_for_the_transport]:
+                   test_with_a_boot_host_the_local_tool_check_asks_for_the_transport,
+                   test_an_orphaned_guest_fails_the_sweep_and_is_named,
+                   test_a_pid_that_is_not_ours_is_reported_and_left_alone,
+                   test_one_paths_leftovers_do_not_reach_the_next,
+                   test_an_interrupt_stops_the_sweep]:
             fn()
         if FAILURES:
             for f in FAILURES:

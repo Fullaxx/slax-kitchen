@@ -240,9 +240,24 @@ else it compared two counts of nothing and printed "clean" over a real leak.
 [`tests/unit/test_tier_c_run.py`](../../tests/unit/test_tier_c_run.py) leaks one there on
 purpose and requires the run to fail.
 
-There is a `trap`, which matters more than it looks: this is normally driven over ssh, and
-a dropped connection would otherwise leave a live QEMU behind. It kills only pids this run
-started — never `pkill qemu`, which on a shared machine takes out somebody else's work.
+**A guest nobody stopped fails the run, by name.** `qemu_boot.py` removes its own pid file
+on the way out, so one still sitting in `$OUT/pids` when a boot path returns means that
+boot lost its guest. Each path answers for its own leftovers before the next one starts.
+
+That used to be the `trap`'s job alone, and the trap runs at `EXIT` — after `exit $rc` has
+already fixed the status. So an orphaned guest was killed in silence and the sweep reported
+success, which is the same defect as a check that cannot fail.
+[`lib/boot_host.py`](../../lib/boot_host.py)'s agent has always named its leftovers and
+failed the run; this is the local half catching up.
+
+**And a pid is checked before it is signalled.** "Only pids this run started" used to mean
+"whatever number is in the file", killed at exit — up to minutes after the boot that wrote
+it, and a pid is exactly what a busy machine recycles. So the promise never to take out
+somebody else's virtual machines was not kept. `/proc/<pid>/cmdline` must now name both
+qemu and this run's output directory before anything is signalled; anything else is
+reported and left alone, which is the safe direction to be wrong in.
+[`tests/unit/test_tier_c_run.py`](../../tests/unit/test_tier_c_run.py) plants both kinds and
+requires the foreign one to still be running afterwards.
 
 ## What CI does with all this
 
