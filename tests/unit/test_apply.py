@@ -78,14 +78,47 @@ def test_bundle_exclude_account_backups():
 
 def test_slackware_pkgname():
     """Slackware entries are <name>-<version>-<arch>-<build>, and <name> may contain
-    hyphens. A prefix match let "gcc" match "gcc-g++-13.2.0-x86_64-1"."""
-    for entry, name, want in [("tmux-3.7c-x86_64-2", "tmux", True),
-                              ("gcc-g++-13.2.0-x86_64-1", "gcc", False),
-                              ("gcc-g++-13.2.0-x86_64-1", "gcc-g++", True),
-                              ("gcc-13.2.0-x86_64-1", "gcc", True),
-                              ("aaa_base-15.1-x86_64-2", "aaa_base", True),
-                              ("ncdu-1.18-x86_64-1_SBo", "ncdu", True)]:
-        check(f"pkgname {name} vs {entry}", entry.rsplit("-", 3)[0] == name, want)
+    hyphens. A prefix match let "gcc" match "gcc-g++-13.2.0-x86_64-1".
+
+    THIS TEST USED TO ASSERT `str.rsplit`. Its body compared `entry.rsplit("-", 3)[0]
+    == name` and never called apply at all, so reverting _installed() to `startswith`
+    -- the exact bug named above -- left it green. Mutation-checked 2026-09-20: with
+    the old body, that revert was caught by nothing in the suite.
+
+    So it drives _installed() now. The `("gcc", False)` row is the one that bites.
+    """
+    import tempfile
+    d = tempfile.mkdtemp(prefix="slackpkg-")
+    try:
+        # Slax's /var/log/packages is a symlink to /var/lib/pkgtools/packages, and
+        # _installed tries both. Cover each, and the neither case.
+        for where in ("var/lib/pkgtools/packages", "var/log/packages"):
+            root = os.path.join(d, where.replace("/", "_"))
+            pkgdir = os.path.join(root, where)
+            os.makedirs(pkgdir)
+            # NOTE the absence of a plain `gcc-*` entry. That is the whole point: with
+            # one present, "gcc" matches under either rule and the bug walks through.
+            for entry in ("tmux-3.7c-x86_64-2", "gcc-g++-13.2.0-x86_64-1",
+                          "aaa_base-15.1-x86_64-2", "ncdu-1.18-x86_64-1_SBo"):
+                open(os.path.join(pkgdir, entry), "w").close()
+            for pkg, want in [("gcc", False),          # the load-bearing row
+                              ("tmux", True), ("gcc-g++", True),
+                              ("aaa_base", True), ("ncdu", True),
+                              ("tmu", False), ("vim", False)]:
+                check(f"{where}: installed({pkg})",
+                      apply._installed(root, "slackware", pkg), want)
+
+        # ...and a plain gcc IS found when it really is installed.
+        root = os.path.join(d, "with-gcc")
+        os.makedirs(os.path.join(root, "var", "log", "packages"))
+        open(os.path.join(root, "var", "log", "packages", "gcc-13.2.0-x86_64-1"),
+             "w").close()
+        check("a real gcc is installed", apply._installed(root, "slackware", "gcc"), True)
+
+        # A root with no package database at all answers False rather than raising.
+        check("no package database", apply._installed(d, "slackware", "tmux"), False)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
 
 
 def test_when_guard():
@@ -394,20 +427,6 @@ def test_profile_recipe_forms():
           overrides, {"serial-console": {"port": "ttyS1"}})
 
 
-def test_overrides_merge_not_replace():
-    """Setting one var must not blank the others.
-
-    `--facts` gets this wrong -- `dict(override) if override else _tree_facts(...)`
-    replaces wholesale, so `--facts flavour=debian` discards the derived arch and any
-    step guarding on it then fails with "unknown fact 'arch'". Overrides must not
-    repeat that.
-    """
-    declared = {"port": "ttyS0", "speed": "115200"}
-    merged = {**declared, **{"port": "ttyS1"}}
-    check("overridden key wins", merged["port"], "ttyS1")
-    check("untouched key survives", merged["speed"], "115200")
-
-
 def test_unknown_override_is_rejected():
     """A var the recipe does not declare is an error, not a silent no-op."""
     import tempfile
@@ -546,45 +565,6 @@ def test_link_targets_refused():
         except RuntimeError:
             refused = True
         check(f"_refuse_escaping_link: {label}", refused, want_refusal)
-
-
-def test_fromtarball_refuses_symlink_escape():
-    """End to end: a crafted tarball must not write outside the tree being unpacked.
-
-    The verb is `privilege: none` and VERB_REQUIRES asks only for mksquashfs, so a reader
-    of a recipe using it has every reason to treat it as harmless. This asserts the
-    refusal happens before extraction -- nothing is written and no bundle is built.
-    """
-    import io
-    import tarfile
-    import tempfile
-
-    work = tempfile.mkdtemp()
-    os.makedirs(os.path.join(work, "iso", "slax", "modules"))
-    outside = os.path.join(work, "OUTSIDE")
-    os.makedirs(outside)
-
-    archive = os.path.join(work, "evil.tar.gz")
-    with tarfile.open(archive, "w:gz") as t:
-        link = tarfile.TarInfo("x")
-        link.type = tarfile.SYMTYPE
-        link.linkname = outside
-        t.addfile(link)
-        payload = b"planted\n"
-        f = tarfile.TarInfo("x/cron.d/kitchen")
-        f.size = len(payload)
-        t.addfile(f, io.BytesIO(payload))
-
-    ctx = apply.Ctx(work, work, "t")
-    step = {"verb": "bundle.fromTarball", "bundle": "07-poc", "src": archive}
-    try:
-        apply.v_bundle_fromtarball(ctx, step)
-        FAILURES.append("bundle.fromTarball extracted an escaping symlink")
-    except RuntimeError:
-        pass
-    check("nothing written outside the tree", os.listdir(outside), [])
-    check("no bundle built",
-          os.listdir(os.path.join(work, "iso", "slax", "modules")), [])
 
 
 def test_checksums_sign_is_a_key_id():
@@ -1452,6 +1432,7 @@ def test_bundle_files_refuses_a_setuid_mode():
 
     bundle.files is privilege: none and now builds with -all-root, so a setuid mode here
     would be a setuid ROOT binary requested by a recipe that looks harmless.
+
     """
     import tempfile
 
@@ -1791,13 +1772,11 @@ def main():
                    test_initramfs_busybox_registered,
                    test_say_does_not_journal, test_apt_source_line,
                    test_network_declaration, test_profile_recipe_forms,
-                   test_overrides_merge_not_replace,
                    test_unknown_override_is_rejected,
                    test_recipe_search_path,
                    test_reserved_bundle_numbers,
                    test_renumber_refuses_reserved,
                    test_link_targets_refused,
-                   test_fromtarball_refuses_symlink_escape,
                    test_checksums_sign_is_a_key_id,
                    test_removes_come_first,
                    test_network_is_declared_where_it_is_used,

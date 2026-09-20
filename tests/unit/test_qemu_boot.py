@@ -67,25 +67,20 @@ def test_a_missing_expectation_still_burns_the_whole_ceiling():
     reported faster AND the run would still fail on the missing string -- but only by
     luck of ordering. Burning the ceiling is what makes the failure honest: we waited as
     long as we promised and it never came.
+
+    IT IS ALSO WHAT PINS `all`, NOT `any`. One expectation here is present and the other
+    never appears, so a poll breaking on the first match returns immediately and this
+    goes red. `Live Kit done` is the LAST marker livekit prints; returning on the first
+    would stop before the stages that follow it. A separate test used to make that point
+    with a second pair of markers, and was removed 2026-09-20 after mutation-checking
+    showed `all` -> `any` in qemu_boot.py is caught here and by the test above -- the
+    same single predicate, asserted twice for 3.0 s.
     """
     log = _log()
     with open(log, "w") as f:
         f.write("Looking for slax data\n")
     took = qb._wait(log, 4, ["Looking for slax data", "this-never-appears"])
     check("waited the full ceiling", took >= 3.9, True)
-
-
-def test_a_partial_match_does_not_satisfy():
-    """`all`, not `any`. `Live Kit done` is the LAST marker livekit prints.
-
-    Returning on the first expectation would stop before the stages that follow it, which
-    is precisely the coverage this test exists to protect.
-    """
-    log = _log()
-    with open(log, "w") as f:
-        f.write("Live Kit done, starting slax\n")
-    took = qb._wait(log, 3, ["Live Kit done", "Mounting bundles"])
-    check("did not return on a partial match", took >= 2.9, True)
 
 
 def test_no_expectations_keeps_the_flat_sleep():
@@ -172,7 +167,6 @@ def main():
     try:
         for fn in [test_returns_as_soon_as_every_expectation_is_present,
                    test_a_missing_expectation_still_burns_the_whole_ceiling,
-                   test_a_partial_match_does_not_satisfy,
                    test_no_expectations_keeps_the_flat_sleep,
                    test_a_missing_serial_file_is_not_a_crash,
                    test_qemu_version_is_what_the_binary_says,

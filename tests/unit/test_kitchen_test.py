@@ -212,6 +212,15 @@ def test_no_xorriso_refuses_a_menu_boot_before_booting(fx):
 
 @case
 def test_no_xorriso_refuses_a_kernel_boot_before_booting(fx):
+    """NOT a duplicate of the --bios case above, though it reads like one.
+
+    An audit proposed deleting this on the grounds that
+    test_every_missing_tool_is_named_at_once covers it. Mutation-checked 2026-09-20:
+    dropping `want_kernel` from lib/build.sh's xorriso rule is caught by THIS TEST AND
+    NOTHING ELSE. The other case runs `--structure --kernel`, and --structure requires
+    xorriso by its own rule, which masks the mutation entirely. Kernel mode alone is the
+    only shape that can see it.
+    """
     rc, out, calls, left = fx.run("--kernel")
     check("no xorriso, --kernel: fails", rc, 1)
     check("...naming the package", "xorriso is not installed (apt-get install xorriso)" in out,
@@ -414,7 +423,14 @@ def test_a_default_run_carries_the_default_seconds_and_no_key_choice(fx):
 
 @case
 def test_a_remote_boot_does_not_need_qemu_here(fx):
-    """The whole point. This container has no qemu, and that must stop being fatal."""
+    """The whole point. This container has no qemu, and that must stop being fatal.
+
+    NOT a subset of the two boot-host tests either side of it, though it reads like one.
+    Mutation-checked 2026-09-20: adding qemu-system-x86_64 back to lib/build.sh's
+    boot-host branch is caught by THIS TEST AND NOTHING ELSE. The others keep the
+    fixture's stub qemu on PATH, so a needless demand for it costs them nothing;
+    without_qemu() is what makes the demand visible.
+    """
     fx.with_boot_host()
     fx.with_xorriso()
     fx.without_qemu()
@@ -422,8 +438,6 @@ def test_a_remote_boot_does_not_need_qemu_here(fx):
     check("it runs", rc, 0)
     check("...without asking for qemu", "qemu-system-x86" in out, False)
     check("...and the boot went over", len(fx.sent), 1)
-    # What IS needed here is what carries it there.
-    fx.bh_rc = "0"
 
 
 @case

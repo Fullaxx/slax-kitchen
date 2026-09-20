@@ -282,14 +282,19 @@ def test_notes_attachment_claim_follows_the_workflow():
     check_in("so the notes say none is attached", NO_IMAGE, out)
 
     # The fixture that must fail. Adding an upload without changing the notes is exactly
-    # the drift this exists to catch.
+    # the drift this exists to catch, and this is what proves the detector can go red at
+    # all -- without it, "the real workflow attaches nothing" would be satisfied by a
+    # workflow_uploads() that always answered False.
     uploading = real + '\n      - run: gh release upload "$TAG" out/*.iso out/SHA256SUMS\n'
-    check("an upload line is seen", workflow_uploads(uploading), True)
     check("and contradicts the notes", len(attachment_claim_problems(out, uploading)), 1)
-    as_create = 'gh release create "$TAG" --title "$TAG" --notes-file notes.md dist/x.iso'
-    check("a path given to gh release create is an upload", workflow_uploads(as_create), True)
-    plain = 'gh release create "$TAG" --title "$TAG" --notes-file release-notes.md $PRE'
-    check("options and their values are not uploads", workflow_uploads(plain), False)
+
+    # THREE CHECKS USED TO STAND HERE and they tested `gh`, not this project. They fed
+    # synthetic `gh release create ...` strings to workflow_uploads() -- a regex model of
+    # gh's own argument parsing, written in this file, carrying a hardcoded list of gh's
+    # option names. gh is never invoked; nothing outside this file uses that helper; and
+    # one of the strings ended in `$PRE`, a shell variable that could expand to a path at
+    # run time, which the model cannot see. Removed 2026-09-20 under CONTRIBUTING's "what
+    # a test here is for": whose behaviour is the subject decides whether it belongs.
 
 
 def test_notes_publish_only_verifiable_hashes():

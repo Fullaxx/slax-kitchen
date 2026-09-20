@@ -92,6 +92,10 @@ REFUSALS = [
     ("a bare IPv6 address", GOOD + "vnc = fd00::1\n",                "in brackets"),
     ("an IPv6 address that looks like a port",
      GOOD + "vnc = fe80::1:5900\n",                                  "in brackets"),
+    # An opening bracket with no closing one. Came here 2026-09-20 from
+    # test_tools_qemu.py, which drove the same parse_vnc through argparse and a
+    # built ISO; the other five rows it carried were already in this table.
+    ("an unclosed IPv6 bracket", GOOD + "vnc = [::1\n",             "unclosed"),
     ("vnc_public is not a boolean", GOOD + "vnc_public = maybe\n",   "must be yes or no"),
 ]
 

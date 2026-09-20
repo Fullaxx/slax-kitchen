@@ -666,23 +666,6 @@ def test_a_public_vnc_address_is_refused_until_confirmed():
         check("no vnc server, no refusal", rc, 0)
 
 
-def test_a_bad_vnc_address_is_refused_by_the_parser():
-    with tempfile.TemporaryDirectory() as t:
-        iso = make_iso(os.path.join(t, "s.iso"))
-        for addr, why in (("kvmbox", "not an IP address"),
-                          ("127.0.0.1:vnc", "not a port number"),
-                          # qemu listens on 5900+display, so it cannot offer port 22.
-                          ("127.0.0.1:22", "below 5900"),
-                          ("[::1", "unclosed"),
-                          # Both a valid address and a plausible "address, port" --
-                          # so it is refused rather than silently read as one of them.
-                          ("fe80::1:5900", "in brackets"),
-                          ("fd00::1", "in brackets")):
-            rc, out, err = run_main([iso, "--bios", "--print", "--vnc-addr", addr])
-            check(f"{addr}: refused", rc != 0, True)
-            check(f"{addr}: says why", why in err, True)
-
-
 def test_the_viewer_is_told_the_route_that_works():
     with tempfile.TemporaryDirectory() as t:
         iso = make_iso(os.path.join(t, "s.iso"))
@@ -756,7 +739,6 @@ def main():
                test_existing_disk_format_is_read_not_guessed,
                test_the_vnc_port_is_the_one_asked_for,
                test_a_public_vnc_address_is_refused_until_confirmed,
-               test_a_bad_vnc_address_is_refused_by_the_parser,
                test_the_viewer_is_told_the_route_that_works,
                test_the_command_line_sent_to_a_boot_host]:
         # One test crashing must not stop the rest: the count of failures is only honest if
