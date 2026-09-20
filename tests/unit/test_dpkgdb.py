@@ -327,7 +327,7 @@ def test_a_saved_session_supersedes_the_fragments_below_it():
 
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
-    # all 7 of this file's mkdtemp() calls had no cleanup, so running this file by hand left
+    # all 7 of this file's mkdtemp() calls had no cleanup on 2026-09-18, so running it by hand left
     # their trees in /tmp and nothing took them away. ci/checks/80-unit.sh does this
     # for a GATE run; the box is the half that survives running the file directly.
     # Issue #25.

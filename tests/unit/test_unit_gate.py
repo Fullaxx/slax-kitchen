@@ -322,9 +322,9 @@ def test_the_gate_still_has_teeth_through_the_subshell():
 def test_a_test_leaves_nothing_behind():
     """The gate gives each test a TMPDIR of its own and removes it. Issues #24 and #25.
 
-    Five of the fifteen tests here never remove their fixtures -- 46 directories per run of
-    this gate, 238 MB on the machine where it was found, because the gate runs at both
-    pre-commit and pre-push. Nothing would have noticed the fix going again: every test
+    Five of the fifteen tests here on 2026-09-18 never removed their fixtures -- 46
+    directories per run of this gate, 238 MB on the machine where it was found, because the
+    gate runs at both pre-commit and pre-push. Dated: it was true then, not a claim about now. Nothing would have noticed the fix going again: every test
     passes with or without it.
 
     Asserted on the TMPDIR the gate handed out rather than on a fixture inside it: that

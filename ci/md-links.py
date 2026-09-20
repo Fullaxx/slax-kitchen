@@ -39,8 +39,11 @@ THREE THINGS ABOUT THE SLUG, each of which is the common case here and not an ed
    and 6 begin with one, and two live links depend on the trailing form
    (`#rootcopyfiles-`, from a heading ending in `○`).
 
-The 50 correct-but-awkward anchors already in the tree are the corpus that proves all of
-this: a right implementation reports the five breaks above and nothing else.
+The tree itself is the corpus that proves all of this. On 2026-09-20 it held 55 internal
+anchors, 50 of them correct-but-awkward and five broken, and a right implementation reported
+exactly those five and nothing else. The five were fixed in the commit that added this file,
+so the same run reports none now -- which is why that is dated rather than left to read as a
+claim about today. It was true for exactly one commit.
 
 Prints one `path:line<TAB>message` per failure on stdout; ci/checks/60-links.sh turns each
 into a fail(). Exit 0 clean, 1 with failures, 2 if this script could not run -- the wrapper

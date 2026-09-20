@@ -65,9 +65,9 @@ Out of scope, because it is documented behaviour rather than a flaw:
 
 ## Known, documented, and not secret
 
-[`docs/30-inventory/known-upstream-bugs.md`](docs/30-inventory/known-upstream-bugs.md) records
-fourteen upstream issues found by analysis, several with security relevance. They are public
-because a user of a 2023 image is better served by knowing than by not:
+[`known-upstream-bugs.md`](docs/30-inventory/known-upstream-bugs.md) records fifteen upstream
+issues found by analysis, several with security relevance. They are public because a user of
+a 2023 image is better served by knowing than by not:
 
 - **The shipped browser is three years old.** Both flavours carry chromium
   **117.0.5938.149** (September 2023); the `bookworm-security` suite the image already points at

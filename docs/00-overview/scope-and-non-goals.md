@@ -80,5 +80,6 @@ published image.
 
 ## Honest status
 
-See [`status.md`](status.md). Short version: the core loop and fifteen recipes are boot-verified, the
-Phase 1 documentation is complete, and roughly two thirds of the planned recipes are not written yet.
+See [`status.md`](status.md). Short version: the core loop and thirteen recipes are boot-verified,
+the Phase 1 documentation is complete, and five planned recipes are not written yet — the ones
+needing real engineering rather than YAML.

@@ -2,8 +2,9 @@
 # stages: pre-commit pre-push ci
 # desc: Internal markdown links must resolve, fragment included (external URLs are not fetched).
 #
-# The docs tree is heavily cross-linked across ~60 files; broken relative links rot fast
-# and are invisible until someone follows one.
+# The docs tree is heavily cross-linked -- 122 markdown files on 2026-09-20 -- and broken
+# relative links rot fast and are invisible until someone follows one. This said ~60 until
+# then, while line 41 of this same file said 122: one number, one file, two answers.
 #
 # AND FOR A YEAR THIS GATE CHECKED ONLY THE HALF BEFORE THE `#`. The extractor was
 # `grep -oE '\]\([^)#[:space:]]+'`, and the `#` in that negated class stopped every target

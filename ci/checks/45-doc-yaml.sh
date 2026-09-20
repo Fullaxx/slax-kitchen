@@ -15,8 +15,10 @@
 # is one that was copied from another page months ago.
 #
 # The work is one python3 process for every block in the tree (~30 ms). Per-file
-# subprocesses, the way 40-schema calls validate.py, would mean ~55 interpreter startups
-# plus as many yaml+jsonschema imports -- seconds, on a gate suite that takes ~35.
+# subprocesses, the way 40-schema calls validate.py, would mean one interpreter startup per
+# block plus as many yaml+jsonschema imports -- 67 of them on 2026-09-20, and seconds rather
+# than milliseconds. Stated as a rate rather than a total: the total moves with every block
+# added to docs/, and this argument does not depend on which number it is today.
 . "$(dirname "$0")/../lib.sh"
 
 [ -d "$REPO_ROOT/schema" ] || { note "schema/ not present yet - skipping"; exit 0; }

@@ -1783,7 +1783,7 @@ def test_every_file_writing_verb_records_what_it_wrote():
 
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
-    # 17 of this file's 25 mkdtemp() calls had no cleanup, so running this file by hand left
+    # 17 of this file's 25 mkdtemp() calls had no cleanup on 2026-09-18, so running it by hand left
     # their trees in /tmp and nothing took them away. ci/checks/80-unit.sh does this
     # for a GATE run; the box is the half that survives running the file directly.
     # Issue #25.

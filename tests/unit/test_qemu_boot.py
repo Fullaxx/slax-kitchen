@@ -382,7 +382,7 @@ def test_a_row_records_the_verdict_and_the_golden():
 
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
-    # both of this file's mkdtemp() calls had no cleanup, so running this file by hand left
+    # both of this file's 2 mkdtemp() calls had no cleanup on 2026-09-18, so running it by hand left
     # their trees in /tmp and nothing took them away. ci/checks/80-unit.sh does this
     # for a GATE run; the box is the half that survives running the file directly.
     # Issue #25.

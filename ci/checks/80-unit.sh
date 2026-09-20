@@ -51,8 +51,9 @@ fi
 
 # AND A TMPDIR OF ITS OWN, FOR THE SAME REASON, IN THE SAME PLACE.
 #
-# Five of the fifteen tests here build fixtures with tempfile.mkdtemp() and never remove
-# them: 46 directories per run of this gate, measured with TMPDIR pointed somewhere empty.
+# Five of the fifteen tests here ON 2026-09-18 built fixtures with tempfile.mkdtemp() and
+# never removed them: 46 directories per run of this gate, measured with TMPDIR pointed
+# somewhere empty. The count is dated because it was true then and is not a claim about now.
 # This gate runs at pre-commit AND pre-push, so a machine with the hooks installed collects
 # them at every commit and every push -- 238 MB of them since 2026-09-13 on the machine
 # where it was found. CI runners are thrown away, which is why nothing noticed. Issue #24.

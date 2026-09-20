@@ -40,7 +40,9 @@ Everything below is pure userspace file manipulation and runs here with no privi
   it.** This is the detail that makes the `uefi-bootable` recipe possible unprivileged.
 - `grub-mkstandalone` — produces `BOOTX64.EFI`
 
-That covers 27 of the 32 cookbook recipes, including both flagship ones.
+That covers the 20 recipes declaring `privilege: none`, counted from their `compat:` blocks.
+Another 4 need `mknod` and 11 need `chroot`, both of which this container has, so all 35 run
+here — including both flagship ones. Mounting is the one thing that does not.
 
 ## `bundle.packages` needs less than expected
 
