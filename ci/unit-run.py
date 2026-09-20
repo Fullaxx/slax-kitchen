@@ -36,23 +36,52 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import runpy
 import sys
 
 SKIP_STATUS = 77
 
 
-def defined_tests(path: str) -> list[str]:
+def defined_tests(tree: ast.Module) -> list[str]:
     """Module-level `test_*` functions, in source order.
 
     Module level only, as the gate's own rule was: a nested helper called test_something
     is not a registered test and never was one.
     """
-    with open(path, encoding="utf-8") as f:
-        tree = ast.parse(f.read(), path)
     return [n.name for n in tree.body
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
             and n.name.startswith("test_")]
+
+
+def disabled_tests(tree: ast.Module) -> dict:
+    """What a file declares it has switched off, and the reason each entry gives.
+
+        DISABLED = {"test_the_thing": "#33 - no evidence this ever bit; justify to re-enable"}
+
+    WHY THIS EXISTS AT ALL. A test that fails and has no incident behind it is supposed to
+    be disabled and argued back through an issue, rather than adjusted until it passes --
+    CONTRIBUTING.md, "What a test here is for", question 4. But the check above fails any
+    test that is defined and never runs, so obeying that rule would turn the gate red, and
+    the only way to switch a test off would be to delete it. Deleting it loses the one
+    thing the rule is for: the trail back to why.
+
+    THE ISSUE NUMBER IS THE POINT, not the entry. A disable nobody has to justify is just a
+    quieter way of deleting the test, so an entry with no `#N` in it fails the gate exactly
+    as an undeclared one does. `grep -rn DISABLED tests/` is then the list of tests waiting
+    on somebody, which is a list that should be short and visible.
+    """
+    out = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == "DISABLED" for t in node.targets):
+            continue
+        if isinstance(node.value, ast.Dict):
+            for key, val in zip(node.value.keys, node.value.values):
+                if isinstance(key, ast.Constant) and isinstance(val, ast.Constant):
+                    out[str(key.value)] = str(val.value)
+    return out
 
 
 def main(argv: list[str]) -> int:
@@ -61,7 +90,10 @@ def main(argv: list[str]) -> int:
         return 2
     path = os.path.abspath(argv[1])
     try:
-        want = set(defined_tests(path))
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read(), path)
+        want = set(defined_tests(tree))
+        disabled = disabled_tests(tree)
     except (OSError, SyntaxError) as e:
         # Fail closed: a file whose tests cannot be accounted for is not a file that
         # passed. ci/lib.sh states the same rule for a git that will not answer.
@@ -96,15 +128,29 @@ def main(argv: list[str]) -> int:
     if rc == SKIP_STATUS:
         print(f"{os.path.basename(path)}: skipped")
         return 0
-    missed = sorted(want - entered)
-    if missed and rc == 0:
+    if rc != 0:
         # Only over a pass. A file that failed has a real failure to report, and a test
         # after the failing one may legitimately not have been reached.
-        for name in missed:
-            print(f"{os.path.basename(path)}: {name} is defined but never ran",
+        return rc if isinstance(rc, int) else 1
+
+    base = os.path.basename(path)
+    problems = 0
+    for name in sorted(want - entered):
+        why = disabled.get(name)
+        if why is None:
+            print(f"{base}: {name} is defined but never ran", file=sys.stderr)
+            problems += 1
+        elif not re.search(r"#\d+", why):
+            print(f"{base}: {name} is DISABLED with no issue to argue it back: {why!r}",
                   file=sys.stderr)
-        return 1
-    return rc if isinstance(rc, int) else 1
+            problems += 1
+        else:
+            # Said out loud on every run. A disabled test that nobody is reminded of is a
+            # deleted test with extra steps.
+            print(f"{base}: {name} is disabled -- {why}")
+    for name in sorted(set(disabled) & entered):
+        print(f"{base}: {name} is listed in DISABLED but ran; drop the entry")
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":

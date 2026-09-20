@@ -35,6 +35,12 @@ tree: **when the user says "self-review", that means you.** Read the diffs and t
 answer and report directly. Do not invoke the code-review skill — it is expensive, and being asked
 to review is not being asked to pay for that.
 
+## Before changing a test that just failed
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) § *"What a test here is for"*, question 4. If the test
+was wrong rather than the code, and its docstring cannot point at an incident that can still
+happen, it gets **disabled with an issue filed** — not adjusted until it passes.
+
 ## Before producing Tier C evidence
 
 Read [`docs/60-testing/tier-c.md`](docs/60-testing/tier-c.md) § *"A recorded run needs a clean

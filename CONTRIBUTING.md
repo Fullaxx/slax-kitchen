@@ -513,6 +513,34 @@ someone fell into. A test written from an incident has a failure to point at; on
 completeness usually has only a shape. Say which in the docstring: every file in `tests/unit/`
 already opens by saying why it exists, and most name a numbered issue.
 
+**And a test with no incident behind it is disabled when it fails, not adjusted.** The tempting
+move, when a test goes red and the fix is to change the *test*, is to nudge it until it passes.
+That is how a suite fills with tests nobody can defend: ten commits in three days once went into
+this repository's own test machinery, and between them they caught one real product defect. So
+when the test was wrong rather than the code, look at what its docstring points to.
+
+- It names an incident that can still happen → fix the test, and say in the commit message what
+  that incident is.
+- It names nothing, or names one in a mechanism that no longer exists → **disable it and open an
+  issue** carrying the justification for turning it back on. It returns when somebody argues it
+  back, not when somebody patches it.
+
+Two answers that do not count as evidence: *"for completeness"*, and an incident whose mechanism
+has since been deleted. The second is the easy one to miss, because the docstring still reads like
+a real bite — [`test_each_path_answers_for_its_own_guest`](tests/unit/test_tier_c_run.py) is the
+worked example in the tree, and says so in its own docstring.
+
+**Disabling is declared, never silent.** [`ci/unit-run.py`](ci/unit-run.py) fails a test that is
+defined and never runs, so switching one off means saying where the next person will see it:
+
+```python
+DISABLED = {"test_the_thing": "#33 - no evidence this ever bit; justify to re-enable"}
+```
+
+An entry carrying no issue number fails the gate exactly as an undeclared one does: a disable
+nobody has to justify is a quieter way of deleting the test. `grep -rn DISABLED tests/` is the
+list of tests waiting on somebody, and it should be short.
+
 Three notes that follow from question 2, all of which the tree already does somewhere:
 
 - **A test that freezes a tool's output names the version it came from.** A frozen transcript keeps
