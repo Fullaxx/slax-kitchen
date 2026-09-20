@@ -184,108 +184,24 @@ JSONL="$OUT/runs.jsonl"
 # directory and removed here rather than by the harness, which is handed the path and
 # has no business deleting a caller's file.
 #
-# A PID FILE STILL PRESENT WHEN A PATH RETURNS IS A GUEST NOBODY STOPPED. qemu_boot.py
-# unlinks its own on the way out, so one left behind means the boot lost its guest. That
-# is a failure of the run and is reported as one, by name, per path.
+# A BOOT THAT LEAVES A GUEST RUNNING IS A FAILED BOOT, and that is answered in
+# ci/run-boot.py rather than here, because that is where the boot is started. Each boot
+# gets a process group of its own, so whatever it leaves behind is still in that group
+# and one signal ends it.
 #
-# It used to be handled only by the EXIT trap, which runs AFTER `exit $rc` has fixed the
-# status -- so an orphaned guest was killed in silence and the sweep reported success.
-# lib/boot_host.py's agent has always named its leftovers and failed the run; its
-# docstring says this one "could only ever be a count". Now it is not.
+# THIS FILE USED TO GO LOOKING. It read pids back out of $OUT/pids after the fact and
+# then had to work out, for each one, whether the process was still alive and whether it
+# was still ours -- two questions it had created for itself by letting the pid go in the
+# first place. A zombie answers `kill -0`, and a pid is what a busy machine recycles, so
+# both answers were wrong: five defects between them, and the second of the two put the
+# gates job red on master until it was fixed the next commit (622891b, 09801bc). Neither
+# question needed asking: the boot is this script's own
+# child. See ci/run-boot.py's header.
 #
-# AND THE PID IS CHECKED BEFORE IT IS SIGNALLED. "Only pids THIS run wrote" used to mean
-# "whatever number is in the file", killed at exit -- up to minutes after the boot that
-# wrote it, and a pid is exactly what a busy machine recycles. The promise not to touch
-# somebody else's virtual machines was therefore never kept. /proc/<pid>/cmdline must
-# name both qemu and this run's output directory before anything is signalled; anything
-# else is reported and LEFT ALONE, which is the safe direction to be wrong in.
-#
-# MEASURED, so the comment does not outrun the code: the trap is also said to protect a
-# run driven over ssh from a dropped connection. On dash here, both SIGINT and SIGHUP to
-# the process group do run this trap and the guest is reaped -- checked 2026-09-20 with a
-# setsid'd guest, which is what one that outlived its launcher looks like. The signal list
-# is therefore left as it is rather than extended on a story.
-PIDDIR="$OUT/pids"   # written by lib/build.sh, one per boot
-mkdir -p "$PIDDIR"
-
-# Is this pid RUNNING, or merely present in the process table?
-#
-# A ZOMBIE ANSWERS `kill -0` AND NAMES NOTHING, and asking only `kill -0` made the sweep
-# get both halves of its job wrong on one. A process that has exited but whose parent has
-# not reaped it keeps its table entry, so `kill -0` succeeds; /proc/<pid>/cmdline is then
-# EMPTY, so _is_ours below cannot match it however exactly it was ours. The sweep therefore
-# announced this run's own corpse as "names pid N, which is not this run's; left alone" --
-# a false accusation against whoever is sharing the machine, and a leak reported for a
-# guest that had already stopped.
-#
-# Measured 2026-09-20, not assumed. In a container whose pid 1 is `sleep` and so reaps
-# nothing, the orphan fixture walks through all three states: while its launcher lives,
-# S with cmdline `<out>/fakebin/qemu-system-x86_64 60`; after the launcher exits, still S,
-# reparented; and after sweep_pids' own `kill -9`, Z with `kill -0` still succeeding and an
-# empty cmdline. Under an init that reaps, the third state lasts microseconds, which is why
-# this never showed on a developer's machine and is deterministic on a runner.
-#
-# NOT the same question as _is_ours, and kept separate on purpose: this one asks whether
-# there is anything to kill, that one asks whether we are allowed to. Unreadable /proc with
-# a live pid answers "running" -- over-reporting a leak costs a message, under-reporting it
-# is the bug this sweep exists to prevent.
-_is_running() {
-    kill -0 "$1" 2>/dev/null || return 1
-    [ -r "/proc/$1/stat" ] || return 0
-    # The state field follows the LAST ')': a comm may itself contain spaces and parens.
-    case "$(sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f1)" in
-        Z) return 1 ;;
-    esac
-    return 0
-}
-
-# Is this pid one of ours? Linux-only, like the rest of this file's leak checks, and the
-# same question lib/boot_host.py's _kill_orphans asks of the same file.
-#
-# HOW STRONG THIS IS, stated rather than implied. It is a SECOND guard: only pids written
-# into $OUT/pids are ever looked at, and this asks whether the process still there is
-# plausibly the one that wrote it. A recycled pid gets through only if the new process
-# also names qemu and $OUT, so the guard is as specific as $OUT is -- `--out /tmp` on a
-# machine running other people's virtual machines is a weak test, and `out/tier-c` is a
-# strong one. Wrong in this direction means declining to kill, which is the safe way.
-_is_ours() {
-    [ -r "/proc/$1/cmdline" ] || return 1
-    _cmd=$(tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null) || return 1
-    case "$_cmd" in
-        *qemu*) ;;
-        *) return 1 ;;
-    esac
-    case "$_cmd" in
-        *"$OUT"*) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-# Answer for every pid file left behind. Non-zero when anything was.
-sweep_pids() {
-    _leaked=0
-    for pf in "$PIDDIR"/*.pid; do
-        [ -e "$pf" ] || continue
-        _leaked=1
-        _pid=$(cat "$pf" 2>/dev/null)
-        _name=$(basename "$pf")
-        rm -f "$pf"
-        if [ -z "$_pid" ] || ! _is_running "$_pid"; then
-            say "${R}LEAK${O} $_name was left behind; the guest it named is already gone"
-        elif _is_ours "$_pid"; then
-            kill -9 "$_pid" 2>/dev/null
-            say "${R}LEAK${O} a guest was left running ($_name, pid $_pid); it has been killed"
-        else
-            say "${R}LEAK${O} $_name names pid $_pid, which is not this run's; left alone"
-        fi
-    done
-    [ "$_leaked" = 0 ]
-}
-cleanup() {
-    sweep_pids || :
-    [ "$KEEP" = 1 ] || rm -rf "$PIDDIR"
-}
-trap 'cleanup' EXIT INT TERM
+# AND THERE IS NO TRAP HERE ANY MORE. One existed to sweep $OUT/pids on the way out --
+# lib/build.sh no longer writes it, and nothing reads a pid from anywhere. An interrupt
+# reaches ci/run-boot.py directly, because it is an ordinary child in this script's own
+# process group, and it passes the signal to the boot's group before returning.
 
 # ------------------------------------------------------- what is here already ----
 # WHERE THE HARNESS PUTS THEM, which is not necessarily /tmp. qemu_boot.py makes its qmp
@@ -316,14 +232,15 @@ for path in $PATHS; do
         kernel)        flag="--kernel" ;;
         *) die "unknown path: $path (want bios, uefi, usb, persistence or kernel)" ;;
     esac
+    # EACH PATH ANSWERS FOR ITS OWN LEFTOVERS, before the next one starts, and it answers
+    # for the group it was given rather than for a directory shared with every other path.
+    # ci/run-boot.py owns the boot: one process group, ended when the boot is, and a leak
+    # is anything still in it afterwards. It reports the leak and folds it into the status,
+    # so 1 still means "this path failed" and 2 and above still mean the machinery could
+    # not run -- which is the distinction the ledger step below depends on.
     t_rc=0
-    ./kitchen test "$ISO" "$flag" --out "$OUT" --seconds "$SECONDS_CEIL" \
-        --golden "$GOLDEN" --record "$JSONL" || t_rc=$?
-    # EACH PATH ANSWERS FOR ITS OWN LEFTOVERS, before the next one starts. One directory
-    # is shared by every path and nothing emptied it, so a file left by the first was
-    # still sitting there when the last finished -- and whatever it named was killed at
-    # exit, under the wrong path's name, if it was noticed at all.
-    sweep_pids || { say "${R}$path left a guest behind.${O}"; rc=1; }
+    python3 ci/run-boot.py --label "$path" ./kitchen test "$ISO" "$flag" --out "$OUT" \
+        --seconds "$SECONDS_CEIL" --golden "$GOLDEN" --record "$JSONL" || t_rc=$?
     # STOP BEFORE THE LEDGER. 2 and 3 mean the boot host could not be used -- a broken
     # configuration, or a machine that could not be reached -- so no boot happened and
     # there is nothing to record. Carrying on would run the remaining paths against the

@@ -240,9 +240,11 @@ else it compared two counts of nothing and printed "clean" over a real leak.
 [`tests/unit/test_tier_c_run.py`](../../tests/unit/test_tier_c_run.py) leaks one there on
 purpose and requires the run to fail.
 
-**A guest nobody stopped fails the run, by name.** `qemu_boot.py` removes its own pid file
-on the way out, so one still sitting in `$OUT/pids` when a boot path returns means that
-boot lost its guest. Each path answers for its own leftovers before the next one starts.
+**A guest nobody stopped fails the run, by name.** Each boot is started by
+[`ci/run-boot.py`](../../ci/run-boot.py) in a process group of its own, so anything the boot
+leaves running is still in that group when it returns. That is the whole test: an empty group
+refuses a signal, a group with members is alive, and each path answers for its own before the
+next one starts.
 
 That used to be the `trap`'s job alone, and the trap runs at `EXIT` — after `exit $rc` has
 already fixed the status. So an orphaned guest was killed in silence and the sweep reported
@@ -250,23 +252,25 @@ success, which is the same defect as a check that cannot fail.
 [`lib/boot_host.py`](../../lib/boot_host.py)'s agent has always named its leftovers and
 failed the run; this is the local half catching up.
 
-**And a pid is checked before it is signalled.** "Only pids this run started" used to mean
-"whatever number is in the file", killed at exit — up to minutes after the boot that wrote
-it, and a pid is exactly what a busy machine recycles. So the promise never to take out
-somebody else's virtual machines was not kept. `/proc/<pid>/cmdline` must now name both
-qemu and this run's output directory before anything is signalled; anything else is
-reported and left alone, which is the safe direction to be wrong in.
-[`tests/unit/test_tier_c_run.py`](../../tests/unit/test_tier_c_run.py) plants both kinds and
-requires the foreign one to still be running afterwards.
+**It used to go looking, and that is what cost.** The sweep let the pid go at launch and
+read it back afterwards out of `$OUT/pids`, which left it two questions it had created for
+itself. *Is this pid still alive* — `kill -0` succeeds on a process that has exited and not
+been reaped, so the sweep counted a leak for a guest that had already stopped, and the gates
+job went red on a runner twice before anyone read `/proc/<pid>/stat` rather than the exit
+status. *Is it still ours* — a pid is exactly what a busy machine recycles, so
+`/proc/<pid>/cmdline` had to be matched against both qemu and the output directory, and that
+guard was only ever as specific as `--out`.
 
-**And a corpse is not a stranger's guest.** `kill -0` succeeds on a process that has exited
-but has not been reaped, and `/proc/<pid>/cmdline` is *empty* for one — so the ownership test
-above could never match it, however exactly the guest was ours. The sweep announced this run's
-own leftover as somebody else's virtual machine and counted a leak for a guest that had already
-stopped: wrong in both directions at once. The state in `/proc/<pid>/stat` decides now, and `Z`
-means already gone. Wherever init reaps promptly that window is microseconds, which is why this
-was invisible on a developer's machine and deterministic on a GitHub runner — the gates job went
-red on it for two runs before anyone read the state rather than the exit status.
+Five defects came out of those two questions across `622891b` and `09801bc`. Neither needed
+asking that way: `ci/tier-c.sh` runs the boot as its own child, so the process group was free
+at launch.
+
+*Is it ours* stops existing. Only this boot's processes are in this boot's group, and the
+kernel keeps a pid reserved while a group still refers to it, so a non-empty group is always
+the one we made — nothing is searched for and nothing is matched against a command line.
+*Is it alive* remains a real question, because `killpg` counts an unreaped zombie as a
+member, and it is answered by reading `/proc` for processes **already known to be ours**.
+That is the whole of what `/proc` is still used for here.
 
 ## What CI does with all this
 

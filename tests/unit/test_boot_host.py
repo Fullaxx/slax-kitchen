@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
@@ -607,6 +608,63 @@ def test_active_answers_with_a_status():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_a_boot_answers_for_its_own_group_and_nobody_elses():
+    """What _leftovers does with a guest, and with a process that is not one.
+
+    BOTH HALVES OF THIS WERE WRONG until 2026-09-20, and both were demonstrated rather than
+    argued. It read a pid out of <run_dir>/out/pids and SIGKILLed it with no check that the
+    process was still alive, and none that it had ever been ours:
+
+      - it killed an unrelated `sleep 300` whose pid happened to be in that file;
+      - it reported "a guest was left running" for a process that had already exited.
+
+    THIS IS THE WORST PLACE IN THE TREE TO BE WRONG, which is why the test is here rather
+    than only on the local path. The agent runs on a machine that by design belongs to
+    somebody else -- _kill_orphans, thirty lines away, spends a paragraph promising never
+    to touch a stranger's virtual machine, and this was breaking that promise from the
+    other side of the file.
+
+    A process group answers both questions without asking either: the boot is the agent's
+    own child, started with start_new_session, so the group is one the agent made for this
+    boot and nothing else can be in it.
+    """
+    agent = boot_host.Agent("/unused-scratch")
+    tmp = tempfile.mkdtemp(prefix="bh-leftovers-")
+    guest = bystander = None
+    try:
+        run_dir = os.path.join(tmp, "run")
+        os.makedirs(os.path.join(run_dir, "tmp"))
+
+        # A process that has nothing to do with this boot, in a group of its own -- the
+        # `sleep 300` the old code killed.
+        bystander = subprocess.Popen(["sleep", "300"], start_new_session=True)
+        # A boot whose guest outlived it: the group still has a member when it returns.
+        guest = subprocess.Popen(["sleep", "300"], start_new_session=True)
+        time.sleep(0.2)
+
+        problems = agent._leftovers(run_dir, guest.pid)
+        check("a guest still in the group is reported",
+              any("guest was left running" in p for p in problems), True)
+        time.sleep(0.5)
+        check("...and stopped", guest.poll() is not None, True)
+        check("...and nothing else is claimed", len(problems), 1)
+        check("a process outside the group is untouched", bystander.poll(), None)
+
+        # The other half: a boot whose guest had already gone. An empty group must not be
+        # reported as one that left something running.
+        gone = subprocess.Popen(["true"], start_new_session=True)
+        gone.wait()
+        time.sleep(0.3)
+        check("a boot that left nothing says nothing",
+              agent._leftovers(run_dir, gone.pid), [])
+    finally:
+        for p in (guest, bystander):
+            if p is not None and p.poll() is None:
+                p.kill()
+                p.wait()
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     box = tempfile.mkdtemp(prefix="test_boot_host-")
     tempfile.tempdir = box
@@ -632,7 +690,8 @@ def main():
                    test_a_stale_screenshot_is_not_this_run_s_evidence,
                    test_printed_paths_are_paths_here,
                    test_the_gate_refuses_a_committed_config,
-                   test_active_answers_with_a_status]:
+                   test_active_answers_with_a_status,
+                   test_a_boot_answers_for_its_own_group_and_nobody_elses]:
             fn()
         if FAILURES:
             for f in FAILURES:

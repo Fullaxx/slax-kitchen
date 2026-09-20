@@ -31,6 +31,20 @@ import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 TIER_C = os.path.join(ROOT, "ci", "tier-c.sh")
+RUN_BOOT = os.path.join(ROOT, "ci", "run-boot.py")
+
+
+def _load_run_boot():
+    """ci/run-boot.py by path -- a hyphen is not importable, and it has no package."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ci_run_boot", RUN_BOOT)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["ci_run_boot"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+run_boot = _load_run_boot()
 
 FAILURES = []
 
@@ -68,87 +82,42 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ -n "${STUB_RUNLOG:-}" ] && echo "$path" >> "$STUB_RUNLOG"
-# $STUB_ORPHAN: leave a pid file behind, the way a boot that lost its guest does.
+# $STUB_ORPHAN: still be running a guest when the boot returns, the way a boot that
+# lost its own child does.
 #
-# setsid, and every fd off the harness's pipes. Both are load-bearing and were found by
-# measuring: a process left in this harness's process group does NOT outlive
-# subprocess.run(capture_output=True), so without them "the process is still running"
-# passed on a corpse and "the sweep killed it" passed without the sweep doing anything.
-# A guest that outlived its launcher is detached in exactly this way, so the fixture is
-# also the more faithful one.
-#   ours    a process whose command line names both qemu and this run's --out. That is
-#           what the sweep has to recognise, kill, and name.
-#   foreign a pid file naming a process that is NOT this run's -- a recycled number, on a
-#           machine shared with other people's virtual machines. It must be reported and
-#           LEFT ALONE, which is the promise the old comment made and never kept.
-# THE PID IS REPORTED BY THE GUEST ITSELF, AFTER exec, AND NOT BY $! .
+# NOT setsid, AND THAT IS THE POINT. The old fixture detached the orphan into a session
+# of its own, because the sweep it was written against could only find a guest by reading
+# a pid file and matching /proc. No real guest does that: nothing in the chain
+# tier-c.sh -> `sh kitchen` -> qemu_boot.py -> qemu calls setsid or start_new_session, so
+# a qemu orphaned by its launcher being killed is reparented to init and STAYS IN THE
+# PROCESS GROUP it was born in. ci/run-boot.py gives each boot a group and ends it, so
+# this fixture now models the real thing and the old one modelled something unreachable.
 #
-# $! names whatever the shell backgrounded, which is setsid(1) -- and setsid FORKS whenever
-# it is already a process group leader, so on such a host $! was a wrapper that exited
-# immediately, leaving an unreaped corpse whose /proc/<pid>/cmdline is empty. tier-c.sh's
-# _is_ours cannot match an empty cmdline, so the sweep announced this run's own leftover as
-# somebody else's virtual machine and the two assertions below failed for a reason neither
-# of them names. exec preserves the pid, so a shell that writes its own $$ and then execs
-# reports the pid the guest really has, whatever setsid decided to do. Found 2026-09-20.
+# Every fd off the harness's pipes, which is load-bearing and was measured: a process
+# still holding them keeps subprocess.run(capture_output=True) waiting, so the test would
+# hang rather than assert.
 #
-# AND THE FIXTURE IS THEN CHECKED, because a fixture that did not take must say so rather
-# than leave the assertions to fail obscurely: a non-empty cmdline is exactly what the
-# sweep has to be able to read, so that is what is waited for.
+# The pid is written by the guest itself after exec, for the TEST to read back -- exec
+# preserves the pid, so it is the one the guest really has. That is instrumentation now,
+# not mechanism: nothing in tier-c.sh reads a pid from anywhere any more.
 if [ -n "${STUB_ORPHAN:-}" ] && [ -n "$out" ]; then
-    mkdir -p "$out/pids" "$out/fakebin"
-    rm -f "$out/orphan.pid"
-    case "$STUB_ORPHAN" in
-        ours)
-            ln -sf "$(command -v sleep)" "$out/fakebin/qemu-system-x86_64"
-            setsid sh -c 'echo $$ > "$1/orphan.pid"; exec "$1/fakebin/qemu-system-x86_64" 60' \
-                _ "$out" >/dev/null 2>&1 </dev/null & ;;
-        foreign)
-            # setsid for the same reason as above, and for one more: a process left in
-            # this harness's group does not outlive subprocess.run(capture_output=True)
-            # -- measured -- so without it the test would "pass" on a corpse.
-            setsid sh -c 'echo $$ > "$1/orphan.pid"; exec sleep 60' \
-                _ "$out" >/dev/null 2>&1 </dev/null & ;;
-        zombie)
-            # A GUEST THAT ALREADY STOPPED, still in the table because nobody reaped it.
-            # python3 and not a shell on purpose: a shell reaps its own background
-            # children, so the corpse would be gone before the sweep read the pid file.
-            setsid python3 -c 'import os, sys, time
-p = os.fork()
-if p == 0: os._exit(0)
-open(sys.argv[1], "w").write(str(p))
-open(sys.argv[2], "w").write(str(os.getpid()))
-time.sleep(60)' "$out/orphan.pid" "$out/zparent.pid" >/dev/null 2>&1 </dev/null & ;;
-    esac
-    case "$STUB_ORPHAN" in
-        ours|foreign)
-            _n=0
-            while [ ! -s "$out/orphan.pid" ] && [ "$_n" -lt 200 ]; do
-                _n=$((_n + 1)); sleep 0.05
-            done
-            _op=$(cat "$out/orphan.pid" 2>/dev/null)
-            # NOT `kill -0`, which succeeds on a zombie: the question is whether there is a
-            # RUNNING process for the sweep to read, and a zombie names nothing.
-            _oc=""
-            [ -n "$_op" ] && _oc=$(tr '\0' ' ' < "/proc/$_op/cmdline" 2>/dev/null)
-            if [ -z "$_oc" ]; then
-                echo "stub kitchen: the $STUB_ORPHAN orphan never started (pid '$_op')" >&2
-                exit 9
-            fi
-            echo "$_op" > "$out/pids/$path-$$.pid" ;;
-        zombie)
-            _n=0
-            while [ ! -s "$out/orphan.pid" ] && [ "$_n" -lt 200 ]; do
-                _n=$((_n + 1)); sleep 0.05
-            done
-            _op=$(cat "$out/orphan.pid" 2>/dev/null)
-            # The state field follows the LAST ')': a comm may contain spaces and parens.
-            _st=$(sed 's/.*) //' "/proc/$_op/stat" 2>/dev/null | cut -d' ' -f1)
-            if [ "$_st" != Z ]; then
-                echo "stub kitchen: the zombie orphan is '$_st', not Z (pid '$_op')" >&2
-                exit 9
-            fi
-            echo "$_op" > "$out/pids/$path-$$.pid" ;;
-    esac
+    mkdir -p "$out"
+    rm -f "$out/orphan-$path.pid"
+    # One per path: two boots leave two guests, and a test that can only read the last
+    # pid cannot say whether the first was dealt with.
+    sh -c 'echo $$ > "$1/orphan-$2.pid"; exec sleep 60' _ "$out" "$path" \
+        >/dev/null 2>&1 </dev/null &
+    _n=0
+    while [ ! -s "$out/orphan-$path.pid" ] && [ "$_n" -lt 200 ]; do
+        _n=$((_n + 1)); sleep 0.05
+    done
+    _op=$(cat "$out/orphan-$path.pid" 2>/dev/null)
+    # A fixture that did not take must say so, rather than leave the assertions to fail
+    # for a reason none of them names.
+    if [ -z "$_op" ] || [ ! -d "/proc/$_op" ]; then
+        echo "stub kitchen: the orphan never started (pid '$_op')" >&2
+        exit 9
+    fi
 fi
 # $STUB_BLOCK: say we started, then block on a fifo until the test signals us. A real
 # boot takes seconds; this takes as long as the test needs and not a millisecond more.
@@ -208,6 +177,10 @@ def fixture(tmp, boot_host=False):
     this test controls rather than whatever the developer has uncommitted."""
     repo = os.path.join(tmp, "repo")
     write(os.path.join(repo, "ci", "tier-c.sh"), open(TIER_C).read(), 0o755)
+    # THE REAL RUNNER, not a stand-in. tier-c.sh starts every boot through it, so a
+    # fixture without it is a fixture where no boot runs at all -- which surfaces as a
+    # missing ledger, several assertions away from the cause.
+    write(os.path.join(repo, "ci", "run-boot.py"), open(RUN_BOOT).read(), 0o755)
     write(os.path.join(repo, "kitchen"), STUB_KITCHEN, 0o755)
     # Everything tier-c.sh writes is sent outside the repository, so nothing here can make
     # the tree look modified.
@@ -308,9 +281,9 @@ def reap(pid):
             pass
 
 
-def orphan_pid(out):
+def orphan_pid(out, path="bios"):
     try:
-        return int(open(os.path.join(out, "orphan.pid")).read().strip())
+        return int(open(os.path.join(out, f"orphan-{path}.pid")).read().strip())
     except (OSError, ValueError):
         return 0
 
@@ -489,115 +462,139 @@ def test_with_a_boot_host_the_local_tool_check_asks_for_the_transport(tmp, _box)
 
 @in_a_box
 def test_an_orphaned_guest_fails_the_sweep_and_is_named(tmp, _box):
-    """A pid file still present when a path returns is a guest nobody stopped.
+    """A boot that returns while its guest is still running is a failed boot.
 
     THIS USED TO PASS SILENTLY. cleanup() ran from the EXIT trap -- after `exit $rc` had
     already fixed the status -- so an orphan was killed with nothing said and the sweep
     reported success. lib/boot_host.py's agent gets the remote case right and its own
-    docstring says tier-c's equivalent "could only ever be a count".
+    docstring said tier-c's equivalent "could only ever be a count".
+
+    THE QUESTION IS NOW ASKED OF THE BOOT'S OWN PROCESS GROUP, not of a pid file, so what
+    the fixture poses is what a real guest poses: it stays in the group it was born in,
+    because nothing in the chain detaches. The three tests this replaces -- a foreign pid
+    left alone, a zombie, and one path's pid file reaching the next -- were all about
+    recognising a process the sweep had gone looking for. Nothing goes looking any more.
     """
     out = os.path.join(tmp, "evidence")
-    rc, o = run_tier_c(tmp, {"STUB_ORPHAN": "ours"}, paths="bios")
+    rc, o = run_tier_c(tmp, {"STUB_ORPHAN": "1"}, paths="bios")
     pid = orphan_pid(out)
     try:
         check("the orphan was actually created", pid != 0, True)
         check("an orphaned guest fails the sweep", rc != 0, True)
         check("...and is named, not counted", "a guest was left running" in o, True)
-        check("...naming the pid file", "bios-" in o, True)
+        check("...naming the path it belongs to", "bios:" in o, True)
         check("...and it is not still running", alive(pid), False)
     finally:
         reap(pid)
 
 
 @in_a_box
-def test_a_pid_that_is_not_ours_is_reported_and_left_alone(tmp, _box):
-    """The promise the old comment made, now checkable.
+def test_each_path_answers_for_its_own_guest(tmp, _box):
+    """Two boots, two groups, two answers, and neither inherits the other's.
 
-    "Only pids THIS run wrote. Never pkill qemu: on a shared host that takes out somebody
-    else's virtual machines." It was not kept: the pid was killed by NUMBER, minutes after
-    the boot that wrote it, and a number is exactly what gets recycled on a busy machine.
-    A pid whose /proc entry does not name this run is somebody else's, and is left alone.
+    $OUT/pids was one directory shared by every path with nothing emptying it, so a file
+    left by the first was still sitting there when the last finished -- and whatever it
+    named was killed at exit under the wrong path's name, if it was noticed at all. A
+    group per boot makes that structurally impossible rather than merely fixed: the
+    second path cannot see the first's group, and the first is answered for before the
+    second starts.
+
+    SO ITS INCIDENT CAN NO LONGER BE BUILT, and the next reader should not have to work
+    that out for themselves. 622891b was a real bite, but in a mechanism that has since
+    been deleted: there is no shared directory left for one path to leak into the next.
+    What this still covers is the loop -- that run-boot.py is invoked per path rather than
+    once for all of them -- and that is completeness, not an incident. If it ever fails,
+    that is the first question to ask; see CONTRIBUTING.md, "What a test here is for".
     """
     out = os.path.join(tmp, "evidence")
-    rc, o = run_tier_c(tmp, {"STUB_ORPHAN": "foreign"}, paths="bios")
-    pid = orphan_pid(out)
+    rc, o = run_tier_c(tmp, {"STUB_ORPHAN": "1"}, paths="bios uefi")
+    first, second = orphan_pid(out, "bios"), orphan_pid(out, "uefi")
     try:
-        check("the foreign process was actually created", pid != 0, True)
-        check("a pid file we cannot account for still fails the sweep", rc != 0, True)
-        check("...and says whose it is not", "not this run's" in o, True)
-        check("...and the process is STILL RUNNING", alive(pid), True)
-    finally:
-        reap(pid)
-
-
-@in_a_box
-def test_a_zombie_is_a_guest_that_already_stopped(tmp, _box):
-    """A corpse answers `kill -0` and names nothing, and both halves misled the sweep.
-
-    WHY THIS EXISTS. sweep_pids asked `kill -0` and nothing else, which succeeds on a
-    process that has exited but has not been reaped. /proc/<pid>/cmdline is empty for one,
-    so _is_ours could not match it however exactly it was ours, and this run's own corpse
-    was announced as "names pid N, which is not this run's; left alone" -- a false
-    accusation against whoever shares the machine, and a leak counted for a guest that had
-    already stopped.
-
-    Invisible wherever init reaps promptly, which is every developer's machine and not
-    every runner: ci/run-checks.sh went red on GitHub's and green here, with two assertions
-    in this file failing for a reason neither of them names. Found 2026-09-20.
-    """
-    out = os.path.join(tmp, "evidence")
-    rc, o = run_tier_c(tmp, {"STUB_ORPHAN": "zombie"}, paths="bios")
-    pid = orphan_pid(out)
-    try:
-        check("the zombie was actually created", pid != 0, True)
-        check("a pid file left behind still fails the sweep", rc != 0, True)
-        check("...and the guest is reported as already gone", "already gone" in o, True)
-        check("...not as somebody else's", "not this run's" in o, False)
-        check("...and a corpse does not read as running", alive(pid), False)
-    finally:
-        reap(pid_in(out, "zparent.pid"))
-
-
-@in_a_box
-def test_one_paths_leftovers_do_not_reach_the_next(tmp, _box):
-    """$OUT/pids is one directory shared by every path, and nothing emptied it.
-
-    So a file left by the first path was still there when the last one finished, and the
-    kill happened at exit with the wrong path's name on it -- if it was reported at all.
-    Each path now answers for its own leftovers and hands none on.
-    """
-    out = os.path.join(tmp, "evidence")
-    rc, o = run_tier_c(tmp, {"STUB_ORPHAN": "ours"}, paths="bios uefi")
-    pid = orphan_pid(out)
-    try:
+        check("both orphans were actually created", (first != 0, second != 0), (True, True))
         check("the sweep fails", rc != 0, True)
-        # Each path leaves one, and each is reported once, against its own name.
-        check("the first path's orphan is named", "bios-" in o, True)
-        check("the second path's orphan is named", "uefi-" in o, True)
-        check("neither is reported twice", o.count("a guest was left running"), 2)
-        left = os.path.join(out, "pids")
-        check("nothing is handed on afterwards",
-              os.listdir(left) if os.path.isdir(left) else [], [])
+        check("the first path is named", "bios:" in o, True)
+        check("the second path is named", "uefi:" in o, True)
+        check("each is reported once", o.count("a guest was left running"), 2)
+        check("the first path's guest was stopped", alive(first), False)
+        check("...and so was the second's", alive(second), False)
     finally:
-        reap(pid)
+        reap(first)
+        reap(second)
+
+
+def test_a_zombie_in_the_group_is_not_a_running_guest():
+    """The defect that reddened the gates job twice, asked of the new mechanism.
+
+    `killpg(pgid, 0)` succeeds while a group has ANY member, and an unreaped zombie is a
+    member -- so "is this boot's group still alive" answers yes over a guest that has
+    already stopped. That is the same mistake `kill -0` made in the old sweep (09801bc),
+    arriving by a different door, and it was found here by probing ci/run-boot.py rather
+    than by waiting for CI to go red a third time.
+
+    A CORPSE THAT STAYS A CORPSE, deterministically and on any init. A zombie whose
+    parent has exited is reparented to init and reaped at once wherever init reaps, so
+    this keeps the parent alive and OUTSIDE the group: it forks a child, the child makes
+    itself a group of its own and exits, and the parent never waits for it. The group
+    then has exactly one member and that member is dead.
+    """
+    src = (
+        "import os, sys, time\n"
+        "pid = os.fork()\n"
+        "if pid == 0:\n"
+        "    os.setpgid(0, 0)\n"          # a process group of its own
+        "    os._exit(0)\n"
+        "time.sleep(0.3)\n"               # ...and it is never waited for
+        "sys.stdout.write(str(pid) + chr(10)); sys.stdout.flush()\n"
+        "time.sleep(30)\n")
+    holder = subprocess.Popen([sys.executable, "-c", src], stdout=subprocess.PIPE, text=True)
+    try:
+        pgid = int(holder.stdout.readline().strip())
+        state, pgrp = "", 0
+        for _ in range(100):
+            try:
+                with open(f"/proc/{pgid}/stat") as fh:
+                    fields = fh.read().rsplit(") ", 1)[1].split()
+                state, pgrp = fields[0], int(fields[2])
+            except (OSError, IndexError, ValueError):
+                break
+            if state == "Z" and pgrp == pgid:
+                break
+            time.sleep(0.02)
+        # A fixture that did not take must say so rather than let the assertions pass for
+        # the wrong reason: a live process would make both answers below "running".
+        check("the fixture planted a zombie", state, "Z")
+        check("...alone in a group of its own", pgrp, pgid)
+        check("the group answers a signal at all", run_boot._group_alive(pgid), True)
+        check("...but nothing in it is running", run_boot._group_running(pgid), False)
+    finally:
+        holder.kill()
+        holder.wait()
 
 
 def test_an_interrupt_stops_the_sweep():
     """Ctrl-C must not start the next boot path, and must not leave the guest running.
 
-    A REGRESSION TEST, NOT A BUG REPORT, and it is worth saying which. An audit expected
-    two failures here -- that cleanup() never calls exit so the sweep carries on into the
-    next path, and that the trap omits HUP, the signal a dropped ssh session delivers.
-    Neither reproduced when it was measured (2026-09-20, dash): an interrupted `kitchen
-    test` returns >= 2, which the loop already stops on before the trap's behaviour can
-    matter, and the EXIT trap does run for both INT and HUP here, so the guest is reaped
-    either way. The signal list was left alone rather than extended on a story.
+    WHY IT EXISTS HAS CHANGED, so the reason is restated rather than left to rot. It was
+    written as a regression test for a bug that did not exist: an audit expected cleanup()
+    to carry on into the next path and the trap to omit HUP, and neither reproduced when it
+    was measured. On its own that is the weakest justification this repo takes --
+    completeness.
+
+    It has a real one now. ci/run-boot.py starts each boot in a session of its own, which
+    REMOVED THE FREE DELIVERY OF Ctrl-C: the terminal's signal used to reach qemu because
+    everything shared one process group, and now it reaches run-boot.py, which forwards it
+    by hand. That forwarding is days old, it is the only thing between an interrupted sweep
+    and a VM left running, and nothing else exercises it.
+
+    Honest about what it has caught: this test hung once while that forwarding was being
+    written and passed after two separate changes. Which one fixed it was never isolated,
+    so it is not credited with the catch.
 
     What this pins is the outcome a reader actually cares about, in a shape that CAN go
     red: after an interrupt, the second path has not started and no guest is left behind.
-    The guest is setsid with its fds detached, which is what one that outlived its
-    launcher looks like -- and is also the only way it survives this harness long enough
-    to be asked about.
+    The guest has its fds detached, which is what lets it survive this harness long
+    enough to be asked about. It is no longer setsid: it sits in the boot's own process
+    group, where a real orphaned qemu sits, and the interrupt has to reach it there.
 
     No sleeps: the stub says it has started and blocks on a fifo, so the signal goes at
     exactly the right moment and the test takes as long as that takes and no longer.
@@ -633,9 +630,10 @@ def test_an_interrupt_stops_the_sweep():
         ran = [ln for ln in open(runlog).read().split() if ln] if os.path.exists(runlog) else []
         check("only the interrupted path ran", ran, ["bios"])
         check("...and no ledger claims otherwise", ledger_of(tmp), None)
-        # THE POINT OF THE TRAP. The guest is setsid, the way one that outlived its
-        # launcher is, so the terminal's Ctrl-C never reached it. Only this script can
-        # stop it, and if it does not, an interrupted sweep leaves a VM running.
+        # THE POINT OF FORWARDING THE SIGNAL. The boot runs in a session of its own, so
+        # the terminal's Ctrl-C does not reach it for free any more -- ci/run-boot.py
+        # passes it on deliberately. If it did not, an interrupted sweep would leave a VM
+        # running on the machine.
         pid = orphan_pid(out)
         check("the interrupted sweep left a guest to find", pid != 0, True)
         check("...and did not leave it running", alive(pid), False)
@@ -666,9 +664,8 @@ def main():
                    test_an_ordinary_failure_still_records,
                    test_with_a_boot_host_the_local_tool_check_asks_for_the_transport,
                    test_an_orphaned_guest_fails_the_sweep_and_is_named,
-                   test_a_pid_that_is_not_ours_is_reported_and_left_alone,
-                   test_a_zombie_is_a_guest_that_already_stopped,
-                   test_one_paths_leftovers_do_not_reach_the_next,
+                   test_each_path_answers_for_its_own_guest,
+                   test_a_zombie_in_the_group_is_not_a_running_guest,
                    test_an_interrupt_stops_the_sweep]:
             fn()
         if FAILURES:

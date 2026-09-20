@@ -492,24 +492,27 @@ def test_the_boot_hosts_own_failures_are_not_test_results(fx):
 
 
 @case
-def test_the_two_persistence_boots_get_different_pid_files(fx):
-    """One `kitchen test`, two boots, and they were writing the SAME pid file.
+def test_the_two_persistence_boots_are_told_apart(fx):
+    """One `kitchen test --persistence`, two boots, and they must not collide.
 
-    _boot_run names it `<mode>-$$.pid`. The persistence pair calls _boot_run with mode
-    `kernel` twice in one process, so the mode and $$ are both identical and boot 2
-    overwrote boot 1's file. A guest orphaned by the first boot therefore became
-    invisible the moment the second started -- and a driver's trap, which finds orphans
-    by reading that directory, had nothing left to find. --run-tag disambiguates the
-    evidence filenames and never touched this.
+    The whole test is that the second boot sees what the first wrote, so the two have to
+    be distinguishable wherever they leave anything: the mode is `kernel` both times and
+    they run in one process, so nothing derived from those can tell them apart.
+
+    THIS USED TO BE ASKED OF THE PID FILE, named `<mode>-$$.pid`, where both boots
+    collided and the second overwrote the first -- so a guest orphaned by boot 1 went
+    invisible the moment boot 2 started. There are no pid files now: a boot is owned by
+    its process group, and a second boot cannot overwrite the first's group. --run-tag is
+    what still has to differ, because it is what keeps the two boots' evidence apart.
     """
     fx.with_xorriso()
     fx.iso_file("/slax/boot/vmlinuz", "stands in for a kernel\n")
     fx.iso_file("/slax/boot/initrfs.img", "stands in for an initramfs\n")
     write(os.path.join(fx.bin, "mkfs.ext4"), "#!/bin/sh\nexit 0\n", 0o755)
     rc, out, calls, left = fx.run("--persistence")
-    pidfiles = [opt(c, "--pidfile")[0] for c in calls if opt(c, "--pidfile")]
-    check("the persistence pair is two boots", len(pidfiles), 2)
-    check("...and each names its own pid file", len(set(pidfiles)), 2)
+    tags = [opt(c, "--run-tag")[0] for c in calls if opt(c, "--run-tag")]
+    check("the persistence pair is two boots", len(tags), 2)
+    check("...and each is tagged differently", len(set(tags)), 2)
     check("...and leaves no scratch", left, [])
 
 
@@ -540,7 +543,7 @@ def main():
                    test_a_remote_boot_checks_what_IT_needs_here,
                    test_local_beats_the_configured_host,
                    test_the_boot_hosts_own_failures_are_not_test_results,
-                   test_the_two_persistence_boots_get_different_pid_files]:
+                   test_the_two_persistence_boots_are_told_apart]:
             fn()
         if FAILURES:
             for f in FAILURES:

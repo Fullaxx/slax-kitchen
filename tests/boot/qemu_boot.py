@@ -240,8 +240,7 @@ def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
          keys: str | None = None, kernel: str | None = None,
          initrd: str | None = None, expect: list | None = None,
          disk: str | None = None, disk_size: str = "256M",
-         append: str | None = None, run_tag: str | None = None,
-         pidfile: str | None = None) -> dict:
+         append: str | None = None, run_tag: str | None = None) -> dict:
     # BEFORE anything is created, so a refusal leaks nothing. A stock Slax ISO has bytes
     # 0..512 all zero -- no signature, no partition table -- so attaching it as a stick
     # gives a guest that finds nothing bootable and an empty serial log, for a reason
@@ -278,8 +277,6 @@ def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
     cmd = ["qemu-system-x86_64", "-m", str(mem),
            "-display", "none", "-serial", f"file:{serial}",
            "-qmp", f"unix:{qmp},server,nowait", "-no-reboot"]
-    if pidfile:
-        cmd += ["-pidfile", pidfile]
     if os.access("/dev/kvm", os.W_OK):
         cmd.insert(1, "-enable-kvm")
 
@@ -392,8 +389,6 @@ def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
         shutil.rmtree(qmp_dir, ignore_errors=True)
         if vars_copy and os.path.exists(vars_copy):
             os.unlink(vars_copy)
-        if pidfile and os.path.exists(pidfile):
-            os.unlink(pidfile)
     result["serial_text"] = open(serial, errors="replace").read() if os.path.exists(serial) else ""
     result["screenshot_bytes"] = os.path.getsize(shot) if os.path.exists(shot) else 0
     return result
@@ -459,8 +454,6 @@ def main(argv: list[str]) -> int:
                                     "testing persistence, and the record should say so")
     ap.add_argument("--golden", help="file of expected testkit lines to diff against")
     ap.add_argument("--record", help="append one JSON line describing this run")
-    ap.add_argument("--pidfile", help="where qemu writes its pid, so a driver's trap "
-                                      "can kill this run and nothing else")
     ap.add_argument("--retries", type=int, default=1,
                     help="retry this many times if the guest panics before reaching "
                          "livekit at all (TCG flakiness); a boot that reached livekit "
@@ -481,7 +474,7 @@ def main(argv: list[str]) -> int:
     # and is never retried, so this cannot mask a product bug.
     kw = dict(keys=a.keys, kernel=a.kernel, initrd=a.initrd, expect=a.expect,
               mem=a.mem, append=a.append, disk=a.disk, disk_size=a.disk_size,
-              run_tag=a.run_tag, pidfile=a.pidfile)
+              run_tag=a.run_tag)
     try:
         r = boot(a.iso, a.mode, a.seconds, a.out, **kw)
     except RuntimeError as e:

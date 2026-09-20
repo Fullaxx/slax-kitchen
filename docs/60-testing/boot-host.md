@@ -145,9 +145,13 @@ Everything lives under one directory, created `0700`:
    a bootloader countdown, so two boots sharing a CPU do not merely go slower — they miss
    the menu and assert against an entry nobody selected.
 8. **Leftovers are named, not counted.** `TMPDIR` is the run's own directory, so anything
-   still in it afterwards belongs to this boot and fails it by name. A pid file still
-   present means an orphaned guest: it is killed and the run fails.
-9. **The evidence comes back**, `pids/` excluded and never with `--delete`. A screenshot
+   still in it afterwards belongs to this boot and fails it by name. And the boot runs in a
+   process group of its own, so a guest that outlived it is still in that group: one signal
+   ends it, and the run fails. There is no pid file to read and no process to go looking for,
+   because nothing of anybody else's can be in a group the agent made for this boot. Whether
+   a member is *running* rather than an unreaped corpse is still read from `/proc` — but only
+   for processes already known to be this boot's, never to work out which one to signal.
+9. **The evidence comes back**, never with `--delete`. A screenshot
    from an older local run is deleted first if this boot produced none — `qemu_boot.py`
    unlinks its own outputs, but it cannot reach across a machine boundary, and a stale PNG
    beside a fresh serial log reads as evidence of a boot that never produced it.
@@ -171,6 +175,34 @@ Measured, with a real guest up on the boot host:
 A run directory is **kept** in exactly one case: the copy-back failed, so the boot host
 holds the only copy of the evidence. Kept runs expire after seven days, cached images after
 fourteen.
+
+### Which process is whose
+
+Nothing here goes looking for a process to kill, with one exception that is named below.
+Every long-lived process this toolkit starts is held by the thing that started it, and ended
+through that handle — because a process you are holding is one you cannot lose.
+
+| what is started | who holds it | how it ends | if its owner is killed outright |
+|---|---|---|---|
+| the boot on the boot host — `kitchen test`, and the qemu beneath it | the agent, `Popen(…, start_new_session=True)`: one process group whose id is the child's pid | `killpg`, `SIGTERM` then `SIGKILL` | stdin EOF, or thirty seconds without a heartbeat, ends the agent — which ends the group first |
+| a boot in a local Tier C sweep | [`ci/run-boot.py`](../../ci/run-boot.py), the same way: a group per boot | `killpg` once the boot returns; anything still in the group fails that path | signals are forwarded to the group before it exits |
+| qemu, under [`qemu_boot.py`](../../tests/boot/qemu_boot.py) | that process, by `Popen` | `terminate()` then `kill()`, in a `finally` | orphaned **only on `SIGTERM` or `SIGKILL`** — those end Python without unwinding, so the `finally` never runs (`SIGINT` raises, unwinds, and kills qemu). The orphan stays in the enclosing group above, which reaps it |
+| the agent itself (ssh #1) | the driver, by `Popen` | `op=done`, then the connection closes | the agent notices the closed connection and tears its own run down |
+| the interactive ssh (#2) | the driver, by `Popen` | `wait()`, with `SIGTERM`/`SIGHUP` forwarded | **its remote half is nobody's child — see below** |
+| qemu, under [`boot.py`](../../tools/qemu/boot.py) run locally | that process, by `Popen` | `wait()`; `SIGTERM`/`SIGHUP` forwarded, `SIGINT` left to the terminal | orphaned, with the terminal's own session as the only owner left |
+
+**The exception, stated rather than hidden.** The interactive launcher's guest arrives on the
+*second* ssh connection, in a login session of its own, and `exec` replaces even the remote
+shell — so the agent that owns the run has never held a handle on it. `_kill_orphans` reaches
+it by searching `/proc`, matching the run directory path: twenty characters this run generated,
+present in the command line of everything it started and in nothing else on the machine. No pid
+is read from a file and no program name is matched, so a recycled pid cannot collide with it.
+
+Retiring that search means the agent starting `boot.py` itself, with the second connection
+carrying only a terminal onto it. That is a pty relay — window size, raw mode, the `AF_UNIX`
+path budget — and it is more machinery than the search it would replace, in the one path no
+gate covers. Weighed and declined; if the search ever has to change, this is the trade it is
+being measured against.
 
 ## Commands
 

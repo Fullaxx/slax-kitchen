@@ -916,10 +916,10 @@ def cmd_test(cfg: Config, args: list) -> int:
 
         remote_files = s.listing()
         _drop_stale_shots(out, remote_files)
-        # --exclude=/pids/, never --delete: the pid files are the boot host's own
-        # bookkeeping and mean nothing here, and everything else in the evidence
-        # directory belongs to whoever put it there.
-        s.pull(f"{run_dir}/out/", out.rstrip("/") + "/", ["--exclude=/pids/"])
+        # NEVER --delete: everything else in the evidence directory belongs to whoever put
+        # it there. There used to be an --exclude=/pids/ beside that, for a directory of
+        # pid files lib/build.sh no longer writes -- nothing reads a pid from anywhere now.
+        s.pull(f"{run_dir}/out/", out.rstrip("/") + "/")
         if record:
             _append_record(s, run_dir, record)
         if golden and not os.path.exists(golden) and gold_remote:
@@ -1518,21 +1518,37 @@ class Agent:
             text=True, bufsize=1, start_new_session=True)
         for line in self.child.stdout:
             self.emit(t="out", line=line.rstrip("\n"))
+        # The group id, kept before the handle is dropped. start_new_session above made
+        # the child a session leader, so its pid IS its process group -- which is the only
+        # thing _leftovers needs to ask whether the boot left a guest behind.
+        pgid = self.child.pid
         rc = self.child.wait()
         self.child = None
-        problems = self._leftovers(run_dir)
+        problems = self._leftovers(run_dir, pgid)
         fcntl.flock(self.boot_lock, fcntl.LOCK_UN)
         self.boot_lock.close()
         self.boot_lock = None
         self.emit(t="rc", rc=rc, problems=problems)
 
-    def _leftovers(self, run_dir: str) -> list:
+    def _leftovers(self, run_dir: str, pgid: int) -> list:
         """What the run left behind. Named, and failing the run.
 
         TMPDIR pointed at this run's own directory is what makes this possible: a leaked
         QMP socket directory is normally invisible among everyone else's /tmp, and
         ci/tier-c.sh's leak count could only ever be a count. Here the whole directory
         belongs to one boot, so anything still in it has a name.
+
+        AND THE GUEST IS ASKED OF THE PROCESS GROUP, not of a pid file. This used to read
+        a number out of <run_dir>/out/pids and SIGKILL it, with no check that the process
+        was still alive and none that it was ever ours -- on a machine that, by the whole
+        design of this feature, belongs to somebody else. Both halves were demonstrated
+        wrong: it killed an unrelated `sleep 300` whose pid happened to be in the file,
+        and it reported "a guest was left running" for a process that had already exited.
+        Three functions below, _kill_orphans refuses to do exactly that.
+
+        Neither question needed asking. The boot is this agent's own child and
+        start_new_session gave it a group of its own, so a corpse is not a member and
+        nothing of anybody else's can be in a group made here for this boot.
         """
         problems = []
         tmp = os.path.join(run_dir, "tmp")
@@ -1541,21 +1557,11 @@ class Agent:
             problems.append("the run left " + ", ".join(left[:5])
                             + (f" and {len(left) - 5} more" if len(left) > 5 else "")
                             + " in its temporary directory")
-        piddir = os.path.join(run_dir, "out", "pids")
-        for pf in sorted(os.listdir(piddir)) if os.path.isdir(piddir) else []:
-            full = os.path.join(piddir, pf)
-            try:
-                pid = int(open(full).read().strip())
-            except (OSError, ValueError):
-                continue
-            # qemu_boot.py removes its own pid file on the way out, so one still here is
-            # a guest nobody stopped.
-            problems.append(f"a guest was left running ({pf}); it has been killed")
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                pass
-            os.unlink(full)
+        if _group_alive(pgid) and _group_running(pgid):
+            problems.append("a guest was left running; it has been stopped")
+            _end_group(pgid)
+            if _group_running(pgid):
+                problems.append(f"the boot's process group ({pgid}) would not stop")
         return problems
 
     def op_list(self, msg: dict) -> None:
@@ -1656,6 +1662,110 @@ class Agent:
         shutil.rmtree(self.run_dir, ignore_errors=True)
 
 
+def _group_alive(pgid: int) -> bool:
+    """Is anything still in this process group? Signal 0 asks without sending anything.
+
+    A SECOND COPY OF ci/run-boot.py's, DELIBERATELY. Everything below the agent marker in
+    this file is rsynced to the boot host and run there alone, stdlib only and importing
+    nothing from the tree -- that is what lets a single sha256 stand for the whole of it.
+    Fifteen shared lines are not worth giving that up for.
+
+    Copy-of: ci/run-boot.py  _group_alive _group_running _end_group
+
+    AND THEY DRIFTED WITHIN THE HOUR of being written -- `except OSError` on one side and
+    `except (ProcessLookupError, PermissionError)` on the other, two spellings of the same
+    grace period, one of them reaching for a module constant the other did not have. So the
+    bodies are identical text now, and this is what says so:
+
+        python3 -c 'import ast
+    b=lambda p,n:[ast.unparse(ast.Module(body=f.body[1:],type_ignores=[]))
+                  for f in ast.parse(open(p).read()).body if getattr(f,"name",0)==n][0]
+    print([n for n in ("_group_alive","_group_running","_end_group")
+           if b("ci/run-boot.py",n)!=b("lib/boot_host.py",n)] or "identical")'
+
+    A convention and a command, deliberately not a gate: it costs nothing at commit time,
+    and `grep -rn Copy-of:` is the list of pairs to check when either side is touched.
+
+    This says only that the group has a member. An unreaped zombie is one, so it is a
+    cheap pre-filter and _group_running() below decides. What it does settle for free is
+    ownership: the kernel keeps a pid reserved while a process group still refers to it,
+    so a non-empty group is always the one this process made.
+    """
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Something in the group is no longer ours to signal, which should not happen for
+        # one we created. Answering "alive" reports a leak rather than hiding one.
+        return True
+
+
+def _group_running(pgid: int) -> bool:
+    """Is any member of this group actually RUNNING, rather than a corpse?
+
+    killpg(pgid, 0) succeeds while the group has any member at all, and an unreaped zombie
+    is a member. That is precisely how the old sweep reported a guest which had already
+    stopped, and how the gates job went red on a runner twice (09801bc): a process orphaned
+    by its launcher is reparented to init, so whether its corpse lingers depends on whether
+    that init reaps -- microseconds under systemd, forever in a container whose pid 1 does
+    not. Found again here, by probing this very code, before it could reach CI.
+
+    THE GROUP ANSWERS *WHO*, THIS ANSWERS *WHETHER*, and the difference is the whole point
+    of the redesign. Nothing is searched for and nothing is matched: every pid read here is
+    already known to be ours, because it is in a process group this process created. The
+    old code read /proc to work out whether a pid it had found was plausibly a guest of
+    ours; this reads it only to tell a live process from a dead one.
+
+    Unreadable /proc answers "running": over-reporting a leak costs a message, and
+    under-reporting one is the bug this exists to prevent.
+    """
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        return True
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/stat") as fh:
+                # After the LAST ')' come state, ppid and pgrp: a comm may itself contain
+                # spaces and parentheses, so anything counting from the left is wrong.
+                fields = fh.read().rsplit(") ", 1)[1].split()
+            if fields[0] != "Z" and int(fields[2]) == pgid:
+                return True
+        except (OSError, IndexError, ValueError):
+            continue
+    return False
+
+
+def _end_group(pgid: int, grace_s: float = 10.0) -> None:
+    """Ask the group to stop, then insist.
+
+    grace_s is what the guest gets to answer SIGTERM. qemu answers promptly, so it only
+    matters for one that has already stopped listening; SIGKILL then gets two seconds,
+    which is the kernel's work rather than the guest's.
+    """
+    for sig, wait_s in ((signal.SIGTERM, grace_s), (signal.SIGKILL, 2.0)):
+        try:
+            os.killpg(pgid, sig)
+        except OSError:
+            return
+        deadline = time.monotonic() + wait_s
+        while time.monotonic() < deadline:
+            # _group_running, NOT _group_alive: killpg counts an unreaped corpse as a
+            # member, so waiting on it meant waiting the whole grace period every time the
+            # guest died instantly and its parent had not reaped it yet. Measured at 12 s
+            # per teardown before this, on a machine whose init reaps in microseconds --
+            # and a container's pid 1 often does not reap at all, which is the case this
+            # runs in. Third place the same zombie has been found (09801bc, then the leak
+            # check, then here).
+            if not _group_running(pgid):
+                return
+            time.sleep(0.1)
+
+
 def _locked(path: str):
     """Open `path` and take its lock, or None if somebody already holds it.
 
@@ -1677,20 +1787,34 @@ def _locked(path: str):
 
 
 def _kill_orphans(run_dir: str) -> list:
-    """Kill what this run left running -- and only that.
+    """The one guest nobody parents, and the only search left in this toolkit.
 
-    THE RUN DIRECTORY'S PATH IS THE TEST, and it is enough: that path is unique to this
-    run, it appears in the command line of everything the run started (qemu is given the
-    image inside it, boot.py is run from the tree inside it), and it appears in nothing
-    else on the machine. Never pkill qemu: a boot host is somebody's machine, and on the
-    one this was built against that would have taken out a libvirt guest with a graphics
-    card passed through to it.
+    EVERYTHING ELSE IS OWNED. A boot started by op_run is this agent's own child in a
+    process group of its own, and kill_child signals that group; a local sweep does the
+    same through ci/run-boot.py. Neither needs to look for anything, because you cannot
+    lose a process you are holding.
 
-    NOT ONLY THE PID FILES. `kitchen test` writes one per boot, so the pid files used to
-    be the whole story; the interactive launcher does not write any, because its guest is
-    started by a login session of its own rather than by the agent. Measured: killing the
-    driver left a qemu running out of a run directory that had already been deleted.
-    Scanning /proc covers both, and costs a few milliseconds once per session.
+    THE INTERACTIVE LAUNCHER IS THE EXCEPTION, BY CONSTRUCTION. Its guest arrives on the
+    SECOND ssh connection (see launch()), in a login session of its own, and `exec`
+    replaces even the remote shell -- so the agent that owns the run has never held a
+    handle on it and cannot be given one without re-parenting the whole pty. Measured:
+    killing the driver left a qemu running out of a run directory that had already been
+    deleted, and nothing but a search could reach it.
+
+    SO IT IS A SEARCH, AND IT IS A SOUND ONE -- which is a different claim from the ones
+    this file used to make. It matches on the run directory path: twenty characters this
+    process generated, for this run, appearing in the command line of everything the run
+    started and in nothing else on the machine. A pid is never read from a file, nothing
+    is matched on a program name, and a recycled pid cannot collide because the token is
+    not a number. Never pkill qemu: a boot host is somebody's machine, and on the one
+    this was built against that would have taken out a libvirt guest with a graphics card
+    passed through to it.
+
+    WHAT WOULD RETIRE IT: the agent starting boot.py itself, with the interactive ssh
+    carrying only a terminal onto it. That is a pty relay -- window size, raw mode, the
+    AF_UNIX path budget -- and it is more machinery than the search it would replace, in
+    the one path no gate covers. Weighed and declined 2026-09-20; docs/60-testing/
+    boot-host.md carries the ownership table this is the single exception to.
     """
     killed = []
     me = os.getpid()
