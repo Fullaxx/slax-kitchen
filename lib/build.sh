@@ -204,14 +204,6 @@ kitchen_test() {
     done
     [ -n "$iso" ] || die "test: need an ISO path"
     [ -f "$iso" ] || die "test: no such file: $iso"
-    # AND THE KEY SPEC, ON THIS SIDE OF THE DISPATCH. A spec this harness cannot read
-    # would otherwise be answered after the tree had been rsync'd to the boot host --
-    # #31's lesson, "a missing image is answered here, not after the tree has been sent".
-    # The grammar lives in qemu_boot.py and is ASKED here rather than copied: a second
-    # copy in shell is how the two drift.
-    if [ "$auto_keys" = 0 ] && [ -n "$keys" ]; then
-        python3 "$REPO_ROOT/tests/boot/qemu_boot.py" --check-keys "$keys" || return 2
-    fi
     [ "$want_structure" = 0 ] && [ "$want_bios" = 0 ] && [ "$want_uefi" = 0 ] \
         && [ "$want_kernel" = 0 ] && [ "$want_usb" = 0 ] && [ "$want_perch" = 0 ] \
         && want_structure=1
@@ -280,6 +272,30 @@ kitchen_test() {
         done
         printf '       nothing was tested: every mode asked for needs these before it can start\n'
         return 1
+    fi
+
+    # AND THE HARNESS ITSELF, which is a file in this checkout rather than a tool on PATH.
+    # Every boot mode runs tests/boot/qemu_boot.py -- here, or on the boot host out of the
+    # tree that is sent there -- and without it the first thing to reach for it dies with
+    # `python3: can't open file ...` and exit 2, which is the status meaning "refused"
+    # carrying a message about a path. The same collision lib/boot_host.py is guarded
+    # against twenty lines above, for the same reason. A checkout without it is a real
+    # shape: tests/unit/test_kitchen_test.py builds one for every case it runs.
+    if [ "$want_kernel$want_bios$want_uefi$want_usb$want_perch" != "00000" ]; then
+        if [ ! -f "$REPO_ROOT/tests/boot/qemu_boot.py" ]; then
+            printf '  %sFAIL%s tests/boot/qemu_boot.py is missing from this checkout\n' \
+                "$R" "$O"
+            printf '       nothing was tested: every boot mode runs it\n'
+            return 1
+        fi
+        # AND THE KEY SPEC, ON THIS SIDE OF THE DISPATCH -- #31's lesson, "a missing image
+        # is answered here, not after the tree has been sent". The grammar lives in
+        # qemu_boot.py and is ASKED rather than copied into shell, because a second copy
+        # is how the two drift. Only what the caller typed: auto_keys=1 means the spec is
+        # derived from the image, over there, and is this harness's own output.
+        if [ "$auto_keys" = 0 ] && [ -n "$keys" ]; then
+            python3 "$REPO_ROOT/tests/boot/qemu_boot.py" --check-keys "$keys" || return 2
+        fi
     fi
 
     rc=0

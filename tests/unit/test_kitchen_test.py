@@ -37,8 +37,15 @@ TOOLS = ("sh", "python3", "awk", "sed", "grep", "mkdir", "mktemp", "rm", "cp", "
 
 STUB_HARNESS = r'''#!/usr/bin/env python3
 import json, os, sys
+argv = sys.argv[1:]
 with open(os.environ["STUB_HARNESS_LOG"], "a") as f:
-    f.write(json.dumps(sys.argv[1:]) + "\n")
+    f.write(json.dumps(argv) + "\n")
+# --check-keys is a question, not a boot: kitchen_test asks it before the dispatch and
+# refuses on a non-zero answer. STUB_KEYS_RC exercises that refusal without a qcode
+# grammar in here -- the grammar is the real harness's, and tests/unit/test_qemu_boot.py
+# is what holds it.
+if argv[:1] == ["--check-keys"]:
+    raise SystemExit(int(os.environ.get("STUB_KEYS_RC", "0")))
 '''
 
 # Stands in for lib/boot_host.py. `active` answers the question kitchen_test asks before
@@ -139,6 +146,7 @@ class Fixture:
         self.log = os.path.join(tmp, "harness.jsonl")
         self.bhlog = os.path.join(tmp, "boot-host.jsonl")
         self.bh_rc = "0"
+        self.keys_rc = "0"
 
     def with_boot_host(self):
         """A configured boot host: the file kitchen_test looks for, and the driver.
@@ -165,6 +173,11 @@ class Fixture:
     def without_qemu(self):
         os.unlink(os.path.join(self.bin, "qemu-system-x86_64"))
 
+    def without_harness(self):
+        """A checkout with no tests/boot/qemu_boot.py, which is a real shape rather than a
+        hypothetical -- this fixture is one until __init__ writes the stub in."""
+        os.unlink(os.path.join(self.repo, "tests", "boot", "qemu_boot.py"))
+
     def iso_file(self, path, text):
         write(os.path.join(self.tree, path.lstrip("/")), text)
 
@@ -173,7 +186,8 @@ class Fixture:
         open(self.bhlog, "w").close()
         env = {"PATH": self.bin, "HOME": self.tmp, "TMPDIR": self.box, "NO_COLOR": "1",
                "STUB_HARNESS_LOG": self.log, "STUB_ISO_TREE": self.tree,
-               "STUB_BH_LOG": self.bhlog, "STUB_BH_RC": self.bh_rc}
+               "STUB_BH_LOG": self.bhlog, "STUB_BH_RC": self.bh_rc,
+               "STUB_KEYS_RC": self.keys_rc}
         p = subprocess.run(["sh", os.path.join(self.repo, "kitchen"), "test", self.iso] + list(args),
                            cwd=self.tmp, env=env, capture_output=True, text=True, timeout=60)
         calls = [json.loads(ln) for ln in open(self.log) if ln.strip()]
@@ -263,6 +277,87 @@ def test_every_missing_tool_is_named_at_once(fx):
     check("...and qemu", "qemu-system-x86_64 is not installed" in out, True)
     check("...each once", out.count("xorriso is not installed"), 1)
     check("...and runs nothing, structure included", calls, [])
+
+
+@case
+def test_a_checkout_without_the_boot_harness_is_refused(fx):
+    """Every boot mode runs tests/boot/qemu_boot.py. Without it, whatever reaches for it
+    first dies with `python3: can't open file ...` and exit 2 -- the status that means
+    "refused" carrying a message about a path, which is the collision lib/boot_host.py is
+    already guarded against twenty lines above.
+
+    --no-keys so the menu is never read: this is about the harness being absent, not about
+    xorriso.
+    """
+    fx.without_harness()
+    rc, out, calls, left = fx.run("--bios", "--no-keys")
+    check("the checkout is refused", rc, 1)
+    check("...naming the file that is missing",
+          "tests/boot/qemu_boot.py is missing" in out, True)
+    check("...rather than python's message about a path",
+          "can't open file" in out, False)
+    check("...and nothing was booted", calls, [])
+    check("...and no scratch is left", left, [])
+
+
+@case
+def test_structure_needs_no_boot_harness(fx):
+    """--structure reads the image with iso_assert.py and boots nothing, so a checkout
+    with no boot harness must still run it. The refusal above is per requested mode."""
+    fx.with_xorriso()
+    fx.without_harness()
+    rc, out, calls, left = fx.run("--structure")
+    check("--structure is not refused for a missing boot harness",
+          "tests/boot/qemu_boot.py is missing" in out, False)
+    check("...and it reached the structure check", [c[0] for c in calls], ["iso_assert"])
+
+
+@case
+def test_a_typed_key_spec_is_checked_before_anything_boots(fx):
+    """`--keys` is asked about before the dispatch, not after the tree has been sent.
+
+    A spec this harness cannot read used to be discovered by QEMU, which meant -- with a
+    boot host configured -- after the tree had been rsync'd to somebody else's machine and
+    a guest started. #31's lesson, applied to the other thing `kitchen test` carries over.
+
+    The grammar is not duplicated in shell: build.sh ASKS qemu_boot.py, which is why this
+    shows up as an extra recorded harness call rather than as a shell test.
+    """
+    rc, out, calls, left = fx.run("--bios", "--keys", "2s,down,ret")
+    check("the spec is asked about first", calls[0], ["--check-keys", "2s,down,ret"])
+    check("...then the boot runs", len(calls), 2)
+    check("...with the keys it was given", opt(calls[1], "--keys"), ["2s,down,ret"])
+    check("...and nothing is left behind", left, [])
+
+
+@case
+def test_a_refused_key_spec_boots_nothing(fx):
+    """A non-zero answer to --check-keys stops the run where it stands.
+
+    Exit 2, because a spec this harness will not take is a refusal rather than a test
+    result -- the same status a broken boot-host.ini gets, and for the same reason.
+    """
+    fx.keys_rc = "2"
+    rc, out, calls, left = fx.run("--bios", "--keys", "3s,(home,1s)x22,ret")
+    check("the run is refused", rc, 2)
+    check("...having booted nothing", len(calls), 1)
+    check("...and the one call was the question", calls[0][0], "--check-keys")
+    check("...leaving no scratch behind", left, [])
+
+
+@case
+def test_derived_keys_are_not_second_guessed(fx):
+    """auto_keys means the spec is this harness's own output, read from the image.
+
+    Asking it about its own answer would be a check that cannot fail, and with a boot host
+    the image it reads is the one over there -- so there is nothing here to read.
+    """
+    fx.with_xorriso()
+    fx.iso_file("/slax/boot/isolinux.cfg", ISOLINUX_SERIAL)
+    rc, out, calls, left = fx.run("--bios")
+    check("no spec is asked about", [c for c in calls if c[:1] == ["--check-keys"]], [])
+    check("...and the derived boot still happens", len(calls), 1)
+    check("...with keys this harness worked out itself", len(opt(calls[0], "--keys")), 1)
 
 
 @case
@@ -528,6 +623,11 @@ def main():
                    test_structure_without_xorriso_is_refused_before_it_runs,
                    test_no_qemu_is_a_failure_not_a_skip,
                    test_every_missing_tool_is_named_at_once,
+                   test_a_checkout_without_the_boot_harness_is_refused,
+                   test_structure_needs_no_boot_harness,
+                   test_a_typed_key_spec_is_checked_before_anything_boots,
+                   test_a_refused_key_spec_boots_nothing,
+                   test_derived_keys_are_not_second_guessed,
                    test_no_keys_needs_no_xorriso_and_says_why_it_asserts_nothing,
                    test_a_menu_that_will_not_extract_fails_with_xorrisos_reason,
                    test_an_empty_menu_is_not_a_menu_without_the_entry,
