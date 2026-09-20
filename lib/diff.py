@@ -420,8 +420,15 @@ def diff(a: str, b: str, show_bundles: bool = False, limit: int = 20) -> int:
                 # The bundle's bytes differ and nothing in it does. Say which, because
                 # this is what two builds of one tree look like and the old message --
                 # "(same file list; contents differ)" -- asserted the opposite.
-                print("    (identical content -- only the squashfs container differs:"
-                      " its creation time, and the mtimes it stores)")
+                #
+                # NAMING THE CAUSE WOULD BE A SECOND WRONG ANSWER. What is measured here
+                # is that no entry differs; WHY the container's bytes do is not. A
+                # rebuild's creation time is the usual reason and the one worth pointing
+                # at, but a different compressor or block size, padding, or plain
+                # corruption all land here too -- a corrupted byte outside any file's
+                # data reaches this line, measured.
+                print("    (identical content -- every entry matches; only the"
+                      " container's own bytes differ, as a rebuild's do)")
 
     print()
     print("  identical" if not differs else "  DIFFERENT")

@@ -11,7 +11,7 @@ turns a repack into something you can diff.
 
 | layer | deterministic? | why |
 |---|---|---|
-| **bundles** (`.sb`) | ✅ yes, given the same input tree | `mksquashfs` with fixed flags; no timestamps in the output beyond the files' own |
+| **bundles** (`.sb`) | ⚠️ **contents yes, bytes no** | every file in them is identical, but the superblock carries its own creation time — see below |
 | **initramfs** (`initrfs.img`) | ❌ **no** — `find` has no `sort` | fixable in one pipe |
 | **ISO** (`genisoimage`) | ❌ no — volume timestamps **and extent order** | fixable with the xorriso backend |
 | **ISO** (`xorriso`) | ✅ yes with `--date` | but it uppercases the application id |
@@ -105,15 +105,36 @@ task:
 | bit-identical rebuilds | `xorriso --date …` |
 | UEFI or isohybrid | `xorriso` — genisoimage cannot add a second El Torito entry |
 
-## Bundles are fine
+## Bundles — identical inside, not byte-identical
 
-`mksquashfs` with upstream's four flags is deterministic for a given input tree:
+`mksquashfs` with upstream's four flags lays out the *contents* deterministically for a given input
+tree:
 
 ```sh
 mksquashfs SRC DST -comp xz -b 1024K -Xbcj x86 -always-use-fragments
 ```
 
-The caveat is the *input tree*, not the tool. A bundle built by installing packages is only as
+**But the bundle itself is not byte-identical between runs.** A squashfs superblock carries its own
+`mkfs_time`, so that exact command run twice, a second apart, produces two files differing in
+**one byte at offset 8** — measured 2026-09-20 on squashfs-tools 4.6.1, with every entry inside
+identical in type, mode, owner, size, link target and sha256. This page used to say bundles had "no
+timestamps in the output beyond the files' own", which is what that byte disproves.
+
+Two flags remove it:
+
+```sh
+mksquashfs SRC DST -comp xz -b 1024K -Xbcj x86 -always-use-fragments -mkfs-time 0 -all-time 0
+```
+
+Measured the same day: byte-identical across runs. They are **not** used for shipped bundles, and
+that is a choice rather than an oversight — `-all-time 0` throws away every file's real mtime, which
+changes what the image hands its users. Pass them when you want a comparable rebuild.
+
+This is why [`kitchen diff --bundles`](../90-reference/cli.md) compares what is *inside* a bundle
+rather than its bytes: comparing the container reports two builds of one tree as different, every
+time, which is exactly the case you are usually asking about.
+
+The other caveat is the *input tree*, not the tool. A bundle built by installing packages is only as
 reproducible as the package repository — and bookworm is oldstable while Slackware's configured
 mirror points at `-current`. If you need a reproducible bundle, pin the source:
 

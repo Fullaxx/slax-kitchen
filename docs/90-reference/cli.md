@@ -70,6 +70,15 @@ this ISO" and pass on a screenshot of an unasserted boot. On a machine without `
 the normal outcome. Only an image that really has no serial entry falls back to screenshot
 evidence, and `--no-keys` does the same when asked.
 
+`--keys SPEC` drives the menu yourself instead: comma-separated **QEMU qcodes** — `down`, `ret`,
+`esc`, `home`, `a`–`z`, `0`–`9` — with `Ns` to wait, as in `'3s,down,down,ret'`. There is no
+repetition syntax, and it is `ret`, not `enter`. Both halves are checked, by whoever can answer:
+a token that is not in that grammar is refused **here**, before anything boots and before the tree
+goes to a [boot host](../60-testing/boot-host.md); a name QEMU does not know is refused by QEMU,
+whose answer is reported rather than discarded. It used to be discarded, so a mistyped key was
+simply never pressed — the run spent its whole `--seconds` ceiling and then blamed the *sequence*
+for not selecting an entry, which points at timing rather than at the typo.
+
 `--kernel` boots the kernel directly, bypassing the bootloader. It is the mode that can actually
 fail on its own, because it puts the kernel on `ttyS0` by construction and requires livekit's
 three markers in the serial log. `--expect STRING` adds your own requirements, repeatably — pair it
@@ -364,7 +373,7 @@ rather than leaving you to guess:
 
 ```
   inside /slax/modules/08-ssh.sb   6 -> 6 entries
-    (identical content -- only the squashfs container differs: its creation time, and the mtimes it stores)
+    (identical content -- every entry matches; only the container's own bytes differ, as a rebuild's do)
 ```
 
 This is the one place `diff` extracts, and only for a bundle whose bytes already differ: a

@@ -48,13 +48,31 @@ identity:
   arch_mismatch: /etc/slax-version claims 64bit but the ELF userland is 32bit -- upstream mislabelled this build
 ```
 
-Two traps when writing such a probe, both hit during implementation:
+The probe lives in `lib/fingerprint.py` as `arch_from_extract()`, and `kitchen apply` reads
+`when: arch==` from the same function — so a fingerprint and a recipe guard cannot disagree about
+one tree. Nothing is executed: byte 4 of an ELF header is `EI_CLASS`, the field whose whole job is
+to declare the binary's width.
+
+Three traps when writing such a probe, all hit in this tree:
 
 - **Do not probe `bin/busybox`.** It is i386 static on *all four* ISOs by design, so it tells you
   nothing about the userland.
-- **Follow symlinks (`file -L`).** On Slackware `usr/bin/ls` is a symlink to `../../bin/ls`, and an
-  unresolved `symbolic link to ...` string contains no bitness at all — which silently produced the
-  wrong answer until fixed.
+- **You must deal with symlinks, but do not follow them off the extract.** On Slackware `usr/bin/ls`
+  is a symlink to `../../bin/ls`, so an unresolved `symbolic link to …` string carries no bitness at
+  all — this page used to say "follow them with `file -L`" for that reason, and that is the trap.
+  Slackware's `01-core` also has `usr/bin/bash -> /bin/bash`, **absolute**, and `file -L` resolves an
+  absolute target against the *host's* root. Measured on the 32-bit Slackware image on 2026-09-20:
+  `file -bL` on that path answered `ELF 64-bit LSB pie executable, x86-64` — this machine's `bash`,
+  in the probe this page calls authoritative. `resolve_within()` re-roots an absolute target at the
+  extract and refuses anything still climbing out.
+- **Do not read the return status of the extraction to decide whether it worked.** Measured on
+  squashfs-tools 4.6.1, 2026-09-20: `unsquashfs` given a member list exits **0** whether or not any
+  of those members existed, so a check on it is a check that cannot fail. Ask whether a candidate is
+  there instead.
+
+Each candidate is tried in order and the first that resolves to a real ELF wins, so the recorded
+`arch_probe_file` is the *candidate that answered* — `usr/bin/ls` on all four ISOs — rather than the
+file the bytes were finally read from, which on Slackware is `bin/ls`.
 
 ## How it reads the ISO without mounting anything
 

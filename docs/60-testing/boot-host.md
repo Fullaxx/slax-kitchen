@@ -220,7 +220,7 @@ tool's bookkeeping.
 | | |
 |---|---|
 | 0, 1 | the boot test's own, unchanged — a caller cannot tell a remote run from a local one |
-| 2 | the configuration was refused, before anything connected |
+| 2 | the configuration — or a `--keys` spec this harness cannot read — was refused, before anything connected |
 | 3 | it could not be run: unreachable, the pre-run check failed, or the session was lost |
 
 On 2 or 3 nothing ran, and `ci/tier-c.sh` stops on either **without writing a ledger**,
