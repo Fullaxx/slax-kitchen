@@ -7,6 +7,7 @@ take about a second.
 """
 import os
 import shutil
+import subprocess
 import sys
 
 REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
@@ -1996,6 +1997,79 @@ def test_facts_reach_the_steps_that_run():
         check("a partial override does not break `when:`", str(e), "no exception")
 
 
+def test_flavour_is_a_fact_about_the_tree_or_says_it_is_not():
+    """_detect_flavour answered "debian" for a tree it could not read.
+
+    Not a detection, a default -- and it never said `unknown`, where arch does. So
+    `when: flavour==debian` ran on a tree nobody had identified, and bundle.packages
+    installed with apt on the strength of it. Three shipped recipes branch on this fact:
+    add-packages, enable-ssh and locale-timezone-keyboard.
+
+    Found while fixing #27, recorded there as needing its own evidence rather than being
+    changed as a rider on the arch work. This is that change.
+    """
+    if not _needs_mksquashfs("an unidentifiable tree"):
+        return
+    import tempfile
+
+    # A tree with slax/modules but no 01-core at all: `kitchen apply` gets this far,
+    # because it only refuses when <work>/iso is missing entirely.
+    blank = _core_tree("/srv/slax.iso", core=None)
+    check("a tree with no 01-core does not claim a flavour",
+          apply._detect_flavour(os.path.join(blank, "iso")), "unknown")
+    check("...and neither does the fact a recipe branches on",
+          apply._tree_facts(blank, os.path.join(blank, "iso"))["flavour"], "unknown")
+    check("a guard on it is false rather than true",
+          apply._when_ok("flavour==debian",
+                         apply._tree_facts(blank, os.path.join(blank, "iso"))), False)
+
+    # An identifiable tree is unaffected -- the fixture's 01-core carries
+    # etc/debian_version, which is what _detect_flavour reads.
+    real = _core_tree("/srv/slax.iso", core="64")
+    check("a readable tree still answers",
+          apply._detect_flavour(os.path.join(real, "iso")), "debian")
+
+    # check_compat treats it the way it already treats an unreadable arch: a base nobody
+    # could read is not a base that disagrees with the recipe.
+    facts = apply._tree_facts(blank, os.path.join(blank, "iso"))
+    check("check_compat does not warn about a flavour nobody measured",
+          apply.check_compat({"compat": {"flavours": ["slackware"]}}, blank, facts), [])
+    check("...and still warns where the tree did answer",
+          apply.check_compat({"compat": {"flavours": ["slackware"]}}, real,
+                             apply._tree_facts(real, os.path.join(real, "iso"))),
+          ["recipe declares flavours=['slackware'] but the base looks like debian"])
+
+    # The override is the escape hatch, and it only works because #34 landed first.
+    over = apply.facts_with_overrides(blank, os.path.join(blank, "iso"),
+                                      {"flavour": "debian"})
+    check("--facts is the way back", over["flavour"], "debian")
+
+    # AND bundle.packages REFUSES BEFORE THE WORK, not after. Its flavour branch used to
+    # sit at the end of step 3, so an unreadable tree was refused only once 01-core had
+    # been unpacked as a build root and a chroot prepared under it. A tree with a 01-core
+    # carrying neither version file reaches the verb where `blank` would not.
+    opaque = tempfile.mkdtemp()
+    mods = os.path.join(opaque, "iso", "slax", "modules")
+    os.makedirs(mods)
+    src = tempfile.mkdtemp()
+    os.makedirs(os.path.join(src, "usr", "bin"))
+    open(os.path.join(src, "usr", "bin", "ls"), "wb").write(b"\x7fELF\x02" + bytes(59))
+    subprocess.run(["mksquashfs", src, os.path.join(mods, "01-core.sb"),
+                    "-noappend", "-no-progress", "-all-root"],
+                   capture_output=True, check=True)
+    ctx = apply.Ctx(opaque, os.path.join(opaque, "iso"), "probe", False)
+    try:
+        apply.v_bundle_packages(ctx, {"verb": "bundle.packages",
+                                      "packages": ["tmux"], "bundle": "07-x"})
+        check("bundle.packages refuses an unreadable flavour", "no refusal", "RuntimeError")
+    except RuntimeError as e:
+        check("the refusal names the flavour", "is 'unknown'" in str(e), True)
+        check("...and both ways to say which it is",
+              "flavour: debian" in str(e) and "--facts" in str(e), True)
+        check("...before anything was unpacked", "unpacked" in "".join(ctx.lines)
+              if hasattr(ctx, "lines") else False, False)
+
+
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
     # 17 of this file's 25 mkdtemp() calls had no cleanup on 2026-09-18, so running it by hand left
@@ -2056,7 +2130,8 @@ def main():
                    test_status_removals_is_a_transition_not_a_scan,
                    test_arch_is_a_fact_about_the_tree,
                    test_a_profile_is_held_to_the_base_it_declares,
-                   test_facts_reach_the_steps_that_run]:
+                   test_facts_reach_the_steps_that_run,
+                   test_flavour_is_a_fact_about_the_tree_or_says_it_is_not]:
             fn()
         if FAILURES:
             for f in FAILURES:

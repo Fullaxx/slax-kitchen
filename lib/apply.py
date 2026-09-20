@@ -2963,6 +2963,18 @@ def _prune_dead_repos(root: str, say) -> None:
 
 
 def _detect_flavour(tree: str) -> str:
+    """"debian", "slackware", or "unknown" -- read from 01-core's own file list.
+
+    "unknown" RATHER THAN A DEFAULT. This used to end `return "debian"`, so a tree with no
+    01-core, an unreadable one, or one carrying neither version file was reported as
+    Debian -- a fact nobody had measured, and one three shipped recipes branch on
+    (add-packages, enable-ssh, locale-timezone-keyboard). `when: flavour==debian` ran on
+    it, and bundle.packages installed with apt on the strength of it.
+
+    arch already answered "unknown" here (#27); this is the same answer for the same
+    reason. Both escape hatches predate it: `--facts flavour=debian` for a run, and
+    `flavour:` on the step for a recipe that knows better.
+    """
     mods = os.path.join(tree, "slax", "modules")
     for n in sorted(os.listdir(mods)) if os.path.isdir(mods) else []:
         if n.startswith("01-core"):
@@ -2972,7 +2984,7 @@ def _detect_flavour(tree: str) -> str:
                 return "slackware"
             if "debian_version" in r.stdout:
                 return "debian"
-    return "debian"
+    return "unknown"
 
 
 def _detect_arch(tree: str) -> str | None:
@@ -3088,6 +3100,19 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
     mods = ctx.p("slax", "modules")
     stack = _bundle_stack(ctx, step.get("from"), out_name, "bundle.packages")
     flavour = step.get("flavour") or _detect_flavour(ctx.tree)
+    # CHECKED HERE, not after the work. This used to be a branch at the end of step 3,
+    # so a flavour nobody could read was refused only after 01-core had been unpacked as
+    # a build root and a chroot prepared under it -- ~122 MiB of it on the stock ISO.
+    # _detect_flavour answers "unknown" now rather than defaulting to "debian", which
+    # makes that path reachable by an ordinary tree instead of only by a typo.
+    if flavour not in ("debian", "slackware"):
+        raise RuntimeError(
+            f"bundle.packages: this tree's flavour is {flavour!r}, so there is no package "
+            f"manager to use.\n"
+            f"  01-core carries neither etc/debian_version nor etc/slackware-version, or "
+            f"could not be read at all.\n"
+            f"  Say which it is: `flavour: debian` on this step, or --facts "
+            f"flavour=debian for the run.")
 
     if ctx.dry:
         ctx.say(f"would install {', '.join(packages)} into {out_name} "
@@ -3135,7 +3160,7 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
                     raise RuntimeError("apt-get update failed:\n" + r.stderr.strip()[-1500:])
             apt_argv = apt_install_argv(step.get("apt") or {})
             r = _in_chroot(root, apt_argv + list(packages))
-        elif flavour == "slackware":
+        else:                                  # slackware; the third case refused above
             # slackpkg + slackpkg+ are preconfigured in Slax's 01-core, but -batch=on
             # does NOT cover slackpkg's "you picked a -current mirror but 15.0+ is
             # installed, is this really what you want?" confirmation. With no stdin it
@@ -3171,8 +3196,6 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
                     f"on success)")
             r = _in_chroot(root, ["slackpkg", "-batch=on", "-default_answer=y",
                                   "install"] + list(packages), stdin=yes)
-        else:
-            raise RuntimeError(f"bundle.packages: unknown flavour {flavour!r}")
         if r.returncode != 0:
             out = (r.stderr.strip() or r.stdout.strip())
             # apt's --no-remove refusal is one terse line, and -qq makes it terser: it does
@@ -3297,12 +3320,8 @@ def _tree_facts(work: str, tree: str) -> dict:
     Now it is read from the tree. The ISO's own NAME is the fallback when there is no
     01-core to read -- never the directory it sits in, which is the whole bug.
 
-    `flavour` IS NOT SYMMETRICAL WITH THIS, and the difference is worth knowing before
-    trusting it: _detect_flavour() answers "debian" for a tree it could not read, where
-    arch answers "unknown". So an unreadable tree asserts a flavour it never measured,
-    and `when: flavour==debian` runs on it. Left alone here deliberately -- changing that
-    default decides whether guarded steps run at all, which is a product change needing
-    its own evidence, not a rider on this one.
+    `flavour` is symmetrical with it: both answer "unknown" for a tree they could not
+    read, and a `when:` guard on an unknown fact is false rather than true.
     """
     import yaml
     facts = {"flavour": _detect_flavour(tree), "arch": _detect_arch(tree) or "unknown"}
@@ -3419,7 +3438,9 @@ def check_compat(doc: dict, work: str, facts: dict) -> list[str]:
         return []
     compat = doc.get("compat", {}) or {}
     warn = []
-    flav = facts["flavour"]
+    # "unknown" is not a disagreement, for either fact: a base nobody could read is a
+    # different problem and not one to warn about the recipe over.
+    flav = None if facts["flavour"] == "unknown" else facts["flavour"]
     arch = None if facts["arch"] == "unknown" else facts["arch"]
     if flav and compat.get("flavours") and flav not in compat["flavours"]:
         warn.append(f"recipe declares flavours={compat['flavours']} but the base looks like {flav}")
@@ -3648,8 +3669,8 @@ def base_mismatch(base: dict, facts: dict) -> list[str]:
     "...32bit...", turning a silent wrong-arch apply into a confident wrong refusal.
     _tree_facts reads the tree now.
 
-    `flavour` still answers "debian" for a tree it could not read rather than "unknown"
-    (see _tree_facts), so a flavour disagreement is only as certain as that default.
+    Both facts answer "unknown" for a tree that could not be read, so neither is asserted
+    here on the strength of a default.
     """
     out = []
     for key in ("flavour", "arch"):
