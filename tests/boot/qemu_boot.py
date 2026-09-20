@@ -559,18 +559,38 @@ def main(argv: list[str]) -> int:
                 f.write("\n".join(got) + "\n")
             golden_state = "created"
         else:
-            want = [ln.rstrip("\n") for ln in open(a.golden)]
+            # rstrip(), not rstrip("\n"), so BOTH sides are stripped the same way.
+            # testkit_block's comment says "Both the write and the comparison go through
+            # here, so they cannot disagree" -- and the comparison did not: it kept any
+            # trailing whitespace the file carried, so such a golden could never match,
+            # whatever the image did, and the diff below could not say why. A committed
+            # golden is protected by ci/checks/70-whitespace.sh; a --golden-dir pointing
+            # outside the tree, which every scratch run uses, is not.
+            want = [ln.rstrip() for ln in open(a.golden)]
             if got == want:
                 print(f"  ok   golden: {len(got)} testkit lines match {a.golden}")
                 golden_state = "match"
             else:
                 print(f"  FAIL golden: testkit output differs from {a.golden}")
-                for ln in want:
-                    if ln not in got:
-                        print(f"    - {ln}")
-                for ln in got:
-                    if ln not in want:
-                        print(f"    + {ln}")
+                missing = [ln for ln in want if ln not in got]
+                extra = [ln for ln in got if ln not in want]
+                for ln in missing:
+                    print(f"    - {ln}")
+                for ln in extra:
+                    print(f"    + {ln}")
+                # BOTH OF THOSE ARE MEMBERSHIP TESTS, so when the two sides hold the same
+                # lines in a different order they print nothing at all -- while `got ==
+                # want` above still fails the run. "differs from" followed by silence is
+                # the one diff a reader cannot act on.
+                if not missing and not extra:
+                    at = next((i for i, (g, w) in enumerate(zip(got, want)) if g != w),
+                              None)
+                    if at is None:
+                        print(f"    the same lines, but {len(got)} of them here and "
+                              f"{len(want)} in the golden")
+                    else:
+                        print(f"    the same {len(got)} lines in a different order: "
+                              f"line {at + 1} is {got[at]!r}, expected {want[at]!r}")
                 golden_state, rc = "differ", 1
 
     if r["serial_text"].strip():
