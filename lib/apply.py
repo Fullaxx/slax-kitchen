@@ -3099,7 +3099,14 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
 
     mods = ctx.p("slax", "modules")
     stack = _bundle_stack(ctx, step.get("from"), out_name, "bundle.packages")
-    flavour = step.get("flavour") or _detect_flavour(ctx.tree)
+    # THE RUN'S FACTS, not a fresh probe of the tree. This verb asked _detect_flavour
+    # itself, which is the same shape as #34 and had the same consequence: --facts
+    # reached the `when:` guard in front of the step and not the step behind it, so the
+    # refusal below told people to pass a flag that could not change its answer.
+    # ctx.facts is what the plan was built from, overrides already merged in; the probe
+    # stays as the fallback for a caller that set none.
+    flavour = (step.get("flavour") or ctx.facts.get("flavour")
+               or _detect_flavour(ctx.tree))
     # CHECKED HERE, not after the work. This used to be a branch at the end of step 3,
     # so a flavour nobody could read was refused only after 01-core had been unpacked as
     # a build root and a chroot prepared under it -- ~122 MiB of it on the stock ISO.

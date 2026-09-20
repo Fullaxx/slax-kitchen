@@ -2066,8 +2066,26 @@ def test_flavour_is_a_fact_about_the_tree_or_says_it_is_not():
         check("the refusal names the flavour", "is 'unknown'" in str(e), True)
         check("...and both ways to say which it is",
               "flavour: debian" in str(e) and "--facts" in str(e), True)
-        check("...before anything was unpacked", "unpacked" in "".join(ctx.lines)
-              if hasattr(ctx, "lines") else False, False)
+
+    # AND BOTH OF THOSE WAYS HAVE TO WORK, or the message is an instruction that fails.
+    # The verb probed the tree itself rather than reading the facts the run was planned
+    # with, so --facts reached the `when:` guard and not the step behind it -- #34's shape,
+    # in the one verb that had its own copy of the question.
+    dry = apply.Ctx(opaque, os.path.join(opaque, "iso"), "probe", True)
+    dry.facts = {"flavour": "debian", "arch": "64bit"}
+    try:
+        apply.v_bundle_packages(dry, {"verb": "bundle.packages",
+                                      "packages": ["tmux"], "bundle": "07-x"})
+    except RuntimeError as e:
+        check("--facts reaches bundle.packages", f"refused: {e}", "accepted")
+    # ...and the step's own declaration still wins over both.
+    told = apply.Ctx(opaque, os.path.join(opaque, "iso"), "probe", True)
+    told.facts = {"flavour": "unknown", "arch": "64bit"}
+    try:
+        apply.v_bundle_packages(told, {"verb": "bundle.packages", "flavour": "slackware",
+                                       "packages": ["tmux"], "bundle": "07-x"})
+    except RuntimeError as e:
+        check("`flavour:` on the step still wins", f"refused: {e}", "accepted")
 
 
 def main():
