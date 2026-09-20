@@ -208,6 +208,37 @@ JSONL="$OUT/runs.jsonl"
 PIDDIR="$OUT/pids"   # written by lib/build.sh, one per boot
 mkdir -p "$PIDDIR"
 
+# Is this pid RUNNING, or merely present in the process table?
+#
+# A ZOMBIE ANSWERS `kill -0` AND NAMES NOTHING, and asking only `kill -0` made the sweep
+# get both halves of its job wrong on one. A process that has exited but whose parent has
+# not reaped it keeps its table entry, so `kill -0` succeeds; /proc/<pid>/cmdline is then
+# EMPTY, so _is_ours below cannot match it however exactly it was ours. The sweep therefore
+# announced this run's own corpse as "names pid N, which is not this run's; left alone" --
+# a false accusation against whoever is sharing the machine, and a leak reported for a
+# guest that had already stopped.
+#
+# Measured 2026-09-20, not assumed. In a container whose pid 1 is `sleep` and so reaps
+# nothing, the orphan fixture walks through all three states: while its launcher lives,
+# S with cmdline `<out>/fakebin/qemu-system-x86_64 60`; after the launcher exits, still S,
+# reparented; and after sweep_pids' own `kill -9`, Z with `kill -0` still succeeding and an
+# empty cmdline. Under an init that reaps, the third state lasts microseconds, which is why
+# this never showed on a developer's machine and is deterministic on a runner.
+#
+# NOT the same question as _is_ours, and kept separate on purpose: this one asks whether
+# there is anything to kill, that one asks whether we are allowed to. Unreadable /proc with
+# a live pid answers "running" -- over-reporting a leak costs a message, under-reporting it
+# is the bug this sweep exists to prevent.
+_is_running() {
+    kill -0 "$1" 2>/dev/null || return 1
+    [ -r "/proc/$1/stat" ] || return 0
+    # The state field follows the LAST ')': a comm may itself contain spaces and parens.
+    case "$(sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f1)" in
+        Z) return 1 ;;
+    esac
+    return 0
+}
+
 # Is this pid one of ours? Linux-only, like the rest of this file's leak checks, and the
 # same question lib/boot_host.py's _kill_orphans asks of the same file.
 #
@@ -239,7 +270,7 @@ sweep_pids() {
         _pid=$(cat "$pf" 2>/dev/null)
         _name=$(basename "$pf")
         rm -f "$pf"
-        if [ -z "$_pid" ] || ! kill -0 "$_pid" 2>/dev/null; then
+        if [ -z "$_pid" ] || ! _is_running "$_pid"; then
             say "${R}LEAK${O} $_name was left behind; the guest it named is already gone"
         elif _is_ours "$_pid"; then
             kill -9 "$_pid" 2>/dev/null

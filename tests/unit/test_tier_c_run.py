@@ -81,19 +81,73 @@ done
 #   foreign a pid file naming a process that is NOT this run's -- a recycled number, on a
 #           machine shared with other people's virtual machines. It must be reported and
 #           LEFT ALONE, which is the promise the old comment made and never kept.
+# THE PID IS REPORTED BY THE GUEST ITSELF, AFTER exec, AND NOT BY $! .
+#
+# $! names whatever the shell backgrounded, which is setsid(1) -- and setsid FORKS whenever
+# it is already a process group leader, so on such a host $! was a wrapper that exited
+# immediately, leaving an unreaped corpse whose /proc/<pid>/cmdline is empty. tier-c.sh's
+# _is_ours cannot match an empty cmdline, so the sweep announced this run's own leftover as
+# somebody else's virtual machine and the two assertions below failed for a reason neither
+# of them names. exec preserves the pid, so a shell that writes its own $$ and then execs
+# reports the pid the guest really has, whatever setsid decided to do. Found 2026-09-20.
+#
+# AND THE FIXTURE IS THEN CHECKED, because a fixture that did not take must say so rather
+# than leave the assertions to fail obscurely: a non-empty cmdline is exactly what the
+# sweep has to be able to read, so that is what is waited for.
 if [ -n "${STUB_ORPHAN:-}" ] && [ -n "$out" ]; then
     mkdir -p "$out/pids" "$out/fakebin"
+    rm -f "$out/orphan.pid"
     case "$STUB_ORPHAN" in
         ours)
             ln -sf "$(command -v sleep)" "$out/fakebin/qemu-system-x86_64"
-            setsid "$out/fakebin/qemu-system-x86_64" 60 >/dev/null 2>&1 </dev/null &
-            echo $! > "$out/pids/$path-$$.pid"; echo $! > "$out/orphan.pid" ;;
+            setsid sh -c 'echo $$ > "$1/orphan.pid"; exec "$1/fakebin/qemu-system-x86_64" 60' \
+                _ "$out" >/dev/null 2>&1 </dev/null & ;;
         foreign)
             # setsid for the same reason as above, and for one more: a process left in
             # this harness's group does not outlive subprocess.run(capture_output=True)
             # -- measured -- so without it the test would "pass" on a corpse.
-            setsid sleep 60 >/dev/null 2>&1 </dev/null &
-            echo $! > "$out/pids/$path-$$.pid"; echo $! > "$out/orphan.pid" ;;
+            setsid sh -c 'echo $$ > "$1/orphan.pid"; exec sleep 60' \
+                _ "$out" >/dev/null 2>&1 </dev/null & ;;
+        zombie)
+            # A GUEST THAT ALREADY STOPPED, still in the table because nobody reaped it.
+            # python3 and not a shell on purpose: a shell reaps its own background
+            # children, so the corpse would be gone before the sweep read the pid file.
+            setsid python3 -c 'import os, sys, time
+p = os.fork()
+if p == 0: os._exit(0)
+open(sys.argv[1], "w").write(str(p))
+open(sys.argv[2], "w").write(str(os.getpid()))
+time.sleep(60)' "$out/orphan.pid" "$out/zparent.pid" >/dev/null 2>&1 </dev/null & ;;
+    esac
+    case "$STUB_ORPHAN" in
+        ours|foreign)
+            _n=0
+            while [ ! -s "$out/orphan.pid" ] && [ "$_n" -lt 200 ]; do
+                _n=$((_n + 1)); sleep 0.05
+            done
+            _op=$(cat "$out/orphan.pid" 2>/dev/null)
+            # NOT `kill -0`, which succeeds on a zombie: the question is whether there is a
+            # RUNNING process for the sweep to read, and a zombie names nothing.
+            _oc=""
+            [ -n "$_op" ] && _oc=$(tr '\0' ' ' < "/proc/$_op/cmdline" 2>/dev/null)
+            if [ -z "$_oc" ]; then
+                echo "stub kitchen: the $STUB_ORPHAN orphan never started (pid '$_op')" >&2
+                exit 9
+            fi
+            echo "$_op" > "$out/pids/$path-$$.pid" ;;
+        zombie)
+            _n=0
+            while [ ! -s "$out/orphan.pid" ] && [ "$_n" -lt 200 ]; do
+                _n=$((_n + 1)); sleep 0.05
+            done
+            _op=$(cat "$out/orphan.pid" 2>/dev/null)
+            # The state field follows the LAST ')': a comm may contain spaces and parens.
+            _st=$(sed 's/.*) //' "/proc/$_op/stat" 2>/dev/null | cut -d' ' -f1)
+            if [ "$_st" != Z ]; then
+                echo "stub kitchen: the zombie orphan is '$_st', not Z (pid '$_op')" >&2
+                exit 9
+            fi
+            echo "$_op" > "$out/pids/$path-$$.pid" ;;
     esac
 fi
 # $STUB_BLOCK: say we started, then block on a fifo until the test signals us. A real
@@ -223,11 +277,26 @@ def run_tier_c(tmp, env_extra, paths="kernel", boot_host=False):
 
 
 def alive(pid):
+    """Running, not merely present in the process table.
+
+    os.kill(pid, 0) SUCCEEDS ON A ZOMBIE, so this used to answer True for a guest that had
+    already stopped -- which is the exact opposite of what every caller asks it. Three
+    checks here read "it is not still running" and one reads "the process is STILL
+    RUNNING"; on an unreaped corpse the first three failed and the fourth passed, both for
+    the same wrong reason. Found 2026-09-20 when ci/run-checks.sh went red on a runner and
+    green on the machine it was written on: after sweep_pids' own `kill -9` the orphan is a
+    zombie until something reaps it, which under systemd takes microseconds and under a
+    pid 1 that reaps nothing takes forever.
+
+    The state field follows the LAST ')' in /proc/<pid>/stat, because a comm may itself
+    contain spaces and parentheses.
+    """
     try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
+        with open("/proc/%d/stat" % pid) as fh:
+            state = fh.read().rsplit(") ", 1)[1].split()[0]
+    except (OSError, IndexError, ValueError):
         return False
+    return state != "Z"
 
 
 def reap(pid):
@@ -242,6 +311,13 @@ def reap(pid):
 def orphan_pid(out):
     try:
         return int(open(os.path.join(out, "orphan.pid")).read().strip())
+    except (OSError, ValueError):
+        return 0
+
+
+def pid_in(out, name):
+    try:
+        return int(open(os.path.join(out, name)).read().strip())
     except (OSError, ValueError):
         return 0
 
@@ -455,6 +531,34 @@ def test_a_pid_that_is_not_ours_is_reported_and_left_alone(tmp, _box):
 
 
 @in_a_box
+def test_a_zombie_is_a_guest_that_already_stopped(tmp, _box):
+    """A corpse answers `kill -0` and names nothing, and both halves misled the sweep.
+
+    WHY THIS EXISTS. sweep_pids asked `kill -0` and nothing else, which succeeds on a
+    process that has exited but has not been reaped. /proc/<pid>/cmdline is empty for one,
+    so _is_ours could not match it however exactly it was ours, and this run's own corpse
+    was announced as "names pid N, which is not this run's; left alone" -- a false
+    accusation against whoever shares the machine, and a leak counted for a guest that had
+    already stopped.
+
+    Invisible wherever init reaps promptly, which is every developer's machine and not
+    every runner: ci/run-checks.sh went red on GitHub's and green here, with two assertions
+    in this file failing for a reason neither of them names. Found 2026-09-20.
+    """
+    out = os.path.join(tmp, "evidence")
+    rc, o = run_tier_c(tmp, {"STUB_ORPHAN": "zombie"}, paths="bios")
+    pid = orphan_pid(out)
+    try:
+        check("the zombie was actually created", pid != 0, True)
+        check("a pid file left behind still fails the sweep", rc != 0, True)
+        check("...and the guest is reported as already gone", "already gone" in o, True)
+        check("...not as somebody else's", "not this run's" in o, False)
+        check("...and a corpse does not read as running", alive(pid), False)
+    finally:
+        reap(pid_in(out, "zparent.pid"))
+
+
+@in_a_box
 def test_one_paths_leftovers_do_not_reach_the_next(tmp, _box):
     """$OUT/pids is one directory shared by every path, and nothing emptied it.
 
@@ -563,6 +667,7 @@ def main():
                    test_with_a_boot_host_the_local_tool_check_asks_for_the_transport,
                    test_an_orphaned_guest_fails_the_sweep_and_is_named,
                    test_a_pid_that_is_not_ours_is_reported_and_left_alone,
+                   test_a_zombie_is_a_guest_that_already_stopped,
                    test_one_paths_leftovers_do_not_reach_the_next,
                    test_an_interrupt_stops_the_sweep]:
             fn()
