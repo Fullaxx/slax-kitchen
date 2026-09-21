@@ -168,14 +168,21 @@ if [ -n "$want" ] && [ "$n" -gt 0 ]; then
     # file, and xargs may end a batch on one. Without -H that line parses as file="12",
     # line="four targets" and the rule reports nonsense instead of a finding.
     #
-    # And an empty list is refused rather than passed: ci/lib.sh already FATALs when git will
-    # not answer, so this cannot fire in practice -- which is exactly why it would never be
-    # noticed if it could. A rule that examined no files has not checked anything.
+    # AN EMPTY LIST IS NORMAL HERE, and refusing it blocked every code-only commit. This
+    # said an empty list "cannot fire in practice, which is exactly why it would never be
+    # noticed if it could" -- and then it fired, at pre-commit, on a commit that staged
+    # twenty-five .py files and no markdown. The reasoning conflated two different empty
+    # sets: ci/lib.sh FATALs when GIT will not answer, which is the unobtainable list this
+    # was guarding against, while a staged scope holding no .md is an ordinary Python
+    # change. CI never saw it, because `ci` runs scope=tree where markdown always exists.
+    #
+    # So it notes and skips, like the four other count rules in this file, all of which
+    # already say "count check skipped" rather than failing when they cannot answer.
     if [ -s /tmp/.kitchen-tgt-f.$$ ]; then
         xargs grep -noHiE "(($words)(-($words))?|[0-9]+)([[:space:]]+targets|-targets?)" \
             < /tmp/.kitchen-tgt-f.$$ > /tmp/.kitchen-tgt.$$ 2>/dev/null || true
     else
-        fail "90-doc-coverage: no markdown files in scope, so the target count checked nothing"
+        note "90-doc-coverage: no markdown in scope; target count check skipped"
         : > /tmp/.kitchen-tgt.$$
     fi
     rm -f /tmp/.kitchen-tgt-f.$$
