@@ -11,6 +11,7 @@ Issue #30.
 import importlib.util
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -38,6 +39,69 @@ def _have_tools(what: str) -> bool:
     FAILURES.append(f"{', '.join(missing)} not installed, so {what} cannot be tested "
                     f"(required tools -- see kitchen doctor)")
     return False
+
+
+# A stub xorriso serving canned answers, and an image written here rather than mastered.
+# BOTH COPIED FROM tests/unit/test_listing.py, deliberately and not factored out: unit test
+# files in this tree are standalone -- none imports another, and each runs directly with
+# `python3 tests/unit/<file>.py`. What is shared is the shape, not the code.
+#
+# THE REASON IS CI. The gates job installs containers/packages/lint.txt and nothing else --
+# shellcheck, yamllint, python3-yaml, python3-jsonschema -- and squashfs-tools only comes
+# free from the ubuntu-24.04 runner image. xorriso is in neither. This test used to build
+# two real ISOs with `xorriso -as mkisofs` and took the whole gate down with
+# `FileNotFoundError: 'xorriso'` (run 35548115254), while passing here, where xorriso is
+# installed. docs/60-testing/ci.md calls that job "~1 min, no ISOs".
+STUB_XORRISO = r"""#!/bin/sh
+for a in "$@"; do
+    case "$a" in
+        lsdl) cat "$STUB_DIR/lsdl" 2>/dev/null ;;
+        report_lba) cat "$STUB_DIR/lba" 2>/dev/null ;;
+    esac
+done
+exit 0
+"""
+
+SECTOR = 2048
+
+
+def _stub_xorriso(tmp: str, path: str, size: int, lba: int) -> str:
+    """A directory holding the stub and the one file it will report. Returns the dir."""
+    d = os.path.join(tmp, "stub")
+    os.makedirs(d, exist_ok=True)
+    exe = os.path.join(d, "xorriso")
+    with open(exe, "w") as f:
+        f.write(STUB_XORRISO)
+    os.chmod(exe, 0o755)
+    dirs = ("/", "/slax", "/slax/modules")
+    with open(os.path.join(d, "lsdl"), "w") as f:
+        f.write("".join(f"drwxr-xr-x    1 0 0    0 Sep 19 14:37 '{x}'\n" for x in dirs)
+                + f"-rw-r--r--    1 0 0 {size} Sep 19 14:37 '{path}'\n")
+    with open(os.path.join(d, "lba"), "w") as f:
+        f.write("Report layout: xt , Startlba ,   Blocks , Filesize , ISO image path\n"
+                f"File data lba:  0 ,       {lba} ,        {size // SECTOR + 1} ,       "
+                f"{size} , '{path}'\n")
+    return d
+
+
+def _iso_carrying(path: str, payload: bytes, lba: int) -> None:
+    """A primary volume descriptor and a terminator -- enough for IsoReader to open it --
+    with `payload` laid down at `lba`, so _hash_all reads a real extent and
+    bundle_manifest has a real squashfs to open at that offset."""
+    img = bytearray(SECTOR * 24)
+    pvd = bytearray(SECTOR)
+    pvd[0], pvd[1:6], pvd[6] = 1, b"CD001", 1
+    struct.pack_into("<I", pvd, 80, 24)
+    struct.pack_into("<H", pvd, 128, SECTOR)
+    struct.pack_into("<I", pvd, 158, 23)
+    struct.pack_into("<I", pvd, 166, SECTOR)
+    img[16 * SECTOR:17 * SECTOR] = pvd
+    img[17 * SECTOR] = 255
+    img[17 * SECTOR + 1:17 * SECTOR + 6] = b"CD001"
+    img += bytearray(lba * SECTOR - len(img))
+    img += payload
+    with open(path, "wb") as f:
+        f.write(bytes(img))
 
 
 def _sb(src: str, path: str, mkfs_time: str) -> None:
@@ -159,34 +223,45 @@ def test_an_unreadable_bundle_does_not_abandon_the_report():
     """
     if not _have_tools("an unreadable bundle inside a report"):
         return
-    import io
     import contextlib
+    import io
     src = tempfile.mkdtemp()
     os.makedirs(os.path.join(src, "etc"))
     with open(os.path.join(src, "etc", "conf"), "w") as f:
         f.write("one\n")
     d = tempfile.mkdtemp()
-    a, b = os.path.join(d, "a.sb"), os.path.join(d, "b.sb")
-    _sb(src, a, "1000")
-    _sb(src, b, "2000")
-    # Destroy b's superblock magic: unsquashfs cannot read it, and the ISO-level compare
-    # still sees a .sb whose bytes differ, which is what puts it in the bundle loop.
-    with open(b, "r+b") as fh:
-        fh.write(b"\x00\x00\x00\x00")
+    sb = os.path.join(d, "x.sb")
+    _sb(src, sb, "1000")
+    with open(sb, "rb") as fh:
+        good = fh.read()
+    # The same bundle with its squashfs magic zeroed: unsquashfs cannot read it, and the
+    # extents still differ, which is what puts it in the bundle loop rather than skipping
+    # it as unchanged.
+    bad = b"\x00\x00\x00\x00" + good[4:]
 
-    isos = []
-    for name, sb in (("a.iso", a), ("b.iso", b)):
-        root = os.path.join(d, name + ".tree", "slax", "modules")
-        os.makedirs(root)
-        shutil.copy2(sb, os.path.join(root, "08-ssh.sb"))
-        iso = os.path.join(d, name)
-        subprocess.run(["xorriso", "-as", "mkisofs", "-o", iso, "-V", "T",
-                        os.path.join(d, name + ".tree")], capture_output=True)
-        isos.append(iso)
+    lba, rel = 24, "/slax/modules/08-ssh.sb"
+    a, b = os.path.join(d, "a.iso"), os.path.join(d, "b.iso")
+    _iso_carrying(a, good, lba)
+    _iso_carrying(b, bad, lba)
+    stub = _stub_xorriso(d, rel, len(good), lba)
 
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        rc = kd.diff(isos[0], isos[1], show_bundles=True)
+    # In-process, so the stub goes on this process's PATH rather than a child's env --
+    # test_listing.py drives `diff` as a subprocess and hands it one. Restored in finally:
+    # a test that leaves PATH rewritten would break every file after it in the same run.
+    old_path, old_dir = os.environ.get("PATH", ""), os.environ.get("STUB_DIR")
+    os.environ["PATH"] = stub + os.pathsep + old_path
+    os.environ["STUB_DIR"] = stub
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            rc = kd.diff(a, b, show_bundles=True)
+    finally:
+        os.environ["PATH"] = old_path
+        if old_dir is None:
+            os.environ.pop("STUB_DIR", None)
+        else:
+            os.environ["STUB_DIR"] = old_dir
+
     text = out.getvalue()
     check("the run is refused", rc, 2)
     check("the bundle is named as unreadable", "could not be read" in text, True)
