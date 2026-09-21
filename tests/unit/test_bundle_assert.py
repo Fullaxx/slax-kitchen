@@ -15,6 +15,7 @@ doing exactly what its package says to do.
 import importlib.util
 import os
 import sys
+import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
@@ -99,7 +100,14 @@ def main():
                test_what_no_package_owns_is_flagged,
                test_a_setgid_directory_is_never_the_question,
                test_the_path_mapping_matches_what_the_package_database_records]:
-        fn()
+        # One test crashing must not stop the rest: the count of failures is only honest
+        # if every test ran. The traceback still goes to stderr, because a crash's location
+        # is the useful half and a one-line summary loses it.
+        try:
+            fn()
+        except Exception as e:                 # noqa: BLE001
+            traceback.print_exc()
+            FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
     if FAILURES:
         for f in FAILURES:
             print(f"FAIL {f}", file=sys.stderr)

@@ -35,6 +35,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 sys.path.insert(0, os.path.join(ROOT, "ci"))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 
+import traceback
 import yaml  # noqa: E402
 
 # The fenced-block reader ci/checks/45-doc-yaml.sh already uses. ONE extractor, not two: a
@@ -261,7 +262,14 @@ def test_desktop_written_by_recipe_yaml_and_docs():
 def main():
     for fn in [test_desktop_files_shipped_by_recipes,
                test_desktop_written_by_recipe_yaml_and_docs]:
-        fn()
+        # One test crashing must not stop the rest: the count of failures is only honest
+        # if every test ran. The traceback still goes to stderr, because a crash's location
+        # is the useful half and a one-line summary loses it.
+        try:
+            fn()
+        except Exception as e:                 # noqa: BLE001
+            traceback.print_exc()
+            FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
     if FAILURES:
         for f in FAILURES:
             print(f"FAIL {f}", file=sys.stderr)

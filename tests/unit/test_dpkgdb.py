@@ -12,6 +12,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 
 import dpkgdb  # noqa: E402
+import traceback
 
 FAILURES = []
 
@@ -358,7 +359,14 @@ def main():
                    test_merge_fragments_into_chroot,
                    test_a_real_status_does_not_discard_the_fragments_below_it,
                    test_a_saved_session_supersedes_the_fragments_below_it]:
-            fn()
+            # One test crashing must not stop the rest: the count of failures is only honest
+            # if every test ran. The traceback still goes to stderr, because a crash's location
+            # is the useful half and a one-line summary loses it.
+            try:
+                fn()
+            except Exception as e:                 # noqa: BLE001
+                traceback.print_exc()
+                FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
         if FAILURES:
             for f in FAILURES:
                 print(f"FAIL {f}", file=sys.stderr)

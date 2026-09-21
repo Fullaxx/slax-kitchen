@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 
 import sources  # noqa: E402
+import traceback
 
 FAILURES = []
 H = {c: c * 64 for c in "abcdef0123456789"}
@@ -668,7 +669,14 @@ def main():
                test_a_file_from_a_build_host_package_points_at_that_package,
                test_the_recorded_digest_is_the_one_git_computes,
                test_markdown_renders]:
-        fn()
+        # One test crashing must not stop the rest: the count of failures is only honest
+        # if every test ran. The traceback still goes to stderr, because a crash's location
+        # is the useful half and a one-line summary loses it.
+        try:
+            fn()
+        except Exception as e:                 # noqa: BLE001
+            traceback.print_exc()
+            FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
     if FAILURES:
         for f in FAILURES:
             print(f"FAIL {f}", file=sys.stderr)

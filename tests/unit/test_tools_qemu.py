@@ -21,6 +21,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import traceback
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.join(_HERE, "..", "..")
@@ -787,6 +788,7 @@ def main():
         try:
             fn()
         except Exception as e:                # noqa: BLE001
+            traceback.print_exc()
             FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
     if FAILURES:
         for f in FAILURES:

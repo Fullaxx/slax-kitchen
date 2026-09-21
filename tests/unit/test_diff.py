@@ -15,6 +15,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import traceback
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location(
@@ -281,7 +282,14 @@ def main():
                    test_a_change_is_named,
                    test_a_bundle_that_cannot_be_read_is_refused,
                    test_an_unreadable_bundle_does_not_abandon_the_report]:
-            fn()
+            # One test crashing must not stop the rest: the count of failures is only honest
+            # if every test ran. The traceback still goes to stderr, because a crash's location
+            # is the useful half and a one-line summary loses it.
+            try:
+                fn()
+            except Exception as e:                 # noqa: BLE001
+                traceback.print_exc()
+                FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
         if FAILURES:
             for f in FAILURES:
                 print(f"FAIL {f}", file=sys.stderr)

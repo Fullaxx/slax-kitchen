@@ -155,6 +155,7 @@ def check(name, got, want):
 # Stands in for lib/boot_host.py, which tier-c.sh asks where the boots will happen.
 STUB_BOOT_HOST = """#!/usr/bin/env python3
 import os, sys
+import traceback
 if sys.argv[1:2] == ["active"]:
     if os.environ.get("KITCHEN_BOOT_HOST") == "local":
         raise SystemExit(1)
@@ -667,7 +668,14 @@ def main():
                    test_each_path_answers_for_its_own_guest,
                    test_a_zombie_in_the_group_is_not_a_running_guest,
                    test_an_interrupt_stops_the_sweep]:
-            fn()
+            # One test crashing must not stop the rest: the count of failures is only honest
+            # if every test ran. The traceback still goes to stderr, because a crash's location
+            # is the useful half and a one-line summary loses it.
+            try:
+                fn()
+            except Exception as e:                 # noqa: BLE001
+                traceback.print_exc()
+                FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
         if FAILURES:
             for f in FAILURES:
                 print(f"FAIL {f}", file=sys.stderr)

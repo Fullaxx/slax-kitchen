@@ -27,6 +27,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
@@ -135,7 +136,14 @@ def main():
         return 77
     for fn in [test_a_successful_build_keeps_the_claim_it_wrote,
                test_a_claim_that_cannot_be_written_fails_the_build]:
-        fn()
+        # One test crashing must not stop the rest: the count of failures is only honest
+        # if every test ran. The traceback still goes to stderr, because a crash's location
+        # is the useful half and a one-line summary loses it.
+        try:
+            fn()
+        except Exception as e:                 # noqa: BLE001
+            traceback.print_exc()
+            FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
     if FAILURES:
         for f in FAILURES:
             print(f"FAIL {f}", file=sys.stderr)

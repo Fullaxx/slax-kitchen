@@ -15,6 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 
+import traceback
 import validate  # noqa: E402
 
 FAILURES = []
@@ -84,7 +85,14 @@ def test_every_shipped_recipe_passes():
 def main():
     for fn in [test_a_recipe_that_removes_may_do_nothing_else,
                test_every_shipped_recipe_passes]:
-        fn()
+        # One test crashing must not stop the rest: the count of failures is only honest
+        # if every test ran. The traceback still goes to stderr, because a crash's location
+        # is the useful half and a one-line summary loses it.
+        try:
+            fn()
+        except Exception as e:                 # noqa: BLE001
+            traceback.print_exc()
+            FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
     if FAILURES:
         for f in FAILURES:
             print(f"FAIL {f}", file=sys.stderr)

@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import traceback
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 GATE = os.path.join(ROOT, "ci", "checks", "97-tier-c-ledger.sh")
@@ -124,8 +125,16 @@ def main():
     _tmpdir = os.environ.get("TMPDIR")
     os.environ["TMPDIR"] = box
     try:
-        test_a_separator_anywhere_is_refused_by_name()
-        test_qemu_must_name_a_version()
+        for fn in [test_a_separator_anywhere_is_refused_by_name,
+                   test_qemu_must_name_a_version]:
+            # One test crashing must not stop the rest: the count of failures is only honest
+            # if every test ran. The traceback still goes to stderr, because a crash's location
+            # is the useful half and a one-line summary loses it.
+            try:
+                fn()
+            except Exception as e:                 # noqa: BLE001
+                traceback.print_exc()
+                FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
         if FAILURES:
             for f in FAILURES:
                 print(f"FAIL {f}", file=sys.stderr)

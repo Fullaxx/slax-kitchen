@@ -14,6 +14,7 @@ REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 sys.path.insert(0, os.path.join(REPO, "lib"))
 
 import apply  # noqa: E402
+import traceback
 
 FAILURES = []
 
@@ -2293,7 +2294,14 @@ def main():
                    test_facts_reach_the_steps_that_run,
                    test_flavour_is_a_fact_about_the_tree_or_says_it_is_not,
                    test_a_menu_entry_names_a_payload_that_is_there]:
-            fn()
+            # One test crashing must not stop the rest: the count of failures is only honest
+            # if every test ran. The traceback still goes to stderr, because a crash's location
+            # is the useful half and a one-line summary loses it.
+            try:
+                fn()
+            except Exception as e:                 # noqa: BLE001
+                traceback.print_exc()
+                FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
         if FAILURES:
             for f in FAILURES:
                 print(f"FAIL {f}", file=sys.stderr)

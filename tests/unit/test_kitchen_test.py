@@ -54,6 +54,7 @@ if argv[:1] == ["--check-keys"]:
 # host to be unreachable.
 STUB_BOOT_HOST = r'''#!/usr/bin/env python3
 import json, os, sys
+import traceback
 argv = sys.argv[1:]
 if argv[:1] == ["active"]:
     if os.environ.get("KITCHEN_BOOT_HOST") == "local":
@@ -644,7 +645,14 @@ def main():
                    test_local_beats_the_configured_host,
                    test_the_boot_hosts_own_failures_are_not_test_results,
                    test_the_two_persistence_boots_are_told_apart]:
-            fn()
+            # One test crashing must not stop the rest: the count of failures is only honest
+            # if every test ran. The traceback still goes to stderr, because a crash's location
+            # is the useful half and a one-line summary loses it.
+            try:
+                fn()
+            except Exception as e:                 # noqa: BLE001
+                traceback.print_exc()
+                FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
         if FAILURES:
             for f in FAILURES:
                 print(f"FAIL {f}", file=sys.stderr)

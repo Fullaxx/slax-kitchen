@@ -24,6 +24,7 @@ import time
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 import boot_host  # noqa: E402
+import traceback
 
 FAILURES = []
 
@@ -692,7 +693,14 @@ def main():
                    test_the_gate_refuses_a_committed_config,
                    test_active_answers_with_a_status,
                    test_a_boot_answers_for_its_own_group_and_nobody_elses]:
-            fn()
+            # One test crashing must not stop the rest: the count of failures is only honest
+            # if every test ran. The traceback still goes to stderr, because a crash's location
+            # is the useful half and a one-line summary loses it.
+            try:
+                fn()
+            except Exception as e:                 # noqa: BLE001
+                traceback.print_exc()
+                FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
         if FAILURES:
             for f in FAILURES:
                 print(f"FAIL {f}", file=sys.stderr)

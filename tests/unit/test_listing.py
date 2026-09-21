@@ -36,6 +36,7 @@ import tempfile
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 import diff  # noqa: E402
+import traceback
 
 _spec = importlib.util.spec_from_file_location(
     "iso_assert", os.path.join(ROOT, "tests", "structure", "iso_assert.py"))
@@ -297,7 +298,14 @@ def main():
                    test_the_structure_check_end_to_end,
                    test_sources_refuses_what_it_could_not_list,
                    test_diff_refuses_before_it_reports]:
-            fn()
+            # One test crashing must not stop the rest: the count of failures is only honest
+            # if every test ran. The traceback still goes to stderr, because a crash's location
+            # is the useful half and a one-line summary loses it.
+            try:
+                fn()
+            except Exception as e:                 # noqa: BLE001
+                traceback.print_exc()
+                FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
         if FAILURES:
             for f in FAILURES:
                 print(f"FAIL {f}", file=sys.stderr)

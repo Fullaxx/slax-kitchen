@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(ROOT, "ci"))
 sys.path.insert(0, os.path.join(ROOT, "lib"))
 
 import importlib.util  # noqa: E402
+import traceback
 
 
 def _load(name, path):
@@ -418,7 +419,14 @@ def main():
                    test_the_claim_names_what_is_attached,
                    test_the_claim_says_only_what_the_directory_shows,
                    test_release_notes_use_the_claim_when_given_assets]:
-            fn()
+            # One test crashing must not stop the rest: the count of failures is only honest
+            # if every test ran. The traceback still goes to stderr, because a crash's location
+            # is the useful half and a one-line summary loses it.
+            try:
+                fn()
+            except Exception as e:                 # noqa: BLE001
+                traceback.print_exc()
+                FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
         if FAILURES:
             for f in FAILURES:
                 print(f"FAIL {f}", file=sys.stderr)

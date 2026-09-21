@@ -47,6 +47,7 @@ FAILURES = []
 # commit in progress instead of the fixture's.
 PROBE = '''#!/usr/bin/env python3
 import os, shutil, subprocess, sys, tempfile
+import traceback
 open(os.environ["PROBE_REPORT"] + ".tmpdir", "w").write(tempfile.gettempdir())
 d = tempfile.mkdtemp(prefix="probe-")
 def g(*a):
@@ -442,7 +443,14 @@ TESTS = [test_a_test_cannot_reach_the_commit_in_progress,
 
 def main():
     for fn in TESTS:
-        fn()
+        # One test crashing must not stop the rest: the count of failures is only honest
+        # if every test ran. The traceback still goes to stderr, because a crash's location
+        # is the useful half and a one-line summary loses it.
+        try:
+            fn()
+        except Exception as e:                 # noqa: BLE001
+            traceback.print_exc()
+            FAILURES.append(f"{fn.__name__} crashed: {type(e).__name__}: {e}")
     if FAILURES:
         for f in FAILURES:
             print(f"FAIL {f}", file=sys.stderr)
