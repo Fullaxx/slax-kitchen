@@ -439,19 +439,25 @@ A new verb needs: the implementation, the `schema/recipe.schema.json` enum entry
 Pure logic — anything that does not need an ISO — belongs in `tests/unit/test_apply.py`, which runs
 as one of the thirteen gates. Every case in that file is a bug that actually shipped.
 
-**Seconds, not milliseconds, and it is worth knowing where they go.** Measured 2026-09-20 on
-Ubuntu 24.04 with python 3.12, median of three: the whole unit gate is **about 18 s**, and 5 s of
-that is `tests/unit/test_qemu_boot.py` alone — it drives a poller, so real sleeps *are* the thing
-under test, and its own docstring says so. The next slowest are `test_tier_c_run.py` and
-`test_apply.py` at about a second each, and everything else together comes to about 5 s. That cost
-is paid at **both** `pre-commit` and `pre-push`.
+**Seconds, not milliseconds, and it is worth knowing where they go.** Measured 2026-09-21 at
+`af9358f` on Ubuntu 24.04 with python 3.12, median of three, each file timed the way the gate runs
+it: the whole unit gate is **about 19 s**, and 5.1 s of that is `tests/unit/test_qemu_boot.py`
+alone — it drives a poller, so real sleeps *are* the thing under test, and its own docstring says
+so. Then `test_apply.py` at 3.2 s, `test_tier_c_run.py` at 2.3 s and `test_boot_host.py` at 1.8 s;
+the other twenty files together come to about 7 s. That cost is paid at **both** `pre-commit` and
+`pre-push`.
 
-**About 2.7 s of that is the measurement that every test defined actually ran**
-([`ci/unit-run.py`](ci/unit-run.py)): the tests are 15.4 s on their own, 18.1 s through the runner,
+The shape moved between `e08c053` and here, which is why the figures are re-derived rather than
+adjusted: `test_apply.py` was "about a second" and is now the second most expensive file in the
+tree. `test_diff.py` was expected to be costly, since it packs real squashfs images — it is 0.13 s,
+because those trees hold a handful of files apiece and the ISO layer around them is a stub. An
+expectation is not a measurement either.
+
+**About 2.9 s of that is the measurement that every test defined actually ran**
+([`ci/unit-run.py`](ci/unit-run.py)): the tests are 16.4 s on their own, 19.3 s through the runner,
 on the same tree. `sys.setprofile` is called for every function call in the process, which is what
-being certain costs; the hook stops itself once the last test has been seen, which is worth about
-three-quarters of a second of it (17.3 s without that). Two cheaper versions of this check read the
-source instead, and both could be satisfied by a test that never ran.
+being certain costs; the hook stops itself once the last test has been seen. Two cheaper versions
+of this check read the source instead, and both could be satisfied by a test that never ran.
 
 **This paragraph is the only copy of that number.** `ci/checks/80-unit.sh` used to restate it; the
 two were measured months apart and drifted to 18 s and 16 s, neither of them wrong when it was
