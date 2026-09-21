@@ -337,6 +337,11 @@ class Ctx:
         self.work = work                       # <work>
         self.tree = os.path.join(work, "iso")  # <work>/iso
         self.facts: dict = {}                  # flavour/arch, for `when:` conditions
+        # In-image paths the steps of this recipe that WILL RUN intend to create. Read by
+        # boot.menu, which must not refuse an entry for a payload a later step installs --
+        # and under --dry-run no step installs anything, so existence alone is not the
+        # question. Set by apply_recipe from the resolved plan.
+        self.provides: set = set()
         self.meta = os.path.join(work, ".kitchen")
         self.recipe_dir = recipe_dir
         self.recipe = recipe_name
@@ -2283,8 +2288,63 @@ def _render_entry(e: dict) -> str:
     return "\n".join(out) + "\n"
 
 
+# The keys of a menu entry that name a FILE, as _render_entry emits them. `append` is a
+# kernel command line, not a path, and is deliberately absent: serial-console carries
+# `initrd=/slax/boot/initrfs.img` inside its append string, and parsing that back out
+# would be guessing at a grammar this project does not own.
+MENU_PAYLOAD_KEYS = ("kernel", "linux", "com32", "initrd")
+
+
+def _menu_payload_missing(ctx: Ctx, entry: dict) -> list[str]:
+    """Paths a menu entry names that are neither in the tree nor coming from this plan.
+
+    WHY THIS EXISTS. boot.menu checked that the CONFIG file was there and never the
+    payload the entry pointed AT, so memtest86plus -- two `when: arch==`-guarded
+    boot.payload steps and an unguarded boot.menu -- wrote `LINUX /slax/boot/memtest.bin`
+    on a tree whose arch could not be read, with both payload steps skipped. An ISO
+    offering "Memory test" that loads nothing, `kitchen apply` exit 0, and the journal
+    recording the recipe as applied. Issue #33.
+
+    "OR COMING FROM THIS PLAN" IS THE WHOLE DIFFICULTY. boot.payload returns before
+    writing under --dry-run, so asking only whether the file is there refuses every dry
+    run of memtest86plus against a perfectly good 64-bit tree -- and example.yaml ships
+    it. ctx.provides is what the steps that will run say they will create.
+
+    ONLY ABSOLUTE PATHS ARE CHECKED, and that is a stated gap rather than an oversight.
+    isolinux also takes a path relative to the config it appears in, which cannot be
+    resolved here: the entry is rendered once for every target. Both shipped recipes and
+    the stock isolinux.cfg use absolute paths. A relative one goes unchecked rather than
+    wrongly refused.
+    """
+    missing = []
+    for key in MENU_PAYLOAD_KEYS:
+        if key not in entry:
+            continue
+        # syslinux takes several initrds, comma-separated.
+        for one in str(entry[key]).split(","):
+            one = one.strip()
+            if not one.startswith("/") or one in ctx.provides:
+                continue
+            if not os.path.isfile(_under(ctx.tree, one, "boot.menu", key)):
+                missing.append(f"{key.upper()} {one}")
+    return missing
+
+
 @verb("boot.menu")
 def v_boot_menu(ctx: Ctx, step: dict) -> None:
+    # BEFORE THE LOOP, because the entry is rendered the same for every target: the
+    # question is about the entry, not about which config it lands in.
+    if "add" in step:
+        gone = _menu_payload_missing(ctx, step["add"])
+        if gone:
+            raise RuntimeError(
+                f"boot.menu: LABEL {step['add']['label']} would point at "
+                f"{' and '.join(repr(g) for g in gone)}, which "
+                f"{'are' if len(gone) > 1 else 'is'} not in the tree and no step of this "
+                f"recipe installs.\n"
+                f"  The entry would be written into the bootloader and boot nothing.\n"
+                f"  If a `when:` guard skipped the step that installs it, this tree is "
+                f"not one this recipe can serve.")
     for path in _cfg_paths(ctx, step.get("targets")):
         if not os.path.isfile(path):
             ctx.say(f"skip {os.path.basename(path)} (not present)")
@@ -3509,6 +3569,17 @@ def apply_recipe(path: str, work: str, dry: bool = False,
     name = doc["metadata"]["name"]
     ctx = Ctx(work, os.path.dirname(os.path.abspath(path)), name, dry)
     ctx.facts = facts
+    # What the steps that WILL RUN say they will create, so a consumer can tell "nobody
+    # installs this" from "the step that installs it has not run yet". Only the verbs
+    # that put a file at a named in-image path; a bundle is not addressable this way.
+    for _i, _st, _run in steps:
+        if not _run:
+            continue
+        if _st["verb"] == "boot.payload":
+            ctx.provides.add("/" + str(_st["dest"]).lstrip("/"))
+        elif _st["verb"] == "iso.files":
+            for _f in _st.get("files") or []:
+                ctx.provides.add("/" + str(_f["dest"]).lstrip("/"))
     print(f"  {name}: {doc['metadata']['summary']}")
     for w in check_compat(doc, work, facts):
         print(f"    warning: {w}", file=sys.stderr)

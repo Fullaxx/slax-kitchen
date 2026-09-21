@@ -2088,6 +2088,88 @@ def test_flavour_is_a_fact_about_the_tree_or_says_it_is_not():
         check("`flavour:` on the step still wins", f"refused: {e}", "accepted")
 
 
+def test_a_menu_entry_names_a_payload_that_is_there():
+    """boot.menu wrote an entry for a file nobody installed, and exited 0.
+
+    It checked the CONFIG existed and never the kernel/payload path the entry it wrote
+    pointed at. memtest86plus is the shape: two `when: arch==`-guarded boot.payload steps
+    and an UNGUARDED boot.menu, so a tree whose arch could not be read got both payloads
+    skipped and `LINUX /slax/boot/memtest.bin` written anyway -- an ISO offering "Memory
+    test" in its menu that loads nothing, with the journal recording success. Issue #33.
+
+    THE NAIVE CHECK IS WRONG, and case 3 is why: boot.payload returns before writing under
+    --dry-run, so "does the file exist" refuses every dry run of memtest86plus against a
+    perfectly good 64-bit tree. example.yaml ships that recipe. The question has to be "is
+    it there, or does a step that WILL RUN provide it".
+    """
+    import tempfile
+
+    def tree(*, payload=False):
+        work = tempfile.mkdtemp()
+        boot = os.path.join(work, "iso", "slax", "boot")
+        os.makedirs(boot)
+        with open(os.path.join(boot, "isolinux.cfg"), "w") as f:
+            f.write("DEFAULT slax\nLABEL slax\n")
+        with open(os.path.join(boot, "vmlinuz"), "w") as f:
+            f.write("not really a kernel\n")
+        if payload:
+            with open(os.path.join(boot, "memtest.bin"), "w") as f:
+                f.write("not really memtest\n")
+        return work
+
+    def add(work, entry, provides=(), dry=False):
+        ctx = apply.Ctx(work, os.path.join(work, "iso"), "probe", dry)
+        ctx.provides = set(provides)
+        apply.v_boot_menu(ctx, {"verb": "boot.menu", "targets": ["isolinux.cfg"],
+                                "add": entry})
+
+    memtest = {"label": "memtest", "menu_label": "Memory test",
+               "linux": "/slax/boot/memtest.bin"}
+
+    # 1. the bug: nothing installs it, and nothing plans to.
+    w = tree()
+    try:
+        add(w, memtest)
+        check("an entry for an absent payload is refused", "written", "RuntimeError")
+    except RuntimeError as e:
+        check("the refusal names the label", "memtest" in str(e), True)
+        check("...and the path", "/slax/boot/memtest.bin" in str(e), True)
+    with open(os.path.join(w, "iso", "slax", "boot", "isolinux.cfg")) as f:
+        check("...and nothing was written", "LABEL memtest" in f.read(), False)
+
+    # 2. serial-console's shape: the tree already has what the entry names.
+    w = tree()
+    try:
+        add(w, {"label": "serial", "menu_label": "Serial", "kernel": "/slax/boot/vmlinuz"})
+    except RuntimeError as e:
+        check("an entry naming a file that is there is written", f"refused: {e}", "written")
+
+    # 3. THE DRY-RUN CASE. Nothing on disk, but a step that will run installs it.
+    w = tree()
+    try:
+        add(w, memtest, provides={"/slax/boot/memtest.bin"}, dry=True)
+    except RuntimeError as e:
+        check("a payload the plan provides is not a missing payload",
+              f"refused: {e}", "written")
+
+    # 4. A relative path cannot be resolved without knowing which target it lands beside,
+    #    so it is left alone rather than wrongly refused. Stated, not silent.
+    w = tree()
+    try:
+        add(w, {"label": "rel", "menu_label": "Rel", "linux": "memtest.bin"})
+    except RuntimeError as e:
+        check("a relative path is not refused", f"refused: {e}", "written")
+
+    # 5. Steps that name no payload at all are untouched.
+    w = tree()
+    try:
+        ctx = apply.Ctx(w, os.path.join(w, "iso"), "probe", False)
+        apply.v_boot_menu(ctx, {"verb": "boot.menu", "targets": ["isolinux.cfg"],
+                                "timeout": 100})
+    except RuntimeError as e:
+        check("a timeout-only step is untouched", f"refused: {e}", "written")
+
+
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
     # 17 of this file's 25 mkdtemp() calls had no cleanup on 2026-09-18, so running it by hand left
@@ -2149,7 +2231,8 @@ def main():
                    test_arch_is_a_fact_about_the_tree,
                    test_a_profile_is_held_to_the_base_it_declares,
                    test_facts_reach_the_steps_that_run,
-                   test_flavour_is_a_fact_about_the_tree_or_says_it_is_not]:
+                   test_flavour_is_a_fact_about_the_tree_or_says_it_is_not,
+                   test_a_menu_entry_names_a_payload_that_is_there]:
             fn()
         if FAILURES:
             for f in FAILURES:

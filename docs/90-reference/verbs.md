@@ -367,6 +367,18 @@ refused rather than silently doing nothing.
 **Use `LINUX`, not `KERNEL`, for a non-bzImage payload** — see
 [edit-bootloader](../40-workflow/edit-bootloader.md).
 
+**The payload an entry names must exist, or be on its way.** `kernel`, `linux`, `com32` and `initrd`
+are resolved against the work tree, and an entry naming a file that is neither there nor installed by
+a step of the same recipe that *will run* is refused — the entry would be written into the bootloader
+and boot nothing. "will run" is what makes `--dry-run` work: `boot.payload` installs nothing under a
+dry run, so existence alone would refuse a plan that is perfectly fine. Only absolute paths are
+checked; isolinux also accepts one relative to the config it appears in, which cannot be resolved
+before the entry is placed. `append` is a kernel command line and is not inspected, so an
+`initrd=` inside it is not checked.
+
+This is what a `when:`-guarded payload with an unguarded menu step used to produce: both guarded
+steps skipped, the entry written anyway, `kitchen apply` exit 0.
+
 ### `boot.payload` ○
 
 ```yaml
