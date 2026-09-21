@@ -374,7 +374,8 @@ and boot nothing. "will run" is what makes `--dry-run` work: `boot.payload` inst
 dry run, so existence alone would refuse a plan that is perfectly fine. Only absolute paths are
 checked; isolinux also accepts one relative to the config it appears in, which cannot be resolved
 before the entry is placed. `append` is a kernel command line and is not inspected, so an
-`initrd=` inside it is not checked.
+`initrd=` inside it is not checked. Paths are compared after normalising, so `/slax/boot/x` and
+`//slax/boot/./x` are the same file rather than a refusal.
 
 This is what a `when:`-guarded payload with an unguarded menu step used to produce: both guarded
 steps skipped, the entry written anyway, `kitchen apply` exit 0.

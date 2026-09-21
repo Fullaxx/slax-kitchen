@@ -2160,6 +2160,66 @@ def test_a_menu_entry_names_a_payload_that_is_there():
     except RuntimeError as e:
         check("a relative path is not refused", f"refused: {e}", "written")
 
+    # 6. AND THE OTHER HALF: apply_recipe has to FILL ctx.provides, or case 3 above
+    #    holds nothing. Mutating the population to a no-op turned the whole suite green,
+    #    because every case so far sets the set by hand -- the reader tested, the writer
+    #    not. That is the shape this very commit's message warned about for ctx.facts.
+    #    Driven through apply_recipe with a real recipe, both ways round.
+    import textwrap
+    rdir = tempfile.mkdtemp()
+    rpath = os.path.join(rdir, "provides-probe.yaml")
+    with open(rpath, "w") as f:
+        f.write(textwrap.dedent("""\
+            apiVersion: slax-kitchen/v1
+            kind: Recipe
+            metadata:
+              name: provides-probe
+              summary: A throwaway recipe pairing a guarded payload with a menu entry
+            compat: {flavours: [debian], arch: [32bit, 64bit], privilege: none}
+            steps:
+              - verb: boot.payload
+                when: arch==64bit
+                src: https://example.invalid/x.bin
+                sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+                dest: slax/boot/probe.bin
+              - verb: iso.files
+                files:
+                  - {dest: slax/boot/probe.c32, content: "not really a c32 module"}
+              - verb: boot.menu
+                targets: [isolinux.cfg]
+                add:
+                  label: probe
+                  menu_label: Probe
+                  linux: /slax/boot/./probe.bin
+                  com32: //slax/boot/probe.c32
+            """))
+
+    # The payload and iso.files steps WILL run, and install nothing because this is a dry
+    # run. The menu step must still be satisfied -- this is the case that makes "does the
+    # file exist" the wrong question. The entry spells both paths awkwardly on purpose:
+    # `/slax/boot/./probe.bin` and `//slax/boot/probe.c32` are the same files the steps
+    # declare, and a raw string comparison refuses them.
+    w = tree()
+    try:
+        apply.apply_recipe(rpath, w, True, None, {"flavour": "debian", "arch": "64bit"})
+    except RuntimeError as e:
+        check("a dry run whose payload step will run is not refused",
+              f"refused: {e}", "applied")
+
+    # ...and with the guard false, nothing provides it, which is issue #33 end to end.
+    w = tree()
+    try:
+        apply.apply_recipe(rpath, w, True, None, {"flavour": "debian", "arch": "32bit"})
+        check("a dry run whose payload step is skipped IS refused", "applied", "RuntimeError")
+    except RuntimeError as e:
+        # Named AS THE RECIPE WROTE IT, which is what you would search for, rather than
+        # the normalised form the comparison uses.
+        check("...naming the payload", "/slax/boot/./probe.bin" in str(e), True)
+        # ...and only that one: the unguarded iso.files step still provides the .c32, so
+        # the two are accounted for separately rather than as one "something is missing".
+        check("...and not the module the other step provides",
+              "probe.c32" in str(e), False)
+
     # 5. Steps that name no payload at all are untouched.
     w = tree()
     try:

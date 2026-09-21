@@ -2295,6 +2295,18 @@ def _render_entry(e: dict) -> str:
 MENU_PAYLOAD_KEYS = ("kernel", "linux", "com32", "initrd")
 
 
+def _in_image(path: str) -> str:
+    """One spelling for an in-image path, so two of them can be compared.
+
+    `ctx.provides` is matched against what a menu entry names, and both come from recipe
+    text. Without this, `/slax/boot/x.bin` and `//slax/boot/x.bin` -- or a `.` or `..`
+    segment -- are different strings for one file, and the check refuses a payload the
+    plan is about to install. A false refusal is the worst answer this check can give,
+    since it blocks a build that was fine.
+    """
+    return os.path.normpath("/" + str(path).lstrip("/"))
+
+
 def _menu_payload_missing(ctx: Ctx, entry: dict) -> list[str]:
     """Paths a menu entry names that are neither in the tree nor coming from this plan.
 
@@ -2323,7 +2335,7 @@ def _menu_payload_missing(ctx: Ctx, entry: dict) -> list[str]:
         # syslinux takes several initrds, comma-separated.
         for one in str(entry[key]).split(","):
             one = one.strip()
-            if not one.startswith("/") or one in ctx.provides:
+            if not one.startswith("/") or _in_image(one) in ctx.provides:
                 continue
             if not os.path.isfile(_under(ctx.tree, one, "boot.menu", key)):
                 missing.append(f"{key.upper()} {one}")
@@ -3576,10 +3588,10 @@ def apply_recipe(path: str, work: str, dry: bool = False,
         if not _run:
             continue
         if _st["verb"] == "boot.payload":
-            ctx.provides.add("/" + str(_st["dest"]).lstrip("/"))
+            ctx.provides.add(_in_image(_st["dest"]))
         elif _st["verb"] == "iso.files":
             for _f in _st.get("files") or []:
-                ctx.provides.add("/" + str(_f["dest"]).lstrip("/"))
+                ctx.provides.add(_in_image(_f["dest"]))
     print(f"  {name}: {doc['metadata']['summary']}")
     for w in check_compat(doc, work, facts):
         print(f"    warning: {w}", file=sys.stderr)
