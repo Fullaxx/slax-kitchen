@@ -14,6 +14,7 @@ REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 sys.path.insert(0, os.path.join(REPO, "lib"))
 
 import apply  # noqa: E402
+import fingerprint  # noqa: E402
 import traceback
 
 FAILURES = []
@@ -1783,11 +1784,15 @@ def test_every_file_writing_verb_records_what_it_wrote():
         check(f"{v} records what it writes", reaches(fn, "ctx.record"), True)
 
 
-def _core_tree(source_iso, *, core="64", link=None):
+def _core_tree(source_iso, *, core="64", link=None, flavour="debian"):
     """A work tree carrying a 01-core.sb, for the two tests that need real facts.
 
     core: '64' or '32' -- the EI_CLASS of the ELF at usr/bin/ls -- or None for a tree with
     no 01-core at all, which is what makes _tree_facts fall back to the ISO's name.
+
+    flavour: 'debian' writes etc/debian_version, 'slackware' writes etc/slackware-version,
+    None writes neither -- the rebuilt core that reads as `unknown` (#35). It was Debian or
+    nothing until then, so every flavour case in this file tested one of the two.
 
     link='rel' puts usr/bin/ls -> ../../bin/ls with the real ELF at bin/ls, which is
     Slackware's shape. link='abs' makes it -> /bin/ls, the shape that escapes: bin/ls
@@ -1805,7 +1810,11 @@ def _core_tree(source_iso, *, core="64", link=None):
         src = tempfile.mkdtemp()
         os.makedirs(os.path.join(src, "usr", "bin"))
         os.makedirs(os.path.join(src, "etc"))
-        open(os.path.join(src, "etc", "debian_version"), "w").write("12.2\n")
+        if flavour == "slackware":
+            open(os.path.join(src, "etc", "slackware-version"), "w").write(
+                "Slackware 15.0+\n")
+        elif flavour:
+            open(os.path.join(src, "etc", "debian_version"), "w").write("12.2\n")
         bits = 2 if core == "64" else 1
         elf = b"\x7fELF" + bytes([bits]) + bytes(59)
         if link:
@@ -2008,6 +2017,14 @@ def test_flavour_is_a_fact_about_the_tree_or_says_it_is_not():
 
     Found while fixing #27, recorded there as needing its own evidence rather than being
     changed as a rider on the arch work. This is that change.
+
+    AND THEN ONLY HALF OF IT. lib/fingerprint.py kept a second detector -- `"slackware" if
+    "slackware" in str(ident).lower() else "debian"`, a substring match over a stringified
+    dict with no third answer -- so the same 01-core was `unknown` to this function and
+    `debian` to `kitchen fingerprint`, which is the disagreement arch_from_extract() exists
+    to prevent. `kitchen probe` could not report it either: it regenerates the fingerprint
+    with the same function that wrote compat/, so both sides carried the same default.
+    Both read fingerprint.flavour_from_extract() now (#35).
     """
     if not _needs_mksquashfs("an unidentifiable tree"):
         return
@@ -2044,6 +2061,53 @@ def test_flavour_is_a_fact_about_the_tree_or_says_it_is_not():
     over = apply.facts_with_overrides(blank, os.path.join(blank, "iso"),
                                       {"flavour": "debian"})
     check("--facts is the way back", over["flavour"], "debian")
+
+    # AND THE SECOND DETECTOR, which is what #35 was. Directories rather than an ISO:
+    # flavour_from_extract() reads an extract, and building one to hand it would need
+    # xorriso, which the commit gates job does not have (af9358f).
+    ex = tempfile.mkdtemp()
+    os.makedirs(os.path.join(ex, "etc"))
+    check("an extract with neither version file does not claim a flavour",
+          fingerprint.flavour_from_extract(ex), "unknown")
+    open(os.path.join(ex, "etc", "debian_version"), "w").write("12.2\n")
+    check("...and answers where one of them is there",
+          fingerprint.flavour_from_extract(ex), "debian")
+    open(os.path.join(ex, "etc", "slackware-version"), "w").write("Slackware 15.0+\n")
+    check("...and answers a core carrying both the same way every time",
+          fingerprint.flavour_from_extract(ex), "slackware")
+
+    # AND fingerprint() HAS TO READ IT, which is the half the checks above cannot see:
+    # they pass just as happily with the substring match put back at the call site,
+    # because they never call fingerprint(). Calling it would need an ISO, so this reads
+    # the source instead and pins where `flav` is allowed to come from -- the probe, or
+    # the "unknown" it starts as, and nothing else.
+    import ast
+    fpfn = next(f for f in ast.walk(ast.parse(
+                    open(os.path.join(REPO, "lib", "fingerprint.py")).read()))
+                if isinstance(f, ast.FunctionDef) and f.name == "fingerprint")
+    check("fingerprint() takes flavour from the probe and nowhere else",
+          sorted(ast.unparse(n.value) for n in ast.walk(fpfn)
+                 if isinstance(n, ast.Assign)
+                 and any(isinstance(t, ast.Name) and t.id == "flav" for t in n.targets)),
+          ["'unknown'", "flavour_from_extract(cx)"])
+    # ...and the extract it hands that probe has to carry the paths the probe looks for.
+    # The two are spread from the same tuples for that reason; a member list that named
+    # them separately could stop extracting one and turn every ISO "unknown" in silence,
+    # which no fixture here would notice because none of them calls fingerprint().
+    members = [ast.unparse(n.args[3]) for n in ast.walk(fpfn)
+               if isinstance(n, ast.Call) and ast.unparse(n.func).endswith("squash_extract")]
+    check("the extract it reads is spread from the same candidate lists",
+          [("FLAVOUR_CANDIDATES" in m, "ARCH_CANDIDATES" in m) for m in members],
+          [(True, True)])
+
+    # THE SLACKWARE SIDE OF THE FACT, which nothing exercised: _core_tree wrote
+    # etc/debian_version or nothing, so every case above measured Debian or an absence.
+    slack = _core_tree("/srv/slax.iso", core="64", flavour="slackware")
+    check("a Slackware tree answers too",
+          apply._detect_flavour(os.path.join(slack, "iso")), "slackware")
+    check("...and both facts come from the one extract",
+          apply._tree_facts(slack, os.path.join(slack, "iso")),
+          {"flavour": "slackware", "arch": "64bit"})
 
     # AND bundle.packages REFUSES BEFORE THE WORK, not after. Its flavour branch used to
     # sit at the end of step 3, so an unreadable tree was refused only once 01-core had

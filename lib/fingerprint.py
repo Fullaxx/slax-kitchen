@@ -81,6 +81,14 @@ def squash_extract(iso: str, offset: int, dest: str, members: list[str]) -> bool
 # 32bit for every base.
 ARCH_CANDIDATES = ("usr/bin/ls", "bin/ls", "usr/bin/bash", "bin/bash")
 
+# The version file each flavour's 01-core carries, in the order they are tried. The two
+# are mutually exclusive on all four stock bases -- etc/debian_version on the Debian pair,
+# etc/slackware-version on the Slackware pair -- so which one is PRESENT is the answer.
+# The order is fixed rather than incidental: a rebuilt core carrying both gets one answer
+# every time, not whichever the filesystem happened to hand back first.
+FLAVOUR_CANDIDATES = (("slackware", "etc/slackware-version"),
+                      ("debian", "etc/debian_version"))
+
 
 def resolve_within(root: str, rel: str, hops: int = 10) -> str | None:
     """Resolve `rel` under `root`, following symlinks but NEVER leaving `root`.
@@ -137,6 +145,38 @@ def arch_from_extract(cx: str) -> tuple[str, str] | None:
             continue
         return ("32bit" if head[4:5] == b"\x01" else "64bit"), cand
     return None
+
+
+def flavour_from_extract(cx: str) -> str:
+    """"debian", "slackware", or "unknown", read from an extracted 01-core's version file.
+
+    THE ONE AUTHORITY ON FLAVOUR, the way arch_from_extract() above is the one authority on
+    arch. `kitchen probe` and `kitchen apply`'s `when: flavour==` both come here, so a
+    fingerprint and a recipe guard cannot disagree about the same tree.
+
+    They did. This module decided flavour with `"slackware" if "slackware" in
+    str(ident).lower() else "debian"` -- a substring match over a STRINGIFIED DICT, which
+    matches a key name as readily as a value, and which had no third answer, so an ISO
+    nothing had been read from was reported as Debian. 012e720 took that same default out
+    of lib/apply.py's _detect_flavour and left this copy standing: one 01-core carrying
+    neither version file was `unknown` to the recipe guard and `debian` to the fingerprint
+    (#35).
+
+    A file that is there rather than a string that matched, because the presence of one
+    name IS the distinction -- and unlike arch, nothing has to be opened to see it.
+
+    NARROWER than what it replaces, deliberately: the old match reached etc/os-release
+    through ident's os_release_id, so a rebuilt core that drops slackware-version but
+    keeps os-release read "slackware" and now reads "unknown". That is the answer arch
+    gives for a tree it cannot read, and --facts is how to say otherwise. lib/apply.py's
+    _detect_flavour never consulted os-release either, so this is the two of them meeting
+    on the signal the recipe guard already used, not a new one.
+    """
+    for flav, rel in FLAVOUR_CANDIDATES:
+        p = resolve_within(cx, rel)
+        if p and os.path.isfile(p):
+            return flav
+    return "unknown"
 
 
 def kernel_banner(vmlinuz: str) -> tuple[str, str]:
@@ -297,11 +337,18 @@ def fingerprint(iso: str, name: str | None = None) -> dict:
         # ---- identity ------------------------------------------------------
         core = next((b for b in bundles if b.startswith("01-core")), None)
         ident: dict = {}
+        # "unknown" unless a 01-core is actually read below -- the answer `version` and
+        # `arch` already give for an image nothing could be read from (#35).
+        flav = "unknown"
         if core and "offset" in bundles[core]:
             cx = os.path.join(tmp, "core")
+            # The flavour paths are spread from FLAVOUR_CANDIDATES rather than spelled
+            # again, the way ARCH_CANDIDATES already is: flavour_from_extract() looks for
+            # exactly these, so a list that named them separately could stop extracting
+            # one and turn every ISO's flavour "unknown" without a word.
             squash_extract(iso, bundles[core]["offset"], cx,
-                           ["etc/slax-version", "etc/os-release", "etc/debian_version",
-                            "etc/slackware-version", "usr/lib/os-release",
+                           ["etc/slax-version", "etc/os-release", "usr/lib/os-release",
+                            *(rel for _flav, rel in FLAVOUR_CANDIDATES),
                             *ARCH_CANDIDATES])
             for key, rel_ in (("slax_version_file", "etc/slax-version"),
                               ("debian_version", "etc/debian_version"),
@@ -329,6 +376,9 @@ def fingerprint(iso: str, name: str | None = None) -> dict:
                 ident["arch_probe_result"] = run(
                     ["file", "-b", real]).stdout.strip().split(",")[0]
                 ident["arch"] = hit[0]
+            # From the same extract: its member list above already pulls both version
+            # files, so this costs no unsquashfs of its own.
+            flav = flavour_from_extract(cx)
         if "arch" not in ident and (fp.get("kernel") or {}).get("release", "").endswith("-smp"):
             ident["arch"] = "32bit"       # 32-bit Slax kernels carry LOCALVERSION=-smp
         claimed = ident.get("slax_version_file", "")
@@ -340,7 +390,6 @@ def fingerprint(iso: str, name: str | None = None) -> dict:
                     f"{ident['arch']} -- upstream mislabelled this build")
         fp["identity"] = ident
 
-        flav = "slackware" if "slackware" in str(ident).lower() else "debian"
         m = re.search(r"(\d+\.\d+\.\d+)", claimed)
         fp["metadata"] = {
             "name": name or f"{flav}-{ident.get('arch','unknown')}-{m.group(1) if m else 'unknown'}",

@@ -35,6 +35,8 @@ session on FAT32 or NTFS. Split at 4000 MB because FAT cannot hold a file ≥ 4 
 Slax declares exactly one, for BIOS. → [the UEFI gap](../20-boot-sequence/uefi-cd-gap.md)
 
 **flavour** ⚠ — Debian-based or Slackware-based. Orthogonal to word size, so four targets.
+Read from the version file in `01-core`, and `unknown` for a tree that carries neither. → [how it
+is read](../70-compat/fingerprints.md#flavour-is-read-the-same-way)
 
 **initrfs.img** — Slax's initramfs. Note the spelling: no `d`.
 

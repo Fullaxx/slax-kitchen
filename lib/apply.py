@@ -3034,8 +3034,46 @@ def _prune_dead_repos(root: str, say) -> None:
     say(f"pruned unreachable slackpkg+ repo(s): {', '.join(dead)}")
 
 
+def _core_facts(tree: str) -> tuple[str, str | None]:
+    """(flavour, arch) read from this tree's 01-core, in ONE extraction.
+
+    ONE, where there were two of different kinds: flavour ran `unsquashfs -l` and grepped
+    the listing text, arch extracted four paths right beside it. Both asked the same
+    bundle the same kind of question, so they now share one extract of six small paths,
+    and the two facts are guaranteed to describe the same bundle rather than merely the
+    same tree. Measured on the stock 64-bit Debian 01-core, 2026-09-21: _tree_facts()
+    0.060 s before, 0.032 s after -- the listing it no longer runs cost more than the two
+    version files added to the extract.
+
+    Both probes live in fingerprint.py, which is what makes them the same probes
+    `kitchen probe` runs. That was already true of arch; flavour had a second
+    implementation of its own that disagreed with this one (#35).
+
+    cores[0], not every 01-core* in turn: _detect_arch already read only the first, and
+    two facts taken from two different bundles would be a worse answer than either.
+    """
+    import tempfile
+    mods = os.path.join(tree, "slax", "modules")
+    cores = sorted(n for n in os.listdir(mods) if n.startswith("01-core")) \
+        if os.path.isdir(mods) else []
+    if not cores:
+        return "unknown", None
+    tmp = tempfile.mkdtemp(prefix="kitchen-core.")
+    try:
+        cx = os.path.join(tmp, "core")
+        # offset 0: in a work tree the bundle is a file of its own, not a region of an ISO.
+        fingerprint.squash_extract(
+            os.path.join(mods, cores[0]), 0, cx,
+            [*fingerprint.ARCH_CANDIDATES,
+             *(rel for _flav, rel in fingerprint.FLAVOUR_CANDIDATES)])
+        hit = fingerprint.arch_from_extract(cx)
+        return fingerprint.flavour_from_extract(cx), (hit[0] if hit else None)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _detect_flavour(tree: str) -> str:
-    """"debian", "slackware", or "unknown" -- read from 01-core's own file list.
+    """"debian", "slackware", or "unknown" -- read from 01-core's own version file.
 
     "unknown" RATHER THAN A DEFAULT. This used to end `return "debian"`, so a tree with no
     01-core, an unreadable one, or one carrying neither version file was reported as
@@ -3046,17 +3084,15 @@ def _detect_flavour(tree: str) -> str:
     arch already answered "unknown" here (#27); this is the same answer for the same
     reason. Both escape hatches predate it: `--facts flavour=debian` for a run, and
     `flavour:` on the step for a recipe that knows better.
+
+    Delegates to fingerprint.flavour_from_extract(), the probe `kitchen probe` reads, so
+    the fact a recipe branches on and the fact a fingerprint records are THE SAME FACT,
+    decided in one place. They were not: this function answered "unknown" for a bundle
+    the fingerprint called "debian" (#35). Presence of etc/debian_version or
+    etc/slackware-version, not a substring of an `unsquashfs -l` listing -- which would
+    also have answered on a file of that name anywhere else in the image.
     """
-    mods = os.path.join(tree, "slax", "modules")
-    for n in sorted(os.listdir(mods)) if os.path.isdir(mods) else []:
-        if n.startswith("01-core"):
-            r = subprocess.run(["unsquashfs", "-l", os.path.join(mods, n)],
-                               capture_output=True, text=True)
-            if "slackware-version" in r.stdout:
-                return "slackware"
-            if "debian_version" in r.stdout:
-                return "debian"
-    return "unknown"
+    return _core_facts(tree)[0]
 
 
 def _detect_arch(tree: str) -> str | None:
@@ -3066,25 +3102,11 @@ def _detect_arch(tree: str) -> str | None:
     authoritative, so the fact a recipe branches on and the fact a fingerprint records are
     THE SAME FACT, decided in one place. Two probes that agree today are two probes.
 
-    One unsquashfs of four small paths, beside the `unsquashfs -l` _detect_flavour already
-    runs. Measured on the stock 64-bit Debian 01-core, 2026-09-20: 0.02 s.
+    The extract it reads is shared with _detect_flavour -- see _core_facts. Measured on
+    the stock 64-bit Debian 01-core, 2026-09-20: 0.02 s for the four arch candidates; the
+    two version files that joined them are a few bytes each.
     """
-    import tempfile
-    mods = os.path.join(tree, "slax", "modules")
-    cores = sorted(n for n in os.listdir(mods) if n.startswith("01-core")) \
-        if os.path.isdir(mods) else []
-    if not cores:
-        return None
-    tmp = tempfile.mkdtemp(prefix="kitchen-arch.")
-    try:
-        cx = os.path.join(tmp, "core")
-        # offset 0: in a work tree the bundle is a file of its own, not a region of an ISO.
-        fingerprint.squash_extract(os.path.join(mods, cores[0]), 0, cx,
-                                   list(fingerprint.ARCH_CANDIDATES))
-        hit = fingerprint.arch_from_extract(cx)
-        return hit[0] if hit else None
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+    return _core_facts(tree)[1]
 
 
 def _apt_would_remove(root: str, argv: list, packages) -> list[str]:
@@ -3399,11 +3421,15 @@ def _tree_facts(work: str, tree: str) -> dict:
     Now it is read from the tree. The ISO's own NAME is the fallback when there is no
     01-core to read -- never the directory it sits in, which is the whole bug.
 
-    `flavour` is symmetrical with it: both answer "unknown" for a tree they could not
-    read, and a `when:` guard on an unknown fact is false rather than true.
+    `flavour` is symmetrical with it in two of three ways: both are read from 01-core by a
+    probe in fingerprint.py (#35), both answer "unknown" for a tree they could not read,
+    and a `when:` guard on an unknown fact is false rather than true. The NAME fallback
+    below is arch's alone -- an ISO called slax-64bit-debian-12.2.0.iso names its flavour
+    too, and that is not read. Deliberate only in the sense that nothing has argued for it.
     """
     import yaml
-    facts = {"flavour": _detect_flavour(tree), "arch": _detect_arch(tree) or "unknown"}
+    flav, arch = _core_facts(tree)
+    facts = {"flavour": flav, "arch": arch or "unknown"}
     origin = os.path.join(work, ".kitchen", "origin.yaml")
     if facts["arch"] == "unknown" and os.path.isfile(origin):
         src = os.path.basename(

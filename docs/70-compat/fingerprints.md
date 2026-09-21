@@ -74,6 +74,53 @@ Each candidate is tried in order and the first that resolves to a real ELF wins,
 `arch_probe_file` is the *candidate that answered* — `usr/bin/ls` on all four ISOs — rather than the
 file the bytes were finally read from, which on Slackware is `bin/ls`.
 
+## Flavour is read the same way
+
+The Debian bases carry `/etc/debian_version` inside `01-core.sb`; the Slackware bases carry
+`/etc/slackware-version`. Neither pair carries the other's, so **which file is present is the
+answer** — nothing has to be opened to see it:
+
+```yaml
+identity:
+  slackware_version: Slackware 15.0+
+  os_release_id: slackware
+metadata:
+  flavour: slackware                           # authoritative
+```
+
+The probe is `flavour_from_extract()`, beside `arch_from_extract()` in `lib/fingerprint.py`, and
+`kitchen apply` reads `when: flavour==` from that same function — the same arrangement as arch, for
+the same reason. It answers **`unknown`** for a `01-core` it could not read, and a `when:` guard on
+an unknown fact is false rather than true.
+
+Which is the whole of issue #35, because this module used to answer differently from the recipe
+guard. It decided flavour with
+
+```python
+flav = "slackware" if "slackware" in str(ident).lower() else "debian"
+```
+
+— a substring match over the *stringified* identity dict, so it matched a key name as readily as a
+value, and it had no third answer. An image whose `01-core` carried neither file, or no `01-core` at
+all, was recorded as Debian: `flavour: debian` sitting beside `arch: unknown` and `version: unknown`
+under an empty `identity: {}`. `kitchen apply` called the same bundle `unknown`, which is precisely
+the disagreement `arch_from_extract()` exists to prevent.
+
+`probe` could not report it, either. It regenerates the fingerprint with the same function that
+wrote `compat/`, so both sides of the comparison carried the same default and always agreed — a
+field listed as **critical** below that could not fire.
+
+Two consequences worth knowing:
+
+- **`/etc/os-release` is not consulted**, though the old substring match reached it through
+  `os_release_id`. A rebuilt `01-core` that drops `slackware-version` but keeps `os-release` now
+  reads `unknown` instead of `slackware`. That is the answer arch already gives for a tree it cannot
+  read, and `--facts flavour=slackware` is how to say otherwise for a run.
+- **The member list and the probe come from one tuple.** `FLAVOUR_CANDIDATES` supplies both the
+  paths `unsquashfs` is asked to extract and the paths the probe looks for. A list that spelled them
+  out separately could stop extracting one and turn every ISO `unknown` without a word — the same
+  hazard `ARCH_CANDIDATES` is spread to avoid.
+
 ## How it reads the ISO without mounting anything
 
 | Data | Method |
