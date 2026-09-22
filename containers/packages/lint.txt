@@ -16,4 +16,9 @@ python3-jsonschema
 
 # 35-pyflakes.sh lints every python file, the way shellcheck lints every shell one.
 # 0.65 s over 55 files, measured 2026-09-22.
+#
+# THIS PACKAGE SHIPS THE MODULE AND NOT THE BINARY. On ubuntu:24.04 `pyflakes` comes
+# from a separate package, pyflakes3. The gate runs `python3 -m pyflakes` and doctor
+# imports it, for the same reason stated above -- asking `have pyflakes` instead cost
+# both container jobs on 524279c, passing locally only because a pip venv had it.
 python3-pyflakes

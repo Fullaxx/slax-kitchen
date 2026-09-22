@@ -100,7 +100,6 @@ git|git|provenance, upstream-diff, and the file list sent to a boot host
 ssh|openssh-client|reach the boot host (boot-host.example.ini)
 rsync|rsync|send the tree and image to the boot host
 shellcheck|shellcheck|commit gate
-pyflakes|python3-pyflakes|commit gate
 yamllint|yamllint|commit gate
 jq|jq|JSON handling
 curl|curl|fetch base ISOs
@@ -343,20 +342,27 @@ doctor_toolchain() {
     else
         echo "python3 >= 3.9: unknown (python3 did not run)"
     fi
-    # The fourth one. apt's python3-yaml and python3-jsonschema are invisible to a
-    # python3 that resolves into a venv, and the failure surfaces as a schema gate
-    # that cannot run rather than as a missing package. Import them, the same way
+    # The fourth one. apt's python3-yaml, python3-jsonschema and python3-pyflakes are
+    # invisible to a python3 that resolves into a venv, and the failure surfaces as a
+    # gate that cannot run rather than as a missing package. Import them, the same way
     # lib/validate.py does, rather than asking dpkg.
+    #
+    # pyflakes is here rather than in TOOLS above because it went in TOOLS first and
+    # broke both container jobs: `have pyflakes` passed on a machine with a pip venv and
+    # failed in the container, where python3-pyflakes ships the module and the binary
+    # comes from a separate package (pyflakes3 on ubuntu:24.04). ci/checks/35-pyflakes.sh
+    # runs `python3 -m pyflakes`, so this asks the question that gate actually asks.
     _pymiss=
-    for _m in yaml jsonschema; do
+    for _m in yaml jsonschema pyflakes; do
         timeout 5 python3 -c "import $_m" >/dev/null 2>&1 || _pymiss="$_pymiss $_m"
     done
     if [ -z "$_pymiss" ]; then
-        echo "python3 imports yaml + jsonschema: yes"
+        echo "python3 imports yaml + jsonschema + pyflakes: yes"
     else
-        echo "python3 imports yaml + jsonschema: NO --$_pymiss not importable"
-        echo "  (a venv python3 cannot see apt's python3-yaml / python3-jsonschema:"
-        echo "   pip install PyYAML jsonschema, or use the system python3)"
+        echo "python3 imports yaml + jsonschema + pyflakes: NO --$_pymiss not importable"
+        echo "  (a venv python3 cannot see apt's python3-yaml / python3-jsonschema /"
+        echo "   python3-pyflakes: pip install PyYAML jsonschema pyflakes, or use the"
+        echo "   system python3)"
     fi
 }
 

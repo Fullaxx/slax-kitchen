@@ -26,9 +26,21 @@
 # function-local `import urllib.parse` shadowed the module binding, while lines further
 # down depended on the module-level import's side effect. Deleting it would have broken
 # the tool; hoisting the local import fixed both the shadowing and the report.
+#
+# THE MODULE, NOT A BINARY ON PATH, and that distinction broke CI the day this gate
+# landed. `kitchen doctor --strict` was given a TOOLS row asking `have pyflakes`, which
+# passed on the machine it was written on because pyflakes was there from a pip venv.
+# In the reference container apt installs python3-pyflakes, which on ubuntu:24.04 ships
+# the MODULE ONLY -- the binary is a separate package, pyflakes3 -- so doctor reported
+# `MISS pyflakes (apt-get install python3-pyflakes)` about a package that was already
+# installed, and both container jobs failed. kitchen:346 already stated the rule for
+# python3-yaml and python3-jsonschema: "Import them, the same way lib/validate.py does,
+# rather than asking dpkg." `python3 -m pyflakes` is the same answer for the same reason,
+# and it works whether the tool arrived from apt or from a venv.
 . "$(dirname "$0")/../lib.sh"
 
-have pyflakes || { warn "pyflakes not installed - skipping (install: apt-get install python3-pyflakes)"; exit 0; }
+python3 -c "import pyflakes" 2>/dev/null \
+    || { warn "python3 cannot import pyflakes - skipping (install: apt-get install python3-pyflakes)"; exit 0; }
 
 check_files_nl | while IFS= read -r f; do
     case "$f" in
@@ -44,7 +56,7 @@ done > "${TMPDIR:-/tmp}/.kitchen-py.$$"
 # dominates a per-file loop. Measured 2026-09-22.
 if [ -s "${TMPDIR:-/tmp}/.kitchen-py.$$" ]; then
     # shellcheck disable=SC2046  # the list is paths this gate just wrote, one per line
-    pyflakes $(cat "${TMPDIR:-/tmp}/.kitchen-py.$$") || fail "pyflakes"
+    python3 -m pyflakes $(cat "${TMPDIR:-/tmp}/.kitchen-py.$$") || fail "pyflakes"
 fi
 rm -f "${TMPDIR:-/tmp}/.kitchen-py.$$"
 check_result

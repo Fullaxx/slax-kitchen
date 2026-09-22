@@ -111,9 +111,8 @@ checked there before it starts; what this machine needs instead is the row below
 | | package | |
 |---|---|---|
 | `shellcheck` | `shellcheck` | commit gate 30 |
-| `pyflakes` | `python3-pyflakes` | commit gate 35 |
 | `yamllint` | `yamllint` | commit gate 40 |
-| `python3-yaml`, `python3-jsonschema` | — | recipe and profile validation |
+| `python3-yaml`, `python3-jsonschema`, `python3-pyflakes` | — | recipe and profile validation, and commit gate 35 |
 | `jq`, `curl`, `file`, `git` | — | JSON, `kitchen fetch`, artifact identification, submodules. `git` is also what lists the files sent to a boot host |
 
 ## Two installation gotchas
