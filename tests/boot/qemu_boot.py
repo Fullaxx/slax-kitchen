@@ -608,8 +608,8 @@ def main(argv: list[str]) -> int:
             and not any(m in r["serial_text"] for m in LIVEKIT_MARKERS)):
         print(f"  FAIL: no livekit marker reached the serial log, so the --keys sequence "
               f"({a.keys!r}) did not select an entry with console=ttyS0.")
-        print(f"        The guest may well have booted fine on a DIFFERENT entry -- check "
-              f"the screenshot before blaming the image.")
+        print("        The guest may well have booted fine on a DIFFERENT entry -- check "
+              "the screenshot before blaming the image.")
         rc = 1
     for want in a.expect:
         if want in r["serial_text"]:

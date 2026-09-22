@@ -13,3 +13,7 @@ yamllint
 # gate -- `kitchen doctor` probes for exactly that.
 python3-yaml
 python3-jsonschema
+
+# 35-pyflakes.sh lints every python file, the way shellcheck lints every shell one.
+# 0.65 s over 55 files, measured 2026-09-22.
+python3-pyflakes

@@ -94,7 +94,7 @@ technical advantage to Ubuntu here.
 `Slax/debian12/install` installs `squashfs-tools genisoimage … xz-utils` into the image, because the
 image is the build host. Debian 12's toolchain is literally what produced the stock bundles.
 
-CI builds **both** on every push and runs `doctor --strict` plus all thirteen gates in each, so
+CI builds **both** on every push and runs `doctor --strict` plus all fourteen gates in each, so
 "any Debian-family release works" is a tested claim rather than an assumption.
 
 ### One file, and when to stop

@@ -100,6 +100,7 @@ git|git|provenance, upstream-diff, and the file list sent to a boot host
 ssh|openssh-client|reach the boot host (boot-host.example.ini)
 rsync|rsync|send the tree and image to the boot host
 shellcheck|shellcheck|commit gate
+pyflakes|python3-pyflakes|commit gate
 yamllint|yamllint|commit gate
 jq|jq|JSON handling
 curl|curl|fetch base ISOs

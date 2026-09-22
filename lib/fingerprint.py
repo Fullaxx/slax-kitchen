@@ -317,7 +317,6 @@ def fingerprint(iso: str, name: str | None = None) -> dict:
 
         # ---- bundles -------------------------------------------------------
         listing = iso_listdir(iso, MODULES_DIR)
-        by_size = {sq.bytes_used: sq for sq in squashes}
         bundles = {}
         for bname, bsize in listing:
             sq = next((s for s in squashes

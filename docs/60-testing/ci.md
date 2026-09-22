@@ -5,10 +5,11 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` → `gates` | push to master, or any PR | the thirteen commit gates, ~1 min, no ISOs |
+| `ci.yml` → `gates` | push to master, or any PR | the fourteen commit gates, ~1 min, no ISOs |
 
 **What a test in that job may assume is installed**: `containers/packages/lint.txt` — `shellcheck`,
-`yamllint`, `python3-yaml`, `python3-jsonschema` — plus whatever the `ubuntu-24.04` runner image
+`yamllint`, `python3-yaml`, `python3-jsonschema`, `python3-pyflakes` — plus whatever the
+`ubuntu-24.04` runner image
 happens to ship, which today includes `squashfs-tools` and **does not include `xorriso`**. Nothing
 else is installed for it. A unit test that needs to read or write an image serves canned output from
 a stub and writes the few sectors it needs in Python:

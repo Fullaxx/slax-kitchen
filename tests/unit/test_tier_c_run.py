@@ -636,7 +636,7 @@ def test_an_interrupt_stops_the_sweep():
             time.sleep(0.02)
         check("the first path started", os.path.exists(fifo + ".ready"), True)
         os.killpg(os.getpgid(proc.pid), signal.SIGINT)
-        o = proc.communicate(timeout=60)[0]
+        proc.communicate(timeout=60)          # reap it; the output is not read here
 
         ran = [ln for ln in open(runlog).read().split() if ln] if os.path.exists(runlog) else []
         check("only the interrupted path ran", ran, ["bios"])

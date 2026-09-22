@@ -45,6 +45,7 @@ import re
 import struct
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -103,7 +104,6 @@ def fetch(urls, cache, key=None):
     anonymous bulk clients, and this tool has no reason to be one.
     """
     import time
-    import urllib.parse
     if isinstance(urls, str):
         urls = [urls]
     os.makedirs(cache, exist_ok=True)
@@ -267,7 +267,6 @@ def licence_names(tag, cache):
     of others (LICENCE.cw1200 / LICENCE.cw1200-sdd) -- all three defeat a regex.
     """
     import json
-    import urllib.parse
     proj = urllib.parse.quote("kernel-firmware/linux-firmware", safe="")
     found = {}
     for sub in ("LICENSES", ""):

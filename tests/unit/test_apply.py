@@ -1808,7 +1808,7 @@ def test_both_delta_lines_report_what_the_step_removed():
                 if isinstance(n, ast.Call) and ast.unparse(n.func).endswith("say")
                 and "delta:" in ast.unparse(n)]
         check(f"{verb} prints one delta line", len(says), 1)
-        check(f"...and names the vanished in it", "vanished" in says[0], True)
+        check("...and names the vanished in it", "vanished" in says[0], True)
 
 
 def _core_tree(source_iso, *, core="64", link=None, flavour="debian"):
