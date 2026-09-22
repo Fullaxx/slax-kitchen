@@ -32,6 +32,8 @@ import time
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 TIER_C = os.path.join(ROOT, "ci", "tier-c.sh")
 RUN_BOOT = os.path.join(ROOT, "ci", "run-boot.py")
+TARGET_PY = os.path.join(ROOT, "lib", "target.py")
+SOURCES = os.path.join(ROOT, "compat", "sources.yaml")
 
 
 def _load_run_boot():
@@ -182,6 +184,13 @@ def fixture(tmp, boot_host=False):
     # fixture without it is a fixture where no boot runs at all -- which surfaces as a
     # missing ledger, several assertions away from the cause.
     write(os.path.join(repo, "ci", "run-boot.py"), open(RUN_BOOT).read(), 0o755)
+    # AND THE REAL TARGET MODULE, for the same reason: tier-c.sh checks --target through
+    # it before any boot, so a fixture without it refuses every run -- a missing ledger
+    # several assertions from the cause, exactly as the sentence above predicts. It reads
+    # compat/sources.yaml, so that comes too, unedited: the target these runs name has to
+    # be one that really exists, which is the point of #36.
+    write(os.path.join(repo, "lib", "target.py"), open(TARGET_PY).read(), 0o755)
+    write(os.path.join(repo, "compat", "sources.yaml"), open(SOURCES).read())
     write(os.path.join(repo, "kitchen"), STUB_KITCHEN, 0o755)
     # Everything tier-c.sh writes is sent outside the repository, so nothing here can make
     # the tree look modified.
@@ -243,7 +252,8 @@ def run_tier_c(tmp, env_extra, paths="kernel", boot_host=False):
     else:
         env = dict(os.environ, PATH=bindir + ":" + os.environ.get("PATH", ""), **env_extra)
     p = subprocess.run(
-        ["sh", os.path.join(repo, "ci", "tier-c.sh"), "--iso", iso, "--target", "stub-target",
+        ["sh", os.path.join(repo, "ci", "tier-c.sh"), "--iso", iso,
+         "--target", "debian-64bit-12.2.0",
          "--paths", paths, "--out", out, "--ledger", os.path.join(tmp, "ledger.json"),
          "--golden-dir", os.path.join(tmp, "golden")],
         cwd=repo, env=env, capture_output=True, text=True, timeout=120)
@@ -612,7 +622,7 @@ def test_an_interrupt_stops_the_sweep():
                    STUB_BLOCK=fifo, STUB_RUNLOG=runlog, STUB_ORPHAN="ours")
         proc = subprocess.Popen(
             ["sh", os.path.join(repo, "ci", "tier-c.sh"), "--iso", iso,
-             "--target", "stub-target", "--paths", "bios uefi", "--out", out,
+             "--target", "debian-64bit-12.2.0", "--paths", "bios uefi", "--out", out,
              "--ledger", os.path.join(tmp, "ledger.json"),
              "--golden-dir", os.path.join(tmp, "golden")],
             cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

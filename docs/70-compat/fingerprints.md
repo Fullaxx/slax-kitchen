@@ -169,9 +169,18 @@ DIFFERENT RELEASE                             # exit code 1
 
 ## Adopting a new Slax release
 
+**Register it in `compat/sources.yaml` first** — `file`, `tree`, `size`, `sha256` under a new
+`<flavour>-<arch>-<version>` key. That entry is what makes the target *exist*: `kitchen fetch`
+downloads from it, `lib/target.py` resolves every target name against it, and the manifests, the
+recipe matrix and the Tier C ledger are all named by it. Tools that used to invent a target name
+out of a filename now refuse one that is not there.
+
 ```sh
+# after adding the target to compat/sources.yaml
+kitchen fetch <flavour>-<arch>-<version>
 kitchen probe slax-new.iso                       # expect: MODIFIED or DIFFERENT RELEASE
 kitchen fingerprint slax-new.iso -o compat/<flavour>-<arch>-<version>.yaml
+ci/gen-manifests.sh isos/slax-new.iso            # refuses an ISO no target is built from
 kitchen selftest ci
 ```
 Then work through whatever breaks and write it up in `version-notes/`. Because 30 of 32

@@ -45,8 +45,18 @@ skip_reason() {
     ' "$MATRIX_SKIP" 2>/dev/null
 }
 
-FLAVOUR=${TARGET%%-*}
-case "$TARGET" in *-32bit-*) ARCH=32bit ;; *) ARCH=64bit ;; esac
+# RESOLVED, NOT SPLIT. This was `FLAVOUR=${TARGET%%-*}` and a `case` whose catch-all made
+# every unrecognised target 64bit, so `debain-64bit-12.2.0` declared all 35 recipes
+# incompatible with a flavour that does not exist, skipped every one of them and exited 0
+# in two seconds -- this gate, the one that exists to catch a recipe which silently works
+# on only one target, reporting green having run nothing at all (#36).
+# Captured before eval, not `eval "$(...)"`: command substitution discards the exit
+# status, so a refusal would be evalled as nothing and the failure would surface as
+# `BASE_FLAVOUR: parameter not set` three lines later. lib/build.sh:501 does it this way.
+_tgt=$(python3 "$REPO_ROOT/lib/target.py" "$TARGET") || exit 2
+eval "$_tgt"
+FLAVOUR=$BASE_FLAVOUR
+ARCH=$BASE_ARCH
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     G=$(printf '\033[32m'); R=$(printf '\033[31m'); Y=$(printf '\033[33m')

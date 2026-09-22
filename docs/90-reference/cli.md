@@ -253,8 +253,14 @@ rot automatically.
 
 ### Bring your own ISO
 
-Nothing requires `fetch`. `kitchen build --base /path/to.iso` and `kitchen unpack /path/to.iso`
-accept any image — an ISO you already have, a corporate mirror, or one you previously customized.
+Nothing requires `fetch`. `kitchen unpack /path/to.iso` accepts any image — one you already have,
+a corporate mirror, or one you previously customized — and a profile can point a build at one with
+`base.iso:`, which wins over the derived path.
+
+**`--base` is not that.** It takes a *target name*, checked against `compat/sources.yaml`, so
+`--base /path/to.iso` is refused naming the four that exist. It selects which known release to
+build; `base.iso:` supplies an image the project does not know. This page used to say `--base`
+took a path. It never did.
 
 ## `probe <iso>` / `fingerprint <iso> [-o FILE]`
 

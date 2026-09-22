@@ -40,15 +40,38 @@ def program():
     return body.split("\nPY\n", 1)[0]
 
 
+_KNOWN = None
+
+
+def known_targets():
+    """The closed set the gate is handed, obtained the way the gate obtains it.
+
+    Not a literal list here: a fifth hardcoded copy of the four target names is the thing
+    #36 was about, and tests/unit/test_release.py already exists to catch the fourth.
+
+    Asked once. run() is called eight times here and the answer cannot change between
+    them; a subprocess per call measured 0.2 s of the unit gate, which is paid at
+    pre-commit AND pre-push -- CONTRIBUTING's "Cost is part of the argument".
+    """
+    global _KNOWN
+    if _KNOWN is None:
+        r = subprocess.run([sys.executable, os.path.join(ROOT, "lib", "target.py"),
+                            "--list"], capture_output=True, text=True)
+        _KNOWN = " ".join(r.stdout.split())
+    return _KNOWN
+
+
 def run(doc):
-    """Run that program on `doc` exactly as the gate does: the ledger's path is its argument."""
+    """Run that program on `doc` exactly as the gate does: the ledger's path, then the
+    targets that exist. The second argument arrived with #36, when `target` gained the
+    closed set that `path`, `result` and `accel` already had."""
     d = tempfile.mkdtemp(prefix="ledger-")
     try:
         path = os.path.join(d, "tier-c.json")
         with open(path, "w") as f:
             json.dump(doc, f)
-        r = subprocess.run([sys.executable, "-", path], input=program(),
-                           capture_output=True, text=True)
+        r = subprocess.run([sys.executable, "-", path, known_targets()],
+                           input=program(), capture_output=True, text=True)
         return r.returncode, r.stdout + r.stderr
     finally:
         shutil.rmtree(d, ignore_errors=True)

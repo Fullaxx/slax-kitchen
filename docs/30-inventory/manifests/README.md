@@ -29,6 +29,11 @@ All four targets are present: `{debian,slackware}` × `{32bit,64bit}`.
 ci/gen-manifests.sh isos/slax-*.iso
 ```
 
+Each ISO is matched to a target by its filename against `compat/sources.yaml`'s `file:`, so an
+image no target is built from is refused rather than given an invented target name — a new release
+is registered there before its manifests are generated. See
+[adopting a new release](../../70-compat/fingerprints.md#adopting-a-new-slax-release).
+
 About sixteen seconds for all four images — measured 2026-09-17 at `9c5a45a`, the commit that added
 the `isofiles` hashing which is most of it. It cost three seconds before that. **This paragraph is
 the only copy of that number**: [`../README.md`](../README.md) restated the older figure and nobody

@@ -24,7 +24,20 @@ LEDGER="$REPO_ROOT/tests/boot/tier-c.json"
 [ -f "$LEDGER" ] || { note "tests/boot/tier-c.json not present - Tier C has not been run"; exit 0; }
 have python3 || { note "python3 not installed - skipping the Tier C ledger check"; exit 0; }
 
-python3 - "$LEDGER" <<'PY' || fail "tests/boot/tier-c.json"
+# The targets that exist, from compat/sources.yaml via the one module that reads it.
+# NOT a fifth hardcoded copy: ci/tier-c-claim.py holds one and tests/unit/test_release.py
+# exists to catch it drifting. A failure here is a failure, not a skip -- a gate that
+# cannot find out which targets exist cannot check the field that names one.
+# NOT `$(... | tr ...)`: a pipeline's status is the LAST command's, so tr exiting 0 would
+# have hidden python3 exiting 1 and left the set EMPTY -- every row then rejected, for the
+# wrong reason. sys.argv[2].split() takes the newlines as they come. And `fail` does not
+# exit (ci/lib.sh:53), so this stops here rather than checking 20 rows against nothing.
+if ! KNOWN_TARGETS=$(python3 "$REPO_ROOT/lib/target.py" --list); then
+    fail "cannot read compat/sources.yaml, so the ledger's targets cannot be checked"
+    check_result; exit
+fi
+
+python3 - "$LEDGER" "$KNOWN_TARGETS" <<'PY' || fail "tests/boot/tier-c.json"
 import json, re, sys
 
 DOC_KEYS = {"kitchen": str, "commit": str, "qemu": str, "accel": str,
@@ -42,6 +55,9 @@ UNSAID = ("", "unknown")
 REQUIRED_RUN = {"accel", "commit", "iso_bytes", "iso_name", "markers", "missing",
                 "path", "profile", "result", "target"}
 PATHS = {"bios", "uefi", "usb", "persistence", "kernel"}
+# Handed in from compat/sources.yaml rather than written here, so this gate and the
+# builds it judges cannot disagree about which targets exist.
+TARGETS = set(sys.argv[2].split())
 RESULTS = {"pass", "fail"}
 ACCELS = {"kvm", "tcg"}
 
@@ -92,6 +108,11 @@ for i, r in enumerate(doc.get("runs", [])):
         bad.append(f"{where}.path: {r['path']!r} is not one of {sorted(PATHS)}")
     if r.get("result") not in RESULTS and "result" in r:
         bad.append(f"{where}.result: {r['result']!r} is not one of {sorted(RESULTS)}")
+    # A CLOSED SET, like path and result above. `target` was typed str and nothing more,
+    # which is how a misspelt --target appended its rows past this gate and made the
+    # release notes name a target that does not exist across 21 boots that were 20 (#36).
+    if r.get("target") not in TARGETS and "target" in r:
+        bad.append(f"{where}.target: {r['target']!r} is not one of {sorted(TARGETS)}")
     if r.get("iso_bytes", 1) <= 0:
         bad.append(f"{where}.iso_bytes: should be a real size")
     if r.get("commit") in ("", "unknown"):

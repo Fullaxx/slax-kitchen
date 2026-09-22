@@ -12,36 +12,52 @@ import shlex
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import target  # noqa: E402
 from validate import validate_file  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def resolve_base_iso(base: dict) -> tuple[str, str]:
-    """Return (path, how). Explicit `iso:` wins; otherwise use the standard filename."""
+    """Return (path, how). Explicit `iso:` wins; otherwise sources.yaml states the name.
+
+    LOOKED UP, not rebuilt. The target is `<flavour>-<arch>-<version>` and the ISO is
+    `slax-<arch>-<flavour>-<version>.iso` -- the middle two fields are swapped, and that
+    swap was written out as a template here while ci/gen-manifests.sh reversed it with a
+    sed regex. compat/sources.yaml carries `file:` for every target, so neither spelling
+    of the swap has to exist (#36).
+
+    The template survives as the fallback for a `base:` naming no known target, which is
+    legal: schema/profile.schema.json constrains flavour and arch to their enums but
+    leaves `version` a free string, so a fork pinning an unreleased base still resolves.
+    """
     if base.get("iso"):
         p = base["iso"]
         return (p if os.path.isabs(p) else os.path.join(ROOT, p)), "profile"
-    name = f"slax-{base['arch']}-{base['flavour']}-{base['version']}.iso"
+    try:
+        # SystemExit is how target.resolve() refuses; here that is not fatal, it just
+        # means this base is not one of the four and the template below is all there is.
+        name = target.resolve(
+            f"{base['flavour']}-{base['arch']}-{base['version']}")["file"]
+    except (SystemExit, RuntimeError):
+        name = f"slax-{base['arch']}-{base['flavour']}-{base['version']}.iso"
     return os.path.join(ROOT, "isos", name), "derived"
 
 
-def base_override(target: str) -> dict:
+def base_override(name: str) -> dict:
     """Turn a target name into a base dict, validating it against compat/sources.yaml.
 
     Checked rather than split-and-hope: `debain-64bit-12.2.0` would otherwise sail
     through, derive a plausible ISO path, and fail much later with "base ISO not found"
     pointing at a filename nobody typed. sources.yaml is the authority on which four
     targets exist, so ask it.
+
+    The asking moved to lib/target.py, which is now the only place that does it -- this
+    check was the one of ten target parses that performed it, and the argument above was
+    never copied to the other nine (#36).
     """
-    import yaml
-    src = os.path.join(ROOT, "compat", "sources.yaml")
-    known = list((yaml.safe_load(open(src)) or {}).get("targets", {}))
-    if target not in known:
-        raise SystemExit(f"--base: unknown target {target!r}\n"
-                         f"  known: {', '.join(sorted(known))}")
-    flavour, arch, version = target.split("-", 2)
-    return {"flavour": flavour, "arch": arch, "version": version}
+    spec = target.resolve(name, "--base")
+    return {k: spec[k] for k in ("flavour", "arch", "version")}
 
 
 def main(argv: list[str]) -> int:
@@ -90,6 +106,10 @@ def main(argv: list[str]) -> int:
     emit = {
         "PROFILE_PATH": path,
         "PROFILE_NAME": doc["metadata"]["name"],
+        # Assembled ONCE, here. lib/build.sh built the work-tree path out of the three
+        # fields and ci/tier-c.sh reassembled the same string from the profile with no
+        # check; both read this now (#36).
+        "BASE_TARGET": f"{base['flavour']}-{base['arch']}-{base['version']}",
         "BASE_FLAVOUR": base["flavour"],
         "BASE_ARCH": base["arch"],
         "BASE_VERSION": base["version"],

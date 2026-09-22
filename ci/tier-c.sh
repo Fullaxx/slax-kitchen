@@ -6,6 +6,8 @@
 #   --iso FILE         image to boot   (default: the one `--profile` builds)
 #   --profile NAME     profile whose output to use   (default: boot-matrix)
 #   --target NAME      label recorded in the ledger  (default: from the profile base)
+#   --base NAME        resolve --profile for this target instead of its own `base:`,
+#                      the way `kitchen build --base` does
 #   --out DIR          where evidence lands          (default: out/tier-c)
 #   --ledger FILE      the committed record    (default: tests/boot/tier-c.json)
 #   --golden-dir DIR   committed testkit blocks (default: tests/boot/golden)
@@ -35,7 +37,7 @@ set -u
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$REPO_ROOT" || exit 2
 
-ISO="" PROFILE=boot-matrix TARGET="" OUT=out/tier-c
+ISO="" PROFILE=boot-matrix TARGET="" BASE="" OUT=out/tier-c
 LEDGER=tests/boot/tier-c.json GOLDEN_DIR=tests/boot/golden
 SECONDS_CEIL=120 PATHS="bios uefi usb persistence" KEEP=0 ALLOW_DIRTY=0
 # TWO destinations, tracked separately, because --allow-dirty has to move BOTH. One flag
@@ -49,6 +51,9 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --iso)        ISO=$2; shift 2 ;;
         --profile)    PROFILE=$2; shift 2 ;;
+        # Mirrors `kitchen build --base`. Without it this read the profile's own
+        # `base:`, so Tier C after a --base build measured the wrong target (#36).
+        --base)       BASE=$2; shift 2 ;;
         --target)     TARGET=$2; shift 2 ;;
         --out)        OUT=$2; shift 2 ;;
         --ledger)     LEDGER=$2; LEDGER_REDIRECTED=1; shift 2 ;;
@@ -141,37 +146,42 @@ elif [ -w /dev/kvm ]; then ACCEL=KVM; else
     say "${Y}evidence -- a ledger row saying accel=tcg is what tells them apart.${O}"
 fi
 
-# Resolve the image from the profile when not given one outright.
-if [ -z "$ISO" ]; then
-    ISO=$(python3 - "$PROFILE" <<'PY'
-import sys, os, glob
-sys.path.insert(0, "lib")
-name = sys.argv[1]
-p = name if os.path.isfile(name) else f"profiles/{name}.yaml"
-import yaml
-d = yaml.safe_load(open(p))
-b = d["base"]
-out = d.get("output", {}).get("name", "")
-for k, v in (("{{version}}", b["version"]), ("{{flavour}}", b["flavour"]),
-             ("{{arch}}", b["arch"]), ("{{name}}", d["metadata"]["name"])):
-    out = out.replace(k, str(v))
-print(os.path.join("out", out))
-PY
-) || die "could not resolve an ISO from profile $PROFILE"
+# An explicit --target is CHECKED. It reaches the committed ledger and the golden's
+# filename, and the ledger merge below drops only rows whose target DIFFERS -- so a
+# misspelt one appended its rows beside the real ones instead of replacing them, and
+# 97-tier-c-ledger.sh passed it because `target` was the one field there with no closed
+# set. ci/release-notes.sh derives the published Tier C claim from that file (#36).
+if [ -n "$TARGET" ]; then
+    python3 "$REPO_ROOT/lib/target.py" "$TARGET" >/dev/null || die "--target: refused"
+fi
+
+# --base only has an effect through the profile, so with both --iso and --target given
+# there is nothing for it to do. REFUSED rather than ignored: #34 was a flag that
+# silently did nothing, and a run whose author thinks they selected a target while the
+# ledger records another is the shape this file exists to prevent.
+if [ -n "$BASE" ] && [ -n "$ISO" ] && [ -n "$TARGET" ]; then
+    die "--base has nothing to resolve when both --iso and --target are given
+  drop --base, or drop the one of --iso/--target you want it to decide."
+fi
+
+# Resolve the image and the target from the profile when not given outright.
+#
+# ASKS lib/profile.py -- the same question `kitchen build` asks it (lib/build.sh:501).
+# This was two inline heredocs that yaml.safe_load'd the profile raw: no schema
+# validation, a second copy of profile.py's {{flavour}} template loop that differed from
+# it in three ways, and no --base support, so Tier C after `kitchen build <p> --base
+# <other>` measured the first target's ISO. One heredoc even carried
+# `sys.path.insert(0, "lib")` and an unused `import glob` -- the scaffolding for this
+# call was already there, and the call was not (#36).
+if [ -z "$ISO" ] || [ -z "$TARGET" ]; then
+    _prof=$(python3 "$REPO_ROOT/lib/profile.py" "$PROFILE" ${BASE:+--base "$BASE"}) \
+        || die "could not read profile $PROFILE"
+    eval "$_prof"
+    [ -n "$ISO" ] || ISO="out/$OUTPUT_NAME"
+    [ -n "$TARGET" ] || TARGET=$BASE_TARGET
 fi
 [ -f "$ISO" ] || die "no such image: $ISO
   build it first:  ./kitchen build $PROFILE"
-
-if [ -z "$TARGET" ]; then
-    TARGET=$(python3 - "$PROFILE" <<'PY'
-import sys, os, yaml
-name = sys.argv[1]
-p = name if os.path.isfile(name) else f"profiles/{name}.yaml"
-b = yaml.safe_load(open(p))["base"]
-print(f'{b["flavour"]}-{b["arch"]}-{b["version"]}')
-PY
-) || die "could not resolve a target from profile $PROFILE"
-fi
 
 GOLDEN="$GOLDEN_DIR/$PROFILE-$TARGET.testkit"
 mkdir -p "$OUT" "$GOLDEN_DIR" || die "cannot write to $OUT or $GOLDEN_DIR"

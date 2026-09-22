@@ -10,8 +10,8 @@
 #
 # Everything here is read-only and unprivileged. Bundles are read in place with
 # `unsquashfs -o <offset>` rather than extracted, so a full run costs seconds and no
-# disk. The target name comes from the ISO filename, which upstream's own releases and
-# `kitchen fetch` both follow.
+# disk. The target is looked up in compat/sources.yaml by the ISO's filename, so an image
+# this project does not know is refused here rather than silently inventing a target name.
 set -u
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT=$REPO_ROOT/docs/30-inventory/manifests
@@ -44,10 +44,14 @@ manifest() {
 
 for ISO in "$@"; do
     [ -f "$ISO" ] || { echo "no such ISO: $ISO" >&2; exit 1; }
-    base=$(basename "$ISO" .iso)                        # slax-64bit-debian-12.2.0
-    target=$(echo "$base" | sed -n 's/^slax-\([0-9]*bit\)-\([a-z]*\)-\(.*\)$/\2-\1-\3/p')
-    [ -n "$target" ] || { echo "cannot parse target from $base" >&2; exit 1; }
-    flavour=${target%%-*}
+    # LOOKED UP in compat/sources.yaml by filename, not parsed out of it. This was a sed
+    # reversing the arch/flavour swap by hand, and it accepted anything of that shape:
+    # slax-64bit-debian-999.9.9.iso became target debian-64bit-999.9.9 and four manifests
+    # were written under a name no release has (#36).
+    _tgt=$(python3 "$REPO_ROOT/lib/target.py" --from-iso "$ISO") || exit 1
+    eval "$_tgt"
+    target=$BASE_TARGET
+    flavour=$BASE_FLAVOUR
     echo "== $target"
 
     # --- /slax/boot/ ------------------------------------------------------------

@@ -539,7 +539,7 @@ kitchen_build() {
 
     # Per TARGET, not per profile: building boot-matrix for all four targets in sequence
     # would otherwise have each unpack land on the last one's tree.
-    work="work/$PROFILE_NAME-$BASE_FLAVOUR-$BASE_ARCH-$BASE_VERSION"
+    work="work/$PROFILE_NAME-$BASE_TARGET"
     if [ -e "$work" ] && [ "$bld_force" != 1 ]; then
         die "build: $work exists (use --force to rebuild from scratch)"
     fi

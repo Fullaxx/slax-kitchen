@@ -18,12 +18,21 @@ All four targets, which is one loop because a profile's base is now overridable:
 for t in debian-64bit-12.2.0 debian-32bit-12.2.0 \
          slackware-64bit-15.0.4 slackware-32bit-15.0.4; do
     ./kitchen build boot-matrix --base "$t" --no-test --force
-    ./ci/tier-c.sh --target "$t" --iso "out/slax-boot-matrix-$t.iso"
+    ./ci/tier-c.sh --base "$t"
 done
 ```
 
+`--base` takes the same target name `kitchen build` takes, and resolves the image and the
+ledger's target from the profile the same way. It had to be spelled out as
+`--target "$t" --iso "out/slax-boot-matrix-$t.iso"` until `ci/tier-c.sh` gained the flag,
+because it read the profile's own `base:` and would otherwise have measured the first
+target four times over.
+
 The ledger **merges by target**, so four invocations accumulate into one document; a
-re-run replaces that target's rows rather than appending to them.
+re-run replaces that target's rows rather than appending to them. Which is why the name
+is checked: an unknown one matches no existing rows, so it appended a fifth target's
+worth beside the four instead of replacing anything, and the release notes are derived
+from that file.
 
 ## A recorded run needs a clean tree
 
