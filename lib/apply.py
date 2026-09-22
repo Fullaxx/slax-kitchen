@@ -2217,8 +2217,16 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
                     "Their files remain in the bundle below, so the image will report "
                     "them gone while they are still present and runnable. See "
                     "docs/40-workflow/composing-bundles.md.")
+        # `vanished` in the same words bundle.packages uses, from the same numbers. It
+        # was worked out here and dropped: the paragraph in bundle.packages arguing that a
+        # bundle cannot express a deletion, and that the files are still there at boot, is
+        # about bundles rather than about one verb -- and this is the verb for vendor
+        # installers and scripts that rewrite a conf.d, which is the case it says is
+        # occasionally not harmless (#38).
         ctx.say(f"delta: {len(added)} added, {len(modified)} modified, "
-                f"{len(keep)} kept after exclusions")
+                f"{len(keep)} kept after exclusions"
+                + (f", {len(vanished)} vanished (still present from the bundle below)"
+                   if vanished else ""))
         if not keep:
             raise RuntimeError("bundle.script: the script changed nothing that survives "
                                "the exclusion list; nothing to package")

@@ -1784,6 +1784,33 @@ def test_every_file_writing_verb_records_what_it_wrote():
         check(f"{v} records what it writes", reaches(fn, "ctx.record"), True)
 
 
+def test_both_delta_lines_report_what_the_step_removed():
+    """bundle.script worked out `vanished` and never said it (#38).
+
+    A bundle cannot express a deletion, so a file the step removed is still in the bundle
+    below and still there at boot. bundle.packages says so; bundle.script computed the
+    identical list and printed a delta line without it -- and bundle.script is the verb
+    for vendor installers and scripts that rewrite a conf.d, which is the case
+    lib/apply.py:3342 calls occasionally not harmless.
+
+    SOURCE, not behaviour: v_bundle_script needs a chroot of stacked bundles, so no unit
+    test can drive it. What can be pinned is that neither verb computes the value without
+    reporting it -- which is the whole defect, and what pyflakes noticed first.
+    """
+    import ast
+    src = ast.parse(open(os.path.join(REPO, "lib", "apply.py")).read())
+    for verb in ("v_bundle_script", "v_bundle_packages"):
+        fn = next(n for n in ast.walk(src)
+                  if isinstance(n, ast.FunctionDef) and n.name == verb)
+        body = ast.unparse(fn)
+        check(f"{verb} works out what vanished", "vanished = [" in body, True)
+        says = [ast.unparse(n) for n in ast.walk(fn)
+                if isinstance(n, ast.Call) and ast.unparse(n.func).endswith("say")
+                and "delta:" in ast.unparse(n)]
+        check(f"{verb} prints one delta line", len(says), 1)
+        check(f"...and names the vanished in it", "vanished" in says[0], True)
+
+
 def _core_tree(source_iso, *, core="64", link=None, flavour="debian"):
     """A work tree carrying a 01-core.sb, for the two tests that need real facts.
 
@@ -2357,6 +2384,7 @@ def main():
                    test_a_profile_is_held_to_the_base_it_declares,
                    test_facts_reach_the_steps_that_run,
                    test_flavour_is_a_fact_about_the_tree_or_says_it_is_not,
+                   test_both_delta_lines_report_what_the_step_removed,
                    test_a_menu_entry_names_a_payload_that_is_there]:
             # One test crashing must not stop the rest: the count of failures is only honest
             # if every test ran. The traceback still goes to stderr, because a crash's location
