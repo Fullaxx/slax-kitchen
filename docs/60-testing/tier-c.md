@@ -208,6 +208,12 @@ Nothing about the machine goes in either, and that is gated rather than trusted:
 any string containing a path separator: every field is a name, a version, a marker or one of
 a fixed set. Add a hostname field and it fails.
 
+Four fields are held to a fixed set: `path`, `result`, `accel` and `target`. The first three are
+written into the gate; `target`'s is read from `compat/sources.yaml` through `lib/target.py --list`
+on every run, so the gate and the builds it judges cannot disagree about which targets exist. It
+was the one field with no set at all, which is how a misspelt `--target` once appended a fifth
+target's rows beside the four and passed.
+
 The ledger also refuses to be written without a commit. The first run recorded
 `"commit": "unknown"` because git will not read a repository owned by another user
 ("dubious ownership") — and said nothing. A ledger that cannot name the tree it tested is

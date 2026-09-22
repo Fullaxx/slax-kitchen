@@ -26,15 +26,21 @@ Runs **unpack → apply → pack → test** from one file, then deletes the work
 
 | Option | Effect |
 |---|---|
+| `--base TARGET` | build against a different base than the profile pins, e.g. `slackware-64bit-15.0.4` — a target name, [not a path](#bring-your-own-iso) |
 | `--keep` | keep the work tree for inspection |
 | `--no-test` | build only, skip the `test:` list |
 | `-f`, `--force` | rebuild over an existing work tree and output |
+| `--local` | run the profile's boot tests here, not on the [boot host](../60-testing/boot-host.md) |
 
 Roughly 4 seconds for a four-recipe profile, excluding boot tests.
 
-The base ISO comes from `base.iso` if the profile sets it, otherwise from
-`isos/slax-<arch>-<flavour>-<version>.iso`. A missing base fails before any work happens and says
-which of those two it was looking for.
+The base ISO comes from `base.iso` if the profile sets it. Otherwise the filename is **looked up**
+in `compat/sources.yaml`, which states a `file:` for every target — `isos/` plus that name. Only a
+base naming no known target falls back to building the name from the three fields, and note they
+are not in the same order: the target is `<flavour>-<arch>-<version>` and the ISO is
+`slax-<arch>-<flavour>-<version>.iso`. Re-deriving it was a second source of truth in the other
+field order, which is what the lookup replaced. A missing base fails before any work happens and
+says which of the two it was looking for.
 
 **Test expectations are derived, not trusted.** A profile listing `uefi-bootable` or `isohybrid` is
 automatically asserted on having actually got an EFI El Torito entry and a hybrid MBR. A recipe that
@@ -628,7 +634,7 @@ base:
   flavour: debian          # debian | slackware
   arch: 64bit              # 32bit | 64bit
   version: "12.2.0"
-  iso: path/to/base.iso    # optional; otherwise derived from the three above
+  iso: path/to/base.iso    # optional; otherwise looked up in compat/sources.yaml
 recipes:                   # a bare name, or {name, vars} to override that recipe's vars
   - memtest86plus
   - isohybrid
