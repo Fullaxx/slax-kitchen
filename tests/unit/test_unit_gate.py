@@ -34,6 +34,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import traceback
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 LIB = os.path.join(ROOT, "ci", "lib.sh")
@@ -47,7 +48,6 @@ FAILURES = []
 # commit in progress instead of the fixture's.
 PROBE = '''#!/usr/bin/env python3
 import os, shutil, subprocess, sys, tempfile
-import traceback
 open(os.environ["PROBE_REPORT"] + ".tmpdir", "w").write(tempfile.gettempdir())
 d = tempfile.mkdtemp(prefix="probe-")
 def g(*a):

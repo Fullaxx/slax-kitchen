@@ -28,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 TIER_C = os.path.join(ROOT, "ci", "tier-c.sh")
@@ -157,7 +158,6 @@ def check(name, got, want):
 # Stands in for lib/boot_host.py, which tier-c.sh asks where the boots will happen.
 STUB_BOOT_HOST = """#!/usr/bin/env python3
 import os, sys
-import traceback
 if sys.argv[1:2] == ["active"]:
     if os.environ.get("KITCHEN_BOOT_HOST") == "local":
         raise SystemExit(1)

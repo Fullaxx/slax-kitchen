@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import traceback
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
@@ -54,7 +55,6 @@ if argv[:1] == ["--check-keys"]:
 # host to be unreachable.
 STUB_BOOT_HOST = r'''#!/usr/bin/env python3
 import json, os, sys
-import traceback
 argv = sys.argv[1:]
 if argv[:1] == ["active"]:
     if os.environ.get("KITCHEN_BOOT_HOST") == "local":
