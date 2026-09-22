@@ -1811,7 +1811,7 @@ def test_both_delta_lines_report_what_the_step_removed():
         check("...and names the vanished in it", "vanished" in says[0], True)
 
 
-def _core_tree(source_iso, *, core="64", link=None, flavour="debian"):
+def _core_tree(source_iso, *, core="64", link=None, flavour="debian", elf=True):
     """A work tree carrying a 01-core.sb, for the two tests that need real facts.
 
     core: '64' or '32' -- the EI_CLASS of the ELF at usr/bin/ls -- or None for a tree with
@@ -1820,6 +1820,10 @@ def _core_tree(source_iso, *, core="64", link=None, flavour="debian"):
     flavour: 'debian' writes etc/debian_version, 'slackware' writes etc/slackware-version,
     None writes neither -- the rebuilt core that reads as `unknown` (#35). It was Debian or
     nothing until then, so every flavour case in this file tested one of the two.
+
+    elf=False writes no usr/bin/ls, so the core answers a flavour and NOT an arch. That is
+    the only shape where one fact is known and the other is not, which is what it takes to
+    show the ISO name never overrides a fact the tree gave (#41).
 
     link='rel' puts usr/bin/ls -> ../../bin/ls with the real ELF at bin/ls, which is
     Slackware's shape. link='abs' makes it -> /bin/ls, the shape that escapes: bin/ls
@@ -1843,14 +1847,16 @@ def _core_tree(source_iso, *, core="64", link=None, flavour="debian"):
         elif flavour:
             open(os.path.join(src, "etc", "debian_version"), "w").write("12.2\n")
         bits = 2 if core == "64" else 1
-        elf = b"\x7fELF" + bytes([bits]) + bytes(59)
-        if link:
+        elf_bytes = b"\x7fELF" + bytes([bits]) + bytes(59)
+        if not elf:
+            pass
+        elif link:
             os.makedirs(os.path.join(src, "bin"))
-            open(os.path.join(src, "bin", "ls"), "wb").write(elf)
+            open(os.path.join(src, "bin", "ls"), "wb").write(elf_bytes)
             os.symlink("../../bin/ls" if link == "rel" else "/bin/ls",
                        os.path.join(src, "usr", "bin", "ls"))
         else:
-            open(os.path.join(src, "usr", "bin", "ls"), "wb").write(elf)
+            open(os.path.join(src, "usr", "bin", "ls"), "wb").write(elf_bytes)
         subprocess.run(["mksquashfs", src, os.path.join(mods, "01-core.sb"),
                         "-noappend", "-no-progress", "-all-root"],
                        capture_output=True, check=True)
@@ -1947,24 +1953,47 @@ def test_arch_is_a_fact_about_the_tree():
         return
     tree = _core_tree
 
-    for label, kw, src, want in (
+    # FLAVOUR IS ASSERTED BESIDE ARCH, because the ISO name carries both and only arch
+    # read it until #41 -- so a tree with no readable 01-core ran its arch-guarded steps on
+    # a guess while every flavour-guarded step skipped. Rows where the tree answers are
+    # "debian" from _core_tree's own etc/debian_version, not from the name.
+    for label, kw, src, want, want_flav in (
             ("a directory named 32bit does not flip a 64-bit tree", {"core": "64"},
-             "/srv/slax-32bit-and-64bit/slax-64bit-debian-12.2.0.iso", "64bit"),
+             "/srv/slax-32bit-and-64bit/slax-64bit-debian-12.2.0.iso", "64bit", "debian"),
             ("a plain ISO name still reads the tree", {"core": "64"},
-             "/srv/downloads/slax.iso", "64bit"),
+             "/srv/downloads/slax.iso", "64bit", "debian"),
             ("a 32-bit tree under a directory named 64bit", {"core": "32"},
-             "/srv/64bit/slax-32bit-debian-12.2.0.iso", "32bit"),
+             "/srv/64bit/slax-32bit-debian-12.2.0.iso", "32bit", "debian"),
+            ("the tree wins over a name that disagrees", {"core": "64", "flavour": "slackware"},
+             "/srv/isos/slax-64bit-debian-12.2.0.iso", "64bit", "slackware"),
+            # arch unknown, flavour read -- the only shape where the block runs while one
+            # fact is already known, so it is what pins that the name does not overwrite it.
+            ("a name cannot overwrite the flavour the tree gave",
+             {"core": "64", "flavour": "slackware", "elf": False},
+             "/srv/isos/slax-64bit-debian-12.2.0.iso", "64bit", "slackware"),
             ("no 01-core: the ISO's own NAME decides", {"core": None},
-             "/srv/64bit/slax-32bit-debian-12.2.0.iso", "32bit"),
+             "/srv/64bit/slax-32bit-debian-12.2.0.iso", "32bit", "debian"),
+            ("no 01-core, and a Slackware name decides", {"core": None},
+             "/srv/isos/slax-32bit-slackware-15.0.4.iso", "32bit", "slackware"),
+            # The order is fixed rather than incidental, the same claim FLAVOUR_CANDIDATES
+            # makes about a core carrying both version files. A name carrying both words
+            # is the only thing that can show it.
+            ("a name carrying both flavours answers the same way every time", {"core": None},
+             "/srv/isos/slax-64bit-slackware-from-debian.iso", "64bit", "slackware"),
             ("no 01-core, and the DIRECTORY is never read", {"core": None},
-             "/srv/slax-32bit-and-64bit/slax.iso", "unknown"),
+             "/srv/slax-32bit-and-64bit/slax.iso", "unknown", "unknown"),
+            # The case no arch row can express: a FLAVOUR in the directory and not in the
+            # basename. #27's rule is about the path, so it has to hold for the new fact.
+            ("no 01-core, and a flavour in the DIRECTORY is never read", {"core": None},
+             "/srv/debian-builds/slax.iso", "unknown", "unknown"),
             ("a relative symlink, which is Slackware's shape", {"core": "32", "link": "rel"},
-             "/srv/slax.iso", "32bit"),
+             "/srv/slax.iso", "32bit", "debian"),
             ("an absolute symlink resolves inside the image, not on this host",
-             {"core": "32", "link": "abs"}, "/srv/slax.iso", "32bit")):
+             {"core": "32", "link": "abs"}, "/srv/slax.iso", "32bit", "debian")):
         work = tree(src, **kw)
-        check(f"arch: {label}",
-              apply._tree_facts(work, os.path.join(work, "iso"))["arch"], want)
+        facts = apply._tree_facts(work, os.path.join(work, "iso"))
+        check(f"arch: {label}", facts["arch"], want)
+        check(f"flavour: {label}", facts["flavour"], want_flav)
 
     # check_compat is handed the facts the steps ran with, so it cannot warn about a base
     # they never saw. This tree was told "the base looks like 32bit" while the 64-bit

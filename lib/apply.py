@@ -3431,23 +3431,44 @@ def _tree_facts(work: str, tree: str) -> dict:
     Now it is read from the tree. The ISO's own NAME is the fallback when there is no
     01-core to read -- never the directory it sits in, which is the whole bug.
 
-    `flavour` is symmetrical with it in two of three ways: both are read from 01-core by a
-    probe in fingerprint.py (#35), both answer "unknown" for a tree they could not read,
-    and a `when:` guard on an unknown fact is false rather than true. The NAME fallback
-    below is arch's alone -- an ISO called slax-64bit-debian-12.2.0.iso names its flavour
-    too, and that is not read. Deliberate only in the sense that nothing has argued for it.
+    `flavour` is symmetrical with it throughout: both are read from 01-core by a probe in
+    fingerprint.py (#35), both answer "unknown" for a tree they could not read, a `when:`
+    guard on an unknown fact is false rather than true, and both take the ISO's NAME as
+    the last resort below.
+
+    THE NAME WAS ARCH'S ALONE until #41, and an ISO called slax-64bit-debian-12.2.0.iso
+    names its flavour as plainly as its arch. The fallback only fires where there is no
+    readable 01-core, so flavour was necessarily "unknown" in exactly the state where arch
+    got a guess: arch-guarded steps ran and flavour-guarded ones skipped, on one tree, in
+    one run. profiles/example.yaml is the shipped profile that pairs the two.
+
+    Not deleted instead, though it is residue -- #27 replaced "search the absolute path"
+    with the ELF probe and kept the basename as what was left -- because `--facts` is a
+    `kitchen apply` flag and not a `kitchen build` one, so deleting it leaves a build on an
+    unreadable base no recourse at all.
     """
     import yaml
     flav, arch = _core_facts(tree)
     facts = {"flavour": flav, "arch": arch or "unknown"}
     origin = os.path.join(work, ".kitchen", "origin.yaml")
-    if facts["arch"] == "unknown" and os.path.isfile(origin):
+    if "unknown" in facts.values() and os.path.isfile(origin):
+        # THE BASENAME, never the directory it sits in: that was #27, where one stock
+        # 64-bit ISO kept under "slax-32bit-and-64bit/" read as 32bit and memtest86plus
+        # installed the i586 build into it. Both facts obey that rule.
         src = os.path.basename(
             str((yaml.safe_load(open(origin)) or {}).get("source_iso", "")))
-        if "32bit" in src:
-            facts["arch"] = "32bit"
-        elif "64bit" in src:
-            facts["arch"] = "64bit"
+        if facts["arch"] == "unknown":
+            if "32bit" in src:
+                facts["arch"] = "32bit"
+            elif "64bit" in src:
+                facts["arch"] = "64bit"
+        if facts["flavour"] == "unknown":
+            # slackware first, the order FLAVOUR_CANDIDATES uses, so a name carrying both
+            # gets one answer every time rather than whichever was tested first.
+            for flav, _rel in fingerprint.FLAVOUR_CANDIDATES:
+                if flav in src:
+                    facts["flavour"] = flav
+                    break
     return facts
 
 

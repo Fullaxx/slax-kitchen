@@ -174,6 +174,14 @@ a profile to an existing tree took whatever `-w` pointed at, so a 64-bit profile
 a 32-bit tree and every `when: arch==` step would build the other architecture's half. A tree whose
 architecture cannot be read is *not* a disagreement, and `--facts` still overrides.
 
+**Where the facts come from, in order.** `flavour` and `arch` are read from `01-core` — the version
+file for one, an ELF header for the other. Where that fails, the last resort is the **basename** of
+the ISO in `<work>/.kitchen/origin.yaml`: `slax-64bit-debian-12.2.0.iso` names both. The directory
+it sits under is never read, which was issue #27 — one stock 64-bit ISO kept in a folder called
+`slax-32bit-and-64bit/` read as 32-bit, and `memtest86plus` installed the i586 build into it. A
+name carrying neither leaves the fact `unknown`, and a `when:` guard on an unknown fact is false
+rather than true.
+
 `--facts k=v,k=v` overrides what `when:` guards see, **merged over the facts read from the tree** —
 naming one leaves the rest measured, so `--facts flavour=debian` does not blank `arch` out from
 under a step guarding on it. It reaches the steps that actually run, which it did not before: the

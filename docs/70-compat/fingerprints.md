@@ -114,8 +114,10 @@ Two consequences worth knowing:
 
 - **`/etc/os-release` is not consulted**, though the old substring match reached it through
   `os_release_id`. A rebuilt `01-core` that drops `slackware-version` but keeps `os-release` now
-  reads `unknown` instead of `slackware`. That is the answer arch already gives for a tree it cannot
-  read, and `--facts flavour=slackware` is how to say otherwise for a run.
+  reads `unknown` instead of `slackware` — unless the ISO's own name says, which is the last resort
+  for both facts and never the directory it sits in (see
+  [the CLI reference](../90-reference/cli.md#apply-recipe--w-dir--apply---profile-profile)). `--facts flavour=slackware` is
+  how to say otherwise for a run, on `kitchen apply`.
 - **The member list and the probe come from one tuple.** `FLAVOUR_CANDIDATES` supplies both the
   paths `unsquashfs` is asked to extract and the paths the probe looks for. A list that spelled them
   out separately could stop extracting one and turn every ISO `unknown` without a word — the same
