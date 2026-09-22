@@ -3057,21 +3057,23 @@ def _core_facts(tree: str) -> tuple[str, str | None]:
     `kitchen probe` runs. That was already true of arch; flavour had a second
     implementation of its own that disagreed with this one (#35).
 
-    cores[0], not every 01-core* in turn: _detect_arch already read only the first, and
-    two facts taken from two different bundles would be a worse answer than either.
+    ONE bundle, not every 01-core* in turn: two facts taken from two different bundles
+    would be a worse answer than either. WHICH one is fingerprint.pick_core()'s to say --
+    this used to take the first prefix match in sort order, so a tree carrying an overlay
+    called `01-core-patches.sb` had its flavour and arch read out of the overlay while
+    ci/gen-manifests.sh hashed the real core (#40).
     """
     import tempfile
     mods = os.path.join(tree, "slax", "modules")
-    cores = sorted(n for n in os.listdir(mods) if n.startswith("01-core")) \
-        if os.path.isdir(mods) else []
-    if not cores:
+    core = fingerprint.pick_core(os.listdir(mods)) if os.path.isdir(mods) else None
+    if not core:
         return "unknown", None
     tmp = tempfile.mkdtemp(prefix="kitchen-core.")
     try:
         cx = os.path.join(tmp, "core")
         # offset 0: in a work tree the bundle is a file of its own, not a region of an ISO.
         fingerprint.squash_extract(
-            os.path.join(mods, cores[0]), 0, cx,
+            os.path.join(mods, core), 0, cx,
             [*fingerprint.ARCH_CANDIDATES,
              *(rel for _flav, rel in fingerprint.FLAVOUR_CANDIDATES)])
         hit = fingerprint.arch_from_extract(cx)

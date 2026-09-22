@@ -89,6 +89,34 @@ ARCH_CANDIDATES = ("usr/bin/ls", "bin/ls", "usr/bin/bash", "bin/bash")
 FLAVOUR_CANDIDATES = (("slackware", "etc/slackware-version"),
                       ("debian", "etc/debian_version"))
 
+# The bundle both probes read. A NAME, not a prefix -- see pick_core().
+CORE_BUNDLE = "01-core.sb"
+
+
+def pick_core(names) -> str | None:
+    """Which of these bundles is 01-core, or None. THE EXACT NAME WINS.
+
+    Both probes above answer about whichever bundle this returns, so picking the wrong one
+    is picking the wrong answer -- and a prefix scan taking its first hit picks by sort
+    order. `01-core-patches.sb` is a plausible name for an overlay onto the core, the
+    recipe schema allows it, and `01` is not one of RESERVED_PREFIXES; it sorts BEFORE
+    `01-core.sb` because "-" is 0x2d and "." is 0x2e. So lib/apply.py and this module both
+    read the overlay while ci/gen-manifests.sh, which matches the exact name, hashed the
+    real core -- one tree, two answers (#40).
+
+    That failure is already named in this tree. _bundle_stack's docstring: "A prefix
+    resolves to EVERY match, so `from: [01]` means 01-core AND 01-firmware rather than
+    silently just the first one." Found and fixed there, and left standing here.
+
+    The prefix scan survives as the fallback, sorted, because a fork may legitimately ship
+    `01-core-15.0.4.sb` and no exact name to match -- and sorting is what makes the two
+    callers agree, since one lists a directory and the other takes xorriso's listing order.
+    """
+    names = list(names)
+    if CORE_BUNDLE in names:
+        return CORE_BUNDLE
+    return next((n for n in sorted(names) if n.startswith("01-core")), None)
+
 
 def resolve_within(root: str, rel: str, hops: int = 10) -> str | None:
     """Resolve `rel` under `root`, following symlinks but NEVER leaving `root`.
@@ -334,7 +362,7 @@ def fingerprint(iso: str, name: str | None = None) -> dict:
         fp["bundles"] = bundles
 
         # ---- identity ------------------------------------------------------
-        core = next((b for b in bundles if b.startswith("01-core")), None)
+        core = pick_core(bundles)
         ident: dict = {}
         # "unknown" unless a 01-core is actually read below -- the answer `version` and
         # `arch` already give for an image nothing could be read from (#35).

@@ -1871,6 +1871,63 @@ def _needs_mksquashfs(what: str) -> bool:
     return False
 
 
+def test_the_core_is_picked_by_name_not_by_sort_order():
+    """Both fact probes read ONE bundle, and which one was decided by sort order (#40).
+
+    `01-core-patches.sb` is a plausible name for an overlay onto the core -- the recipe
+    schema allows it and `01` is not in RESERVED_PREFIXES -- and it sorts before
+    `01-core.sb`, because "-" is 0x2d and "." is 0x2e. So lib/apply.py and lib/fingerprint
+    read flavour and arch out of the overlay while ci/gen-manifests.sh, which matches the
+    exact name, hashed the real core.
+
+    The failure was already named in this tree before it was found here. _bundle_stack's
+    docstring: "A prefix resolves to EVERY match, so `from: [01]` means 01-core AND
+    01-firmware rather than silently just the first one." Fixed there, left standing in
+    the two places that decide what every `when:` guard reads.
+
+    No fixture: pick_core answers about a list of names, so this needs no tree and no
+    mksquashfs.
+    """
+    real, overlay = "01-core.sb", "01-core-patches.sb"
+    check("the exact name wins over one that sorts first",
+          fingerprint.pick_core([overlay, real, "01-firmware.sb"]), real)
+    check("...and over one that sorts after",
+          fingerprint.pick_core([real, "01-core2.sb"]), real)
+    check("...whatever order it is handed",
+          fingerprint.pick_core(["01-firmware.sb", real, overlay]), real)
+    check("a fork with no exact name still resolves",
+          fingerprint.pick_core(["01-core-15.0.4.sb", "01-firmware.sb"]), "01-core-15.0.4.sb")
+    # SORTED, and it has to be: the two callers hand this list in different orders -- one
+    # lists a directory, the other takes xorriso's listing order -- so an unsorted fallback
+    # lets them disagree with each other on the very tree the exact name cannot settle.
+    check("...by sort order, not by the order it was handed",
+          [fingerprint.pick_core(["01-core-b.sb", "01-core-a.sb"]),
+           fingerprint.pick_core(["01-core-a.sb", "01-core-b.sb"])],
+          ["01-core-a.sb", "01-core-a.sb"])
+    check("and nothing matching is None",
+          fingerprint.pick_core(["01-firmware.sb", "02-xorg.sb"]), None)
+    check("an empty tree is None", fingerprint.pick_core([]), None)
+
+    # The overlay is what ci/gen-manifests.sh would NOT have picked -- that disagreement
+    # is the defect, so pin that the two now answer the same.
+    names = [overlay, real, "01-firmware.sb"]
+    check("it agrees with the exact-match site",
+          fingerprint.pick_core(names),
+          next((n for n in names if n == fingerprint.CORE_BUNDLE), None))
+
+    # AND BOTH FACT SITES HAVE TO GO THROUGH IT. The checks above pass just as happily
+    # with either caller still scanning for a prefix itself, because they never call one.
+    import ast
+    for mod, fn in (("lib/apply.py", "_core_facts"), ("lib/fingerprint.py", "fingerprint")):
+        tree = ast.parse(open(os.path.join(REPO, mod)).read())
+        f = next(n for n in ast.walk(tree)
+                 if isinstance(n, ast.FunctionDef) and n.name == fn)
+        body = ast.unparse(f)
+        check(f"{mod}:{fn} asks pick_core", "pick_core(" in body, True)
+        check("...and scans for no prefix of its own",
+              "startswith('01-core')" in body, False)
+
+
 def test_arch_is_a_fact_about_the_tree():
     """`when: arch==` reads the TREE, not the path the ISO was stored under.
 
@@ -2385,6 +2442,7 @@ def main():
                    test_facts_reach_the_steps_that_run,
                    test_flavour_is_a_fact_about_the_tree_or_says_it_is_not,
                    test_both_delta_lines_report_what_the_step_removed,
+                   test_the_core_is_picked_by_name_not_by_sort_order,
                    test_a_menu_entry_names_a_payload_that_is_there]:
             # One test crashing must not stop the rest: the count of failures is only honest
             # if every test ran. The traceback still goes to stderr, because a crash's location
