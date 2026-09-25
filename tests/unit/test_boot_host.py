@@ -403,17 +403,17 @@ def test_a_failure_is_blamed_on_the_right_thing():
 
     FOUND BY RUNNING IT. A `scratch` the account cannot create gives rsync exit 12 with
     "mkdir: cannot create directory '/root': Permission denied" -- and the first version
-    of the rule matched the bare words and reported "hydra refused the key", sending the
+    of the rule matched the bare words and reported "<host> refused the key", sending the
     reader to run ssh-copy-id against a host whose key had just worked. It had to work:
     that is how the mkdir got far enough to fail.
 
-    Both strings below are what ssh 9.6 and rsync 3.2.7 actually printed.
+    Both strings below are what ssh 9.6 and rsync 3.2.7 actually printed, but for the host.
     Captured from: OpenSSH 9.6p1, rsync 3.2.7
     """
     cfg = boot_host.Config("kvmbox", "/srv/s", "127.0.0.1", 5900, False, "x")
     s = boot_host.Session.__new__(boot_host.Session)     # no connection, just the rule
     s.cfg = cfg
-    auth = s._ssh_hint("nosuchuser@10.1.1.21: Permission denied (publickey,password).")
+    auth = s._ssh_hint("nosuchuser@kvmbox: Permission denied (publickey,password).")
     check("ssh's refusal is a key problem", "refused the key" in auth, True)
     mkdir = s._ssh_hint("mkdir: cannot create directory ‘/root’: Permission "
                         "denied\nrsync: connection unexpectedly closed (0 bytes received "

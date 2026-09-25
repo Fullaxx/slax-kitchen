@@ -493,7 +493,7 @@ class Session:
             # denied". Measured: an unwritable scratch path gives rsync exit 12 with
             # "mkdir: cannot create directory '/root': Permission denied", which the
             # login-failure rule below matched happily -- so a wrong `scratch =` line
-            # was reported as "hydra refused the key", sending the reader to run
+            # was reported as "<host> refused the key", sending the reader to run
             # ssh-copy-id against a host whose key already worked. The login DID work;
             # that is how the mkdir got far enough to fail.
             if "mkdir:" in err or "No such file or directory" in err:
@@ -1066,7 +1066,7 @@ def launch(cfg: Config, a, make_argv) -> int:
         # directory of the account on that machine, which is not ours to litter.
         # KITCHEN_BOOT_HOST_AGENT: the copy over there is nested inside this session, so
         # it must not look for a boot host of its own AND must not repeat the advice this
-        # side has already given -- it was printing "ssh -L 5900:127.0.0.1:5900 hydra",
+        # side has already given -- it was printing "ssh -L 5900:127.0.0.1:5900 <host>",
         # telling the reader to build the tunnel they are already looking through.
         remote = (f"cd {shlex.quote(cfg.base)}/disks && "
                   f"KITCHEN_BOOT_HOST=local KITCHEN_BOOT_HOST_AGENT=1 exec python3 "
