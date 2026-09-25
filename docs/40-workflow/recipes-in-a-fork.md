@@ -95,10 +95,12 @@ Two rules worth knowing:
 - **`metadata.name` must match the filename stem.** `recipes/myproject/my-tools.yaml` needs
   `name: my-tools`. Recipes are referenced by name, so these have to agree.
 - **A name that exists in two directories is an error**, naming both files. Nothing silently
-  picks one. Rename yours, or name the file you mean by path — `kitchen apply` accepts a path
-  anywhere, including outside the repo. A path picks one of them; it does not let both into one
-  plan. Two files with one name are refused there too, including one that another recipe's
-  `compat.requires` pulls in, because vars and the journal key a recipe by its name.
+  picks one. Two *different* files, that is: a stock recipe symlinked into `recipes/myproject/` is
+  the same file under another path, and counts once. Rename yours, or name the file you mean by
+  path — `kitchen apply` accepts a path anywhere, including outside the repo. A path picks one of
+  them; it does not let both into one plan. Two files with one name are refused there too,
+  including one that another recipe's `compat.requires` pulls in, because vars and the journal
+  key a recipe by its name.
 
 ### Sidecar files
 

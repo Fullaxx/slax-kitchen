@@ -1143,7 +1143,7 @@ def test_two_files_with_one_name_are_refused_before_anything_runs():
 
     One x requiring the other directly was refused, but as "recipe dependency cycle: x ->
     x", because resolve() compared names. It compares files now, so that is refused naming
-    both files too -- and a real cycle, the same file again, is still one.
+    both files too; test_a_dependency_cycle_is_the_same_file_again keeps a real cycle one.
     """
     import contextlib
     import io
@@ -1202,16 +1202,61 @@ def test_two_files_with_one_name_are_refused_before_anything_runs():
         check("one x requiring the other: refused", rc, 2)
         check("...naming both files, not as a cycle",
               (xc in said, xb in said, "cycle" in said), (True, True, False))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
 
-        y = os.path.join(d, "recipes", "y", "y.yaml")
-        z = recipe("z/z.yaml", "46-z", requires=y)
-        recipe("y/y.yaml", "45-y", requires=z)
+
+def test_a_dependency_cycle_is_the_same_file_again():
+    """resolve() tells recipes apart by the file, not by the name or the path it was found by.
+
+    Its cycle check compared names, so a recipe requiring another file with its own name
+    was "recipe dependency cycle: x -> x"; f004b6a made it compare files. But the same file
+    was the same abspath. Measured 2026-09-25: `apply branding` run from inside
+    recipes/available was refused as ambiguous, naming recipes/available/branding.yaml
+    twice, because the current directory is searched as well and was a recipe directory.
+    And a recipe reached through a symlink and through its real path counted as two files.
+    A file is its realpath now. A real cycle is still one, and a cycle between two files
+    that share a name is told by their paths, since their names cannot tell them apart.
+    """
+    import tempfile
+    import yaml
+    d = tempfile.mkdtemp(prefix="kitchen-cycle.")
+
+    def recipe(rel, requires=None):
+        # resolve() reads nothing of a recipe but compat.requires.
+        path = os.path.join(d, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            yaml.safe_dump({"compat": {"requires": [requires] if requires else []}}, f)
+        return path
+
+    def outcome(names, search):
         try:
-            apply.resolve([y], [])
-            check("a real cycle is refused", "resolved", "refused")
+            return [os.path.relpath(p, d) for p in apply.resolve(names, search)]
         except RuntimeError as e:
-            check("a real cycle is refused, by name", str(e),
-                  "recipe dependency cycle: y -> z -> y")
+            return str(e)
+
+    try:
+        y = os.path.join(d, "y", "y.yaml")
+        recipe("y/y.yaml", requires=recipe("z/z.yaml", requires=y))
+        check("a real cycle is refused, by name", outcome([y], []),
+              "recipe dependency cycle: y -> z -> y")
+
+        xa = os.path.join(d, "a", "x.yaml")
+        xb = recipe("b/x.yaml", requires=xa)
+        recipe("a/x.yaml", requires=xb)
+        check("a cycle between two files named x is told by their paths", outcome([xa], []),
+              f"recipe dependency cycle: {xa} -> {xb} -> {xa}")
+
+        real = recipe("r/w.yaml")
+        os.makedirs(os.path.join(d, "s"))
+        os.symlink(real, os.path.join(d, "s", "w.yaml"))
+        check("a symlink and its target are one recipe",
+              outcome([real, os.path.join(d, "s", "w.yaml")], []), ["r/w.yaml"])
+
+        recipe("dup/v.yaml")
+        check("one file found twice by name is not ambiguous",
+              outcome(["v"], [os.path.join(d, "dup"), os.path.join(d, "dup")]), ["dup/v.yaml"])
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -2716,6 +2761,7 @@ def main():
                    test_a_recipe_listed_twice_is_refused,
                    test_a_recipe_named_by_path_takes_its_vars,
                    test_two_files_with_one_name_are_refused_before_anything_runs,
+                   test_a_dependency_cycle_is_the_same_file_again,
                    test_a_relative_base_iso_is_found_from_the_profiles_repository,
                    test_a_recipe_named_by_path_keeps_its_build_checks,
                    test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package,

@@ -3515,7 +3515,8 @@ def load_recipe(path: str, overrides: dict | None = None) -> dict:
 
 
 def resolve(names: list[str], search: list[str]) -> list[str]:
-    """Turn recipe names/paths into paths, pulling in compat.requires first."""
+    """Turn recipe names/paths into paths, each file once by its realpath, pulling in
+    compat.requires first."""
     import yaml
     out: list[str] = []
     seen: set[str] = set()
@@ -3529,6 +3530,13 @@ def resolve(names: list[str], search: list[str]) -> list[str]:
         hits = [os.path.join(d, n + ext)
                 for d in search for ext in (".yaml", ".yml")
                 if os.path.isfile(os.path.join(d, n + ext))]
+        # ...but ONE FILE FOUND TWICE IS ONE FILE. The current directory is searched as
+        # well, and run from inside recipes/available every name there was found twice and
+        # refused as ambiguous, naming the same file twice (measured 2026-09-25).
+        files: dict[str, str] = {}
+        for h in hits:
+            files.setdefault(os.path.realpath(h), h)
+        hits = list(files.values())
         if not hits:
             raise RuntimeError(f"recipe not found: {n} (searched {', '.join(search)})")
         if len(hits) > 1:
@@ -3538,22 +3546,28 @@ def resolve(names: list[str], search: list[str]) -> list[str]:
                 + "\n  Rename one, or name the file you mean by path.")
         return hits[0]
 
-    # A CYCLE IS THE SAME FILE AGAIN, so `stack` holds (file, name) pairs and the names are
-    # only for the message. Compared by name, a recipe requiring another file with its own
-    # name was reported as "recipe dependency cycle: x -> x" -- a cycle nobody could find,
-    # for what is two files with one name, which main() refuses naming both.
+    # A CYCLE IS THE SAME FILE AGAIN, and a file is its realpath. Compared by name, a recipe
+    # requiring another file with its own name was reported as "recipe dependency cycle:
+    # x -> x" -- a cycle nobody could find, for what is two files with one name, which
+    # main() refuses naming both. Compared by abspath, one recipe reached through a symlink
+    # and through its real path was two. `stack` holds (file, name, path as found): the
+    # file to compare, and what the message may call it.
     def walk(n: str, stack: tuple) -> None:
         p = find(n)
-        key = os.path.abspath(p)
+        key = os.path.realpath(p)
         if key in seen:
             return
         base = recipe_name(p)
-        if any(f == key for f, _ in stack):
+        if any(f == key for f, _, _ in stack):
+            hops = list(stack) + [(key, base, p)]
+            # By name, unless a name here belongs to two files: then by the path, since
+            # "x -> x -> x" cannot say which x is which.
+            shared = {b for _, b, _ in hops if len({f for f, b2, _ in hops if b2 == b}) > 1}
             raise RuntimeError("recipe dependency cycle: "
-                               + " -> ".join([b for _, b in stack] + [base]))
+                               + " -> ".join(q if b in shared else b for _, b, q in hops))
         doc = yaml.safe_load(open(p)) or {}
         for dep in (doc.get("compat", {}) or {}).get("requires", []) or []:
-            walk(dep, stack + ((key, base),))
+            walk(dep, stack + ((key, base, p),))
         seen.add(key)
         out.append(p)
 
