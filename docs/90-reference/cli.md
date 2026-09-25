@@ -127,6 +127,11 @@ Explodes an ISO into `DIR/iso` (default `work/`) using xorriso's osirrox mode, w
 Ridge names and permission bits. Writes `DIR/.kitchen/origin.yaml` with the source path, sha256 and
 size — that provenance is what `pack` uses to name its output.
 
+An extraction that failed is refused, and leaves no tree and no record behind: a non-zero exit from
+xorriso, a line at `SORRY` or above (the rule `diff` uses), or no `slax/boot/isolinux.bin` in the
+result — which is all a file that is not an ISO produces, since xorriso extracts nothing from one
+and still exits 0.
+
 A `DIR` that already holds a work tree is refused: `DIR/iso`, or a `DIR/.kitchen` whose tree was
 deleted. `-f`/`--force` replaces both, because the record in `.kitchen` describes the tree it came
 with. Kept beside a fresh one, it had `status` list recipes the tree did not have, `apply` refuse
@@ -280,9 +285,9 @@ rot automatically.
 
 ### Bring your own ISO
 
-Nothing requires `fetch`. `kitchen unpack /path/to.iso` accepts any image — one you already have,
-a corporate mirror, or one you previously customized — and a profile can point a build at one with
-`base.iso:`, which wins over the derived path. A relative `base.iso:` is relative to the
+Nothing requires `fetch`. `kitchen unpack /path/to.iso` accepts any Slax image — one you already
+have, a corporate mirror, or one you previously customized — and a profile can point a build at
+one with `base.iso:`, which wins over the derived path. A relative `base.iso:` is relative to the
 repository that holds the profile, so a project that vendors the engine names an image in its own
 tree. Building one project on another's released image this way is
 [LAYERING.md](../../LAYERING.md). What was written when that image was mastered does not come with

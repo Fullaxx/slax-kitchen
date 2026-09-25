@@ -57,7 +57,7 @@ ${B}COMMANDS${O}
   probe <iso>                match an ISO against compat/ and report what differs
   fingerprint <iso> [-o F]   generate a compat fingerprint
   fetch [target|--all]       download + verify a base ISO into isos/ (no args: list)
-  unpack <iso> [-o DIR]      explode an ISO into a work tree      (default: ./work)
+  unpack <iso> [-o DIR]      explode a Slax ISO into a work tree  (default: ./work)
   apply <recipe>... [-w DIR] apply recipes to a work tree (-n for a dry run)
   validate <file.yaml>...    check a recipe or profile against its schema
   pack [-o FILE|DIR]         rebuild an ISO from a work tree      (default: ./out/<name>-custom.iso)
@@ -466,7 +466,7 @@ cmd_doctor() {
 usage_cmd() {
     case "$1" in
       unpack) cat <<'H'
-kitchen unpack <iso> [-o DIR]     explode an ISO into a work tree
+kitchen unpack <iso> [-o DIR]     explode a Slax ISO into a work tree
 
   -o, --output DIR     where to put it (default: ./work)
   -f, --force          replace an existing work tree, and the record of what was

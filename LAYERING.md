@@ -18,7 +18,7 @@ stock Slax ISO --(slax-wine's recipes)--> slax-wine ISO --(slax-rpgs's recipes)-
 
 Each arrow is one build — `kitchen unpack`, `apply`, `pack` — by a project that vendors this
 engine at `vendor/slax-kitchen`. The two arrows differ only in the image they start from.
-`kitchen unpack` accepts any image, including one this engine built
+`kitchen unpack` accepts any Slax image, including one this engine built
 ([bring your own ISO](docs/90-reference/cli.md#bring-your-own-iso)), and a profile names it with
 `base.iso:`. A relative `base.iso:` is relative to the repository that holds the profile.
 

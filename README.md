@@ -46,8 +46,8 @@ without checking its requirements first.
 `kitchen fetch` downloads from a mirror list and checks **both** size and sha256 against
 `compat/sources.yaml` before accepting the file, falling through to the next mirror if either
 fails — so a stale or hostile mirror cannot poison a build. An ISO you already have works too:
-`kitchen unpack /path/to.iso` takes any image, and a profile's `base.iso:` points a build at one.
-(`--base` is not that: it names one of the four known targets.)
+`kitchen unpack /path/to.iso` takes any Slax image, and a profile's `base.iso:` points a build at
+one. (`--base` is not that: it names one of the four known targets.)
 
 ### Two things the stock ISO cannot do
 
