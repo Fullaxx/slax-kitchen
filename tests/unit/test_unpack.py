@@ -17,11 +17,14 @@ A plain `unpack` did the same when iso/ had been deleted by hand.
 And `unpack` reported success for an extraction that had failed. It piped xorriso into grep
 for FAILURE or SORRY, which threw the exit status away, so an xorriso that died printing
 nothing was "ok 0 files"; and a file that is not an ISO extracts nothing, with exit 0 and no
-such line. Measured 2026-09-25: both exited 0 and wrote an origin.yaml for no tree.
+such line. Measured 2026-09-25: both exited 0 and wrote an origin.yaml for no tree. Refusing
+those then showed only xorriso's FAILURE-or-worse lines, which hid what it said when it died
+without one, and pack judged its own run by a narrower rule than unpack's. Both now run
+xorriso through kitchen's xorriso_run, which these cases reach through unpack.
 
 xorriso is a stub whose `-extract / DIR` writes a one-file Slax tree, exits with $STUB_RC,
-and with $STUB_EMPTY extracts nothing: CI's gates job does not install the real one
-(tests/unit/test_diff.py).
+with $STUB_EMPTY extracts nothing, and first prints $STUB_SAY: CI's gates job does not
+install the real one (tests/unit/test_diff.py).
 
 Run directly: python3 tests/unit/test_unpack.py
 """
@@ -40,7 +43,9 @@ FAILURES = []
 # file pack looks for, so DIR is a Slax tree. $STUB_EMPTY extracts nothing, as the real one
 # does with a file that is not an ISO:
 # Captured from: xorriso 1.5.6 -- exit 0, no FAILURE or SORRY line, an empty DIR.
+# $STUB_SAY is printed to stderr first, as xorriso's own messages are.
 STUB_XORRISO = r'''#!/bin/sh
+[ -n "$STUB_SAY" ] && echo "$STUB_SAY" >&2
 while [ $# -gt 0 ]; do
     if [ "$1" = -extract ]; then
         mkdir -p "$3"
@@ -135,17 +140,35 @@ def left_behind(dest):
 
 
 @in_a_box
-def test_an_xorriso_that_dies_saying_nothing_is_a_failure(tmp):
+def test_an_xorriso_that_dies_without_a_failure_line_is_a_failure(tmp):
     """Killed partway -- exit 137, no FAILURE line -- used to be reported as a success.
 
     Piping xorriso into grep threw its exit status away: measured 2026-09-25 with one that
     exited 127 printing nothing, `unpack` said "ok 0 files", exited 0, and recorded an
-    origin.yaml for a tree that was never there.
+    origin.yaml for a tree that was never there. And once that was refused, what xorriso
+    did say was hidden, because only FAILURE-or-worse lines were shown: an xorriso that
+    printed "not installed" and exited 127 was reported as "xorriso failed (exit 127)" alone.
     """
     dest = os.path.join(tmp, "work")
-    p = unpack(tmp, "-o", dest, STUB_RC="137")
+    p = unpack(tmp, "-o", dest, STUB_RC="137", STUB_SAY="stub: took signal 9")
     check("xorriso exiting 137: refused", p.returncode, 1)
     check("...saying so", "xorriso failed (exit 137)" in p.stderr, True)
+    check("...and showing what xorriso said", "stub: took signal 9" in p.stderr, True)
+    check("...leaving no tree and no record", left_behind(dest), (False, False))
+
+
+@in_a_box
+def test_a_mishap_is_a_failure_even_at_exit_0(tmp):
+    """xorriso can report a MISHAP and exit 0 (lib/diff.py records it of a listing).
+
+    pack judged its xorriso run by FAILURE or SORRY alone, so it would have let one through;
+    unpack and pack now share one rule, kitchen's xorriso_run, which this reaches through
+    unpack.
+    """
+    dest = os.path.join(tmp, "work")
+    p = unpack(tmp, "-o", dest, STUB_SAY="xorriso : MISHAP : stub mishap")
+    check("a MISHAP at exit 0: refused", p.returncode, 1)
+    check("...showing it", "xorriso : MISHAP : stub mishap" in p.stderr, True)
     check("...leaving no tree and no record", left_behind(dest), (False, False))
 
 
@@ -173,7 +196,8 @@ def main():
     try:
         for fn in [test_force_replaces_the_record_with_the_tree,
                    test_a_record_without_its_tree_is_refused,
-                   test_an_xorriso_that_dies_saying_nothing_is_a_failure,
+                   test_an_xorriso_that_dies_without_a_failure_line_is_a_failure,
+                   test_a_mishap_is_a_failure_even_at_exit_0,
                    test_a_file_that_is_not_an_iso_is_refused]:
             # One test crashing must not stop the rest: the count of failures is only honest
             # if every test ran.

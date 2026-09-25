@@ -46,22 +46,15 @@ kitchen_unpack() {
     # grep for FAILURE or SORRY, which threw the exit status away -- /bin/sh has no
     # PIPESTATUS, as pack.sh found -- so an xorriso that died printing nothing (measured:
     # exit 127, no such line) was "ok 0 files", with an origin.yaml for a tree that was
-    # never there. Judged now as lib/diff.py judges a listing: a non-zero exit, or any line
-    # at SORRY or above, MISHAP included because xorriso can report one and exit 0. And a
-    # file that is not an ISO at all extracts nothing, with exit 0 and no such line
+    # never there. xorriso_run (in kitchen) judges the run now, by lib/diff.py's rule. And
+    # a file that is not an ISO at all extracts nothing, with exit 0 and no such line
     # (xorriso 1.5.6), so the tree must also hold what pack looks for. On either failure
     # the tree goes: it did not exist before this run, because an existing one was
     # refused or removed above.
-    _xlog=$(mktemp) || die "unpack: cannot create a temporary file"
-    _xrc=0
-    xorriso -osirrox on -indev "$iso" -extract / "$tree" > "$_xlog" 2>&1 || _xrc=$?
-    if [ "$_xrc" != 0 ] || grep -qE '\b(SORRY|MISHAP|FAILURE|FATAL|ABORT)\b' "$_xlog"; then
-        grep -E '\b(SORRY|MISHAP|FAILURE|FATAL|ABORT)\b' "$_xlog" | head -5 >&2
-        rm -f "$_xlog"
+    if ! xorriso_run -osirrox on -indev "$iso" -extract / "$tree"; then
         rm -rf "$tree"
-        die "unpack: xorriso failed (exit $_xrc)"
+        die "unpack: xorriso failed (exit $XORRISO_RC)"
     fi
-    rm -f "$_xlog"
     if [ ! -f "$tree/slax/boot/isolinux.bin" ]; then
         rm -rf "$tree"
         die "unpack: $iso is not a Slax ISO (no slax/boot/isolinux.bin in it)"

@@ -175,20 +175,14 @@ kitchen_pack() {
             set -- "$@" -eltorito-alt-boot -e boot/efi.img -no-emul-boot
             [ "$hybrid" = 1 ] && set -- "$@" -isohybrid-gpt-basdat
         fi
-        # Check the exit status AND the log, not just the log. Grepping a pipeline
-        # throws xorriso's status away (this is /bin/sh, so there is no PIPESTATUS),
-        # and a run killed by the OOM killer prints neither FAILURE nor SORRY -- pack
-        # would have gone on to announce a truncated ISO as "ok". The log is still
-        # scanned because xorriso can report SORRY and exit 0.
-        _log=$(mktemp)
-        xorriso "$@" "$src" > "$_log" 2>&1 || _rc=$?
-        _rc=${_rc:-0}
-        if [ "$_rc" != 0 ] || grep -qiE 'FAILURE|SORRY' "$_log"; then
-            grep -iE 'failure|sorry' "$_log" | head -5
-            rm -f "$_log"
-            die "pack: xorriso failed (exit $_rc)"
-        fi
-        rm -f "$_log"
+        # Check the exit status AND what xorriso said, not just what it said. Grepping a
+        # pipeline throws xorriso's status away (this is /bin/sh, so there is no
+        # PIPESTATUS), and a run killed by the OOM killer prints neither FAILURE nor SORRY
+        # -- pack would have gone on to announce a truncated ISO as "ok". xorriso_run (in
+        # kitchen) judges both, by lib/diff.py's rule. This checked FAILURE and SORRY alone,
+        # which let a MISHAP at exit 0 through; none of the four targets, packed stock,
+        # hybrid, UEFI or both, prints a line at SORRY or above (measured 2026-09-25).
+        xorriso_run "$@" "$src" || die "pack: xorriso failed (exit $XORRISO_RC)"
         ;;
       *) die "pack: unknown backend '$backend' (want genisoimage or xorriso)" ;;
     esac

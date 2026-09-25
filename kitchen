@@ -17,6 +17,29 @@ else B=; G=; Y=; R=; D=; O=; fi
 die() { printf '%serror:%s %s\n' "$R" "$O" "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Run xorriso and judge it the way lib/diff.py judges a listing: a non-zero exit, or any
+# line at SORRY or above -- MISHAP included, because xorriso can report one and exit 0.
+# unpack and pack both run it through here; each had judged it its own way, and pack's rule
+# was narrower than diff.py's. The output is held in a variable, not a temporary file, so
+# an interrupted run leaves nothing behind. On failure this prints what xorriso said --
+# those lines, or its last lines when it said none of them, which is how a crash or a
+# missing binary shows -- sets $XORRISO_RC to its exit status, and returns 1. The caller
+# cleans up and dies.
+XORRISO_BAD='\b(SORRY|MISHAP|FAILURE|FATAL|ABORT)\b'
+xorriso_run() {
+    XORRISO_RC=0
+    _xout=$(xorriso "$@" 2>&1) || XORRISO_RC=$?
+    if [ "$XORRISO_RC" = 0 ] && ! printf '%s\n' "$_xout" | grep -qE "$XORRISO_BAD"; then
+        return 0
+    fi
+    if printf '%s\n' "$_xout" | grep -qE "$XORRISO_BAD"; then
+        printf '%s\n' "$_xout" | grep -E "$XORRISO_BAD" | head -5 >&2
+    elif [ -n "$_xout" ]; then
+        printf '%s\n' "$_xout" | tail -n 5 >&2
+    fi
+    return 1
+}
+
 # The version string alone cannot pin a build. There are no tags, so --always gives the
 # short SHA and --dirty flags uncommitted work -- both of which a bug report needs and
 # "0.1.0-dev" cannot supply. Falls back to the bare version outside a checkout.

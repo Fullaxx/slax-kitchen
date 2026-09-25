@@ -130,7 +130,8 @@ size — that provenance is what `pack` uses to name its output.
 An extraction that failed is refused, and leaves no tree and no record behind: a non-zero exit from
 xorriso, a line at `SORRY` or above (the rule `diff` uses), or no `slax/boot/isolinux.bin` in the
 result — which is all a file that is not an ISO produces, since xorriso extracts nothing from one
-and still exits 0.
+and still exits 0. What xorriso said is shown: its lines at `SORRY` or above, or its last lines
+when it printed none, which is how a crash or a missing binary shows.
 
 A `DIR` that already holds a work tree is refused: `DIR/iso`, or a `DIR/.kitchen` whose tree was
 deleted. `-f`/`--force` replaces both, because the record in `.kitchen` describes the tree it came
@@ -229,7 +230,9 @@ Rebuilds an ISO from a work tree. Default output is `./out/<source>-custom.iso`,
 | `--volid`, `--appid`, `--sysid`, `--publisher`, `--preparer` | volume descriptor fields; [`iso-identity`](../50-cookbook/iso-identity.md) sets them as hints, and a flag given here wins |
 | `--date YYYYMMDDhhmmsscc` | pin timestamps (xorriso only) |
 
-See [repack-iso.md](../40-workflow/repack-iso.md) for why there are two backends.
+See [repack-iso.md](../40-workflow/repack-iso.md) for why there are two backends. The xorriso
+backend is judged the way [`unpack`](#unpack-iso--o-dir) judges an extraction — a non-zero exit,
+or a line at `SORRY` or above, `MISHAP` included — and on failure `pack` shows what xorriso said.
 
 **`pack` writes `<iso>.provenance.json` beside the ISO**: what each applied recipe fetched and built
 — URLs and sha256s, the package versions apt resolved and each `.deb`'s sha256, the build host's
