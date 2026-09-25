@@ -81,7 +81,7 @@ Run these four, in this order. They are fast and they answer most questions outr
 ./kitchen probe out/my.iso             # is the output what I think it is?
 ```
 
-**`selftest ci`** runs the same fourteen gates CI runs. If it fails, fix that first — you are not
+**`selftest ci`** runs the same thirteen gates CI runs. If it fails, fix that first — you are not
 looking at the bug you think you are.
 
 **`doctor`** is the single most useful thing to paste into a report. It reports every tool it needs,
@@ -331,13 +331,13 @@ cause, or one would change the other's fix, say so in the issue.
 ### The bar
 
 ```sh
-./kitchen selftest ci        # all fourteen gates, or it will not merge
+./kitchen selftest ci        # all thirteen gates, or it will not merge
 ```
 
 The gates enforce, among other things: no binaries in the repository, no gitignored working files,
-`vendor/linux-live` byte-identical to its pinned commit, shellcheck, schema validation, no
-credentials, every internal link resolves — `#anchor` included — and **every recipe has a
-cookbook page and every cookbook page has a recipe**.
+`vendor/linux-live` byte-identical to its pinned commit, shellcheck, schema validation, every
+internal link resolves — `#anchor` included — and **every recipe has a cookbook page and every
+cookbook page has a recipe**.
 
 CI re-runs all of them, so `--no-verify` only defers the failure.
 
@@ -366,7 +366,7 @@ something specific:
 | Rung | Means | How |
 |---|---|---|
 | **schema-valid** | the YAML is well-formed, and every key is one a verb reads | `kitchen validate` |
-| **gate-clean** | the tree passes the fourteen gates | `kitchen selftest ci` |
+| **gate-clean** | the tree passes the thirteen gates | `kitchen selftest ci` |
 | **matrix-verified** | it builds and passes structure assertions on all four targets | `ci/recipe-matrix.sh` |
 | **artifact boot-verified** | it booted, and `testkit` confirmed the artifact reached the union | `testkit` + `kitchen test --kernel` |
 | **boot-verified** | it booted to `slax login:` with all three livekit markers | `kitchen test --kernel` |
@@ -437,7 +437,7 @@ A new verb needs: the implementation, the `schema/recipe.schema.json` enum entry
 [the verb reference](docs/90-reference/verbs.md), and a recipe that exercises it.
 
 Pure logic — anything that does not need an ISO — belongs in `tests/unit/test_apply.py`, which runs
-as one of the fourteen gates. Every case in that file is a bug that actually shipped.
+as one of the thirteen gates. Every case in that file is a bug that actually shipped.
 
 **Seconds, not milliseconds, and it is worth knowing where they go.** Measured 2026-09-21 at
 `af9358f` on Ubuntu 24.04 with python 3.12, median of three, each file timed the way the gate runs

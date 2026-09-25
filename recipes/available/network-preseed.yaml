@@ -14,7 +14,7 @@ vars:
   ssid: "MyNetwork"
   # Replace with your own. This is an example value in a public repository, so treat it
   # as published -- which is also true of any PSK you bake into an image you hand out.
-  psk: "example-passphrase"     # kitchen:allow-secret
+  psk: "example-passphrase"
 steps:
   # ConnMan is the network stack on BOTH flavours -- NetworkManager is not installed on
   # either, despite a couple of orphan /etc/NetworkManager directories left behind by

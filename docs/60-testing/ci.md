@@ -5,7 +5,7 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` → `gates` | push to master, or any PR | the fourteen commit gates, ~1 min, no ISOs |
+| `ci.yml` → `gates` | push to master, or any PR | the thirteen commit gates, ~1 min, no ISOs |
 
 **What a test in that job may assume is installed**: `containers/packages/lint.txt` — `shellcheck`,
 `yamllint`, `python3-yaml`, `python3-jsonschema`, `python3-pyflakes` — plus whatever the

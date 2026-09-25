@@ -31,7 +31,7 @@ fi
 # purpose. As the repo's owner, 70-whitespace printed `FAIL trailing whitespace:
 # docs/README.md`. As a uid git would not answer for, the same gate on the same dirty tree
 # printed NOTHING and exited 0. Five gates were in that state simultaneously --
-# 00-no-binaries, 10-no-dnc, 50-secrets, 60-links, 70-whitespace.
+# 00-no-binaries, 10-no-dnc, 50-secrets (since removed, #48), 60-links, 70-whitespace.
 #
 # `.github/workflows/ci.yml`'s container job already had to add `safe.directory` to get
 # past this, and the comment there said the gates "die with git's dubious-ownership

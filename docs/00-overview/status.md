@@ -52,14 +52,14 @@ cannot do at all.
 
 ### Quality
 
-Fourteen commit gates, shared by hooks and CI so they cannot drift. Unit tests for the recipe engine's pure
+Thirteen commit gates, shared by hooks and CI so they cannot drift. Unit tests for the recipe engine's pure
 logic run with no ISO, in seconds. The gates have caught real bugs in their own authors' code
 repeatedly — including a `$'\r'` that silently degraded to matching `$r` under `dash`, and a link
 checker that only examined one link per line.
 
 The toolchain is one list — [`containers/packages/`](../../containers/README.md) — read by both the
 workflows and the reference container, and CI builds that container on every push and runs
-`kitchen doctor --strict` plus all fourteen gates *inside* it. A `v*` tag runs the same CI and then
+`kitchen doctor --strict` plus all thirteen gates *inside* it. A `v*` tag runs the same CI and then
 publishes a Release of the toolkit, whose notes name the rung each target reached. No image is
 attached; [NOTICE.md](../../NOTICE.md) sets out what travels with one when it is published. See
 [CI](../60-testing/ci.md).

@@ -62,6 +62,3 @@ surprising.
 Anyone who can read the ISO can read the passphrase; a squashfs bundle is not a secret store. That
 is a property of preseeding, not of this recipe. If the network matters, use a throwaway SSID for
 the image or hand the credentials over some other way.
-
-`ci/checks/50-secrets.sh` blocks real-looking credentials in this repository and provides the
-`# kitchen:allow-secret` marker for deliberate examples, which this recipe uses.
