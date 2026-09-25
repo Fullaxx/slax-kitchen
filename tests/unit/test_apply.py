@@ -1130,6 +1130,92 @@ def test_a_recipe_named_by_path_takes_its_vars():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_two_files_with_one_name_are_refused_before_anything_runs():
+    """Two different recipe files with one name passed preflight when one of them arrived
+    through another recipe's compat.requires, and the tree was half-applied.
+
+    duplicate_recipes() counts the entries a profile wrote, before resolve() expands
+    compat.requires, and resolve() merges only by path. So both files entered the plan: the
+    first built its bundle, and the journal, keyed by name, refused the second after the
+    tree had changed. The profile's vars for the name reached both. Found by slax-wine
+    reviewing f2ea7d2, measured 2026-09-25: `preflight ok (3 steps)`, exit 0, then `x was
+    already applied to this tree`, exit 1, with 41-x-a.sb built.
+
+    One x requiring the other directly was refused, but as "recipe dependency cycle: x ->
+    x", because resolve() compared names. It compares files now, so that is refused naming
+    both files too -- and a real cycle, the same file again, is still one.
+    """
+    import contextlib
+    import io
+    import tempfile
+    import yaml
+    d = tempfile.mkdtemp(prefix="kitchen-onename.")
+
+    def recipe(rel, bundle, requires=None):
+        path = os.path.join(d, "recipes", rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        compat = {"flavours": ["debian"], "arch": ["64bit"], "privilege": "none"}
+        if requires:
+            compat["requires"] = [requires]
+        with open(path, "w") as f:
+            yaml.safe_dump({"apiVersion": "slax-kitchen/v1", "kind": "Recipe",
+                            "metadata": {"name": os.path.splitext(os.path.basename(rel))[0],
+                                         "summary": "A throwaway recipe for this test"},
+                            "compat": compat, "vars": {"value": "recipe-default"},
+                            "steps": [{"verb": "bundle.files", "bundle": bundle,
+                                       "files": [{"dest": "/etc/" + bundle, "mode": "0644",
+                                                  "content": "{{value}}"}]}]}, f)
+        return path
+
+    xa = recipe("a/x.yaml", "41-x-a")
+    xb = recipe("b/x.yaml", "42-x-b")
+    r = recipe("r/r.yaml", "43-r", requires=xb)
+    p = os.path.join(d, "p.yaml")
+    with open(p, "w") as f:
+        f.write("apiVersion: slax-kitchen/v1\nkind: Profile\nmetadata:\n  name: p\n"
+                "base: {flavour: debian, arch: 64bit, version: \"12.2.0\"}\n"
+                f"recipes:\n  - name: {xa}\n    vars: {{value: from-profile}}\n  - {r}\n")
+
+    def run(*args):
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = apply.main(["apply.py", "--profile", p,
+                             "--facts", "flavour=debian,arch=64bit"] + list(args))
+        return rc, err.getvalue()
+
+    try:
+        rc, err = run("--preflight-only")
+        check("two files with one name: refused at preflight", rc, 2)
+        check("...naming both files", xa in err and xb in err, True)
+        work = os.path.join(d, "work")
+        os.makedirs(os.path.join(work, "iso"))
+        rc, _err = run("-w", work)
+        check("...and by apply, before anything runs", rc, 2)
+        check("...so nothing is applied", os.path.exists(os.path.join(work, ".kitchen")), False)
+
+        xc = recipe("c/x.yaml", "44-x-c", requires=xb)
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = apply.main(["apply.py", xc, "--preflight-only",
+                             "--facts", "flavour=debian,arch=64bit"])
+        said = err.getvalue()
+        check("one x requiring the other: refused", rc, 2)
+        check("...naming both files, not as a cycle",
+              (xc in said, xb in said, "cycle" in said), (True, True, False))
+
+        y = os.path.join(d, "recipes", "y", "y.yaml")
+        z = recipe("z/z.yaml", "46-z", requires=y)
+        recipe("y/y.yaml", "45-y", requires=z)
+        try:
+            apply.resolve([y], [])
+            check("a real cycle is refused", "resolved", "refused")
+        except RuntimeError as e:
+            check("a real cycle is refused, by name", str(e),
+                  "recipe dependency cycle: y -> z -> y")
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def _profile_py():
     """lib/profile.py, loaded by path: `import profile` would find the stdlib's."""
     import importlib.util
@@ -2629,6 +2715,7 @@ def main():
                    test_a_long_pack_hint_survives_the_round_trip,
                    test_a_recipe_listed_twice_is_refused,
                    test_a_recipe_named_by_path_takes_its_vars,
+                   test_two_files_with_one_name_are_refused_before_anything_runs,
                    test_a_relative_base_iso_is_found_from_the_profiles_repository,
                    test_a_recipe_named_by_path_keeps_its_build_checks,
                    test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package,

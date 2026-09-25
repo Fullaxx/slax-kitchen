@@ -170,7 +170,10 @@ Applies recipes to a work tree. A name resolves against **every directory under 
 then the current directory, so a fork's `recipes/<project>/` needs no configuration — see
 [recipes in a fork](../40-workflow/recipes-in-a-fork.md). A path is accepted anywhere, including
 outside the repo. A name found in **two** directories is an error naming both files, rather than
-whichever sorted first. `compat.requires` is resolved depth-first with cycle detection.
+whichever sorted first. `compat.requires` is resolved depth-first with cycle detection. Two
+different files with one name in the resolved plan are an error too, naming both, whether the
+profile lists both or one arrives through another recipe's `compat.requires`: a recipe's vars and
+its journal entry are keyed by its name, so only one of them could ever be applied.
 
 `--profile` takes the recipe list **and its per-recipe `vars:` overrides** from a profile instead
 of naming recipes on the command line; the two forms are mutually exclusive. This is how

@@ -3538,17 +3538,22 @@ def resolve(names: list[str], search: list[str]) -> list[str]:
                 + "\n  Rename one, or name the file you mean by path.")
         return hits[0]
 
+    # A CYCLE IS THE SAME FILE AGAIN, so `stack` holds (file, name) pairs and the names are
+    # only for the message. Compared by name, a recipe requiring another file with its own
+    # name was reported as "recipe dependency cycle: x -> x" -- a cycle nobody could find,
+    # for what is two files with one name, which main() refuses naming both.
     def walk(n: str, stack: tuple) -> None:
         p = find(n)
         key = os.path.abspath(p)
         if key in seen:
             return
         base = recipe_name(p)
-        if base in stack:
-            raise RuntimeError("recipe dependency cycle: " + " -> ".join(stack + (base,)))
+        if any(f == key for f, _ in stack):
+            raise RuntimeError("recipe dependency cycle: "
+                               + " -> ".join([b for _, b in stack] + [base]))
         doc = yaml.safe_load(open(p)) or {}
         for dep in (doc.get("compat", {}) or {}).get("requires", []) or []:
-            walk(dep, stack + (base,))
+            walk(dep, stack + ((key, base),))
         seen.add(key)
         out.append(p)
 
@@ -3766,6 +3771,9 @@ def duplicate_recipes(names: list[str]) -> str | None:
     `var-demo` and `recipes/demo/var-demo.yaml` are one recipe to the overrides, so two
     entries spelling it two ways would have had the second's vars replace the first's in
     silence (#46). The refusal names every spelling.
+
+    It sees only the entries as written. A second file with the same name that arrives
+    through compat.requires is refused after resolve(), by one_name_two_files().
     """
     spellings: dict[str, list[str]] = {}
     for n in names:
@@ -3779,6 +3787,28 @@ def duplicate_recipes(names: list[str]) -> str | None:
             f"second entry is dropped and its vars with it. Say it in one entry instead: "
             f"remove-bundle takes one pattern for several bundles, as in "
             f'drop: "^(05-chromium|01-firmware)\\.sb$".')
+
+
+def one_name_two_files(paths: list[str]) -> str | None:
+    """A refusal for two different files in one plan with the same recipe name, or None.
+
+    duplicate_recipes() counts what a profile or command line wrote, before resolve()
+    expands compat.requires, and resolve() merges only by path. So a file reached through
+    another recipe's requires, sharing a name with one the profile lists, entered the plan
+    beside it: the profile's vars for that name reached both, the first was applied, and the
+    journal -- keyed by name too -- refused the second after the tree had changed. Counted
+    here, over the resolved plan, which is the one place both files are visible.
+    """
+    files: dict[str, list[str]] = {}
+    for p in paths:
+        files.setdefault(recipe_name(p), []).append(p)
+    clash = sorted(k for k, v in files.items() if len(v) > 1)
+    if not clash:
+        return None
+    return ("; ".join(f"{k} is {len(files[k])} different files: {', '.join(files[k])}"
+                      for k in clash)
+            + ". A recipe's vars and its journal entry are keyed by its name, so only one "
+              "of them could ever be applied. Rename one.")
 
 
 def profile_path(path: str) -> str:
@@ -3934,12 +3964,18 @@ def main(argv: list[str]) -> int:
     except RuntimeError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
+    clash = one_name_two_files(paths)
+    if clash:
+        print(f"error: {clash}", file=sys.stderr)
+        return 2
 
     # Overrides are keyed by recipe name -- recipe_name(), the filename stem, which
     # validate_file holds equal to metadata.name -- on BOTH sides. They used to be stored
     # under the profile entry as written, so an entry naming the recipe by path had its vars
     # dropped here in silence, and an undeclared one was never refused (#46). A recipe pulled
-    # in by compat.requires, which the profile never named, correctly gets none.
+    # in by compat.requires, which the profile never named, correctly gets none -- because
+    # one_name_two_files() above has refused a plan in which it shares a name with one the
+    # profile did name. Before that, such a file took that recipe's vars.
     def ov(path: str) -> dict | None:
         return var_overrides.get(recipe_name(path))
 
