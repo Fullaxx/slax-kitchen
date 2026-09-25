@@ -64,7 +64,15 @@ kitchen_pack() {
             *)  out=$1; shift ;;
         esac
     done
-    [ -d "$src" ] || die "pack: no work tree at $src (run 'kitchen unpack' first)"
+    if [ ! -d "$src" ]; then
+        # A record with no tree beside it: a plain unpack refuses it, so name what works.
+        _work=$(dirname "$src")
+        if [ -e "$_work/.kitchen" ]; then
+            die "pack: no work tree at $src: $_work/.kitchen records a tree that is no" \
+                "longer there ('kitchen unpack <iso> -o $_work --force' starts over)"
+        fi
+        die "pack: no work tree at $src (run 'kitchen unpack' first)"
+    fi
 
     # Default destination: ./out/<source-name>-custom.iso
     if [ -z "$out" ]; then

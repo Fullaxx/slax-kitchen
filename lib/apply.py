@@ -3956,7 +3956,13 @@ def main(argv: list[str]) -> int:
             print(f"error: {dup}", file=sys.stderr)
             return 2
     if not a.preflight_only and not os.path.isdir(os.path.join(a.work, "iso")):
-        print(f"no work tree at {a.work}/iso (run 'kitchen unpack' first)", file=sys.stderr)
+        # A record with no tree beside it: a plain unpack refuses it, so name what works.
+        if os.path.exists(os.path.join(a.work, ".kitchen")):
+            print(f"no work tree at {a.work}/iso: {a.work}/.kitchen records a tree that is "
+                  f"no longer there ('kitchen unpack <iso> -o {a.work} --force' starts over)",
+                  file=sys.stderr)
+        else:
+            print(f"no work tree at {a.work}/iso (run 'kitchen unpack' first)", file=sys.stderr)
         return 2
     search = recipe_search_path() + [os.getcwd()]
     try:

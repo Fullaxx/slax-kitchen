@@ -47,6 +47,8 @@ and what `kitchen probe` compares against `compat/`.
 `iso/`, what that fetched and built, and how `pack` is to master it. That record describes this
 tree and no other, so it goes with the tree. Unpacking into a work tree that exists is refused —
 its `iso/`, or a `.kitchen/` left behind after `iso/` was deleted — and `--force` replaces both.
+`status`, `apply` and `pack` recognise a `.kitchen/` with no `iso/` beside it too, and name the
+`unpack --force` that starts over.
 
 Note there is no `slax/rootcopy/` on a stock ISO — the initramfs looks for one and copies its
 contents onto the union at boot, but upstream ships none. Creating it is the cheapest

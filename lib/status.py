@@ -51,7 +51,13 @@ def status(work: str, verbose: bool = False) -> int:
     tree = os.path.join(work, "iso")
     if not os.path.isdir(tree):
         print(f"kitchen status: no work tree at {tree}", file=sys.stderr)
-        print("  run `kitchen unpack <iso>` first", file=sys.stderr)
+        # A record with no tree beside it: a plain unpack refuses to lay a fresh tree down
+        # next to it, so name the command that does.
+        if os.path.exists(os.path.join(work, ".kitchen")):
+            print(f"  {work}/.kitchen records a tree that is no longer there: "
+                  f"`kitchen unpack <iso> -o {work} --force` starts over", file=sys.stderr)
+        else:
+            print("  run `kitchen unpack <iso>` first", file=sys.stderr)
         return 2
 
     meta = os.path.join(work, ".kitchen")
