@@ -367,10 +367,10 @@ different wordings. `Ctx.say()` now prints, and `Ctx.record()` notes an artifact
 Applying one twice is a mistake, not a no-op, and `apply` now says so using the journal:
 
 ```
-error: branding was already applied to this tree at 2026-09-14T21:28:56Z.
+error: branding.yaml: branding was already applied to this tree at 2026-09-14T21:28:56Z.
   It produced: slax/modules/07-branding.sb
   Recipes are not idempotent -- applying one twice is a mistake, not a no-op.
-  See `kitchen status work`; to start over, unpack the base ISO again.
+  See `kitchen status work`; `kitchen unpack /home/you/slax-kitchen/isos/slax-64bit-debian-12.2.0.iso -o work --force` starts over from the image it was unpacked from.
 ```
 
 Previously this surfaced as whichever verb collided first — `slax/modules/07-branding.sb already

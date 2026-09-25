@@ -30,6 +30,25 @@ def _load(path):
         return None
 
 
+def start_over(work: str) -> str:
+    """The command that starts `work` over, worded to end a message.
+
+    status, apply and pack all give this advice -- pack through a one-line python3 import
+    -- so it is written once. It names the image the tree was unpacked from when
+    origin.yaml records one that is still there, so the command can be pasted as it stands;
+    starting over can mean another image, which is why it says which one this is.
+    Otherwise it says <iso>. Paths are shell-quoted, so the command pastes whatever they
+    hold.
+    """
+    import shlex
+    origin = _load(os.path.join(work, ".kitchen", "origin.yaml"))
+    iso = origin.get("source_iso") if isinstance(origin, dict) else None
+    if isinstance(iso, str) and os.path.isfile(iso):
+        cmd = f"kitchen unpack {shlex.quote(iso)} -o {shlex.quote(work)} --force"
+        return f"`{cmd}` starts over from the image it was unpacked from"
+    return f"`kitchen unpack <iso> -o {shlex.quote(work)} --force` starts over"
+
+
 def _size(path: str) -> int:
     """A bundle's size, or 0 when it cannot be read. A dangling symlink or a file another
     process removed mid-listing is worth a 0 in a status line, not a traceback."""
@@ -55,7 +74,7 @@ def status(work: str, verbose: bool = False) -> int:
         # next to it, so name the command that does.
         if os.path.exists(os.path.join(work, ".kitchen")):
             print(f"  {work}/.kitchen records a tree that is no longer there: "
-                  f"`kitchen unpack <iso> -o {work} --force` starts over", file=sys.stderr)
+                  f"{start_over(work)}", file=sys.stderr)
         else:
             print("  run `kitchen unpack <iso>` first", file=sys.stderr)
         return 2

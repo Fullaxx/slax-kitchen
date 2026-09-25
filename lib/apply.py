@@ -3678,11 +3678,12 @@ def apply_recipe(path: str, work: str, dry: bool = False,
     # true, unhelpful, and points at the wrong problem.
     prior = _journal_entry(work, name)
     if prior and not dry:
+        import status
         raise RuntimeError(
             f"{name} was already applied to this tree at {prior.get('at', 'an earlier time')}.\n"
             f"  It produced: {', '.join(prior.get('artifacts') or ['(nothing recorded)'])}\n"
             f"  Recipes are not idempotent -- applying one twice is a mistake, not a no-op.\n"
-            f"  See `kitchen status {work}`; to start over, unpack the base ISO again.")
+            f"  See `kitchen status {shlex.quote(work)}`; {status.start_over(work)}.")
 
     for i, step, run in steps:
         if not run:
@@ -3972,9 +3973,9 @@ def main(argv: list[str]) -> int:
     if not a.preflight_only and not os.path.isdir(os.path.join(a.work, "iso")):
         # A record with no tree beside it: a plain unpack refuses it, so name what works.
         if os.path.exists(os.path.join(a.work, ".kitchen")):
+            import status
             print(f"no work tree at {a.work}/iso: {a.work}/.kitchen records a tree that is "
-                  f"no longer there ('kitchen unpack <iso> -o {a.work} --force' starts over)",
-                  file=sys.stderr)
+                  f"no longer there; {status.start_over(a.work)}", file=sys.stderr)
         else:
             print(f"no work tree at {a.work}/iso (run 'kitchen unpack' first)", file=sys.stderr)
         return 2
