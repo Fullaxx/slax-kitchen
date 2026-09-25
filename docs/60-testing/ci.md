@@ -6,20 +6,6 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` → `gates` | push to master, or any PR | the thirteen commit gates, ~1 min, no ISOs |
-
-**What a test in that job may assume is installed**: `containers/packages/lint.txt` — `shellcheck`,
-`yamllint`, `python3-yaml`, `python3-jsonschema`, `python3-pyflakes` — plus whatever the
-`ubuntu-24.04` runner image
-happens to ship, which today includes `squashfs-tools` and **does not include `xorriso`**. Nothing
-else is installed for it. A unit test that needs to read or write an image serves canned output from
-a stub and writes the few sectors it needs in Python:
-[`test_listing.py`](../../tests/unit/test_listing.py) and
-[`test_diff.py`](../../tests/unit/test_diff.py) both do, and say so at the top.
-
-This is not a style preference. `test_diff.py` once built two real ISOs with `xorriso -as mkisofs`,
-passed on a developer machine where xorriso is installed, and took the whole gate down in CI with
-`FileNotFoundError: 'xorriso'`. To check a test before pushing, run it with a PATH that has no
-xorriso on it rather than trusting the machine you are on.
 | `ci.yml` → `container` | push to master, or any PR | builds the reference container on **both** `ubuntu:24.04` and `debian:12`, then `doctor --strict` and the gates *inside* each |
 | `ci.yml` → `build` | push to master, or any PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
 | `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | one direct-kernel QEMU boot under TCG, asserting |
@@ -27,6 +13,19 @@ xorriso on it rather than trusting the machine you are on.
 | `ci.yml` → `tor-assets` | weekly or dispatch — **not on tags** | builds `tor`, assembles and verifies what would travel with it, uploads the records and source — [never the image](#tor-assets-the-pipeline-proven-weekly) |
 | `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml` — **the full matrix**, not the per-push subset — then publish |
 | `upstream-watch.yml` | Mondays 06:17 UTC, or dispatch | linux-live HEAD, new Slax release, mirror health, pinned signing keys |
+
+**What a test in the `gates` job may assume is installed**: `containers/packages/lint.txt` —
+`shellcheck`, `yamllint`, `python3-yaml`, `python3-jsonschema`, `python3-pyflakes` — plus whatever
+the `ubuntu-24.04` runner image happens to ship, which today includes `squashfs-tools` and **does
+not include `xorriso`**. Nothing else is installed for it. A unit test that needs to read or write an
+image serves canned output from a stub and writes the few sectors it needs in Python:
+[`test_listing.py`](../../tests/unit/test_listing.py) and
+[`test_diff.py`](../../tests/unit/test_diff.py) both do, and say so at the top.
+
+This is not a style preference. `test_diff.py` once built two real ISOs with `xorriso -as mkisofs`,
+passed on a developer machine where xorriso is installed, and took the whole gate down in CI with
+`FileNotFoundError: 'xorriso'`. To check a test before pushing, run it with a PATH that has no
+xorriso on it rather than trusting the machine you are on.
 
 ## Two cadences, and what is on each
 

@@ -9,7 +9,7 @@ contact_links:
   - name: A problem with Slax itself, not with slax-kitchen
     url: https://github.com/Fullaxx/slax-kitchen/blob/master/docs/30-inventory/known-upstream-bugs.md
     about: >-
-      Fourteen upstream issues are already recorded here, including the 2017 busybox,
+      Fifteen upstream issues are already recorded here, including the 2017 busybox,
       the 2023 browser, and Slackware's broken TLS. `kitchen probe <iso>` tells you
       whether an ISO is stock. Upstream has had no release since 2023-10-10.
   - name: A question about a fork, not about this repo

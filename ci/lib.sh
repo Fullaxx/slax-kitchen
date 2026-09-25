@@ -67,7 +67,10 @@ check_files() {
     fi
 }
 
-# Same, but newline-separated (convenient; paths with newlines are rejected by 70-whitespace).
+# Same, but newline-separated (convenient). A path holding a newline comes out as two here:
+# 00-no-binaries refuses it, because neither half can be measured, and 10-no-dnc and
+# 70-whitespace skip both halves. Measured 2026-09-25 -- this used to credit 70-whitespace
+# with rejecting such a path, and that gate reads contents, never a name.
 check_files_nl() { check_files | tr '\0' '\n' | grep -v '^$' || true; }
 
 # Read a file as it will be committed (staged content), or from disk in tree scope.
