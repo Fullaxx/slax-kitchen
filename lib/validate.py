@@ -35,6 +35,21 @@ def _subst(obj, vars_: dict):
     return obj
 
 
+def recipe_name(ref: str) -> str:
+    """The name a recipe reference stands for: its filename stem.
+
+    A reference is a bare name or a path to the file, and a recipe's metadata.name must
+    equal its filename stem (checked below), so the stem IS the name either way. Names
+    cannot contain a dot (schema/recipe.schema.json), so the first dot from the right is
+    always the extension's.
+
+    Stated once, because the two ends of a profile's per-recipe vars used to compute it
+    differently: read_profile_recipes stored an override under the entry as written, and
+    apply's main() looked it up by stem, so a path entry's vars were dropped in silence (#46).
+    """
+    return os.path.basename(ref).rsplit(".", 1)[0]
+
+
 def validate_file(path: str, overrides: dict | None = None) -> list[str]:
     """Return a list of human-readable problems; empty means valid.
 
@@ -135,7 +150,7 @@ def validate_file(path: str, overrides: dict | None = None) -> list[str]:
                 f"or renumbers a bundle does nothing else. Put the removal in its own recipe -- "
                 f"remove-bundle takes a `drop:` pattern -- and list that first; every other "
                 f"recipe then composes in any order. See docs/40-workflow/composing-bundles.md.")
-        stem = os.path.basename(path).rsplit(".", 1)[0]
+        stem = recipe_name(path)
         name = (doc.get("metadata") or {}).get("name")
         if name and name != stem:
             problems.append(

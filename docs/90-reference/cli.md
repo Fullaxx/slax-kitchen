@@ -643,7 +643,7 @@ base:
   arch: 64bit              # 32bit | 64bit
   version: "12.2.0"
   iso: path/to/base.iso    # optional; otherwise looked up in compat/sources.yaml
-recipes:                   # a bare name, or {name, vars} to override that recipe's vars
+recipes:                   # a name or a path, or {name, vars} to override its vars
   - memtest86plus
   - isohybrid
   - name: serial-console

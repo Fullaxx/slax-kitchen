@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dpkgdb  # noqa: E402
 import fingerprint  # noqa: E402
 import provenance  # noqa: E402
-from validate import validate_file  # noqa: E402
+from validate import recipe_name, validate_file  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERBS: dict = {}
@@ -3543,7 +3543,7 @@ def resolve(names: list[str], search: list[str]) -> list[str]:
         key = os.path.abspath(p)
         if key in seen:
             return
-        base = os.path.basename(p).rsplit(".", 1)[0]
+        base = recipe_name(p)
         if base in stack:
             raise RuntimeError("recipe dependency cycle: " + " -> ".join(stack + (base,)))
         doc = yaml.safe_load(open(p)) or {}
@@ -3761,14 +3761,21 @@ def duplicate_recipes(names: list[str]) -> str | None:
     path, and per-recipe vars are keyed by recipe name, so a second entry was dropped and
     took its vars with it. Harmless while each removal had its own preset recipe; with one
     generic remove-bundle, "drop chromium and the firmware bundle" is the obvious mistake.
+
+    Counted BY NAME, not by the entry as written, because that is how the vars are keyed:
+    `var-demo` and `recipes/demo/var-demo.yaml` are one recipe to the overrides, so two
+    entries spelling it two ways would have had the second's vars replace the first's in
+    silence (#46). The refusal names every spelling.
     """
-    counts: dict[str, int] = {}
+    spellings: dict[str, list[str]] = {}
     for n in names:
-        counts[n] = counts.get(n, 0) + 1
-    dups = sorted(n for n, c in counts.items() if c > 1)
+        spellings.setdefault(recipe_name(n), []).append(n)
+    dups = sorted(k for k, v in spellings.items() if len(v) > 1)
     if not dups:
         return None
-    return (f"{', '.join(dups)} listed more than once. Each recipe is applied once, so the "
+    said = ", ".join(k if len(set(spellings[k])) == 1
+                     else f"{k} (as {', '.join(spellings[k])})" for k in dups)
+    return (f"{said} listed more than once. Each recipe is applied once, so the "
             f"second entry is dropped and its vars with it. Say it in one entry instead: "
             f"remove-bundle takes one pattern for several bundles, as in "
             f'drop: "^(05-chromium|01-firmware)\\.sb$".')
@@ -3849,7 +3856,9 @@ def read_profile_recipes(path: str) -> tuple[list[str], dict[str, dict]]:
             continue
         names.append(entry["name"])
         if entry.get("vars"):
-            overrides[entry["name"]] = dict(entry["vars"])
+            # By NAME, however the entry spells the recipe: main() looks overrides up by
+            # the name of the file each entry resolved to (#46).
+            overrides[recipe_name(entry["name"])] = dict(entry["vars"])
     dup = duplicate_recipes(names)
     if dup:
         raise RuntimeError(f"invalid profile {path}: {dup}")
@@ -3926,11 +3935,13 @@ def main(argv: list[str]) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
 
-    # Overrides are keyed by recipe name, and validate_file guarantees the name matches
-    # the filename stem -- so a recipe pulled in by compat.requires, which the profile
-    # never named, correctly gets none.
+    # Overrides are keyed by recipe name -- recipe_name(), the filename stem, which
+    # validate_file holds equal to metadata.name -- on BOTH sides. They used to be stored
+    # under the profile entry as written, so an entry naming the recipe by path had its vars
+    # dropped here in silence, and an undeclared one was never refused (#46). A recipe pulled
+    # in by compat.requires, which the profile never named, correctly gets none.
     def ov(path: str) -> dict | None:
-        return var_overrides.get(os.path.splitext(os.path.basename(path))[0])
+        return var_overrides.get(recipe_name(path))
 
     # Derived here rather than below the banner, because the profile's declared base is
     # held against these and a refusal should not arrive under a heading announcing the

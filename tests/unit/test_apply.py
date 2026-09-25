@@ -1043,6 +1043,93 @@ def test_a_recipe_listed_twice_is_refused():
         os.rmdir(d)
 
 
+def test_a_recipe_named_by_path_takes_its_vars():
+    """A profile entry names its recipe by name or by path, and its `vars:` reach the
+    recipe either way (#46).
+
+    read_profile_recipes stored an override under the entry exactly as written, and
+    main() looked it up by the stem of the file that entry resolved to. For a path entry
+    the two keys never met: its vars were dropped in silence, and an undeclared one was
+    never refused. Reproduced at b20e07e with a profile naming a recipe by path.
+
+    The refusal and what reaches plan_recipe are asserted, not the exit status of a
+    preflight that gets past them: that part looks for bundle.files' tools, which a lint
+    container may not have (test_provenance does the same).
+    """
+    import contextlib
+    import io
+    import tempfile
+    import textwrap
+    d = tempfile.mkdtemp(prefix="kitchen-varpath.")
+    recipe = os.path.join(d, "recipes", "demo", "var-demo.yaml")
+    os.makedirs(os.path.dirname(recipe))
+    with open(recipe, "w") as f:
+        f.write(textwrap.dedent("""\
+            apiVersion: slax-kitchen/v1
+            kind: Recipe
+            metadata:
+              name: var-demo
+              summary: A throwaway recipe with a var a profile can override
+            compat: {flavours: [debian], arch: [64bit], privilege: none}
+            vars: {bundle: 40-var-demo, value: recipe-default}
+            steps:
+              - verb: bundle.files
+                bundle: "{{bundle}}"
+                files:
+                  - {dest: /etc/var-demo, mode: "0644", content: "value={{value}}"}
+            """))
+
+    def profile(entries):
+        p = os.path.join(d, "p.yaml")
+        with open(p, "w") as f:
+            f.write("apiVersion: slax-kitchen/v1\nkind: Profile\nmetadata:\n  name: p\n"
+                    "base: {flavour: debian, arch: 64bit, version: \"12.2.0\"}\n"
+                    "recipes:\n" + entries)
+        return p
+
+    seen = {}
+    real = apply.plan_recipe
+
+    def spy(path, facts, overrides=None):
+        seen[os.path.basename(path)] = overrides
+        return real(path, facts, overrides)
+
+    def preflight(p):
+        out, err = io.StringIO(), io.StringIO()
+        seen.clear()
+        apply.plan_recipe = spy
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = apply.main(["apply.py", "--profile", p, "--preflight-only",
+                                 "--facts", "flavour=debian,arch=64bit"])
+        finally:
+            apply.plan_recipe = real
+        return rc, err.getvalue()
+
+    try:
+        _names, ov = apply.read_profile_recipes(
+            profile(f"  - name: {recipe}\n    vars: {{value: profile-override}}\n"))
+        check("a path entry's vars are keyed by the recipe's name",
+              ov, {"var-demo": {"value": "profile-override"}})
+
+        preflight(profile(f"  - name: {recipe}\n    vars: {{value: profile-override}}\n"))
+        check("...and reach the recipe", seen.get("var-demo.yaml"), {"value": "profile-override"})
+
+        rc, err = preflight(profile(f"  - name: {recipe}\n    vars: {{no_such_var: x}}\n"))
+        check("an undeclared var on a path entry is refused", rc, 2)
+        check("...by name",
+              "overrides a var this recipe does not declare: no_such_var" in err, True)
+
+        try:
+            apply.read_profile_recipes(profile(f"  - var-demo\n  - name: {recipe}\n"))
+            check("one recipe spelled two ways is refused", "accepted", "refused")
+        except RuntimeError as e:
+            check("one recipe spelled two ways is refused, naming both spellings",
+                  "var-demo (as var-demo, " + recipe + ")" in str(e), True)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_recipe_relative_paths_go_through_ctx_local():
     """A file a recipe copies in is `ours` to `kitchen sources` only because Ctx.local
     records where it sat and what it held. A verb that joins recipe_dir itself copies the
@@ -2452,6 +2539,7 @@ def main():
                    test_boot_payload_copies_a_local_file_and_records_it,
                    test_a_long_pack_hint_survives_the_round_trip,
                    test_a_recipe_listed_twice_is_refused,
+                   test_a_recipe_named_by_path_takes_its_vars,
                    test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package,
                    test_symlink_chain_cannot_escape,
                    test_fromtarball_wires_both_guards_in,

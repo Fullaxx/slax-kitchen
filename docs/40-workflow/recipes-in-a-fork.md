@@ -36,6 +36,11 @@ recipes:
 Both forms may be mixed freely. Overrides **merge** over the recipe's defaults, so setting `port`
 leaves `speed` at whatever the recipe says.
 
+`name:` takes a path as readily as a name — `name: recipes/myproject/my-tools.yaml` — and the vars
+reach the recipe either way. Name each recipe once: `my-tools` and
+`recipes/myproject/my-tools.yaml` in one profile are the same recipe, and the profile is refused
+rather than letting one entry's vars replace the other's.
+
 Three things this will not let you do quietly:
 
 | | |

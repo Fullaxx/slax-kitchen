@@ -82,7 +82,8 @@
             "additionalProperties": false,
             "properties": {
               "name": {
-                "type": "string"
+                "type": "string",
+                "description": "recipe name, or a path to a recipe file; vars reach the recipe either way"
               },
               "vars": {
                 "type": "object",
