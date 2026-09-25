@@ -111,6 +111,10 @@ def test_the_size_rule_still_has_teeth():
     The point of the #22 fix is to stop one specific false positive, not to soften the
     gate: an oversized file and a forbidden extension are both still refused, and an
     unmeasurable size is still reported rather than swallowed.
+
+    And an extension is an extension whatever its case (#47): SETUP.EXE holds the same
+    bytes as payload.exe, and 8.3-era Windows payloads are uppercase more often than not.
+    The file is small on purpose, so only the extension rule can be what names it.
     """
     tmp = tempfile.mkdtemp(prefix="cigate-")
     try:
@@ -122,6 +126,8 @@ def test_the_size_rule_still_has_teeth():
             fh.write(b"\0" * (3 * 1024 * 1024))
         with open(os.path.join(repo, "payload.exe"), "wb") as fh:
             fh.write(b"MZ" + b"\0" * 512)
+        with open(os.path.join(repo, "SETUP.EXE"), "wb") as fh:
+            fh.write(b"MZ" + b"\0" * 512)
         git(repo, "add", "-A", check=True)
 
         p = subprocess.run(["sh", "ci/checks/00-no-binaries.sh"], cwd=repo,
@@ -131,6 +137,8 @@ def test_the_size_rule_still_has_teeth():
         check("the gate refuses", p.returncode != 0, True)
         check("an oversized file is still TOO_BIG", "big.bin" in out, True)
         check("a Windows binary is still refused by extension", "payload.exe" in out, True)
+        check("...and in capitals too (#47)",
+              "binary artifact must not be committed: SETUP.EXE" in out, True)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

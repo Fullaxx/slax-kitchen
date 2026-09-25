@@ -16,6 +16,16 @@ MAX_BYTES=${KITCHEN_MAX_FILE_BYTES:-2097152}   # 2 MiB
 
 # Extensions that are never legitimate source in this repo.
 is_forbidden_ext() {
+    # CASE-INSENSITIVE, because a name is whatever the payload shipped as. The list below is
+    # lowercase and `case` is not, so EXILINST.EXE -- a Windows 3.x installer, 1.8 MB, under
+    # the size rule -- was committed where exilinst.exe was refused, and every rule here had
+    # the same hole: BOOTX64.EFI is the name UEFI firmware looks for. Issue #47.
+    #
+    # Only a name with a capital letter is lowercased, because that costs a subshell and a tr
+    # each. Measured 2026-09-25 at b20e07e: this gate took 0.34 s over 311 files in tree
+    # scope, and 24 of those names had a capital -- lowercasing every name would have forked
+    # 311 times where 24 names had anything to lowercase.
+    case "$1" in *[[:upper:]]*) set -- "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" ;; esac
     case "$1" in
         *.iso|*.sb|*.img|*.squashfs|*.cpio|*.tar|*.tar.*|*.tgz|*.txz|*.deb|*.rpm) return 0 ;;
         *.efi|*.c32|*.e64|*.ko|*.so|*.so.*)                                       return 0 ;;
@@ -30,7 +40,9 @@ is_forbidden_ext() {
     return 1
 }
 
-# Directories that are build scratch or download caches.
+# Directories that are build scratch or download caches. Matched as written, unlike the
+# extensions above: these are the names kitchen itself creates, and anything binary or big
+# under another spelling of them is still caught by the extension and size rules.
 is_forbidden_dir() {
     case "$1" in
         isos/*|work/*|out/*) return 0 ;;
