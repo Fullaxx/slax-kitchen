@@ -3,7 +3,8 @@
 
 This is the Tier A check: it runs in about a second and catches the failures that are
 expensive to find any other way -- a bootloader that will not load, a bundle built with
-the wrong compressor, a UEFI recipe that silently did not take effect.
+the wrong compressor, a UEFI recipe that silently did not take effect, a UEFI entry a
+rebuild silently dropped.
 
 Exit 0 if every assertion holds.
 """
@@ -142,6 +143,7 @@ def main(argv: list[str]) -> int:
             t.check(False, "the image's files can be listed", str(e))
         else:
             check_files(t, paths, a.require)
+            check_esp(t, paths, efi, a.expect_uefi)
 
     if a.max_size_mib:
         mib = os.path.getsize(a.iso) / 1048576
@@ -169,6 +171,31 @@ def check_files(t: Asserter, paths: set, extras: list) -> None:
         t.check("/" + req in paths, f"{req} present")
     for extra in extras:
         t.check("/" + extra.lstrip("/") in paths, f"{extra} present")
+
+
+def check_esp(t: Asserter, paths: set, efi: list, expect_uefi: bool) -> None:
+    """An EFI system partition in the image, and no El Torito entry to find it by.
+
+    FOUND BUILDING ON A UEFI IMAGE. A project built on another project's
+    UEFI-bootable image, the way LAYERING.md described it, unpacked the base's
+    boot/efi.img with every other file and packed without the EFI entry: only
+    `uefi-bootable` asks `kitchen pack` for one, and the consumer had not listed it,
+    because the base had already applied it. The entry check in main() passed -- "no EFI
+    El Torito entry, and none was expected" -- because `kitchen build` derives that
+    expectation from the same recipe list. So the build was green, and the image had lost
+    UEFI boot while still carrying the base's ESP.
+
+    The ESP is what the image keeps of having been UEFI-bootable, so this is decided from
+    the image alone. None of the four stock images has a boot/efi.img (checked 2026-09-25),
+    so a stock build never reaches the assertion. With --expect-uefi it is not asked,
+    because the entry check already fails an image without the entry, and one fact gets
+    one failure. Outside a Slax image it is not asked either, for check_files' reason.
+    """
+    if "/slax/boot" not in paths or "/boot/efi.img" not in paths or expect_uefi:
+        return
+    t.check(bool(efi), "EFI El Torito entry present, as boot/efi.img is in the image",
+            "an ESP no entry points at: UEFI firmware cannot boot this image. A build on a "
+            "UEFI image loses the entry -- see LAYERING.md, step 6")
 
 
 if __name__ == "__main__":

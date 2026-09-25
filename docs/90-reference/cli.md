@@ -44,7 +44,11 @@ says which of the two it was looking for.
 
 **Test expectations are derived, not trusted.** A profile listing `uefi-bootable` or `isohybrid` is
 automatically asserted on having actually got an EFI El Torito entry and a hybrid MBR. A recipe that
-silently did nothing is exactly what this catches.
+silently did nothing is exactly what this catches. An entry lost because nobody listed the recipe is
+caught from the image instead: one that carries `boot/efi.img` with no EFI entry fails, which is
+what building on a UEFI-bootable base without `uefi-bootable` produces
+([LAYERING.md, step 6](../../LAYERING.md#what-a-consumer-does)). A lost hybrid MBR leaves nothing
+behind to catch.
 
 ## `test <iso>` — check an ISO you already have
 
@@ -56,7 +60,8 @@ kitchen test out/x.iso --kernel --expect 'dpkg-status: 600 packages'
 ```
 
 `--structure` runs `tests/structure/iso_assert.py`: El Torito shape, Rock Ridge, Joliet,
-boot-info-table consistency, squashfs parameters on every bundle, and required files. About a second.
+boot-info-table consistency, squashfs parameters on every bundle, required files, and no
+`boot/efi.img` without an EFI entry. About a second.
 It expects the volume id `slax` unless `--volid` says otherwise; `kitchen build` passes whatever the
 profile's recipes asked `pack` for, read through the same hint reader `pack` uses.
 
@@ -272,7 +277,10 @@ a corporate mirror, or one you previously customized — and a profile can point
 `base.iso:`, which wins over the derived path. A relative `base.iso:` is relative to the
 repository that holds the profile, so a project that vendors the engine names an image in its own
 tree. Building one project on another's released image this way is
-[LAYERING.md](../../LAYERING.md).
+[LAYERING.md](../../LAYERING.md). What was written when that image was mastered does not come with
+it — its volume id, a UEFI boot entry, a hybrid MBR. `kitchen pack` writes those afresh, from this
+build's recipes or its own flags ([LAYERING.md](../../LAYERING.md#what-a-consumer-does), steps 5
+and 6).
 
 **`--base` is not that.** It takes a *target name*, checked against `compat/sources.yaml`, so
 `--base /path/to.iso` is refused naming the four that exist. It selects which known release to

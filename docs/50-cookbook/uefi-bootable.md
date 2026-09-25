@@ -99,8 +99,17 @@ recipes:
   - uefi-bootable     # last
 ```
 
-Order it earlier and the BIOS menu gets your entries while the UEFI menu does not. It is idempotent,
-so re-running it after adding entries refreshes the menu.
+Order it earlier and the BIOS menu gets your entries while the UEFI menu does not, and it cannot be
+re-run to catch up: `apply` refuses a recipe the tree's journal says already ran, and the ESP it
+built would be in the way of a second one anyway. To change the list afterwards, unpack into a new
+work tree and apply the whole list again, `uefi-bootable` last.
+
+**On an image that is already UEFI-bootable it cannot run at all** — another project's release you
+are building on, say. `mkfs.vfat` refuses the `boot/efi.img` that image already has, and leaving the
+recipe out loses the UEFI entry, which is written when an image is mastered and does not carry
+over. Build on that project's BIOS image instead, as
+[LAYERING.md, step 6](../../LAYERING.md#what-a-consumer-does) says. An image that ships an ESP with
+no entry pointing at it fails `kitchen test --structure`.
 
 ## Verified
 

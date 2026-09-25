@@ -14,7 +14,9 @@ that failed read as an image with no files, and each reader took that at its wor
                              an image that held all three -- five false FAILs
 
 The structure check also compared --require by basename against /slax/boot's listing, so
-`--require /EFI/BOOT/isolinux.cfg` passed on an image with no /EFI at all.
+`--require /EFI/BOOT/isolinux.cfg` passed on an image with no /EFI at all. Its ESP check is
+decided from the same listing, so it is tested here too: an image that carried boot/efi.img
+with no EFI El Torito entry had passed.
 
 A stub xorriso serves canned `lsdl` and `report_lba` output, in the format measured on
 1.5.6, and the image is a few sectors written here -- enough for lib/isoparse.py. Nothing
@@ -243,12 +245,35 @@ def test_the_structure_check_end_to_end(tmp):
     check("a real listing: the five files pass",
           all(f"ok   slax/boot/{n} present" in out for n in FIVE), True)
     check("...with no traceback", "Traceback" in out, False)
+    check("...and no ESP question, with no ESP in the image", "boot/efi.img" in out, False)
 
     stub.says(lsdl(["/"], []))
     out = structure()
     check("a listing of nothing: one failure saying so", out.count("the image's files can be listed"),
           1)
     check("...and no file reported missing", "slax/boot/vmlinuz present" in out, False)
+
+
+@in_a_box
+def test_an_esp_nothing_points_at_fails(tmp):
+    """An image that carries boot/efi.img and has no EFI El Torito entry fails.
+
+    FOUND BUILDING ON A UEFI IMAGE. A consumer built on a UEFI-bootable base, the way
+    LAYERING.md described it, shipped the base's ESP without the entry that lets firmware
+    find it, and the structure check passed: "no EFI El Torito entry, and none was
+    expected". tiny_iso() has no El Torito catalog at all, so here the listing alone
+    decides it.
+    """
+    iso = tiny_iso(os.path.join(tmp, "slax.iso"))
+    stub = Stub(tmp)
+    esp = [f"/slax/boot/{n}" for n in FIVE] + ["/boot/efi.img"]
+    stub.says(lsdl(["/", "/boot", "/slax", "/slax/boot"], esp), report_lba(esp))
+    p = subprocess.run([sys.executable, os.path.join(ROOT, "tests", "structure",
+                                                     "iso_assert.py"), iso],
+                       env=stub.env(), capture_output=True, text=True, timeout=60)
+    check("an ESP and no EFI entry: one failure saying so",
+          (p.stdout + p.stderr).count(
+              "FAIL EFI El Torito entry present, as boot/efi.img is in the image"), 1)
 
 
 def base_sha256() -> str:
@@ -296,6 +321,7 @@ def main():
         for fn in [test_entries_refuses_a_listing_it_cannot_trust,
                    test_check_files_with_plain_data,
                    test_the_structure_check_end_to_end,
+                   test_an_esp_nothing_points_at_fails,
                    test_sources_refuses_what_it_could_not_list,
                    test_diff_refuses_before_it_reports]:
             # One test crashing must not stop the rest: the count of failures is only honest
