@@ -107,3 +107,4 @@ provenance and pack hints.
 | `isolinux.bin` vs `extlinux.x64` | the first is a loader the BIOS runs; the second is an **installer** you run |
 | `bootx64.efi` vs `syslinux.efi` | byte-identical; two names for firmware and for SYSLINUX |
 | `/slax/` vs `/slax/modules/` | a bundle in `/slax/` mounts **first**, so it ranks **lower**, whatever its number |
+| a layer vs a union layer | in [LAYERING.md](../../LAYERING.md), a **project** built on another project's image; everywhere else, a **bundle** in the running system's stack |

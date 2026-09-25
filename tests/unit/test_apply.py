@@ -1130,6 +1130,50 @@ def test_a_recipe_named_by_path_takes_its_vars():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_a_relative_base_iso_is_found_from_the_profiles_repository():
+    """A profile's relative `base.iso:` is relative to the repository that holds the profile.
+
+    It was joined to the engine's root. That is the same place for the engine's own
+    profiles, and the wrong one for a project that vendors the engine and builds on another
+    project's released image -- LAYERING.md's model, slax-rpgs on a slax-wine ISO -- whose
+    `iso: isos/<image>.iso` was looked for under vendor/slax-kitchen/ (#42).
+
+    The `.git` entries are the two shapes git leaves: a directory in a clone, a file in a
+    submodule. repository_of() reads only whether one is there.
+    """
+    import importlib.util
+    import tempfile
+    spec = importlib.util.spec_from_file_location(   # not `import profile`: the stdlib has one
+        "kitchen_profile", os.path.join(REPO, "lib", "profile.py"))
+    prof = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(prof)
+    d = tempfile.mkdtemp(prefix="kitchen-iso.")
+    try:
+        project = os.path.join(d, "project")
+        os.makedirs(os.path.join(project, ".git"))
+        engine = os.path.join(project, "vendor", "slax-kitchen")
+        os.makedirs(engine)
+        with open(os.path.join(engine, ".git"), "w") as f:
+            f.write("gitdir: ../../.git/modules/vendor/slax-kitchen\n")
+        base = {"flavour": "debian", "arch": "64bit", "version": "12.2.0",
+                "iso": "isos/base.iso"}
+        check("a project's profile finds its image in the project",
+              prof.resolve_base_iso(base, os.path.join(project, "profiles", "p.yaml")),
+              (os.path.join(project, "isos", "base.iso"), "profile"))
+        check("...from a profile anywhere in it",
+              prof.resolve_base_iso(base, os.path.join(project, "a", "b", "p.yaml")),
+              (os.path.join(project, "isos", "base.iso"), "profile"))
+        check("the engine's own profile still finds it in the engine",
+              prof.resolve_base_iso(base, os.path.join(engine, "profiles", "p.yaml")),
+              (os.path.join(engine, "isos", "base.iso"), "profile"))
+        check("an absolute iso is taken as written",
+              prof.resolve_base_iso(dict(base, iso="/srv/isos/x.iso"),
+                                    os.path.join(project, "profiles", "p.yaml")),
+              ("/srv/isos/x.iso", "profile"))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_recipe_relative_paths_go_through_ctx_local():
     """A file a recipe copies in is `ours` to `kitchen sources` only because Ctx.local
     records where it sat and what it held. A verb that joins recipe_dir itself copies the
@@ -2540,6 +2584,7 @@ def main():
                    test_a_long_pack_hint_survives_the_round_trip,
                    test_a_recipe_listed_twice_is_refused,
                    test_a_recipe_named_by_path_takes_its_vars,
+                   test_a_relative_base_iso_is_found_from_the_profiles_repository,
                    test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package,
                    test_symlink_chain_cannot_escape,
                    test_fromtarball_wires_both_guards_in,

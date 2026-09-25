@@ -20,9 +20,13 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # The version string alone cannot pin a build. There are no tags, so --always gives the
 # short SHA and --dirty flags uncommitted work -- both of which a bug report needs and
 # "0.1.0-dev" cannot supply. Falls back to the bare version outside a checkout.
+#
+# -e, not -d: vendored as a submodule, the way every project that uses this engine has it,
+# `.git` is a FILE, and the commit went missing from `version` and `doctor --report` -- the
+# block every bug report carries -- for exactly the builds that report from downstream (#42).
 kitchen_version() {
     _v=$KITCHEN_VERSION
-    if [ -d "$REPO_ROOT/.git" ] && have git; then
+    if [ -e "$REPO_ROOT/.git" ] && have git; then
         _c=$(git -C "$REPO_ROOT" describe --always --dirty 2>/dev/null || true)
         [ -n "${_c:-}" ] && _v="$_v ($_c)"
     fi

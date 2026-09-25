@@ -20,6 +20,8 @@ document is a tour of it.
 > **Forking rather than contributing?** [Recipes in a fork](docs/40-workflow/recipes-in-a-fork.md)
 > covers keeping your own recipes in `recipes/<project>/` and overriding a shipped recipe's vars
 > from your profile — both without editing anything you would later have to merge.
+> [LAYERING.md](LAYERING.md) covers building on another project's released image instead of on
+> stock Slax.
 
 ## 1. Engine or recipe?
 

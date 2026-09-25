@@ -269,7 +269,10 @@ rot automatically.
 
 Nothing requires `fetch`. `kitchen unpack /path/to.iso` accepts any image — one you already have,
 a corporate mirror, or one you previously customized — and a profile can point a build at one with
-`base.iso:`, which wins over the derived path.
+`base.iso:`, which wins over the derived path. A relative `base.iso:` is relative to the
+repository that holds the profile, so a project that vendors the engine names an image in its own
+tree. Building one project on another's released image this way is
+[LAYERING.md](../../LAYERING.md).
 
 **`--base` is not that.** It takes a *target name*, checked against `compat/sources.yaml`, so
 `--base /path/to.iso` is refused naming the four that exist. It selects which known release to
@@ -642,7 +645,7 @@ base:
   flavour: debian          # debian | slackware
   arch: 64bit              # 32bit | 64bit
   version: "12.2.0"
-  iso: path/to/base.iso    # optional; otherwise looked up in compat/sources.yaml
+  iso: path/to/base.iso    # optional; relative to the profile's repo; else compat/sources.yaml
 recipes:                   # a name or a path, or {name, vars} to override its vars
   - memtest86plus
   - isohybrid

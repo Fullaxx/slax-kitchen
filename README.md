@@ -224,7 +224,8 @@ step that produced it, gathering the source of whatever was built. If you publis
 
 This project is meant to be forked. [CONTRIBUTING.md](CONTRIBUTING.md) covers how to diagnose a
 problem well enough to report it — the failure taxonomy, what to gather, and where to file — plus
-the bar for a pull request. Security reports go via [SECURITY.md](SECURITY.md).
+the bar for a pull request. [LAYERING.md](LAYERING.md) covers building one project on another's
+image, the way slax-rpgs is to build on slax-wine. Security reports go via [SECURITY.md](SECURITY.md).
 
 ## Licensing
 

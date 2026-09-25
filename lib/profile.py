@@ -18,7 +18,24 @@ from validate import validate_file  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def resolve_base_iso(base: dict) -> tuple[str, str]:
+def repository_of(path: str) -> str:
+    """The checkout a file sits in: the nearest directory at or above it holding a `.git`.
+
+    `.git` is a directory in a clone and a file in a submodule or a linked worktree; either
+    way the directory holding it is the repository's root. With none above the file, its
+    own directory.
+    """
+    here = os.path.dirname(os.path.abspath(path))
+    d = here
+    while not os.path.exists(os.path.join(d, ".git")):
+        up = os.path.dirname(d)
+        if up == d:
+            return here
+        d = up
+    return d
+
+
+def resolve_base_iso(base: dict, profile_path: str) -> tuple[str, str]:
     """Return (path, how). Explicit `iso:` wins; otherwise sources.yaml states the name.
 
     LOOKED UP, not rebuilt. The target is `<flavour>-<arch>-<version>` and the ISO is
@@ -30,10 +47,19 @@ def resolve_base_iso(base: dict) -> tuple[str, str]:
     The template survives as the fallback for a `base:` naming no known target, which is
     legal: schema/profile.schema.json constrains flavour and arch to their enums but
     leaves `version` a free string, so a fork pinning an unreleased base still resolves.
+
+    A RELATIVE `iso:` is relative to the repository that holds the profile. It was joined
+    to this engine's root, which is the same place for the engine's own profiles and the
+    wrong one for a project that vendors the engine: a project building on another
+    project's released image -- LAYERING.md's model -- names it `iso: isos/<image>.iso`,
+    and that was looked for under vendor/slax-kitchen/. A profile outside any checkout
+    resolves beside itself.
     """
     if base.get("iso"):
         p = base["iso"]
-        return (p if os.path.isabs(p) else os.path.join(ROOT, p)), "profile"
+        if os.path.isabs(p):
+            return p, "profile"
+        return os.path.join(repository_of(profile_path), p), "profile"
     try:
         # SystemExit is how target.resolve() refuses; here that is not fatal, it just
         # means this base is not one of the four and the template below is all there is.
@@ -96,7 +122,7 @@ def main(argv: list[str]) -> int:
         # Replace outright rather than merge: a profile that pins an explicit `iso:` for
         # one target must not keep pointing at it when asked for a different one.
         base = override
-    iso, how = resolve_base_iso(base)
+    iso, how = resolve_base_iso(base, path)
     out = doc.get("output", {}) or {}
     name = out.get("name") or f"slax-{doc['metadata']['name']}-{base['version']}.iso"
     for k, v in (("{{version}}", base["version"]), ("{{flavour}}", base["flavour"]),

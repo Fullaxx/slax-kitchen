@@ -10,6 +10,10 @@ Copying costs you upstream fixes. `libreoffice.yaml` shipped with two wrong comm
 claim contradicted by its own measurements, and a dependency relationship stated backwards — and
 both were corrected after it landed. A fork that had copied the file still has them.
 
+A fork of a fork — one project building on another project's work, as slax-rpgs is to build on
+slax-wine — starts from that project's released image instead. See
+[LAYERING.md](../../LAYERING.md).
+
 ---
 
 ## Changing a value: override it in a profile

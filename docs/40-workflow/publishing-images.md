@@ -119,3 +119,7 @@ carries another project's trademark. See [ci.md](../60-testing/ci.md#tor-assets-
   a license permits publishing — a recipe says so with `redistribution:`.
 - **A rebuild.** The records explain an image, file by file. They do not make a second build
   byte-identical to the first.
+- **An image built on another project's image.** `kitchen sources` accounts for files against
+  the stock image of a known target, and a base another project built is not one, so nothing
+  from it is accounted for and `release-assets.sh` refuses. See
+  [LAYERING.md](../../LAYERING.md#provenance-and-publishing).

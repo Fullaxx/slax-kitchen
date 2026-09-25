@@ -34,6 +34,7 @@ Or `kitchen build <profile>` for all four in one step.
 | [`edit-bundles.md`](edit-bundles.md) | adding software — the chroot-and-diff technique |
 | [`composing-bundles.md`](composing-bundles.md) | splitting work across bundles so the pieces stay independent |
 | [`recipes-in-a-fork.md`](recipes-in-a-fork.md) | your own recipes, and overriding a shipped recipe's vars per build |
+| [`LAYERING.md`](../../LAYERING.md) | building on another project's released image instead of stock Slax |
 | [`edit-initramfs.md`](edit-initramfs.md) | modules, static binaries, `livekitlib` patches |
 
 **Finishing**

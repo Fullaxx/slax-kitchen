@@ -212,6 +212,50 @@ def test_a_local_input_is_recorded_relative_to_its_checkout():
         shutil.rmtree(outside, ignore_errors=True)
 
 
+def test_a_vendored_kitchen_reports_its_commit():
+    """`kitchen version` names the engine's commit when the engine is a submodule, which is
+    how every project that uses it has it (#42, row 5).
+
+    The provenance record already took `.git` as either a directory or a file (git_state).
+    `kitchen version` tested for a directory only, and a submodule's `.git` is a file, so
+    the commit went missing from `version` and from `doctor --report` -- the block every bug
+    report carries -- for exactly the builds that report from downstream.
+    """
+    import subprocess
+    tmp = tempfile.mkdtemp(prefix="vendored-")
+
+    def git(repo, *args):
+        return subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t",
+                               "-c", "protocol.file.allow=always", *args],
+                              check=True, capture_output=True, text=True).stdout
+
+    try:
+        engine = os.path.join(tmp, "engine")
+        os.makedirs(os.path.join(engine, "lib"))
+        shutil.copy2(os.path.join(ROOT, "kitchen"), engine)
+        for f in os.listdir(os.path.join(ROOT, "lib")):
+            if f.endswith(".sh"):                # what `kitchen` sources as it starts
+                shutil.copy2(os.path.join(ROOT, "lib", f), os.path.join(engine, "lib", f))
+        git(engine, "init", "-q")
+        git(engine, "add", "-A")
+        git(engine, "commit", "-q", "-m", "engine")
+        project = os.path.join(tmp, "project")
+        os.makedirs(project)
+        git(project, "init", "-q")
+        git(project, "submodule", "add", "-q", engine, "vendor/slax-kitchen")
+        vendored = os.path.join(project, "vendor", "slax-kitchen")
+        # Guards the fixture, not the product: git put a FILE there, which is the case.
+        check("fixture: the vendored engine's .git is a file",
+              os.path.isfile(os.path.join(vendored, ".git")), True)
+        sha = git(vendored, "rev-parse", "--short", "HEAD").strip()
+        p = subprocess.run(["sh", os.path.join(vendored, "kitchen"), "version"],
+                           capture_output=True, text=True, env=dict(os.environ, NO_COLOR="1"))
+        check("kitchen version names the vendored engine's commit",
+              f"({sha})" in p.stdout, True)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def fake_work(tmp, entries):
     """The least of a work tree finalize() reads -- .kitchen/provenance.json, written through
     append_recipe the way apply writes it -- and an image to hash."""
@@ -344,6 +388,7 @@ def main():
                    test_a_directory_counts_only_where_a_path_can_begin,
                    test_the_gaps_are_decisions,
                    test_a_local_input_is_recorded_relative_to_its_checkout,
+                   test_a_vendored_kitchen_reports_its_commit,
                    test_append_records_and_finalize_decides,
                    test_a_var_is_refused_before_anything_is_built]:
             # One test crashing must not stop the rest: the count of failures is only honest

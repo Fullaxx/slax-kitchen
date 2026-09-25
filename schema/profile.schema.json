@@ -60,7 +60,7 @@
         },
         "iso": {
           "type": "string",
-          "description": "explicit path; otherwise kitchen fetch"
+          "description": "explicit path, relative to the repository that holds the profile; otherwise kitchen fetch"
         }
       }
     },
