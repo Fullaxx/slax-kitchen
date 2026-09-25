@@ -127,6 +127,11 @@ Explodes an ISO into `DIR/iso` (default `work/`) using xorriso's osirrox mode, w
 Ridge names and permission bits. Writes `DIR/.kitchen/origin.yaml` with the source path, sha256 and
 size — that provenance is what `pack` uses to name its output.
 
+A `DIR` that already holds a work tree is refused: `DIR/iso`, or a `DIR/.kitchen` whose tree was
+deleted. `-f`/`--force` replaces both, because the record in `.kitchen` describes the tree it came
+with. Kept beside a fresh one, it had `status` list recipes the tree did not have, `apply` refuse
+to apply them, and `pack` master the old tree's hints.
+
 ## Preflight
 
 **`apply` and `build` check every tool, file and kernel capability the whole plan needs before

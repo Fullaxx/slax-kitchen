@@ -40,6 +40,14 @@ work/
 `origin.yaml` is what lets `kitchen pack` and `kitchen diff` reason about where the tree came from,
 and what `kitchen probe` compares against `compat/`.
 
+## Starting over
+
+`.kitchen/` fills up as you work: `apply` adds `journal.yaml` and `provenance.json`, and
+`pack.yaml` once a recipe asks something of `pack` — the record of what was applied to this
+`iso/`, what that fetched and built, and how `pack` is to master it. That record describes this
+tree and no other, so it goes with the tree. Unpacking into a work tree that exists is refused —
+its `iso/`, or a `.kitchen/` left behind after `iso/` was deleted — and `--force` replaces both.
+
 Note there is no `slax/rootcopy/` on a stock ISO — the initramfs looks for one and copies its
 contents onto the union at boot, but upstream ships none. Creating it is the cheapest
 customization available; see the `rootcopy-overlay` recipe.

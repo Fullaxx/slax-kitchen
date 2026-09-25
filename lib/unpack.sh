@@ -21,10 +21,23 @@ kitchen_unpack() {
     [ -f "$iso" ] || die "unpack: no such file: $iso"
     have xorriso || die "unpack: xorriso not installed (apt-get install xorriso)"
 
+    # THE RECORD GOES WITH THE TREE. <dest>/.kitchen says what was applied to <dest>/iso,
+    # what that fetched and built, and what pack is to master it with. --force replaced the
+    # tree and kept the record, so a fresh tree was described as the old one: `status`
+    # listed recipes it did not have, `apply` refused to apply them again and advised
+    # unpacking the base -- which had just been done -- and `pack` put them in the sidecar
+    # and mastered the old hints. A stale `uefi: true` demanded the recipe `apply` refused,
+    # and a stale volid named the image after a recipe it never had. A record whose tree was
+    # deleted by hand is the same record, so it is refused the same way.
     tree="$dest/iso"
     if [ -e "$tree" ]; then
         [ "$force" = 1 ] || die "unpack: $tree exists (use --force to replace)"
-        rm -rf "$tree"
+    elif [ -e "$dest/.kitchen" ]; then
+        [ "$force" = 1 ] || die "unpack: $dest/.kitchen records a tree that is no longer" \
+                                "there (use --force to start over)"
+    fi
+    if [ "$force" = 1 ]; then
+        rm -rf "$tree" "$dest/.kitchen"
     fi
     mkdir -p "$dest"
 

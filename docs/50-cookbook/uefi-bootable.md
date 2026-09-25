@@ -101,8 +101,9 @@ recipes:
 
 Order it earlier and the BIOS menu gets your entries while the UEFI menu does not, and it cannot be
 re-run to catch up: `apply` refuses a recipe the tree's journal says already ran, and the ESP it
-built would be in the way of a second one anyway. To change the list afterwards, unpack into a new
-work tree and apply the whole list again, `uefi-bootable` last.
+built would be in the way of a second one anyway. To change the list afterwards,
+[start over](../40-workflow/unpack.md#starting-over) — `kitchen unpack --force` replaces the tree
+and the journal with it — and apply the whole list again, `uefi-bootable` last.
 
 **On an image that is already UEFI-bootable it cannot run at all** — another project's release you
 are building on, say. `mkfs.vfat` refuses the `boot/efi.img` that image already has, and leaving the

@@ -469,7 +469,8 @@ usage_cmd() {
 kitchen unpack <iso> [-o DIR]     explode an ISO into a work tree
 
   -o, --output DIR     where to put it (default: ./work)
-  -f, --force          overwrite an existing work tree
+  -f, --force          replace an existing work tree, and the record of what was
+                       applied to it (<work>/.kitchen)
 
 Records provenance in <work>/.kitchen/origin.yaml, which `kitchen status` reads back.
 H
