@@ -1130,6 +1130,16 @@ def test_a_recipe_named_by_path_takes_its_vars():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def _profile_py():
+    """lib/profile.py, loaded by path: `import profile` would find the stdlib's."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "kitchen_profile", os.path.join(REPO, "lib", "profile.py"))
+    prof = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(prof)
+    return prof
+
+
 def test_a_relative_base_iso_is_found_from_the_profiles_repository():
     """A profile's relative `base.iso:` is relative to the repository that holds the profile.
 
@@ -1141,12 +1151,8 @@ def test_a_relative_base_iso_is_found_from_the_profiles_repository():
     The `.git` entries are the two shapes git leaves: a directory in a clone, a file in a
     submodule. repository_of() reads only whether one is there.
     """
-    import importlib.util
     import tempfile
-    spec = importlib.util.spec_from_file_location(   # not `import profile`: the stdlib has one
-        "kitchen_profile", os.path.join(REPO, "lib", "profile.py"))
-    prof = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(prof)
+    prof = _profile_py()
     d = tempfile.mkdtemp(prefix="kitchen-iso.")
     try:
         project = os.path.join(d, "project")
@@ -1170,6 +1176,45 @@ def test_a_relative_base_iso_is_found_from_the_profiles_repository():
               prof.resolve_base_iso(dict(base, iso="/srv/isos/x.iso"),
                                     os.path.join(project, "profiles", "p.yaml")),
               ("/srv/isos/x.iso", "profile"))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_a_recipe_named_by_path_keeps_its_build_checks():
+    """`kitchen build` tells its structure test what uefi-bootable and isohybrid add.
+
+    lib/build.sh decides that by matching the recipe NAMES profile.py hands it, as words.
+    profile.py handed it each entry as written, so a profile naming
+    recipes/available/uefi-bootable.yaml by path passed no --expect-uefi -- and the
+    structure test checks both ways, so it failed a correct image: "this ISO HAS a UEFI
+    entry -- pass --expect-uefi if that is intended (kitchen build derives it from the
+    recipe list)". Measured 2026-09-25 on the stock 64-bit Debian ISO: "build produced an
+    ISO but tests failed", exit 1, and the same for isohybrid's MBR.
+    """
+    import contextlib
+    import io
+    import shlex
+    import tempfile
+    prof = _profile_py()
+    d = tempfile.mkdtemp(prefix="kitchen-names.")
+    try:
+        path = os.path.join(d, "p.yaml")
+        with open(path, "w") as f:
+            f.write("apiVersion: slax-kitchen/v1\nkind: Profile\nmetadata:\n  name: p\n"
+                    "base: {flavour: debian, arch: 64bit, version: \"12.2.0\"}\n"
+                    "recipes:\n"
+                    "  - recipes/available/uefi-bootable.yaml\n"
+                    "  - name: recipes/available/isohybrid.yaml\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = prof.main(["profile.py", path])
+        check("the profile is read", rc, 0)
+        emitted = {}
+        for line in out.getvalue().splitlines():
+            k, _, v = line.partition("=")
+            emitted[k] = " ".join(shlex.split(v))
+        check("what build.sh matches is the recipes' names, in both entry forms",
+              emitted.get("RECIPES"), "uefi-bootable isohybrid")
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -2585,6 +2630,7 @@ def main():
                    test_a_recipe_listed_twice_is_refused,
                    test_a_recipe_named_by_path_takes_its_vars,
                    test_a_relative_base_iso_is_found_from_the_profiles_repository,
+                   test_a_recipe_named_by_path_keeps_its_build_checks,
                    test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package,
                    test_symlink_chain_cannot_escape,
                    test_fromtarball_wires_both_guards_in,

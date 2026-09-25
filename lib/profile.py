@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import target  # noqa: E402
-from validate import validate_file  # noqa: E402
+from validate import recipe_name, validate_file  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -144,7 +144,12 @@ def main(argv: list[str]) -> int:
         # NAMES ONLY. build.sh uses this to decide test expectations and to print what
         # will run; the authoritative list -- including any per-recipe vars -- goes to
         # apply.py via --profile, because a space-joined shell string cannot carry them.
-        "RECIPES": " ".join(r if isinstance(r, str) else r["name"]
+        #
+        # Names however the profile spells an entry: build.sh matches `uefi-bootable` and
+        # `isohybrid` as words, and an entry naming the recipe by path came through as the
+        # path. Neither --expect-uefi nor --expect-hybrid was passed, and the structure test
+        # -- which checks both ways -- failed a correct image for having what the recipe added.
+        "RECIPES": " ".join(recipe_name(r if isinstance(r, str) else r["name"])
                             for r in doc["recipes"]),
         "OUTPUT_NAME": name,
         "OUTPUT_HYBRID": "1" if out.get("hybrid") else "",
