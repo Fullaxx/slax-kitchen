@@ -3700,8 +3700,16 @@ def plan_recipe(path: str, facts: dict,
         vars_.update(overrides)
     steps = []
     for i, raw in enumerate(doc["steps"], 1):
-        step = subst(raw, vars_)
-        run = "when" not in step or _when_ok(step["when"], facts)
+        # A RuntimeError NAMING THE STEP, whichever of the two failed. subst raises KeyError
+        # and preflight catches RuntimeError, so an undefined {{name}} crashed `kitchen
+        # apply` with a traceback naming neither recipe nor step (measured 2026-09-26). The
+        # step number is known here and nowhere below. e.args[0], because str() of a
+        # KeyError quotes its message.
+        try:
+            step = subst(raw, vars_)
+            run = "when" not in step or _when_ok(step["when"], facts)
+        except (KeyError, RuntimeError) as e:
+            raise RuntimeError(f"step {i}: {e.args[0]}") from None
         steps.append((i, step, run))
     return doc, steps
 

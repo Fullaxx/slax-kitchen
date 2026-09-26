@@ -646,7 +646,10 @@ In that case doctor no longer suggests `--device /dev/kvm`.
 ## `validate <file.yaml>...`
 
 Checks recipes and profiles against their JSON Schemas. Variables are substituted **before**
-validation, so a templated `bundle: "{{bundle}}"` is checked against its resolved value.
+validation, so a templated `bundle: "{{bundle}}"` is checked against its resolved value. A name no
+variable defines is left as written, so it is reported here only where the braces fail a field's
+pattern. Anywhere else, `kitchen apply` refuses it before anything runs, naming the recipe and the
+step.
 
 It also runs the cross-checks a schema cannot state: a recipe's `metadata.name` must match its
 filename, a `Sources` mirror layout may not reference a field no target defines, and **a recipe that

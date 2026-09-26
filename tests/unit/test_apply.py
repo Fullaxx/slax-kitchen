@@ -1488,6 +1488,70 @@ def test_two_files_with_one_name_are_refused_before_anything_runs():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_an_undefined_variable_is_refused_naming_its_step():
+    """An undefined `{{name}}` crashed `kitchen apply` with a Python traceback.
+
+    Measured 2026-09-26: a step with `dest: "slax/boot/{{typo}}.cfg"` passed validation,
+    which leaves a name nothing defines for apply to report, and `kitchen apply
+    --preflight-only` ended in `KeyError: 'undefined variable {{typo}}'`, exit 1, naming
+    neither the recipe nor the step. subst raised KeyError; preflight caught only
+    RuntimeError. plan_recipe now refuses the step by number, for that and for a `when:`
+    naming no fact -- which was refused already, but without its step. Exit 2, before
+    anything runs.
+
+    Step 2 is the broken one in each fixture, so the number printed has to be the
+    failing step's.
+    """
+    import contextlib
+    import io
+    import tempfile
+    import yaml
+    d = tempfile.mkdtemp(prefix="kitchen-undefined.")
+
+    def recipe(name, broken):
+        path = os.path.join(d, name + ".yaml")
+        good = {"verb": "bundle.files", "bundle": "45-" + name,
+                "files": [{"dest": "/etc/" + name, "mode": "0644", "content": "{{value}}"}]}
+        with open(path, "w") as f:
+            yaml.safe_dump({"apiVersion": "slax-kitchen/v1", "kind": "Recipe",
+                            "metadata": {"name": name,
+                                         "summary": "A throwaway recipe for this test"},
+                            "compat": {"flavours": ["debian"], "arch": ["64bit"],
+                                       "privilege": "none"},
+                            "vars": {"value": "declared"},
+                            "steps": [good, dict(good, bundle="46-" + name, **broken)]}, f)
+        return path
+
+    def run(path, *args):
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = apply.main(["apply.py", path, "--facts", "flavour=debian,arch=64bit"]
+                            + list(args))
+        return rc, err.getvalue()
+
+    try:
+        typo = recipe("typo", {"files": [{"dest": "/etc/{{typo}}", "mode": "0644",
+                                          "content": "x"}]})
+        rc, err = run(typo, "--preflight-only")
+        check("an undefined variable is refused at preflight", rc, 2)
+        check("...naming the recipe and the step",
+              ("typo.yaml" in err, "step 2: undefined variable {{typo}}" in err), (True, True))
+
+        guard = recipe("guard", {"when": "flavor==debian"})
+        rc, err = run(guard, "--preflight-only")
+        check("a guard naming no fact is refused at preflight", rc, 2)
+        check("...naming the recipe and the step",
+              ("guard.yaml" in err, "step 2: when: unknown fact 'flavor'" in err), (True, True))
+
+        work = os.path.join(d, "work")
+        os.makedirs(os.path.join(work, "iso"))
+        rc, _err = run(typo, "-w", work)
+        check("...and by apply, before anything runs", rc, 2)
+        check("...so nothing is applied", os.path.exists(os.path.join(work, ".kitchen")), False)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_a_dependency_cycle_is_the_same_file_again():
     """resolve() tells recipes apart by the file, not by the name or the path it was found by.
 
@@ -3057,6 +3121,7 @@ def main():
                    test_a_recipe_listed_twice_is_refused,
                    test_a_recipe_named_by_path_takes_its_vars,
                    test_two_files_with_one_name_are_refused_before_anything_runs,
+                   test_an_undefined_variable_is_refused_naming_its_step,
                    test_a_dependency_cycle_is_the_same_file_again,
                    test_a_relative_base_iso_is_found_from_the_profiles_repository,
                    test_a_recipe_named_by_path_keeps_its_build_checks,
