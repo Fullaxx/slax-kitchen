@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Unit tests for merging Debian's package database across bundles.
 
-The bug these guard against shipped: add-packages built a bundle from 01-core alone,
+The bug that put this file here shipped: add-packages built a bundle from 01-core alone,
 so its var/lib/dpkg/status listed 299 packages, and the bundle sorted above
 05-chromium's 600. Higher wins, so a booted system lost 304 packages with no error
-anywhere. Every case below is a way the replacement could reintroduce that.
+anywhere. d44bb81 replaced shipped databases with a fragment per bundle, merged at pack
+time, and most cases below are ways that replacement could lose packages again or record
+them wrong. The rest came from its own later bugs: a build chroot that could not see the
+bundles beneath it (#2), and a real status that discarded the fragments below it, where
+only a saved session may (#12).
 """
 import os
 import sys
@@ -54,6 +58,13 @@ def test_blank_line_inside_description():
 
 
 def test_delta_is_added_and_changed():
+    """A fragment is the stanzas a bundle added or changed, and none it left alone.
+
+    d44bb81's design, not a later incident. Lose the added ones and dpkg on the booted
+    system never hears of the bundle's packages: this file's bug again, by another route.
+    Lose the changed ones and an upgrade the bundle carries is never recorded. Keep the
+    unchanged ones and the fragment speaks for packages the bundle does not carry.
+    """
     before = stanza("keep", "1") + "\n\n" + stanza("bump", "1")
     after = stanza("keep", "1") + "\n\n" + stanza("bump", "2") + "\n\n" + stanza("new", "1")
     got = sorted(k for k, _ in dpkgdb.parse(dpkgdb.delta(before, after)))
@@ -124,6 +135,17 @@ def test_sortmod_matches_livekit():
 
 
 def test_render_round_trip():
+    """parse() then render() keeps every stanza, in order and byte for byte.
+
+    It is how the merged database is written: merge() returns render()'s output, and
+    merge_tree ships that as the var/lib/dpkg/status in 98-dpkg-db.sb, which sorts above
+    every add-on. d44bb81's design, not a later incident.
+
+    The fixture is in render()'s own form, ending in one newline. dpkg ends its own
+    status file with a blank line after the last stanza, so a real one does not come back
+    byte for byte: that line goes, and every stanza survives.
+    Captured from: dpkg 1.22.6
+    """
     text = "\n\n".join(stanza(f"p{i}", "1") for i in range(5)) + "\n"
     check("parse/render is lossless", dpkgdb.render(dpkgdb.parse(text)), text)
 

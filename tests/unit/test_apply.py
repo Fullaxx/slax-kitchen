@@ -127,6 +127,16 @@ def test_slackware_pkgname():
 
 
 def test_when_guard():
+    """`when:` is `key==value` or `key!=value`, naming a fact that exists. Anything else
+    is refused.
+
+    No incident is behind this: it arrived with the guard itself, in a0158bc. What it
+    pins is the refusal. The schema types `when:` as any string, so this is the only
+    check a guard gets, and plan_recipe runs it over every step before any of them runs:
+    `when: flavor==debian` names no fact, and stops preflight with "unknown fact
+    'flavor'", exit 2. Read as false instead, it would skip its step on every target.
+    Measured 2026-09-26 by making it do that: "preflight ok (0 steps)", exit 0.
+    """
     facts = {"flavour": "slackware", "arch": "64bit"}
     for expr, want in [("flavour==slackware", True), ("flavour==debian", False),
                        ("flavour!=debian", True), ("arch==32bit", False),
@@ -141,6 +151,15 @@ def test_when_guard():
 
 
 def test_subst():
+    """`{{name}}` is replaced in every string of a step, nested ones included, and a name
+    with no value is an error.
+
+    No incident is behind this: it was written in a0158bc for the substitution 3e87ecd
+    added, which has not changed since. What it pins is the raise. Left in place, an
+    unfilled `{{name}}` reaches a path or a URL as literal braces; replaced by nothing, it
+    drops that part of the value. Measured 2026-09-26 with either breakage: a step with
+    `dest: "slax/boot/{{typo}}.cfg"` passed preflight without a word.
+    """
     check("subst", apply.subst({"a": "x{{v}}y", "b": ["{{v}}"]}, {"v": "1"}),
           {"a": "x1y", "b": ["1"]})
     try:
