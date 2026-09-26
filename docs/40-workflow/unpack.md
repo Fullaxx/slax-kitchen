@@ -49,7 +49,8 @@ tree and no other, so it goes with the tree. Unpacking into a work tree that exi
 its `iso/`, or a `.kitchen/` left behind after `iso/` was deleted — and `--force` replaces both.
 `status`, `apply` and `pack` recognise a `.kitchen/` with no `iso/` beside it too, and name the
 `unpack --force` that starts over — with the image the tree was unpacked from, when `origin.yaml`
-records one that is still there, and its paths quoted, so it can be pasted as it stands.
+records one that is still there and unchanged (the sha256 it recorded), and its paths quoted, so
+it can be pasted as it stands.
 
 Note there is no `slax/rootcopy/` on a stock ISO — the initramfs looks for one and copies its
 contents onto the union at boot, but upstream ships none. Creating it is the cheapest

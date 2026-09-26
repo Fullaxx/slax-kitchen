@@ -69,7 +69,8 @@ kitchen_pack() {
         _work=$(dirname "$src")
         if [ -e "$_work/.kitchen" ]; then
             # The advice is lib/status.py's start_over(), so status, apply and pack say one
-            # thing: the image to unpack, when the record names one, and quoted paths.
+            # thing: the image to unpack, when the record names one that is unchanged, and
+            # quoted paths.
             _how=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import status
 print(status.start_over(sys.argv[2]))' "$REPO_ROOT/lib" "$_work")
             die "pack: no work tree at $src: $_work/.kitchen records a tree that is no" \

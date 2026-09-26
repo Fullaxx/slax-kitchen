@@ -35,17 +35,32 @@ def start_over(work: str) -> str:
 
     status, apply and pack all give this advice -- pack through a one-line python3 import
     -- so it is written once. It names the image the tree was unpacked from when
-    origin.yaml records one that is still there, so the command can be pasted as it stands;
-    starting over can mean another image, which is why it says which one this is.
-    Otherwise it says <iso>. Paths are shell-quoted, so the command pastes whatever they
+    origin.yaml records one that is still there and unchanged, so the command can be pasted
+    as it stands; starting over can mean another image, which is why it says which one this
+    is. Otherwise it says <iso>. Paths are shell-quoted, so the command pastes whatever they
     hold.
+
+    UNCHANGED MEANS THE RECORDED SHA256, because a newer image saved over the old name is a
+    file at the same path, and naming it would start over from something else. The recorded
+    size would be cheaper, but an image of the same size passes it, and a tree unpacked from
+    a link before 593af9e recorded the link's own size; the sha256 has always followed
+    links, as sha256sum does. It reads the whole image inside an error message: 0.24 s for
+    415 MiB already in the page cache (provenance.sha256, measured 2026-09-25), longer from
+    a cold disk.
     """
     import shlex
     origin = _load(os.path.join(work, ".kitchen", "origin.yaml"))
-    iso = origin.get("source_iso") if isinstance(origin, dict) else None
-    if isinstance(iso, str) and os.path.isfile(iso):
-        cmd = f"kitchen unpack {shlex.quote(iso)} -o {shlex.quote(work)} --force"
-        return f"`{cmd}` starts over from the image it was unpacked from"
+    origin = origin if isinstance(origin, dict) else {}
+    iso, want = origin.get("source_iso"), origin.get("source_sha256")
+    if isinstance(iso, str) and want and os.path.isfile(iso):
+        import provenance
+        try:
+            same = provenance.sha256(iso) == str(want)
+        except OSError:
+            same = False
+        if same:
+            cmd = f"kitchen unpack {shlex.quote(iso)} -o {shlex.quote(work)} --force"
+            return f"`{cmd}` starts over from the image it was unpacked from"
     return f"`kitchen unpack <iso> -o {shlex.quote(work)} --force` starts over"
 
 
