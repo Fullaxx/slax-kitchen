@@ -1822,7 +1822,17 @@ def test_extract_members_matches_extractall_on_a_clean_archive():
             for n in ds + fs:
                 p = os.path.join(r, n)
                 st = os.lstat(p)
-                out[p[len(root) + 1:]] = (stat.S_IMODE(st.st_mode), int(st.st_mtime))
+                if stat.S_ISLNK(st.st_mode):
+                    # By target, not by times. tarfile sets no mode or times on a symlink
+                    # -- it skips chmod and utime for SYMTYPE, in extract and extractall
+                    # alike -- so a link's mtime is the second each extraction created it.
+                    # A and B run one after the other, and on 2026-09-26 a second ticked
+                    # over between them: CI run 36240237716, 1790423721 against 1790423722,
+                    # with every directory and file equal.
+                    # Captured from: python 3.11.2 (debian:12, that run) and 3.12.3
+                    out[p[len(root) + 1:]] = ("->", os.readlink(p))
+                else:
+                    out[p[len(root) + 1:]] = (stat.S_IMODE(st.st_mode), int(st.st_mtime))
         return out
 
     a = os.path.join(box, "A")

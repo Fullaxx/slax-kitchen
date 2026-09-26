@@ -2070,9 +2070,10 @@ def _extract_members(t, dest: str, members: list, kw: dict) -> None:
     extractall the file is already outside. The directory handling mirrors CPython's
     extractall, which defers directory attributes "since permissions can interfere with
     extraction and extracting contents can reset mtime" -- without that, every bundle
-    built from a tarball would carry wrong directory modes and mtimes. Verified
-    byte-for-byte identical to extractall on an archive with a 0700 dir, a sticky 1777
-    dir and pinned mtimes.
+    built from a tarball would carry wrong directory modes and mtimes. Held to
+    extractall's result by test_extract_members_matches_extractall_on_a_clean_archive,
+    on an archive with a 0700 dir, a sticky 1777 dir, a symlink and pinned mtimes: every
+    mode and mtime tarfile sets, and the link's target.
     """
     dest = os.path.realpath(dest)
     directories = []
