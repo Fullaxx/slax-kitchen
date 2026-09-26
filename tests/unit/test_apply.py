@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Unit tests for the recipe engine's pure logic.
 
-These exist because every case below is a bug that actually shipped during development
-and was caught by inspecting a built bundle rather than by a test. They need no ISO and
-take about a second.
+Many are here because a bug shipped: seen in a built bundle, filed as an issue, found in
+review, or reported as an advisory. Others guard a mechanism against the failure it
+exists to prevent. A test's docstring should say which, as CONTRIBUTING.md asks in
+"What a test here is for". They need no ISO; what they cost is measured in
+CONTRIBUTING.md, under "Engine changes".
 """
 import os
 import shutil

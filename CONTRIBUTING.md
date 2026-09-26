@@ -439,7 +439,8 @@ A new verb needs: the implementation, the `schema/recipe.schema.json` enum entry
 [the verb reference](docs/90-reference/verbs.md), and a recipe that exercises it.
 
 Pure logic — anything that does not need an ISO — belongs in `tests/unit/test_apply.py`, which runs
-as one of the thirteen gates. Every case in that file is a bug that actually shipped.
+as one of the thirteen gates. Each case there should say in its docstring why it exists, and
+"What a test here is for", below, says what counts.
 
 **Seconds, not milliseconds, and it is worth knowing where they go.** Measured 2026-09-21 at
 `af9358f` on Ubuntu 24.04 with python 3.12, median of three, each file timed the way the gate runs
@@ -546,7 +547,7 @@ settled behaviour is not such a path; our handling of it is.
 **4. What went wrong?** The best justification is an incident — a bug that shipped, an issue, a trap
 someone fell into. A test written from an incident has a failure to point at; one written for
 completeness usually has only a shape. Say which in the docstring: every file in `tests/unit/`
-already opens by saying why it exists, and most name a numbered issue.
+already opens by saying why it exists.
 
 **And a test with no incident behind it is disabled when it fails, not adjusted.** The tempting
 move, when a test goes red and the fix is to change the *test*, is to nudge it until it passes.
