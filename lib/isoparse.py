@@ -11,6 +11,8 @@ Covers:
   * Rock Ridge SUSP entries (RR / NM / PX / TF) in directory records
   * SYSLINUX boot-info-table patched into isolinux.bin
   * squashfs 4.0 superblocks, incl. the xz compressor-options block
+  * FAT12 directories, for the EFI system partition boot.uefi builds
+  * PE headers, as far as the certificate table that says a loader is signed
 
 Nothing here writes.
 """
@@ -282,6 +284,132 @@ class IsoReader:
                 sq.xz_dict_size = struct.unpack("<I", body[0:4])[0]
                 sq.xz_bcj = struct.unpack("<I", body[4:8])[0]
         return sq
+
+
+# -------------------------------------------------------------------- FAT12 --
+
+@dataclass
+class FatImage:
+    label: str                                          # "" when it has none
+    files: dict[str, bytes] = field(default_factory=dict)   # path -> its first bytes
+
+
+def fat12(path: str, head: int = 4096) -> FatImage | None:
+    """The label and every file of the FAT12 image at `path`, each file with its first
+    `head` bytes, or None when it is not a FAT12 image this can read.
+
+    For the EFI system partition: boot.uefi builds one with mkfs.vfat -F 12 and mtools, and
+    reads an existing one back with this before it will replace it. Paths are the 8.3 short
+    names joined with '/', as in EFI/BOOT/BOOTX64.EFI. The label is the root directory's
+    label entry, which is what mlabel changes, or the boot sector's when there is none.
+    FAT16 and FAT32 give None rather than half an answer: nothing here builds either.
+    """
+    def u16(b: bytes, o: int) -> int:
+        return struct.unpack_from("<H", b, o)[0]
+
+    try:
+        with open(path, "rb") as f:
+            boot = f.read(512)
+            if len(boot) < 512 or boot[510:512] != b"\x55\xaa":
+                return None
+            bps, spc, reserved, nfats = u16(boot, 11), boot[13], u16(boot, 14), boot[16]
+            root_entries, spf = u16(boot, 17), u16(boot, 22)
+            total = u16(boot, 19) or struct.unpack_from("<I", boot, 32)[0]
+            # FAT32 has no fixed root directory and no 16-bit FAT size: both zero.
+            if (bps not in (512, 1024, 2048, 4096)
+                    or spc not in (1, 2, 4, 8, 16, 32, 64, 128)
+                    or not (reserved and nfats and root_entries and spf and total)):
+                return None
+            root_at = (reserved + nfats * spf) * bps
+            data_at = root_at + -(-root_entries * 32 // bps) * bps
+            csize = spc * bps
+            clusters = (total * bps - data_at) // csize
+            if not 0 < clusters < 4085:                 # the FAT12 limit, by FAT's own rule
+                return None
+            f.seek(0)
+            img = f.read(total * bps)
+    except OSError:
+        return None
+    if len(img) < total * bps:
+        return None
+    fat = img[reserved * bps:(reserved + spf) * bps]
+
+    def read(c: int, n: int) -> bytes:
+        """Up to n bytes of the cluster chain that starts at c."""
+        out, seen = bytearray(), set()
+        while 2 <= c < 0xFF7 and len(out) < n:
+            if c in seen or c - 2 >= clusters:
+                raise ValueError(f"cluster chain loops or runs off the image at {c}")
+            seen.add(c)
+            at = data_at + (c - 2) * csize
+            out += img[at:at + csize]
+            i = c + c // 2
+            v = fat[i] | fat[i + 1] << 8
+            c = v >> 4 if c & 1 else v & 0xFFF
+        return bytes(out[:n])
+
+    label, files = "", {}
+
+    def walk(entries: bytes, prefix: str, depth: int) -> None:
+        nonlocal label
+        for i in range(0, len(entries) - 31, 32):
+            e = entries[i:i + 32]
+            if e[0] == 0x00:                            # the end of this directory
+                return
+            attr = e[11]
+            if e[0] == 0xE5 or attr == 0x0F:            # deleted, or a long-name fragment
+                continue
+            if attr & 0x08:                             # the volume label
+                if not prefix:
+                    label = e[0:11].decode("latin-1").rstrip()
+                continue
+            name = e[0:8].decode("latin-1").rstrip()
+            if name in (".", ".."):
+                continue
+            ext = e[8:11].decode("latin-1").rstrip()
+            full = prefix + name + ("." + ext if ext else "")
+            first, size = u16(e, 26), struct.unpack_from("<I", e, 28)[0]
+            if attr & 0x10:
+                if depth >= 16:
+                    raise ValueError(f"{full}: directories nested too deep")
+                walk(read(first, clusters * csize), full + "/", depth + 1)
+            else:
+                files[full] = read(first, min(size, head)) if size else b""
+
+    try:
+        walk(img[root_at:data_at], "", 0)
+    except (ValueError, IndexError):
+        return None
+    if not label and boot[38] == 0x29:                  # the boot sector's own label field
+        label = boot[43:54].decode("latin-1").rstrip()
+    return FatImage(label="" if label == "NO NAME" else label, files=files)
+
+
+def pe_signed(head: bytes) -> bool | None:
+    """Whether the PE image that starts with `head` carries an Authenticode signature, or
+    None when `head` is not the start of a PE image.
+
+    A signature lives in the certificate table, data directory 4 of the optional header.
+    grub-mkstandalone's output has none, and a loader signed after it was built (sbsign, or
+    anything else that adds a signature) has one.
+    """
+    try:
+        if head[:2] != b"MZ":
+            return None
+        pe = struct.unpack_from("<I", head, 0x3C)[0]
+        if head[pe:pe + 4] != b"PE\0\0":
+            return None
+        opt = pe + 24                                   # past the signature and COFF header
+        magic = struct.unpack_from("<H", head, opt)[0]
+        if magic not in (0x10B, 0x20B):                 # PE32, PE32+
+            return None
+        dirs = opt + (96 if magic == 0x10B else 112)
+        if struct.unpack_from("<I", head, dirs - 4)[0] <= 4:    # NumberOfRvaAndSizes
+            return False
+        at, size = struct.unpack_from("<II", head, dirs + 4 * 8)
+        return bool(at or size)
+    except struct.error:
+        return None
 
 
 def boot_record(path: str) -> str:

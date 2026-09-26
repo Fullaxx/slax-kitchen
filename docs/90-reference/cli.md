@@ -48,7 +48,7 @@ silently did nothing is exactly what this catches. An entry lost because nobody 
 caught from the image instead: one that carries `boot/efi.img` with no EFI entry fails, which is
 what building on a UEFI-bootable base without `uefi-bootable` produces
 ([LAYERING.md, step 6](../../LAYERING.md#what-a-consumer-does)). A lost hybrid MBR leaves nothing
-behind to catch.
+behind to catch; `pack` warns about it instead.
 
 ## `test <iso>` — check an ISO you already have
 
@@ -310,7 +310,9 @@ tree. Building one project on another's released image this way is
 [LAYERING.md](../../LAYERING.md). What was written when that image was mastered does not come with
 it — its volume id, a UEFI boot entry, a hybrid MBR. `kitchen pack` writes those afresh, from this
 build's recipes or its own flags, and warns about a UEFI entry or hybrid MBR the image had that this
-build will not write ([LAYERING.md](../../LAYERING.md#what-a-consumer-does), steps 5 and 6).
+build will not write ([LAYERING.md](../../LAYERING.md#what-a-consumer-does), steps 5 and 6). On a
+UEFI image, `uefi-bootable` rebuilds the ESP it carries if that recipe built it, and refuses one it
+did not.
 
 **`--base` is not that.** It takes a *target name*, checked against `compat/sources.yaml`, so
 `--base /path/to.iso` is refused naming the four that exist. It selects which known release to

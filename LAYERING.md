@@ -60,7 +60,7 @@ slax-wine is the first, and the examples are from its tree at
 | **Versioned images with a sha256, and the engine commit that built them** | A consumer pins an image, not a commit, and pins the same engine unless it has a reason to differ: `kitchen pack` records it as `kitchen.commit` in `<image>.provenance.json`, and slax-wine's changelog names its pin. Until the base publishes an image, a consumer pins a local build, and only that machine has those bytes: [images are not byte-reproducible](docs/40-workflow/reproducibility.md). slax-wine's 1.0.0 was unreleased on 2026-09-25. |
 | **A release file in the image** | So a build, and a person, can read which base they have. slax-wine writes `/etc/slax-wine-release`: `NAME`, `VERSION`, `BASE_ISO`, `BASE_SHA256`, `WINE` and `HOME_URL`. |
 | **Its bundle numbers, split into platform and applications** | A consumer keeps the platform and replaces the applications. slax-wine uses `20`–`29` for its platform and `30`–`89` for applications ([ARCHITECTURE.md](https://github.com/Fullaxx/slax-wine/blob/7535d6c/docs/ARCHITECTURE.md)), and calls `30-notepadpp32` "the layer a games variant replaces" ([notepadpp32.md](https://github.com/Fullaxx/slax-wine/blob/7535d6c/docs/50-cookbook/notepadpp32.md)). |
-| **What it applied, per image** | A consumer must not apply those recipes again, and the engine cannot warn it: the journal that records what ran lives in the base's work tree, not in the image. slax-wine's `-uefi` images carry `uefi-bootable`, and every image its boot-menu edit. What is written when an image is mastered is not on that list, because it does not carry over: identity, the UEFI boot entry and a hybrid MBR. A consumer writes its own (steps 5 and 6 below). |
+| **What it applied, per image** | A consumer must not apply those recipes again, and the engine cannot warn it: the journal that records what ran lives in the base's work tree, not in the image. Every slax-wine image carries its boot-menu edit. What is written when an image is mastered is not on that list, because it does not carry over: identity, the UEFI boot entry and a hybrid MBR. Nor is `uefi-bootable`, though slax-wine's `-uefi` images carry it: a consumer lists it again, and it rebuilds the ESP the image came with. A consumer writes its own (steps 5 and 6 below). |
 | **Platform recipes that carry only what every consumer needs** | A consumer inherits every file in the base image. slax-wine's `21-wine-desktop` also carries two product decisions, its release file and a mask for the browser its own profiles remove ([slax-wine#2](https://github.com/Fullaxx/slax-wine/issues/2)). Which project owns them is slax-wine's call. |
 
 ## What a consumer does
@@ -79,7 +79,7 @@ apiVersion: slax-kitchen/v1
 kind: Profile
 metadata:
   name: myproduct
-base: {flavour: debian, arch: 64bit, version: "12.2.0", iso: isos/slax64-wine-bios-1.0.0.iso}
+base: {flavour: debian, arch: 64bit, version: "12.2.0", iso: isos/slax64-wine-uefi-1.0.0.iso}
 recipes:
   - name: remove-bundle
     vars: {drop: "^3[01]-notepadpp(32|64)\\.sb$"}
@@ -100,10 +100,13 @@ test: [structure]
 6. **Do not apply what the base already applied**, except what is written when an image is
    mastered, which does not carry over. Identity is step 5. A hybrid MBR is a request `isohybrid`
    makes of `kitchen pack`, so list `isohybrid` whenever you want one. The UEFI boot entry is
-   requested the same way, but `uefi-bootable` also builds `boot/efi.img`, and on an image that
-   already has one it fails: `mkfs.vfat` will not overwrite it. So build on the base's BIOS image
-   and list `uefi-bootable` last, as the example does. Built on a UEFI image without it, the image
-   ships the base's EFI partition with no entry pointing at it, and the structure test fails it.
+   requested the same way, by `uefi-bootable`, which also builds the ESP, `boot/efi.img`, and
+   mirrors the boot menu into GRUB. List it last, whichever image you build on, as the example
+   does. On a UEFI image it replaces the ESP the base built: that rebuilds it from this build's
+   menu, and is not a second application. It refuses an ESP it did not build (a signed loader,
+   other loaders, another label) and says what it found, rather than lose it; build on the base's
+   BIOS image then. Built on a UEFI image without it, the image ships the base's EFI partition
+   with no entry pointing at it, and the structure test fails it.
    `kitchen unpack` records which of the two the base image had, and `kitchen pack` warns about
    each one this build will not write. A dropped MBR leaves nothing behind for a test to find.
 7. **Build from the project's root:** `vendor/slax-kitchen/kitchen build profiles/myproduct.yaml`.

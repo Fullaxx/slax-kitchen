@@ -30,6 +30,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dpkgdb  # noqa: E402
 import fingerprint  # noqa: E402
+import isoparse  # noqa: E402
 import provenance  # noqa: E402
 from validate import recipe_name, validate_file  # noqa: E402
 
@@ -2489,6 +2490,12 @@ GRUB_MODULES = ("part_gpt part_msdos fat iso9660 normal linux configfile "
                 "search search_fs_file search_fs_uuid search_label "
                 "all_video echo test ls reboot halt chain")
 
+# The ESP boot.uefi builds: its label, and the one file in it. The verb builds from these
+# and judges an ESP it finds by them (esp_not_ours), so what it makes and what it will
+# replace cannot drift apart.
+ESP_LABEL = "SLAXEFI"
+ESP_LOADER = "EFI/BOOT/BOOTX64.EFI"
+
 
 def _parse_syslinux(path: str) -> list[dict]:
     """Read LABEL blocks out of a syslinux/isolinux config.
@@ -2776,6 +2783,35 @@ def v_boot_grub(ctx: Ctx, step: dict) -> None:
     ctx.record(dest_rel)
 
 
+def esp_not_ours(path: str) -> str | None:
+    """Why the ESP at `path` is not one boot.uefi built, or None when it is.
+
+    boot.uefi has built one shape of ESP since it was added in 3e87ecd: FAT12, labelled
+    ESP_LABEL, holding only ESP_LOADER, which is grub-mkstandalone's output and so unsigned.
+    Read back from a real one (2026-09-26): SLAXEFI in the boot sector and in a root label
+    entry, EFI/ -> BOOT/ -> BOOTX64.EFI, a PE32+ with no certificate table. Anything else
+    was put there by someone else, and replacing it would lose what they put there.
+    """
+    fat = isoparse.fat12(path)
+    if fat is None:
+        return "it is not a FAT12 image"
+    why = []
+    if fat.label != ESP_LABEL:
+        why.append(f"its label is {fat.label!r}, not {ESP_LABEL!r}")
+    extra = sorted(set(fat.files) - {ESP_LOADER})
+    if extra:
+        why.append("it holds " + ", ".join(extra))
+    if ESP_LOADER not in fat.files:
+        why.append(f"it has no {ESP_LOADER}")
+    else:
+        signed = isoparse.pe_signed(fat.files[ESP_LOADER])
+        if signed is None:
+            why.append(f"its {ESP_LOADER} is not a PE image")
+        elif signed:
+            why.append(f"its {ESP_LOADER} is signed")
+    return "; ".join(why) or None
+
+
 @verb("boot.uefi")
 def v_boot_uefi(ctx: Ctx, step: dict) -> None:
     """Make the ISO bootable on UEFI firmware.
@@ -2786,10 +2822,11 @@ def v_boot_uefi(ctx: Ctx, step: dict) -> None:
     it to the root of a FAT USB stick. On an ISO9660 filesystem it is unreachable.
 
     So we add a second El Torito entry pointing at a real FAT EFI System Partition, and
-    put GRUB in it instead of syslinux.efi, because GRUB *can* read iso9660: a ~4 MiB
-    ESP holding only BOOTX64.EFI is enough, and the kernel stays on the ISO filesystem
-    where it already is. Building the ESP with mkfs.vfat -C plus mtools means nothing
-    is ever mounted, so this works unprivileged.
+    put GRUB in it instead of syslinux.efi, because GRUB *can* read iso9660: an ESP
+    holding only BOOTX64.EFI is enough (6336 KiB with this host's GRUB, measured
+    2026-09-26), and the kernel stays on the ISO filesystem where it already is.
+    Building the ESP with mkfs.vfat -C plus mtools means nothing is ever mounted, so
+    this works unprivileged.
     """
     for tool in ("grub-mkstandalone", "mkfs.vfat", "mmd", "mcopy"):
         if not shutil.which(tool):
@@ -2804,15 +2841,32 @@ def v_boot_uefi(ctx: Ctx, step: dict) -> None:
 
     grub_dir = ctx.p("boot", "grub")
     cfg_text = _grub_cfg(entries, int(step.get("timeout", 5)))
+
+    # AN ESP THE IMAGE CAME WITH IS REBUILT IF THIS VERB BUILT IT, AND REFUSED IF NOT,
+    # before anything is written. A UEFI image carries its ESP as boot/efi.img, so a build
+    # on one meets the file, and mkfs.vfat -C refused it. Measured 2026-09-26: apply exited
+    # 1 having rewritten grub.cfg, nothing was journaled, and LAYERING.md had to send
+    # consumers to the base's BIOS image, which made every UEFI release a dead end to
+    # build on (#49). Rebuilding is not applying the recipe twice: the ESP and grub.cfg are
+    # derived from this build's menu and this host's GRUB. But an ESP this verb did not
+    # build would be lost without a word: a loader signed out of band, as boot.secureboot's
+    # refusal tells people to do, or another project's loaders. So that is refused, naming
+    # what is in it, and a dry run refuses it too.
+    img = ctx.p("boot", "efi.img")
+    replacing = os.path.lexists(img)
+    if replacing:
+        why = esp_not_ours(img)
+        if why:
+            raise RuntimeError(
+                f"boot.uefi: boot/efi.img is not an ESP this recipe built: {why}. It is "
+                f"not replaced; build on an image without one, such as the base's BIOS "
+                f"image (LAYERING.md, step 6)")
     if ctx.dry:
-        ctx.say(f"would build an ESP and mirror {len(entries)} menu entries into GRUB")
+        also = ", replacing the one the image came with," if replacing else ""
+        ctx.say(f"would build an ESP{also} and mirror {len(entries)} menu entries "
+                f"into GRUB")
         ctx.hint("uefi", True)
         return
-    os.makedirs(grub_dir, exist_ok=True)
-    open(os.path.join(grub_dir, "grub.cfg"), "w").write(cfg_text)
-    ctx.record("boot/grub/grub.cfg")
-    ctx.say(f"boot/grub/grub.cfg: mirrored {len(entries)} menu entr"
-            f"{'y' if len(entries) == 1 else 'ies'} from isolinux.cfg")
 
     import tempfile
     tmp = tempfile.mkdtemp(prefix="kitchen-esp-")
@@ -2833,16 +2887,40 @@ def v_boot_uefi(ctx: Ctx, step: dict) -> None:
 
         # FAT12 needs slack beyond the payload for its reserved/root/FAT areas.
         img_kib = max(1440, ((efi_kib + 256) // 64 + 1) * 64)
-        img = ctx.p("boot", "efi.img")
-        os.makedirs(os.path.dirname(img), exist_ok=True)
-        for cmd in (["mkfs.vfat", "-C", "-F", "12", "-n", "SLAXEFI", img, str(img_kib)],
-                    ["mmd", "-i", img, "::/EFI", "::/EFI/BOOT"],
-                    ["mcopy", "-i", img, efi, "::/EFI/BOOT/BOOTX64.EFI"]):
+        # BUILT BESIDE THE TREE, and put in it last. The ESP and grub.cfg are staged next to
+        # the files they replace and renamed over them only once both are whole, so a
+        # failure anywhere before that leaves grub.cfg and the ESP the image came with as
+        # they were -- the partway failure above was grub.cfg written before mkfs.vfat ran.
+        new = os.path.join(tmp, "efi.img")
+        parts = ESP_LOADER.split("/")[:-1]
+        for cmd in (["mkfs.vfat", "-C", "-F", "12", "-n", ESP_LABEL, new, str(img_kib)],
+                    ["mmd", "-i", new] + ["::/" + "/".join(parts[:i + 1])
+                                          for i in range(len(parts))],
+                    ["mcopy", "-i", new, efi, "::/" + ESP_LOADER]):
             rr = subprocess.run(cmd, capture_output=True, text=True)
             if rr.returncode != 0:
                 raise RuntimeError(f"{cmd[0]} failed: {rr.stderr.strip()}")
-        ctx.say(f"boot/efi.img: {img_kib} KiB FAT12 ESP containing "
-                f"EFI/BOOT/BOOTX64.EFI ({efi_kib} KiB GRUB)")
+
+        cfg = os.path.join(grub_dir, "grub.cfg")
+        staged = {img: img + ".new", cfg: cfg + ".new"}
+        os.makedirs(grub_dir, exist_ok=True)
+        try:
+            shutil.move(new, staged[img])       # the temp dir may be another filesystem
+            with open(staged[cfg], "w") as f:
+                f.write(cfg_text)
+            for final, part in staged.items():
+                os.replace(part, final)     # one directory: one step; a link is replaced
+        except BaseException:
+            for part in staged.values():
+                if os.path.lexists(part):
+                    os.unlink(part)
+            raise
+        ctx.record("boot/grub/grub.cfg")
+        ctx.say(f"boot/grub/grub.cfg: mirrored {len(entries)} menu entr"
+                f"{'y' if len(entries) == 1 else 'ies'} from isolinux.cfg")
+        ctx.say(f"boot/efi.img: {img_kib} KiB FAT12 ESP containing {ESP_LOADER} "
+                f"({efi_kib} KiB GRUB)"
+                + (", replacing the one the image came with" if replacing else ""))
         ctx.record("boot/efi.img")
         # GRUB here is BUILT by this verb, from whatever the build host has installed --
         # so the host's package and version are the only answer to "which GRUB is this".

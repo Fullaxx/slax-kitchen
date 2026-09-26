@@ -100,18 +100,20 @@ recipes:
 ```
 
 Order it earlier and the BIOS menu gets your entries while the UEFI menu does not, and it cannot be
-re-run to catch up: `apply` refuses a recipe the tree's journal says already ran, and the ESP it
-built would be in the way of a second one anyway. To change the list afterwards,
-[start over](../40-workflow/unpack.md#starting-over) — `kitchen unpack --force` replaces the tree
-and the journal with it — and apply the whole list again, `uefi-bootable` last.
+re-run to catch up: `apply` refuses a recipe the tree's journal says already ran. To change the
+list afterwards, [start over](../40-workflow/unpack.md#starting-over) — `kitchen unpack --force`
+replaces the tree and the journal with it — and apply the whole list again, `uefi-bootable` last.
 
-**On an image that is already UEFI-bootable it cannot run at all** — another project's release you
-are building on, say. `mkfs.vfat` refuses the `boot/efi.img` that image already has, and leaving the
-recipe out loses the UEFI entry, which is written when an image is mastered and does not carry
-over. Build on that project's BIOS image instead, as
-[LAYERING.md, step 6](../../LAYERING.md#what-a-consumer-does) says. `kitchen pack` warns when a
-build on a UEFI image will not write the entry, and an image that ships an ESP with no entry
-pointing at it fails `kitchen test --structure`.
+**On an image that is already UEFI-bootable** — another project's release you are building on,
+say — it replaces the ESP that image carries, when it is one this recipe built: FAT12, labelled
+`SLAXEFI`, holding only an unsigned `EFI/BOOT/BOOTX64.EFI`. That rebuilds it, from this build's
+boot entries and this host's GRUB, and is not a second application; the output says `replacing the
+one the image came with`. Any other ESP (a loader signed out of band, other loaders, another label)
+is refused before anything is written, naming what was found, because replacing it would lose what
+someone else put there. Build on that project's BIOS image then, as
+[LAYERING.md, step 6](../../LAYERING.md#what-a-consumer-does) says. Leaving the recipe out loses the
+UEFI entry, which is written when an image is mastered and does not carry over: `kitchen pack`
+warns, and an image that ships an ESP with no entry pointing at it fails `kitchen test --structure`.
 
 ## Verified
 
@@ -152,6 +154,25 @@ slax login:
 The 4 MB difference is GRUB's, not ours — the module list
 (`lib/apply.py` `GRUB_MODULES`) is identical in both. Structure assertions pass either way:
 16 passed, 0 failed with `--expect-uefi`.
+
+### On an image that was already UEFI-bootable
+
+Checked on 2026-09-26 on `debian-64bit-12.2.0`, with the boots run on a boot host with KVM:
+
+- **The base:** an image built with `uefi-bootable` and `isohybrid`.
+- **The build on top of it:** `iso-identity`, `serial-console`, `isohybrid`, and `uefi-bootable`
+  last. It replaced the base's ESP.
+- **The result:** `kitchen test --uefi` booted it under OVMF, through the new ESP's GRUB, on the
+  serial entry the build had added, to `Live Kit done`:
+
+  ```
+  BdsDxe: starting Boot0001 "UEFI QEMU DVD-ROM QM00003 " from PciRoot(0x0)/Pci(0x1,0x1)/Ata(Secondary,Master,0x0)
+  GNU GRUB  version 2.12
+  Kernel command line: BOOT_IMAGE=/slax/boot/vmlinuz vga=normal load_ramdisk=1 prompt_ramdisk=0 rw printk.time=0 consoleblank=0 automount console=tty0 console=ttyS0,115200n8
+  Live Kit done, starting slax
+  ```
+
+- **Its other boot modes:** `--bios` and `--usb` booted it to the same point.
 
 ## Limitations
 

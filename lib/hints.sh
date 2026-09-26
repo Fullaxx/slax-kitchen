@@ -29,7 +29,7 @@ pack_hint() {
 base_boot_dropped() {
     if [ "$(pack_hint "$1" boot_uefi)" = true ] && [ "$2" != 1 ]; then
         echo "the base image had a UEFI boot entry and this image will not: uefi-bootable" \
-             "writes one, applied to the base's BIOS image (LAYERING.md, step 6)"
+             "writes one (LAYERING.md, step 6)"
     fi
     if [ "$(pack_hint "$1" hybrid_mbr)" = true ] && [ "$3" != 1 ]; then
         echo "the base image had a hybrid MBR and this image will not: isohybrid writes one" \

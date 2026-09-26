@@ -1026,6 +1026,218 @@ def test_boot_payload_copies_a_local_file_and_records_it():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def fat12_image(label, files):
+    """A FAT12 image laid out as mkfs.vfat -F 12 and mtools lay one out, only smaller:
+    512-byte sectors and clusters, one reserved sector, two FATs and a 16-entry root
+    directory. `files` maps paths such as EFI/BOOT/BOOTX64.EFI to their bytes, and every
+    directory on the way is made. `label` goes where mkfs.vfat -n puts it: the boot sector
+    and a root entry. Built here because CI's gates job has no mkfs.vfat, and the repository
+    takes no disk images."""
+    import struct
+    sec = 512
+    dirs = sorted({"/".join(p.split("/")[:i])
+                   for p in files for i in range(1, p.count("/") + 1)})
+    first, chain, c = {}, {}, 2
+    for d in dirs:                              # a cluster each: sixteen entries is plenty
+        first[d], chain[c] = c, 0xFFF
+        c += 1
+    for p, data in files.items():
+        n = max(1, -(-len(data) // sec))
+        first[p] = c
+        for i in range(n):
+            chain[c + i] = c + i + 1 if i < n - 1 else 0xFFF
+        c += n
+    spf = -(-(c * 3 // 2 + 2) // sec)
+    root_at = sec * (1 + 2 * spf)
+    data_at = root_at + sec
+    img = bytearray(data_at + (c - 2) * sec)
+    img[0:11] = b"\xeb\x3c\x90mkfs.fat"
+    struct.pack_into("<HBHBHHBH", img, 11, sec, 1, 1, 2, 16, len(img) // sec, 0xF8, spf)
+    struct.pack_into("<HH", img, 24, 32, 2)     # a disk geometry, as mkfs.vfat writes one
+    img[38] = 0x29
+    img[43:54] = (label or "NO NAME").ljust(11).encode()
+    img[54:62] = b"FAT12   "
+    img[510:512] = b"\x55\xaa"
+    fat = bytearray(spf * sec)
+    fat[0:3] = b"\xf8\xff\xff"
+    for n, v in chain.items():
+        i = n + n // 2
+        if n & 1:
+            fat[i] = fat[i] & 0x0F | v << 4 & 0xF0
+            fat[i + 1] = v >> 4 & 0xFF
+        else:
+            fat[i] = v & 0xFF
+            fat[i + 1] = fat[i + 1] & 0xF0 | v >> 8 & 0x0F
+    img[sec:sec + len(fat)] = fat
+    img[sec + len(fat):sec + 2 * len(fat)] = fat
+
+    def entry(name, attr, cluster=0, size=0):
+        base, _, ext = name.partition(".")
+        whole = attr == 0x08 or name in (".", "..")     # a label, and the dot entries
+        name11 = name.ljust(11) if whole else base.ljust(8) + ext.ljust(3)
+        return (name11.encode() + bytes([attr]) + bytes(14)
+                + struct.pack("<HI", cluster, size))
+
+    def under(parent):
+        return b"".join(
+            [entry(d.rsplit("/", 1)[-1], 0x10, first[d]) for d in dirs
+             if d.rpartition("/")[0] == parent]
+            + [entry(p.rsplit("/", 1)[-1], 0x20, first[p], len(data))
+               for p, data in files.items() if p.rpartition("/")[0] == parent])
+
+    def put(at, blob):
+        img[at:at + len(blob)] = blob
+    put(root_at, (entry(label, 0x08) if label else b"") + under(""))
+    for d in dirs:
+        put(data_at + (first[d] - 2) * sec,
+            entry(".", 0x10, first[d])
+            + entry("..", 0x10, first.get(d.rpartition("/")[0], 0)) + under(d))
+    for p, data in files.items():
+        put(data_at + (first[p] - 2) * sec, data)
+    return bytes(img)
+
+
+def pe_head(signed):
+    """The first KiB of a PE32+ image, as grub-mkstandalone writes one: MZ, e_lfanew,
+    "PE\\0\\0", and an optional header with sixteen data directories. The certificate
+    table, entry 4, is empty unless `signed`."""
+    import struct
+    b = bytearray(1024)
+    b[0:2] = b"MZ"
+    struct.pack_into("<I", b, 0x3C, 0x80)
+    b[0x80:0x84] = b"PE\0\0"
+    opt = 0x80 + 24
+    struct.pack_into("<H", b, opt, 0x20B)
+    struct.pack_into("<I", b, opt + 108, 16)
+    if signed:
+        struct.pack_into("<II", b, opt + 112 + 4 * 8, 0x5F0000, 0x2000)
+    return bytes(b)
+
+
+def test_boot_uefi_replaces_an_esp_it_built_and_refuses_any_other():
+    """An ESP the image came with is rebuilt if boot.uefi built it, refused if not (#49).
+
+    No incident is behind the refusals. They keep the rebuild from destroying an ESP someone
+    else made, which would otherwise go without a word: a loader signed out of band, as
+    boot.secureboot's refusal tells people to do, or loaders of their own. The accepted
+    shape is the real one, read back from an ESP boot.uefi built (2026-09-26): FAT12,
+    labelled SLAXEFI, EFI/BOOT/BOOTX64.EFI alone, a PE32+ with no certificate table.
+    """
+    import struct
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    try:
+        path = os.path.join(tmp, "efi.img")
+
+        def judge(img):
+            with open(path, "wb") as f:
+                f.write(img)
+            return apply.esp_not_ours(path) or ""
+
+        ours = {apply.ESP_LOADER: pe_head(signed=False)}
+        check("an ESP as boot.uefi builds it: replaced",
+              judge(fat12_image(apply.ESP_LABEL, ours)), "")
+        check("another label: refused, naming it",
+              "'EFISYS'" in judge(fat12_image("EFISYS", ours)), True)
+        check("an extra file: refused, naming it",
+              "EFI/BOOT/GRUBX64.EFI" in judge(fat12_image(
+                  apply.ESP_LABEL, {**ours, "EFI/BOOT/GRUBX64.EFI": b"grub"})), True)
+        check("a signed loader: refused, saying so",
+              "is signed" in judge(fat12_image(
+                  apply.ESP_LABEL, {apply.ESP_LOADER: pe_head(signed=True)})), True)
+        check("not FAT at all: refused", judge(bytes(4096)), "it is not a FAT12 image")
+        # 4085 clusters is FAT16 by FAT's own rule, and its table would misread as FAT12.
+        img = bytearray(fat12_image(apply.ESP_LABEL, ours))
+        spf = struct.unpack_from("<H", img, 22)[0]
+        total = 1 + 2 * spf + 1 + 4085
+        struct.pack_into("<H", img, 19, total)
+        img += bytes(total * 512 - len(img))
+        check("4085 clusters, past FAT12: refused", judge(bytes(img)),
+              "it is not a FAT12 image")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_boot_uefi_refuses_before_it_writes_anything():
+    """A refused ESP, or a build that fails partway, leaves the tree as it was (#49).
+
+    Measured 2026-09-26, before the ESP was judged: on an image that already had one,
+    boot.uefi rewrote boot/grub/grub.cfg and then failed at mkfs.vfat, so apply exited 1
+    with the tree changed and nothing journaled. The refusal now comes before any write,
+    and a dry run refuses too. No GRUB or mtools is needed to reach it: the tools are only
+    looked up first. And a build that fails, as mkfs.vfat did, fails before anything is
+    in the tree, because grub.cfg and the ESP go in last: stubbed here, since the gates
+    job has neither tool.
+    """
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    saved = apply.shutil.which
+    try:
+        work = os.path.join(tmp, "work")
+        cfg = os.path.join(work, "iso", "slax", "boot", "isolinux.cfg")
+        os.makedirs(os.path.dirname(cfg))
+        with open(cfg, "w") as f:
+            f.write("LABEL default\n  KERNEL /slax/boot/vmlinuz\n  APPEND vga=normal\n")
+        esp = os.path.join(work, "iso", "boot", "efi.img")
+        grub_cfg = os.path.join(work, "iso", "boot", "grub", "grub.cfg")
+        os.makedirs(os.path.dirname(esp))
+        signed = fat12_image(apply.ESP_LABEL, {apply.ESP_LOADER: pe_head(signed=True)})
+        with open(esp, "wb") as f:
+            f.write(signed)
+        apply.shutil.which = lambda t: "/usr/bin/" + t
+
+        def run(dry):
+            ctx = apply.Ctx(work, tmp, "uefi-bootable", dry=dry)
+            said = []
+            ctx.say = said.append
+            try:
+                apply.v_boot_uefi(ctx, {"verb": "boot.uefi"})
+            except RuntimeError as e:
+                return str(e), said
+            return "", said
+
+        for dry, mode in ((False, "a real run"), (True, "a dry run")):
+            refused, _ = run(dry)
+            check(f"{mode}, over a signed ESP: refused", "is signed" in refused, True)
+            check(f"...{mode} wrote no grub.cfg", os.path.exists(grub_cfg), False)
+            with open(esp, "rb") as f:
+                check(f"...{mode} left the ESP as it was", f.read() == signed, True)
+        # The ESP it did build goes through, so what was refused above was the ESP.
+        with open(esp, "wb") as f:
+            f.write(fat12_image(apply.ESP_LABEL, {apply.ESP_LOADER: pe_head(signed=False)}))
+        refused, said = run(dry=True)
+        check("a dry run over an ESP boot.uefi built: not refused", refused, "")
+        check("...and says it would replace it",
+              any("replacing the one the image came with" in s for s in said), True)
+
+        # GRUB builds, and mkfs.vfat fails.
+        with open(esp, "rb") as f:
+            ours = f.read()
+
+        def stub(cmd, **_kw):
+            if cmd[0] == "grub-mkstandalone":
+                with open(cmd[cmd.index("-o") + 1], "wb") as f:
+                    f.write(b"MZ")
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return subprocess.CompletedProcess(cmd, 1, "", f"{cmd[0]}: stubbed failure")
+        saved_run = apply.subprocess.run
+        apply.subprocess.run = stub
+        try:
+            refused, _ = run(dry=False)
+        finally:
+            apply.subprocess.run = saved_run
+        check("a build whose mkfs.vfat fails: an error",
+              "mkfs.vfat failed" in refused, True)
+        check("...that wrote no grub.cfg", os.path.exists(grub_cfg), False)
+        with open(esp, "rb") as f:
+            check("...and left the ESP it would have replaced", f.read() == ours, True)
+        check("...with nothing staged beside it", os.listdir(os.path.dirname(esp)),
+              ["efi.img"])
+    finally:
+        apply.shutil.which = saved
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_a_long_pack_hint_survives_the_round_trip():
     """ctx.hint writes <work>/.kitchen/pack.yaml and lib/hints.sh reads it back with sed.
     safe_dump folds a scalar at 80 columns onto a continuation line, and sed takes the
@@ -2808,6 +3020,8 @@ def main():
                    test_fetches_and_bundles_record_provenance,
                    test_recipe_relative_paths_go_through_ctx_local,
                    test_boot_payload_copies_a_local_file_and_records_it,
+                   test_boot_uefi_replaces_an_esp_it_built_and_refuses_any_other,
+                   test_boot_uefi_refuses_before_it_writes_anything,
                    test_a_long_pack_hint_survives_the_round_trip,
                    test_a_recipe_listed_twice_is_refused,
                    test_a_recipe_named_by_path_takes_its_vars,
