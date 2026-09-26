@@ -46,6 +46,11 @@ firmware rather than BIOS only.
 `kitchen pack` switches to the xorriso backend automatically when this recipe has run, because
 `genisoimage` cannot emit a hybrid image on its own.
 
+**Building on an image that is already hybrid** — another project's release, say — still needs this
+recipe. The MBR is written when an image is mastered and does not carry over, so without it the
+image has none. `kitchen pack` warns when a build on a hybrid image will not write one
+([LAYERING.md, step 6](../../LAYERING.md#what-a-consumer-does)).
+
 ## ⚠️ The trade-off: no persistence
 
 A `dd`'d image is a verbatim ISO9660 filesystem, which is **read-only**. So:

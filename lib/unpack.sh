@@ -60,6 +60,13 @@ kitchen_unpack() {
         die "unpack: $iso is not a Slax ISO (no slax/boot/isolinux.bin in it)"
     fi
 
+    # WHAT THE IMAGE BOOTS WITH: its BIOS and UEFI entries and a hybrid MBR, which were
+    # written when it was mastered and so are not in the tree. pack warns about any of them a
+    # build will not write again (LAYERING.md, step 6), and they are read by lib/isoparse.py,
+    # the reader the structure test uses. An image it cannot read records none of them, and
+    # that is not a failure: the tree is already here, and pack reads a missing one as unknown.
+    _boot=$(python3 "$REPO_ROOT/lib/isoparse.py" --boot "$iso") || _boot=""
+
     # Record provenance so pack/ diff/ probe can reason about where this came from.
     mkdir -p "$dest/.kitchen"
     {
@@ -70,6 +77,7 @@ kitchen_unpack() {
         # and the provenance sidecar carried the same wrong number into out/.
         echo "source_size: $(stat -L -c%s "$iso")"
         echo "unpacked_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        if [ -n "$_boot" ]; then printf '%s\n' "$_boot"; fi
     } > "$dest/.kitchen/origin.yaml"
 
     n=$(find "$tree" -type f | wc -l)

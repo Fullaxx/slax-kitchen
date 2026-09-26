@@ -109,8 +109,9 @@ and the journal with it — and apply the whole list again, `uefi-bootable` last
 are building on, say. `mkfs.vfat` refuses the `boot/efi.img` that image already has, and leaving the
 recipe out loses the UEFI entry, which is written when an image is mastered and does not carry
 over. Build on that project's BIOS image instead, as
-[LAYERING.md, step 6](../../LAYERING.md#what-a-consumer-does) says. An image that ships an ESP with
-no entry pointing at it fails `kitchen test --structure`.
+[LAYERING.md, step 6](../../LAYERING.md#what-a-consumer-does) says. `kitchen pack` warns when a
+build on a UEFI image will not write the entry, and an image that ships an ESP with no entry
+pointing at it fails `kitchen test --structure`.
 
 ## Verified
 

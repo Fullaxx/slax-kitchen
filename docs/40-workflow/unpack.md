@@ -34,11 +34,13 @@ work/
       modules/             the .sb bundles                  (6 or 7 files)
       changes/             empty on a stock ISO
   .kitchen/
-    origin.yaml            provenance: source path, sha256, size, timestamp
+    origin.yaml            provenance: source path, sha256, size, timestamp, boot entries
 ```
 
 `origin.yaml` is what lets `kitchen pack` and `kitchen diff` reason about where the tree came from,
-and what `kitchen probe` compares against `compat/`.
+and what `kitchen probe` compares against `compat/`. It also records what the image boots with — its
+BIOS and UEFI entries, and whether it has a hybrid MBR — because those are written when an image is
+mastered and are not in the tree: `kitchen pack` warns about each one a build will not write again.
 
 ## Starting over
 

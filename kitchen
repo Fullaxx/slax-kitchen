@@ -496,6 +496,7 @@ kitchen unpack <iso> [-o DIR]     explode a Slax ISO into a work tree
                        applied to it (<work>/.kitchen)
 
 Records provenance in <work>/.kitchen/origin.yaml, which `kitchen status` reads back.
+That includes the image's boot entries: `kitchen pack` warns when a build drops one.
 H
         ;;
       pack) cat <<'H'
@@ -513,6 +514,7 @@ kitchen pack [-s DIR] [-o FILE]   rebuild an ISO from a work tree
       --date STAMP     pin the image timestamps, YYYYMMDDhhmmsscc (xorriso only)
 
 Recipes record these as hints in <work>/.kitchen/pack.yaml; a flag given here wins.
+Warns when this image will not have a UEFI entry or hybrid MBR the unpacked one had.
 Debian status fragments are merged into 98-dpkg-db.sb at this point.
 H
         ;;

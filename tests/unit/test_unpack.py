@@ -22,6 +22,14 @@ those then showed only xorriso's FAILURE-or-worse lines, which hid what it said 
 without one, and pack judged its own run by a narrower rule than unpack's. Both now run
 xorriso through kitchen's xorriso_run, which these cases reach through unpack.
 
+And nothing recorded what the image booted with. Its UEFI entry and hybrid MBR are written
+when an image is mastered, so they are not in the tree, and a build on the image drops each
+one it does not write again (LAYERING.md, step 6). Measured 2026-09-25 at 21f4cbf, a build
+on a hybrid UEFI image that listed neither recipe lost both: the structure test failed the
+ESP left with no entry, and passed the missing MBR as "no isohybrid MBR (as expected)".
+unpack records them in origin.yaml now, as lib/isoparse.py reads them, and pack warns about
+each one a build drops, through lib/hints.sh's base_boot_dropped.
+
 xorriso is a stub whose `-extract / DIR` writes a one-file Slax tree, exits with $STUB_RC,
 with $STUB_EMPTY extracts nothing, and first prints $STUB_SAY: CI's gates job does not
 install the real one (tests/unit/test_diff.py).
@@ -30,12 +38,15 @@ Run directly: python3 tests/unit/test_unpack.py
 """
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import traceback
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+sys.path.insert(0, os.path.join(ROOT, "lib"))
+import isoparse  # noqa: E402
 
 FAILURES = []
 
@@ -60,6 +71,33 @@ exit 0
 # Everything .kitchen ever holds: origin.yaml from lib/unpack.sh, journal.yaml and pack.yaml
 # from lib/apply.py, provenance.json from lib/provenance.py.
 RECORD = ("origin.yaml", "journal.yaml", "provenance.json", "pack.yaml")
+
+# What `unpack` is given unless a test says otherwise: a file that is not an image at all.
+NOT_AN_IMAGE = b"stands in for an image\n"
+SECTOR = 2048
+
+
+def boot_image(*, efi, mbr):
+    """Just enough ISO for lib/isoparse.py, in the shape of test_tools_qemu.py's make_iso():
+    volume descriptors at 16 (primary), 17 (a boot record naming the catalog at 19) and 18
+    (terminator), and an El Torito catalog with a BIOS entry and, with `efi`, a UEFI
+    section. `mbr` signs the first sector as an MBR is signed, which is what makes it hybrid
+    to isoparse."""
+    img = bytearray(SECTOR * 20)
+    for n, kind in ((16, 1), (17, 0), (18, 255)):
+        img[n * SECTOR:n * SECTOR + 6] = bytes([kind]) + b"CD001"
+    struct.pack_into("<I", img, 16 * SECTOR + 80, 20)           # volume space, in sectors
+    struct.pack_into("<I", img, 17 * SECTOR + 71, 19)           # the catalog's sector
+    cat = 19 * SECTOR
+    img[cat], img[cat + 30], img[cat + 31] = 0x01, 0x55, 0xAA   # validation entry: x86
+    img[cat + 32] = 0x88                                        # BIOS entry, bootable
+    if efi:
+        img[cat + 64], img[cat + 65] = 0x91, 0xEF               # last section header: EFI
+        struct.pack_into("<H", img, cat + 66, 1)                # ...of one entry
+        img[cat + 96] = 0x88                                    # bootable
+    if mbr:
+        img[510:512] = b"\x55\xaa"
+    return bytes(img)
 
 
 def check(name, got, want):
@@ -91,9 +129,10 @@ def seed(dest, files):
             f.write("from the tree before\n")
 
 
-def unpack(tmp, *args, **stub_env):
-    """`sh kitchen unpack <a small file> ARGS`, with the stub xorriso first on PATH and
-    STUB_RC / STUB_EMPTY passed to it as given."""
+def unpack(tmp, *args, image=NOT_AN_IMAGE, **stub_env):
+    """`sh kitchen unpack <image> ARGS`, the image a small file that is not one unless a
+    test gives one, with the stub xorriso first on PATH and STUB_RC / STUB_EMPTY / STUB_SAY
+    passed to it as given."""
     stub = os.path.join(tmp, "stub")
     os.makedirs(stub, exist_ok=True)
     with open(os.path.join(stub, "xorriso"), "w") as f:
@@ -101,7 +140,7 @@ def unpack(tmp, *args, **stub_env):
     os.chmod(os.path.join(stub, "xorriso"), 0o755)
     iso = os.path.join(tmp, "base.iso")
     with open(iso, "wb") as f:
-        f.write(b"stands in for an image\n")
+        f.write(image)
     env = dict(os.environ, PATH=stub + os.pathsep + os.environ.get("PATH", ""), NO_COLOR="1",
                **stub_env)
     return subprocess.run(["sh", os.path.join(ROOT, "kitchen"), "unpack", iso] + list(args),
@@ -187,6 +226,74 @@ def test_a_file_that_is_not_an_iso_is_refused(tmp):
     check("...leaving no tree and no record", left_behind(dest), (False, False))
 
 
+@in_a_box
+def test_what_the_image_boots_with_is_recorded(tmp):
+    """origin.yaml records the image's BIOS and UEFI entries, and whether it is hybrid.
+
+    They are written when an image is mastered, so they are not in the tree, and a build on
+    the image drops each one it does not write again (LAYERING.md, step 6). Nothing recorded
+    them, so nothing could say which a build dropped: the MBR went in silence, as measured
+    at the top of this file.
+
+    The other two cases have no incident behind them; they keep the warning from being
+    wrong. A stock image records its BIOS entry alone, as all four stock ISOs did (measured
+    2026-09-25), or every build on one would be warned about a UEFI entry and an MBR it
+    never had. A file isoparse cannot read records nothing: read as an image with no boot
+    entries and no MBR, it would claim an image that booted with nothing.
+    """
+    dest = os.path.join(tmp, "work")
+    p = unpack(tmp, "-o", dest, image=boot_image(efi=True, mbr=True))
+    check("an image with BIOS and UEFI entries and an MBR: exit", p.returncode, 0)
+    origin = read(os.path.join(dest, ".kitchen", "origin.yaml"))
+    recorded = [ln for ln in origin.splitlines() if ln.startswith(("boot_", "hybrid_"))]
+    check("...all three recorded", recorded,
+          ["boot_bios: true", "boot_uefi: true", "hybrid_mbr: true"])
+    stock = os.path.join(tmp, "stock.iso")
+    with open(stock, "wb") as f:
+        f.write(boot_image(efi=False, mbr=False))
+    check("a stock image's shape: its BIOS entry alone", isoparse.boot_record(stock),
+          "boot_bios: true\nboot_uefi: false\nhybrid_mbr: false\n")
+    other = os.path.join(tmp, "not-an-image")
+    with open(other, "wb") as f:
+        f.write(NOT_AN_IMAGE)
+    check("a file that is not an image: nothing", isoparse.boot_record(other), "")
+
+
+@in_a_box
+def test_pack_names_each_boot_path_the_image_had_that_it_will_not_write(tmp):
+    """lib/hints.sh's base_boot_dropped, whose lines pack prints as warnings.
+
+    Given what pack will write, it names each boot path origin.yaml says the image had and
+    this build will not write again, and the recipe that writes it. The MBR is the half
+    nothing else catches: at 21f4cbf the structure test passed an image that had lost it
+    (the top of this file). An origin.yaml from before unpack recorded them names none:
+    nothing says its image had either.
+    """
+    origin = os.path.join(tmp, "origin.yaml")
+    with open(origin, "w") as f:
+        f.write("source_iso: /isos/base.iso\nboot_bios: true\nboot_uefi: true\n"
+                "hybrid_mbr: true\n")
+    older = os.path.join(tmp, "older.yaml")
+    with open(older, "w") as f:
+        f.write("source_iso: /isos/base.iso\n")
+    out = subprocess.run(
+        ["sh", "-c", '. "$1"; base_boot_dropped "$2" 0 0; echo --;'
+         ' base_boot_dropped "$2" 1 0; echo --; base_boot_dropped "$2" 1 1; echo --;'
+         ' base_boot_dropped "$3" 0 0',
+         "sh", os.path.join(ROOT, "lib", "hints.sh"), origin, older],
+        capture_output=True, text=True, timeout=30).stdout
+    neither, uefi_alone, both, older_origin = (out.split("--\n") + ["?"] * 4)[:4]
+
+    def named(lines):
+        return [[r for r in ("uefi-bootable", "isohybrid") if r in ln]
+                for ln in lines.splitlines()]
+    check("writing neither: a line for each, naming its recipe", named(neither),
+          [["uefi-bootable"], ["isohybrid"]])
+    check("writing the UEFI entry alone: the MBR", named(uefi_alone), [["isohybrid"]])
+    check("writing both: nothing", both, "")
+    check("an origin.yaml from before unpack recorded them: nothing", older_origin, "")
+
+
 def main():
     # One box for every fixture, removed afterwards: the convention of #25.
     box = tempfile.mkdtemp(prefix="test_unpack-")
@@ -198,7 +305,9 @@ def main():
                    test_a_record_without_its_tree_is_refused,
                    test_an_xorriso_that_dies_without_a_failure_line_is_a_failure,
                    test_a_mishap_is_a_failure_even_at_exit_0,
-                   test_a_file_that_is_not_an_iso_is_refused]:
+                   test_a_file_that_is_not_an_iso_is_refused,
+                   test_what_the_image_boots_with_is_recorded,
+                   test_pack_names_each_boot_path_the_image_had_that_it_will_not_write]:
             # One test crashing must not stop the rest: the count of failures is only honest
             # if every test ran.
             try:

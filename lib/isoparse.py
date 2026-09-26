@@ -284,9 +284,30 @@ class IsoReader:
         return sq
 
 
+def boot_record(path: str) -> str:
+    """What `kitchen unpack` records in origin.yaml of how the image boots, as flat YAML:
+    boot_bios and boot_uefi for its El Torito entries, hybrid_mbr for an MBR in its first
+    sector. These are written when an image is mastered, so they do not come with the tree,
+    and `kitchen pack` warns about any a build will not write again (LAYERING.md, step 6).
+
+    Empty for a file with no primary volume descriptor. info() reads one as an image with no
+    boot entries and no MBR, which recorded would be a claim about an image that is not one.
+    """
+    with IsoReader(path) as r:
+        info = r.info()
+    if not info.volume_space:                 # set only from a primary volume descriptor
+        return ""
+    have = {"boot_bios": "x86-BIOS" in info.platforms, "boot_uefi": info.uefi_bootable,
+            "hybrid_mbr": info.isohybrid_mbr}
+    return "".join(f"{k}: {str(v).lower()}\n" for k, v in have.items())
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) == 3 and argv[1] == "--boot":
+        print(boot_record(argv[2]), end="")
+        return 0
     if len(argv) < 2:
-        print(f"usage: {argv[0]} <file.iso>", file=sys.stderr)
+        print(f"usage: {argv[0]} [--boot] <file.iso>", file=sys.stderr)
         return 2
     with IsoReader(argv[1]) as r:
         info = r.info()

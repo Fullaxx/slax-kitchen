@@ -113,6 +113,14 @@ def status(work: str, verbose: bool = False) -> int:
         if hasattr(when, "strftime"):
             when = when.strftime("%Y-%m-%dT%H:%M:%SZ")
         print(f"             unpacked {when}" + (f", {_human(sz)}" if sz else ""))
+        # What the image boots with, as unpack read it; pack warns about any of it a build
+        # will not write again. A tree unpacked before unpack recorded it shows no line,
+        # rather than a "none" nobody measured.
+        if "boot_bios" in origin:
+            boot = ", ".join(w for k, w in (("boot_bios", "BIOS"), ("boot_uefi", "UEFI"))
+                             if origin.get(k)) or "none"
+            print(f"             boot entries {boot}"
+                  + ("; hybrid MBR" if origin.get("hybrid_mbr") else ""))
     else:
         print(f"  origin     {Y}unknown{O} -- no .kitchen/origin.yaml, so this tree was "
               f"not made by `kitchen unpack`")

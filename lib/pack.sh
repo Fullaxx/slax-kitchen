@@ -133,6 +133,16 @@ print(status.start_over(sys.argv[2]))' "$REPO_ROOT/lib" "$_work")
         _sums=$(pack_hint "$_hints" checksums)
     fi
 
+    # A BOOT PATH THE BASE HAD IS GONE UNLESS THIS BUILD WRITES IT AGAIN: a UEFI entry and a
+    # hybrid MBR are written when an image is mastered, so they are not in the tree
+    # (LAYERING.md, step 6). unpack recorded which of them the image had. A warning and not a
+    # refusal, because dropping one can be meant. The structure test fails a dropped UEFI
+    # entry by itself, from the boot/efi.img left behind with nothing pointing at it; a
+    # dropped hybrid MBR leaves nothing behind, and was dropped in silence.
+    base_boot_dropped "$_work/.kitchen/origin.yaml" "$uefi" "$hybrid" | while IFS= read -r _l; do
+        printf '  %swarn%s %s\n' "$Y" "$O" "$_l"
+    done
+
     if [ -z "$backend" ]; then
         if [ "$uefi" = 1 ] || [ "$hybrid" = 1 ]; then backend=xorriso; else backend=genisoimage; fi
     fi

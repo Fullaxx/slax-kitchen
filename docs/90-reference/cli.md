@@ -125,7 +125,11 @@ here regardless. See [the boot host](../60-testing/boot-host.md).
 
 Explodes an ISO into `DIR/iso` (default `work/`) using xorriso's osirrox mode, which preserves Rock
 Ridge names and permission bits. Writes `DIR/.kitchen/origin.yaml` with the source path, sha256 and
-size — that provenance is what `pack` uses to name its output.
+size — that provenance is what `pack` uses to name its output — and what the image boots with: its
+BIOS and UEFI El Torito entries, and whether it has a hybrid MBR, as `lib/isoparse.py` reads them.
+Those are written when an image is mastered, so they are not in the tree, and
+[`pack`](#pack--o-filedir) warns about each one a build will not write again. An image `isoparse`
+cannot read records none of them, and is unpacked all the same.
 
 An extraction that failed is refused, and leaves no tree and no record behind: a non-zero exit from
 xorriso, a line at `SORRY` or above (the rule `diff` uses), or no `slax/boot/isolinux.bin` in the
@@ -239,6 +243,11 @@ See [repack-iso.md](../40-workflow/repack-iso.md) for why there are two backends
 backend is judged the way [`unpack`](#unpack-iso--o-dir) judges an extraction — a non-zero exit,
 or a line at `SORRY` or above, `MISHAP` included — and on failure `pack` shows what xorriso said.
 
+`pack` warns when the image it writes will not have a UEFI entry or a hybrid MBR that the unpacked
+image had, as `unpack` recorded it, and names the recipe that writes it: they do not come with the
+tree ([LAYERING.md](../../LAYERING.md#what-a-consumer-does), step 6). A warning, not a refusal,
+because a build may mean to drop one.
+
 **`pack` writes `<iso>.provenance.json` beside the ISO**: what each applied recipe fetched and built
 — URLs and sha256s, the package versions apt resolved and each `.deb`'s sha256, the build host's
 GRUB and the MBR `pack` copied from it, a build claim for a compiled binary — plus the backend, the
@@ -300,8 +309,8 @@ repository that holds the profile, so a project that vendors the engine names an
 tree. Building one project on another's released image this way is
 [LAYERING.md](../../LAYERING.md). What was written when that image was mastered does not come with
 it — its volume id, a UEFI boot entry, a hybrid MBR. `kitchen pack` writes those afresh, from this
-build's recipes or its own flags ([LAYERING.md](../../LAYERING.md#what-a-consumer-does), steps 5
-and 6).
+build's recipes or its own flags, and warns about a UEFI entry or hybrid MBR the image had that this
+build will not write ([LAYERING.md](../../LAYERING.md#what-a-consumer-does), steps 5 and 6).
 
 **`--base` is not that.** It takes a *target name*, checked against `compat/sources.yaml`, so
 `--base /path/to.iso` is refused naming the four that exist. It selects which known release to
@@ -323,6 +332,7 @@ $ kitchen status work
 work tree  /home/you/slax-kitchen/work
   origin     slax-64bit-debian-12.2.0.iso
              unpacked 2026-09-14T21:28:55Z, 415.7 MiB
+             boot entries BIOS
 
   applied    4 recipes, in order
     1. branding  2026-09-14T21:28:56Z
@@ -349,6 +359,9 @@ work tree  /home/you/slax-kitchen/work
 this command existed** — and a record nobody reads is not provenance, it is a file.
 
 `-v` adds the source ISO's full path and sha256.
+
+`boot entries` is what the image boots with, as `unpack` recorded it: its BIOS and UEFI entries, and
+`; hybrid MBR` when it has one. A tree unpacked before `unpack` recorded them has no such line.
 
 A `provenance` line says how much the recipes recorded — steps, downloads, package versions — or that
 a tree was applied before provenance existed, so "fetched nothing" and "recorded nothing" are not

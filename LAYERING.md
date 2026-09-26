@@ -104,6 +104,8 @@ test: [structure]
    already has one it fails: `mkfs.vfat` will not overwrite it. So build on the base's BIOS image
    and list `uefi-bootable` last, as the example does. Built on a UEFI image without it, the image
    ships the base's EFI partition with no entry pointing at it, and the structure test fails it.
+   `kitchen unpack` records which of the two the base image had, and `kitchen pack` warns about
+   each one this build will not write. A dropped MBR leaves nothing behind for a test to find.
 7. **Build from the project's root:** `vendor/slax-kitchen/kitchen build profiles/myproduct.yaml`.
    `--keep` leaves the work tree for checks of the project's own.
 
@@ -184,9 +186,6 @@ Offered as follow-ups rather than decided:
 - publishing a consumer's image: `kitchen sources` taking a base release's own records;
 - a record inside the image of which recipes built it, so a consumer's `apply` could refuse to
   apply one again;
-- `kitchen unpack` recording which boot entries the base image had, and whether it was hybrid, so
-  a build could say which of them it dropped. Today the structure test catches only a dropped UEFI
-  entry, from the `boot/efi.img` it leaves behind;
 - engine gates that run over a project's own tree, so no project copies them;
 - vars for `iso-identity`'s application id and preparer, and for what `boot-cmdline` appends.
   slax-wine writes its own identity recipe because those are fixed.
