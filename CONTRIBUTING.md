@@ -422,10 +422,13 @@ A recipe we can take needs:
   removes; list it first and the rest compose in any order
 - **matrix-verified on all four targets**, or a `compat:` block that explains the skip
 - **where the source is**, for anything it downloads: `upstream_source:` on the step or the apt
-  repository, `declares:` for anything a `bundle.script` compiles, and `redistribution: {allowed:
-  false, why: …}` if an image containing it must not be published — see
+  repository, a `KITCHEN-FETCHED` line for each file a `bundle.script` downloads into the image,
+  `declares:` for anything a `bundle.script` compiles, and `redistribution: {allowed: false, why:
+  …}` if an image containing it must not be published — see
   [saying where the source is](docs/90-reference/verbs.md#saying-where-the-source-is). The matrix
-  runs `kitchen sources` on every image it builds, so a file nothing accounts for fails there.
+  runs `kitchen sources` on every image it builds, so a file nothing accounts for fails there. A
+  download a script does not report is not caught that way unless it is ELF: the script's bundle is
+  `ours` either way.
 - comments that say **why**, and record what you measured
 
 That last one is the strongest convention in the repository. Read any recipe in

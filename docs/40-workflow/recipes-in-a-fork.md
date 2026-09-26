@@ -108,6 +108,10 @@ A recipe may have a directory of payload beside it — `enable-ssh.debian.files/
 `bundle-from-dir.files/`. `src:` resolves relative to the recipe's own directory, so these travel
 with the recipe wherever it lives. Copy both, or neither.
 
+`kitchen sources` checks each file copied in from there against the recorded commit, so a sidecar
+directory holds what you commit. A file you download at build time does not go there: see
+[a file the build downloads](../90-reference/verbs.md#a-file-the-build-downloads).
+
 ---
 
 ## Bundle numbers

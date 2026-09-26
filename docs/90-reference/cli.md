@@ -507,11 +507,14 @@ a download whose recipe names no `upstream_source`.
 
 **`ours` has to be true.** Whatever a recipe copies in with a local `src:`, and the recipe file
 itself, is recorded with its content digest. `sources` then asks git whether the recorded commit
-holds exactly that content, so an uncommitted, untracked or edited input is unresolved. So is an
-input outside both the kitchen and project checkouts, unless it is a file a build-host package owns:
-`locale-timezone-keyboard` copies the host's tzfile, and it points at the host's `tzdata` source the
-way the isohybrid MBR does. So is compiled code copied in that way, committed or not, because
-nothing records its source.
+holds exactly that content, so an uncommitted, untracked, gitignored or edited input is unresolved.
+So is an input outside both the kitchen and project checkouts, unless it is a file a build-host
+package owns: `locale-timezone-keyboard` copies the host's tzfile, and it points at the host's
+`tzdata` source the way the isohybrid MBR does. So is compiled code copied in that way, committed or
+not, because nothing records its source. `--allow-dirty` waives only the first of these: an input
+the commit does not hold is then classed as if it did, so a gitignored installer that `bundle.files`
+copied in counts as `ours`. A file the build downloads has a route of its own:
+[a file the build downloads](verbs.md#a-file-the-build-downloads).
 
 Exit status: **0** when everything is classified, **1** when anything is unresolved, **2** when the
 image has no provenance sidecar (it was packed by an older kitchen, or by something else), or when
@@ -527,7 +530,7 @@ lists a file it cannot read as an ISO as `/` alone and exits 0. So an unreadable
 | `--markdown F` | the same for people, with the firmware statement and the upstream source list |
 | `--fetch DIR` | gather source: the kitchen tree at the recorded commit **with its submodules**, the tree of the project that vendors it (found as the git superproject, or named by `PROJECT_ROOT`), and the source of everything `built` |
 | `--provenance F` | read the sidecar from somewhere other than `<iso>.provenance.json` |
-| `--allow-dirty` | accept an image built from a tree with uncommitted changes (the recipe matrix builds from one) |
+| `--allow-dirty` | accept uncommitted work: an image built from a dirty kitchen tree, and recipe inputs the recorded commit does not hold, which are then classed as if it did (**`ours` has to be true**, above). The recipe matrix passes it, because its question is attribution; `ci/release-assets.sh` never does |
 | `--strict` | a download whose recipe names no `upstream_source` is unresolved instead of a warning |
 
 **Offline unless `--fetch`.** `kitchen build` never runs it; the recipe matrix runs it on every image

@@ -33,8 +33,11 @@ is_forbidden_ext() {
         # Windows payloads, which had NO extension rule at all -- so one under 2 MiB walked
         # straight through, and KITCHEN_MAX_FILE_BYTES could raise that bar from outside the
         # repo. The documented pattern is to FETCH a payload at build time and never commit
-        # it: bundle.fromTarball and bundle.files exist for that, and tor-browser.yaml pulls
-        # 138 MB rather than vendoring a byte. This list is what stops the shortcut. Issue #19.
+        # it: bundle.fromTarball for an archive -- tor-browser.yaml pulls 138 MB rather than
+        # vendoring a byte -- and a bundle.script that prints KITCHEN-FETCHED for a single
+        # file (verbs.md, "A file the build downloads"). bundle.files fetches nothing, and
+        # `kitchen sources` refuses a copied-in file the commit does not hold. This list is
+        # what stops the shortcut. Issue #19.
         *.exe|*.dll|*.msi|*.sys|*.cab)                                            return 0 ;;
     esac
     return 1

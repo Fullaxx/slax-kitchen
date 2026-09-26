@@ -75,6 +75,48 @@ what they take in is a download or a build output, described by `upstream_source
 or a build claim. `boot.payload` takes either, and is not an exception — a URL is described by
 `upstream_source`, and a local file is recorded like any other file copied in from a checkout.
 
+### A file the build downloads
+
+A file the build downloads goes through a verb that records the download:
+[`bundle.fromTarball`](#bundlefromtarball-), given the tarball's URL, for a tarball, and
+[`bundle.script`](#bundlescript--chroot) for anything else — an installer, a font, a data file. The
+script downloads the file, checks it against a sha256 the recipe pins, and prints a
+`KITCHEN-FETCHED` line. `kitchen sources` then lists the file with the step's `upstream_source`,
+in a bundle classed `ours`:
+
+```yaml
+- verb: bundle.script
+  bundle: 30-installer
+  network: true
+  upstream_source: https://example.org/tool/source/
+  script: |
+    set -e
+    url=https://example.org/tool/releases/tool-1.0-setup.exe
+    want="…"    # the file's sha256, pinned when the recipe is written
+    mkdir -p /opt/tool
+    wget -nv -O /opt/tool/setup.exe "$url"
+    got=$(sha256sum /opt/tool/setup.exe | cut -d' ' -f1)
+    [ "$got" = "$want" ] || { echo "sha256 mismatch: $got" >&2; exit 1; }
+    echo "KITCHEN-FETCHED $got opt/tool/setup.exe $url"
+```
+
+The engine records the line as the script prints it, and checks it against nothing: a line naming
+the wrong sha256 passes `kitchen sources --strict`. The pin is the script's own check, which is why a
+mismatch has to fail the step. The route costs what `bundle.script` costs: `privilege: chroot`,
+network inside the chroot, and a downloader in the image. Stock Slax has `wget` on all four
+targets. On Slackware it verifies no TLS certificate until `/etc/ssl/cert.pem` exists, which
+`fix-slackware-bugs` writes ([issue 13](../30-inventory/known-upstream-bugs.md)).
+
+The obvious shortcut does not get through: a file staged where git ignores it and copied in by
+`bundle.files` is an input the recorded commit does not hold, so it is unresolved.
+`kitchen sources --allow-dirty` accepts it, and `ci/release-assets.sh` never passes that flag.
+Committing the file instead is what `00-no-binaries` exists to refuse, for a Windows payload or a
+large file.
+
+A prebuilt ELF binary that no package ships reaches a bundle accounted for only inside a tarball
+today. One that a `bundle.script` leaves behind is unresolved unless `declares:` names it, and
+`declares:` is for what the script compiled ([#52](https://github.com/Fullaxx/slax-kitchen/issues/52)).
+
 ---
 
 ## Bundle
@@ -310,8 +352,9 @@ KITCHEN-FETCHED <sha256> <path in the image> <url>
 ```
 
 is recorded in the image's provenance and left out of the output shown. `firmware-refresh` prints one
-per linux-firmware file. ELF files the step leaves behind that no package database owns are recorded
-too, with their sha256.
+per linux-firmware file, and [a file the build downloads](#a-file-the-build-downloads) shows the
+shape for one. ELF files the step leaves behind that no package database owns are recorded too,
+with their sha256.
 
 `upstream_source:` says where what the script fetched is published, and `declares:` names what it
 compiled; see [saying where the source is](#saying-where-the-source-is). A package the script

@@ -33,10 +33,10 @@
 # In the reference container apt installs python3-pyflakes, which on ubuntu:24.04 ships
 # the MODULE ONLY -- the binary is a separate package, pyflakes3 -- so doctor reported
 # `MISS pyflakes (apt-get install python3-pyflakes)` about a package that was already
-# installed, and both container jobs failed. kitchen:346 already stated the rule for
-# python3-yaml and python3-jsonschema: "Import them, the same way lib/validate.py does,
-# rather than asking dpkg." `python3 -m pyflakes` is the same answer for the same reason,
-# and it works whether the tool arrived from apt or from a venv.
+# installed, and both container jobs failed. doctor_toolchain in kitchen already stated
+# the rule for python3-yaml and python3-jsonschema: "Import them, the same way
+# lib/validate.py does, rather than asking dpkg." `python3 -m pyflakes` is the same answer
+# for the same reason, and it works whether the tool arrived from apt or from a venv.
 . "$(dirname "$0")/../lib.sh"
 
 python3 -c "import pyflakes" 2>/dev/null \

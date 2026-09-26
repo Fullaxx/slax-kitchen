@@ -52,16 +52,19 @@ own, but it cannot change the vars of the base's recipes. That is a change to th
 
 ## What a base project owes the projects built on it
 
-slax-wine is the first, and the examples are from its tree at
-[`7535d6c`](https://github.com/Fullaxx/slax-wine/tree/7535d6c).
+slax-wine is the first. It answers this table row by row in
+[Building on slax-wine](https://github.com/Fullaxx/slax-wine/blob/11698ad/docs/building-on-slax-wine.md),
+which says where each answer was measured. The examples below are from its tree at
+[`11698ad`](https://github.com/Fullaxx/slax-wine/tree/11698ad). That page is the one slax-wine keeps
+current, and each row links the part of it that answers the row.
 
 | | |
 |---|---|
-| **Versioned images with a sha256, and the engine commit that built them** | A consumer pins an image, not a commit, and pins the same engine unless it has a reason to differ: `kitchen pack` records it as `kitchen.commit` in `<image>.provenance.json`, and slax-wine's changelog names its pin. Until the base publishes an image, a consumer pins a local build, and only that machine has those bytes: [images are not byte-reproducible](docs/40-workflow/reproducibility.md). slax-wine's 1.0.0 was unreleased on 2026-09-25. |
-| **A release file in the image** | So a build, and a person, can read which base they have. slax-wine writes `/etc/slax-wine-release`: `NAME`, `VERSION`, `BASE_ISO`, `BASE_SHA256`, `WINE` and `HOME_URL`. |
-| **Its bundle numbers, split into platform and applications** | A consumer keeps the platform and replaces the applications. slax-wine uses `20`–`29` for its platform and `30`–`89` for applications ([ARCHITECTURE.md](https://github.com/Fullaxx/slax-wine/blob/7535d6c/docs/ARCHITECTURE.md)), and calls `30-notepadpp32` "the layer a games variant replaces" ([notepadpp32.md](https://github.com/Fullaxx/slax-wine/blob/7535d6c/docs/50-cookbook/notepadpp32.md)). |
-| **What it applied, per image** | A consumer must not apply those recipes again, and the engine cannot warn it: the journal that records what ran lives in the base's work tree, not in the image. Every slax-wine image carries its boot-menu edit. What is written when an image is mastered is not on that list, because it does not carry over: identity, the UEFI boot entry and a hybrid MBR. Nor is `uefi-bootable`, though slax-wine's `-uefi` images carry it: a consumer lists it again, and it rebuilds the ESP the image came with. A consumer writes its own (steps 5 and 6 below). |
-| **Platform recipes that carry only what every consumer needs** | A consumer inherits every file in the base image. slax-wine's `21-wine-desktop` also carries two product decisions, its release file and a mask for the browser its own profiles remove ([slax-wine#2](https://github.com/Fullaxx/slax-wine/issues/2)). Which project owns them is slax-wine's call. |
+| **Versioned images with a sha256, and the engine commit that built them** | A consumer pins an image, not a commit, and pins the same engine unless it has a reason to differ: `kitchen pack` records it as `kitchen.commit` in `<image>.provenance.json`, and slax-wine's changelog names its pin. Until the base publishes an image, a consumer pins a local build, and only that machine has those bytes: [images are not byte-reproducible](docs/40-workflow/reproducibility.md). slax-wine's 1.0.0 was unreleased on 2026-09-25. slax-wine's answer: [Pinning it](https://github.com/Fullaxx/slax-wine/blob/11698ad/docs/building-on-slax-wine.md#pinning-it). |
+| **A release file in the image** | So a build, and a person, can read which base they have. slax-wine writes `/etc/slax-wine-release`: `NAME`, `VERSION`, `BASE_ISO`, `BASE_SHA256`, `WINE` and `HOME_URL`. slax-wine's answer: [The release file, and the browser mask](https://github.com/Fullaxx/slax-wine/blob/11698ad/docs/building-on-slax-wine.md#the-release-file-and-the-browser-mask). |
+| **Its bundle numbers, split into platform and applications** | A consumer keeps the platform and replaces the applications. slax-wine uses `20`–`29` for its platform and `30`–`89` for applications ([ARCHITECTURE.md](https://github.com/Fullaxx/slax-wine/blob/11698ad/docs/ARCHITECTURE.md)), and calls `30-notepadpp32` "the layer a games variant replaces" ([notepadpp32.md](https://github.com/Fullaxx/slax-wine/blob/11698ad/docs/50-cookbook/notepadpp32.md)). slax-wine's answer: [Bundle numbers](https://github.com/Fullaxx/slax-wine/blob/11698ad/docs/building-on-slax-wine.md#bundle-numbers). |
+| **What it applied, per image** | A consumer must not apply those recipes again, and the engine cannot warn it: the journal that records what ran lives in the base's work tree, not in the image. Every slax-wine image carries its boot-menu edit. What is written when an image is mastered is not on that list, because it does not carry over: identity, the UEFI boot entry and a hybrid MBR. Nor is `uefi-bootable`, though slax-wine's `-uefi` images carry it: a consumer lists it again, and it rebuilds the ESP the image came with. A consumer writes its own (steps 5 and 6 below). slax-wine's answer: [What each image already applied](https://github.com/Fullaxx/slax-wine/blob/11698ad/docs/building-on-slax-wine.md#what-each-image-already-applied). |
+| **Platform recipes that carry only what every consumer needs** | A consumer inherits every file in the base image. slax-wine's `21-wine-desktop` also carries its release file and a mask for the browser its own profiles remove, and [both stay there](https://github.com/Fullaxx/slax-wine/blob/11698ad/docs/building-on-slax-wine.md#the-release-file-and-the-browser-mask): slax-wine's answer to [slax-wine#2](https://github.com/Fullaxx/slax-wine/issues/2). |
 
 ## What a consumer does
 
@@ -134,7 +137,7 @@ does. A gate fix then reaches a project at its next engine update.
 
 `kitchen build` has passed the volume id the recipes asked for to its structure test since
 `6419fa4` (2026-09-17). #42 and slax-wine's
-[D-13](https://github.com/Fullaxx/slax-wine/blob/7535d6c/docs/DECISIONS.md) say it never did; the
+[D-13](https://github.com/Fullaxx/slax-wine/blob/7535d6c/docs/DECISIONS.md) said it never did; the
 build measured above asserted the consumer's own volume id. A project needs a driver of its own
 only for checks the engine cannot know about — slax-wine's exact module list, or its release file
 read back out of the bundle — and that driver should call `kitchen` commands (`fetch`, `unpack`,

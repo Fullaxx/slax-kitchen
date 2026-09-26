@@ -2454,7 +2454,7 @@ def test_both_delta_lines_report_what_the_step_removed():
     below and still there at boot. bundle.packages says so; bundle.script computed the
     identical list and printed a delta line without it -- and bundle.script is the verb
     for vendor installers and scripts that rewrite a conf.d, which is the case
-    lib/apply.py:3342 calls occasionally not harmless.
+    v_bundle_packages' delta comment in lib/apply.py calls occasionally not harmless.
 
     SOURCE, not behaviour: v_bundle_script needs a chroot of stacked bundles, so no unit
     test can drive it. What can be pinned is that neither verb computes the value without

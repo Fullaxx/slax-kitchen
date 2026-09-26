@@ -27,9 +27,13 @@ alongside the kitchen's.
 | Step | Refuses |
 |---|---|
 | `kitchen build` | nothing new; `kitchen pack` writes `<iso>.provenance.json` beside the image |
-| [`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict) | a file whose sha256 matches neither the stock image nor a recorded step; an image built from a dirty checkout; a file a recipe copied in that its commit does not hold |
-| `ci/release-assets.sh` | everything `sources` refuses; a kitchen or project checkout with uncommitted changes; an asset name GitHub would rename; a non-empty output directory |
+| [`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict) | a file whose sha256 matches neither the stock image nor a recorded step; an image built from a dirty kitchen checkout; a file a recipe copied in that its commit does not hold |
+| `ci/release-assets.sh` | everything `sources` refuses, run without `--allow-dirty`; a kitchen or project checkout with uncommitted changes; an asset name GitHub would rename; a non-empty output directory |
 | `ci/release-verify.py` | see below |
+
+`release-assets.sh` never passes `kitchen sources --allow-dirty`, so no set it assembles rests on
+that flag. Its own check is `git status`, which does not list gitignored files, so an installer
+staged where git ignores it gets past that check and is refused by `sources`.
 
 `release-verify.py` exits 1, naming every problem, when:
 
@@ -65,10 +69,11 @@ image it builds and must not publish; see [below](#the-image-ci-builds-and-never
 | `release-index.json` | every asset's role, sha256 and size, and what it is the source of |
 
 Source is attached for what the build compiled, built or modified. Everything included as its
-upstream published it — Slax's own parts, Debian packages, a vendor's tarball — is listed in
-`SOURCES.md` with the place that upstream publishes its source: linux-live and the repositories it
-names, `snapshot.debian.org` for each Debian source version, the recipe's `upstream_source` for a
-download.
+upstream published it — Slax's own parts, Debian packages, a vendor's tarball, a single file a
+script downloaded — is listed in `SOURCES.md` with the place that upstream publishes its source:
+linux-live and the repositories it names, `snapshot.debian.org` for each Debian source version, the
+recipe's `upstream_source` for a download. Where a download goes in a recipe:
+[a file the build downloads](../90-reference/verbs.md#a-file-the-build-downloads).
 
 **What weakens a pointer is said, not smoothed over.** A download with no `upstream_source`, and one
 the recipe pinned no sha256 for — what it fetched is what that server served that day — are
