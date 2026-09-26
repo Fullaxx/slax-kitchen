@@ -3675,9 +3675,12 @@ def apply_recipe(path: str, work: str, dry: bool = False,
     # The journal already knows this recipe ran. Saying so beats letting the user
     # discover it from whichever verb happens to collide first -- `bundle.files` used to
     # report "slax/modules/07-branding.sb already exists. Pick another number", which is
-    # true, unhelpful, and points at the wrong problem.
+    # true, unhelpful, and points at the wrong problem. A dry run is refused too, because
+    # the real run would be: skipping this under -n had it promise what the real run
+    # refuses -- "would build an ESP" for a uefi-bootable the tree already had (measured
+    # 2026-09-25).
     prior = _journal_entry(work, name)
-    if prior and not dry:
+    if prior:
         import status
         raise RuntimeError(
             f"{name} was already applied to this tree at {prior.get('at', 'an earlier time')}.\n"

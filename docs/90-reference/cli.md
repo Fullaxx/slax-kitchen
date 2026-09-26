@@ -216,7 +216,9 @@ error: the profile is for arch 64bit, but this work tree is 32bit
   unpack the base the profile names, or pass --facts to override
 ```
 
-`-n` / `--dry-run` reports what each step would do without touching anything.
+`-n` / `--dry-run` reports what each step would do without touching anything. A recipe the journal
+says already ran is refused under `-n` too, as the real run refuses it; `-n` used to report what
+that recipe would build.
 
 **Order matters for `uefi-bootable`** — it builds the GRUB menu by parsing `isolinux.cfg`, so list it
 after anything that adds a menu entry.

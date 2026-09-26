@@ -349,6 +349,55 @@ def test_say_does_not_journal():
     apply.shutil.rmtree(work, ignore_errors=True)
 
 
+def test_a_dry_run_refuses_what_the_journal_says_already_ran():
+    """A dry run promised what the real run refuses.
+
+    apply_recipe() consulted the journal only when it was not a dry run, so `apply -n` of a
+    recipe the tree had already had said what it would build, and the real run then
+    refused it. Measured 2026-09-25: `kitchen apply -n uefi-bootable` on a tree where it
+    had run said "would build an ESP and mirror 3 menu entries into GRUB", and `kitchen
+    apply uefi-bootable` said it was already applied. The dry run refuses it now, as the
+    real run does.
+    """
+    import contextlib
+    import io
+    import tempfile
+    import textwrap
+    d = tempfile.mkdtemp(prefix="kitchen-dry.")
+    try:
+        recipe = os.path.join(d, "dry-demo.yaml")
+        with open(recipe, "w") as f:
+            f.write(textwrap.dedent("""\
+                apiVersion: slax-kitchen/v1
+                kind: Recipe
+                metadata:
+                  name: dry-demo
+                  summary: A throwaway recipe the journal says already ran
+                compat: {flavours: [debian], arch: [64bit], privilege: none}
+                steps:
+                  - verb: bundle.files
+                    bundle: 40-dry-demo
+                    files:
+                      - {dest: /etc/dry-demo, mode: "0644", content: "x"}
+                """))
+        work = os.path.join(d, "work")
+        os.makedirs(os.path.join(work, "iso"))
+        os.makedirs(os.path.join(work, ".kitchen"))
+        with open(os.path.join(work, ".kitchen", "journal.yaml"), "w") as f:
+            f.write("applied:\n- recipe: dry-demo\n  at: '2026-09-25T00:00:00Z'\n"
+                    "  artifacts: [slax/modules/40-dry-demo.sb]\n")
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                apply.apply_recipe(recipe, work, dry=True,
+                                   facts={"flavour": "debian", "arch": "64bit"})
+            check("a dry run of a recipe the journal says ran is refused", "ran", "refused")
+        except RuntimeError as e:
+            check("...as the real run is", "dry-demo was already applied to this tree" in str(e),
+                  True)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_apt_source_line():
     """A third-party source must not leave the chroot unless the recipe says so.
 
@@ -2744,7 +2793,9 @@ def main():
                    test_extract_member, test_preflight, test_under_containment,
                    test_wont_do_verbs, test_parse_lsdl,
                    test_initramfs_busybox_registered,
-                   test_say_does_not_journal, test_apt_source_line,
+                   test_say_does_not_journal,
+                   test_a_dry_run_refuses_what_the_journal_says_already_ran,
+                   test_apt_source_line,
                    test_network_declaration, test_profile_recipe_forms,
                    test_unknown_override_is_rejected,
                    test_recipe_search_path,
