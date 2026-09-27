@@ -2299,10 +2299,55 @@ def _render_entry(e: dict) -> str:
 
 
 # The keys of a menu entry that name a FILE, as _render_entry emits them. `append` is a
-# kernel command line, not a path, and is deliberately absent: serial-console carries
-# `initrd=/slax/boot/initrfs.img` inside its append string, and parsing that back out
-# would be guessing at a grammar this project does not own.
+# kernel command line, not a path, and is deliberately absent: an APPEND carries
+# `initrd=/slax/boot/initrfs.img` inside it -- every stock entry does, and so does one
+# copied from them with `from:` -- and parsing that back out would be guessing at a
+# grammar this project does not own.
 MENU_PAYLOAD_KEYS = ("kernel", "linux", "com32", "initrd")
+
+
+def _menu_entry_from(text: str, add: dict, name: str) -> tuple[dict, list[str]]:
+    """`add`, with the KERNEL/LINUX, COM32, INITRD and APPEND of LABEL add['from'] in `text`.
+
+    WHY THIS EXISTS. serial-console wrote stock Slax's command line out in full, so its
+    entry carried none of the edits made before it -- boot-cmdline's, or those a base
+    image's own build made -- and kept `automount`, the flag known-upstream-bugs.md's issue
+    12 says cannot be negated (#50). An entry copied from the one the menu already boots
+    keeps whatever was done to it.
+
+    The APPEND is the source's with every parameter that `append:` names dropped by key --
+    the text before `=` -- and then `append:` added: so two `console=` tokens replace the
+    source's `console=` rather than joining it. MENU lines are not copied, and LINUX stays
+    LINUX. Returns the entry and the source tokens that `append:` replaced with something
+    else. Raises when this file has no such LABEL, or the LABEL boots nothing.
+    """
+    src = add["from"]
+    m = re.search(rf"(?ms)^LABEL[ \t]+{re.escape(src)}[ \t]*$(.*?)(?=^LABEL\s|\Z)", text)
+    if not m:
+        have = re.findall(r"(?m)^LABEL[ \t]+(\S+)", text)
+        raise RuntimeError(
+            f"boot.menu: add.from names LABEL {src}, and {name} has none (it has: "
+            f"{', '.join(have) or 'no LABEL at all'}).\n"
+            f"  The entry is copied from that LABEL in every target file, so each one needs "
+            f"it. Nothing was written: name a LABEL every target has, or narrow targets:.")
+    lines = {}
+    for ln in m.group(1).splitlines():
+        mm = re.match(r"^\s*(KERNEL|LINUX|COM32|INITRD|APPEND)\s+(.*?)\s*$", ln, re.I)
+        if mm:
+            lines[mm.group(1).lower()] = mm.group(2)
+    if not any(k in lines for k in ("kernel", "linux", "com32")):
+        raise RuntimeError(
+            f"boot.menu: LABEL {src} in {name} has no KERNEL, LINUX or COM32 line, so there "
+            f"is nothing for LABEL {add['label']} to copy. Nothing was written.")
+    new = str(add.get("append", "")).split()
+    keys = {t.split("=", 1)[0] for t in new}
+    old = [t for t in lines.get("append", "").split() if t != "-"]   # `APPEND -`: none
+    kept = [t for t in old if t.split("=", 1)[0] not in keys]
+    entry = {k: v for k, v in add.items() if k not in ("from", "append")}
+    entry.update({k: lines[k] for k in MENU_PAYLOAD_KEYS if k in lines})
+    if kept or new:
+        entry["append"] = " ".join(kept + new)
+    return entry, [t for t in old if t.split("=", 1)[0] in keys and t not in new]
 
 
 def _in_image(path: str) -> str:
@@ -2354,53 +2399,88 @@ def _menu_payload_missing(ctx: Ctx, entry: dict) -> list[str]:
 
 @verb("boot.menu")
 def v_boot_menu(ctx: Ctx, step: dict) -> None:
-    # BEFORE THE LOOP, because the entry is rendered the same for every target: the
-    # question is about the entry, not about which config it lands in.
-    if "add" in step:
-        gone = _menu_payload_missing(ctx, step["add"])
+    add = step.get("add")
+    derive = bool(add) and "from" in add
+    if derive:
+        # The schema refuses these beside `from:`; this is for a caller that skipped it.
+        given = [k for k in MENU_PAYLOAD_KEYS if k in add]
+        if given:
+            raise RuntimeError(
+                f"boot.menu: add.from copies the KERNEL/LINUX, COM32 and INITRD lines of "
+                f"LABEL {add['from']}, so add.{given[0]} cannot be given with it. Drop it, "
+                f"or drop from: and write the entry out in full.")
+    # BEFORE THE LOOP, because a literal entry is rendered the same for every target: the
+    # question is about the entry, not about which config it lands in. An entry copied
+    # with `from:` is checked below, once per file, since each file has its own source.
+    elif add:
+        gone = _menu_payload_missing(ctx, add)
         if gone:
             raise RuntimeError(
-                f"boot.menu: LABEL {step['add']['label']} would point at "
+                f"boot.menu: LABEL {add['label']} would point at "
                 f"{' and '.join(repr(g) for g in gone)}, which "
                 f"{'are' if len(gone) > 1 else 'is'} not in the tree and no step of this "
                 f"recipe installs.\n"
                 f"  The entry would be written into the bootloader and boot nothing.\n"
                 f"  If a `when:` guard skipped the step that installs it, this tree is "
                 f"not one this recipe can serve.")
+    # EVERY TARGET IS READ, AND EVERY REFUSAL MADE, BEFORE ANY IS WRITTEN. `from:` can be
+    # refused for the second file after the first would have been edited, and a step that
+    # left isolinux.cfg changed and syslinux.cfg not, unjournaled, is the partway failure
+    # boot.uefi was fixed for (#49). So this reads and decides for every target, then writes.
+    planned = []
     for path in _cfg_paths(ctx, step.get("targets")):
-        if not os.path.isfile(path):
-            ctx.say(f"skip {os.path.basename(path)} (not present)")
-            continue
-        text = open(path).read()
         name = os.path.basename(path)
+        if not os.path.isfile(path):
+            planned.append((path, None, [f"skip {name} (not present)"]))
+            continue
+        text = orig = open(path).read()
+        said = []
 
         if "remove" in step:
             lbl = step["remove"]
             new = re.sub(rf"(?ms)^LABEL\s+{re.escape(lbl)}\s*$.*?(?=^LABEL\s|\Z)", "", text)
             if new != text:
                 text = new
-                ctx.say(f"{name}: removed LABEL {lbl}")
-        if "add" in step:
-            e = step["add"]
-            if re.search(rf"(?m)^LABEL\s+{re.escape(e['label'])}\s*$", text):
-                ctx.say(f"{name}: LABEL {e['label']} already present, skipping")
+                said.append(f"{name}: removed LABEL {lbl}")
+        if add:
+            if re.search(rf"(?m)^LABEL\s+{re.escape(add['label'])}\s*$", text):
+                said.append(f"{name}: LABEL {add['label']} already present, skipping")
             else:
+                e, replaced = add, []
+                if derive:
+                    # From the file as it was read, so a `remove:` in the same step cannot
+                    # take the source away first.
+                    e, replaced = _menu_entry_from(orig, add, name)
+                    gone = _menu_payload_missing(ctx, e)
+                    if gone:
+                        raise RuntimeError(
+                            f"boot.menu: LABEL {add['label']} would point at "
+                            f"{' and '.join(repr(g) for g in gone)} (copied from LABEL "
+                            f"{add['from']} in {name}), which "
+                            f"{'are' if len(gone) > 1 else 'is'} not in the tree and no "
+                            f"step of this recipe installs. Nothing was written.")
                 block = _render_entry(e)
                 if e.get("position") == "top":
                     m = re.search(r"(?m)^LABEL\s", text)
                     text = text[:m.start()] + block + "\n" + text[m.start():] if m else text + "\n" + block
                 else:
                     text = text.rstrip("\n") + "\n\n" + block
-                ctx.say(f"{name}: added LABEL {e['label']} ({e['menu_label']})")
+                said.append(f"{name}: added LABEL {e['label']} ({e['menu_label']})"
+                            + (f" from LABEL {add['from']}" if derive else "")
+                            + (f", replacing {' '.join(replaced)}" if replaced else ""))
         if "timeout" in step:
             text, n = re.subn(r"(?m)^TIMEOUT\s+\d+\s*$", f"TIMEOUT {step['timeout']}", text)
-            ctx.say(f"{name}: TIMEOUT {step['timeout']}" if n else f"{name}: no TIMEOUT to set")
+            said.append(f"{name}: TIMEOUT {step['timeout']}" if n else f"{name}: no TIMEOUT to set")
         if "default" in step:
             text, n = re.subn(r"(?m)^(MENU\s+HIDDENKEY\s+Enter\s+)\S+\s*$",
                               rf"\g<1>{step['default']}", text)
-            ctx.say(f"{name}: default -> {step['default']}" if n else f"{name}: no default key found")
+            said.append(f"{name}: default -> {step['default']}" if n else f"{name}: no default key found")
+        planned.append((path, text, said))
 
-        if not ctx.dry:
+    for path, text, said in planned:
+        for line in said:
+            ctx.say(line)
+        if text is not None and not ctx.dry:
             open(path, "w").write(text)
             # Recorded like every other verb that writes into the tree: the journal is
             # how `kitchen status` shows it and how `kitchen sources` attributes the edit.

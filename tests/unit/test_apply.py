@@ -3052,7 +3052,7 @@ def test_a_menu_entry_names_a_payload_that_is_there():
     with open(os.path.join(w, "iso", "slax", "boot", "isolinux.cfg")) as f:
         check("...and nothing was written", "LABEL memtest" in f.read(), False)
 
-    # 2. serial-console's shape: the tree already has what the entry names.
+    # 2. A literal entry naming a file the tree already has.
     w = tree()
     try:
         add(w, {"label": "serial", "menu_label": "Serial", "kernel": "/slax/boot/vmlinuz"})
@@ -3145,6 +3145,296 @@ def test_a_menu_entry_names_a_payload_that_is_there():
         check("a timeout-only step is untouched", f"refused: {e}", "written")
 
 
+# THE STOCK MENUS, as every stock ISO ships them. Their sha256 are in
+# docs/30-inventory/manifests/bootfiles-*.sha256 -- the same pair on all four targets -- and
+# the test below checks these copies against that first, so a copy that drifted fails as a
+# fixture rather than as the engine.
+# Captured from: Slax 12.2.0 (Debian) and 15.0.4 (Slackware), 32- and 64-bit
+STOCK_ISOLINUX_CFG = """\
+UI /slax/boot/vesamenu.c32
+
+PROMPT 0
+TIMEOUT 40
+
+MENU CLEAR
+MENU HIDDEN
+MENU HIDDENKEY Enter default
+MENU BACKGROUND /slax/boot/bootlogo.png
+
+MENU WIDTH 80
+MENU MARGIN 20
+MENU ROWS 5
+MENU TABMSGROW 11
+MENU CMDLINEROW 9
+MENU HSHIFT 0
+MENU VSHIFT 17
+
+MENU COLOR BORDER   30;40  #00000000 #00000000 none
+MENU COLOR SEL      47;30  #FF000000 #FFFFFFFF none
+MENU COLOR UNSEL    37;40  #FFFFFFFF #FF000000 none
+MENU COLOR TABMSG   32;40  #FF60CA00 #FF000000 none
+
+F1 help.txt /slax/boot/zblack.png
+
+MENU AUTOBOOT Press Esc for options, automatic boot in # second{,s} ...
+MENU TABMSG [F1] help                                                      [Tab] cmdline >
+
+LABEL default
+MENU LABEL Run Slax from CD
+KERNEL /slax/boot/vmlinuz
+APPEND vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw printk.time=0 consoleblank=0 automount
+
+LABEL toram
+MENU LABEL Run Slax from RAM (Copy to RAM)
+KERNEL /slax/boot/vmlinuz
+APPEND vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw printk.time=0 consoleblank=0 toram automount
+
+LABEL sessiondisabled
+MENU LABEL Restore previous session
+MENU DISABLED
+
+LABEL newsessiondisabled
+MENU LABEL Start a new session
+MENU DISABLED
+
+"""
+
+STOCK_SYSLINUX_CFG = """\
+UI /slax/boot/vesamenu.c32
+
+PROMPT 0
+TIMEOUT 40
+
+MENU CLEAR
+MENU HIDDEN
+MENU HIDDENKEY Enter default
+MENU BACKGROUND /slax/boot/bootlogo.png
+
+MENU WIDTH 80
+MENU MARGIN 20
+MENU ROWS 5
+MENU TABMSGROW 11
+MENU CMDLINEROW 9
+MENU HSHIFT 0
+MENU VSHIFT 17
+
+MENU COLOR BORDER   30;40  #00000000 #00000000 none
+MENU COLOR SEL      47;30  #FF000000 #FFFFFFFF none
+MENU COLOR UNSEL    37;40  #FFFFFFFF #FF000000 none
+MENU COLOR DISABLED 37;40  #FFFFFFFF #FF000000 none
+MENU COLOR TABMSG   32;40  #FF60CA00 #FF000000 none
+
+F1 help.txt /slax/boot/zblack.png
+
+MENU AUTOBOOT Press Esc for options, automatic boot in # second{,s} ...
+MENU TABMSG [F1] help                                                      [Tab] cmdline >
+
+LABEL default
+MENU LABEL Resume previous session
+KERNEL /slax/boot/vmlinuz
+APPEND vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw printk.time=0 consoleblank=0 perchdir=resume automount
+
+LABEL perch
+MENU LABEL Start a new session
+KERNEL /slax/boot/vmlinuz
+APPEND vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw printk.time=0 consoleblank=0 automount perchdir=new
+
+LABEL asksession
+MENU LABEL Choose session during startup
+KERNEL /slax/boot/vmlinuz
+APPEND vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw printk.time=0 consoleblank=0 perchdir=ask
+
+LABEL toram
+MENU LABEL Run Slax from RAM (copy to RAM)
+KERNEL /slax/boot/vmlinuz
+APPEND vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw printk.time=0 consoleblank=0 toram
+"""
+
+# What serial-console wrote before #50, for both files: the stock default's command line
+# written out in full. The boot tests of serial-console.md's status line booted this line,
+# through isolinux.cfg and the GRUB menu mirrored from it.
+SERIAL_ENTRY_BEFORE_50 = (
+    "LABEL serial\n"
+    "MENU LABEL Slax (serial console on ttyS0)\n"
+    "KERNEL /slax/boot/vmlinuz\n"
+    "APPEND vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw "
+    "printk.time=0 consoleblank=0 automount console=tty0 console=ttyS0,115200n8\n")
+
+
+def _menu_tree(files: dict) -> str:
+    """A work tree holding these slax/boot files, and the kernel the stock menus name."""
+    import tempfile
+    work = tempfile.mkdtemp()
+    boot = os.path.join(work, "iso", "slax", "boot")
+    os.makedirs(boot)
+    for name, text in {"vmlinuz": "", **files}.items():
+        with open(os.path.join(boot, name), "w") as f:
+            f.write(text)
+    return work
+
+
+def _menu(work: str, name: str) -> str:
+    with open(os.path.join(work, "iso", "slax", "boot", name)) as f:
+        return f.read()
+
+
+def test_an_entry_copied_from_a_label_carries_the_edits_made_before_it():
+    """`add.from` copies an entry as the menu has it by then, edits included (#50).
+
+    serial-console wrote stock Slax's command line out in full, so boot-cmdline before it
+    left the serial entry with `automount` and without `toram`, and on slax-wine's image,
+    whose own build had removed `automount` -- the flag issue 12 says cannot be negated --
+    the entry put it back. Measured at 0dd1b53 on debian-64bit-12.2.0, and on slax-wine's
+    64-bit BIOS image built there. An entry copied from `default` has whatever `default`
+    has; the parameters `append:` names replace the source's by key.
+    """
+    import json
+    import jsonschema
+    menu = ("LABEL default\nMENU LABEL Run\nKERNEL /slax/boot/vmlinuz\n"
+            "APPEND vga=normal initrd=/slax/boot/initrfs.img rw toram console=ttyS1,9600n8\n\n"
+            "LABEL memtest\nMENU LABEL Memory test\nLINUX /slax/boot/memtest.bin\n\n"
+            "LABEL bare\nMENU LABEL Bare\nKERNEL /slax/boot/vmlinuz\nAPPEND -\n")
+    work = _menu_tree({"isolinux.cfg": menu, "memtest.bin": ""})
+    try:
+        said = []
+        ctx = apply.Ctx(work, os.path.join(work, "iso"), "t")
+        ctx.say = said.append
+        apply.v_boot_menu(ctx, {"verb": "boot.menu", "targets": ["isolinux.cfg"], "add": {
+            "label": "serial", "menu_label": "Serial", "from": "default",
+            "append": "console=tty0 console=ttyS0,115200n8"}})
+        check("the copy keeps the edits, and the console= tokens are replaced, last",
+              _menu(work, "isolinux.cfg").endswith(
+                  "LABEL serial\nMENU LABEL Serial\nKERNEL /slax/boot/vmlinuz\n"
+                  "APPEND vga=normal initrd=/slax/boot/initrfs.img rw toram "
+                  "console=tty0 console=ttyS0,115200n8\n"), True)
+        check("...and it says what it copied and what it replaced", said,
+              ["isolinux.cfg: added LABEL serial (Serial) from LABEL default, "
+               "replacing console=ttyS1,9600n8"])
+        for label, src, append, want in (
+                ("m2", "memtest", None, "LABEL m2\nMENU LABEL M2\nLINUX /slax/boot/memtest.bin\n"),
+                ("b2", "bare", None, "LABEL b2\nMENU LABEL B2\nKERNEL /slax/boot/vmlinuz\n"),
+                ("b3", "bare", "quiet", "LABEL b3\nMENU LABEL B3\nKERNEL /slax/boot/vmlinuz\n"
+                                        "APPEND quiet\n")):
+            add = {"label": label, "menu_label": label.upper(), "from": src}
+            if append:
+                add["append"] = append
+            apply.v_boot_menu(ctx, {"verb": "boot.menu", "targets": ["isolinux.cfg"],
+                                    "add": add})
+            check(f"from: {src}{', append: ' + append if append else ''}: {want!r}",
+                  _menu(work, "isolinux.cfg").endswith(want), True)
+        try:
+            apply.v_boot_menu(ctx, {"verb": "boot.menu", "add": {
+                "label": "k", "menu_label": "K", "from": "default",
+                "kernel": "/slax/boot/vmlinuz"}})
+            check("from: with kernel: is refused at run time too", "written", "refused")
+        except RuntimeError as e:
+            check("from: with kernel: is refused at run time too",
+                  "cannot be given with it" in str(e), True)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    v = jsonschema.Draft202012Validator(
+        json.load(open(os.path.join(here, "..", "..", "schema", "recipe.schema.json"))))
+
+    def errors(add):
+        return [e.message for e in v.iter_errors({
+            "apiVersion": "slax-kitchen/v1", "kind": "Recipe",
+            "metadata": {"name": "menu-probe", "summary": "a boot.menu schema probe"},
+            "steps": [{"verb": "boot.menu", "add": add}]})]
+    entry = {"label": "serial", "menu_label": "S", "append": "console=ttyS0"}
+    check("schema: from: with append: is valid", errors({**entry, "from": "default"}), [])
+    check("schema: a misspelt key is refused, not ignored",
+          any("'frm' was unexpected" in m for m in errors({**entry, "frm": "default"})), True)
+    check("schema: from: with kernel: is refused",
+          errors({**entry, "from": "default", "kernel": "/slax/boot/vmlinuz"}) != [], True)
+
+
+def test_serial_console_on_the_stock_menus_is_the_entry_that_was_booted():
+    """serial-console, copying `default` since #50, writes the entry its boots were made on.
+
+    serial-console.md claims boot-verified from boots through isolinux, GRUB and
+    usb-storage, of the entry the recipe wrote out in full. `kitchen test` reads
+    isolinux.cfg for --bios and --usb and the GRUB menu, mirrored from isolinux.cfg, for
+    --uefi. So on the stock menus the copied entry must be that entry byte for byte in
+    isolinux.cfg. syslinux.cfg's `default` also carries `perchdir=resume`, and so does the
+    copy: kept on purpose, and booted by nothing here.
+    """
+    import hashlib
+    import tempfile
+    here = os.path.dirname(os.path.abspath(__file__))
+    manifests = os.path.join(here, "..", "..", "docs", "30-inventory", "manifests")
+    for name, text in (("isolinux.cfg", STOCK_ISOLINUX_CFG),
+                       ("syslinux.cfg", STOCK_SYSLINUX_CFG)):
+        want = {ln.split()[0] for m in sorted(os.listdir(manifests))
+                if m.startswith("bootfiles-")
+                for ln in open(os.path.join(manifests, m)) if ln.rstrip().endswith("./" + name)}
+        check(f"fixture: the copy of the stock {name} is the one all four targets ship",
+              (len(want), hashlib.sha256(text.encode()).hexdigest() in want), (1, True))
+
+    work = _menu_tree({"isolinux.cfg": STOCK_ISOLINUX_CFG, "syslinux.cfg": STOCK_SYSLINUX_CFG})
+    try:
+        recipe = os.path.join(here, "..", "..", "recipes", "available", "serial-console.yaml")
+        (_i, step, _run), = apply.plan_recipe(recipe, {})[1]
+        apply.v_boot_menu(apply.Ctx(work, tempfile.gettempdir(), "serial-console"), step)
+        check("isolinux.cfg: stock, then the entry the boot tests booted",
+              _menu(work, "isolinux.cfg"),
+              STOCK_ISOLINUX_CFG.rstrip("\n") + "\n\n" + SERIAL_ENTRY_BEFORE_50)
+        check("syslinux.cfg: the same, with the default's perchdir=resume",
+              _menu(work, "syslinux.cfg"),
+              STOCK_SYSLINUX_CFG.rstrip("\n") + "\n\n" + SERIAL_ENTRY_BEFORE_50.replace(
+                  "consoleblank=0 automount", "consoleblank=0 perchdir=resume automount"))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def test_a_missing_from_label_is_refused_before_either_file_is_written():
+    """A `from:` that one target cannot serve is refused, and neither file is written (#50).
+
+    The entry is copied per file, so a file with no such LABEL has nothing to copy, and
+    boot.menu edited isolinux.cfg before it read syslinux.cfg: refusing there would have
+    left one file changed and nothing journaled, the partway failure #49 fixed in boot.uefi.
+    Every target is read and every refusal made before anything is written. The same goes
+    for a source that boots nothing (a MENU DISABLED entry) and for a copied kernel that
+    is not in the tree.
+    """
+    sysl = STOCK_SYSLINUX_CFG.replace("LABEL default\n", "LABEL resume\n")
+    work = _menu_tree({"isolinux.cfg": STOCK_ISOLINUX_CFG, "syslinux.cfg": sysl})
+    step = {"verb": "boot.menu", "targets": ["isolinux.cfg", "syslinux.cfg"],
+            "add": {"label": "serial", "menu_label": "S", "from": "default",
+                    "append": "console=tty0 console=ttyS0,115200n8"}}
+    try:
+        ctx = apply.Ctx(work, os.path.join(work, "iso"), "t")
+        for what, st, files, needle in (
+                ("syslinux.cfg has no LABEL default", step, {}, "syslinux.cfg has none (it has: "
+                 "resume, perch, asksession, toram)"),
+                ("the source is a MENU DISABLED entry",
+                 {**step, "targets": ["isolinux.cfg"],
+                  "add": {**step["add"], "from": "sessiondisabled"}}, {},
+                 "has no KERNEL, LINUX or COM32 line"),
+                ("the copied kernel is not in the tree", step,
+                 {"isolinux.cfg": STOCK_ISOLINUX_CFG.replace("KERNEL /slax/boot/vmlinuz\nAPPEND "
+                                                             "vga=normal initrd=/slax/boot/"
+                                                             "initrfs.img load_ramdisk=1 prompt"
+                                                             "_ramdisk=0 rw printk.time=0 "
+                                                             "consoleblank=0 automount",
+                                                             "KERNEL /slax/boot/gone\nAPPEND rw", 1)},
+                 "'KERNEL /slax/boot/gone' (copied from LABEL default in isolinux.cfg)")):
+            for name, text in files.items():
+                with open(os.path.join(work, "iso", "slax", "boot", name), "w") as f:
+                    f.write(text)
+            before = {n: _menu(work, n) for n in ("isolinux.cfg", "syslinux.cfg")}
+            try:
+                apply.v_boot_menu(ctx, st)
+                check(f"{what}: refused", "written", "refused")
+            except RuntimeError as e:
+                check(f"{what}: refused, saying why", needle in str(e), True)
+            check(f"{what}: neither file was written",
+                  {n: _menu(work, n) for n in ("isolinux.cfg", "syslinux.cfg")} == before, True)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
     # 17 of this file's 25 mkdtemp() calls had no cleanup on 2026-09-18, so running it by hand left
@@ -3220,7 +3510,10 @@ def main():
                    test_flavour_is_a_fact_about_the_tree_or_says_it_is_not,
                    test_both_delta_lines_report_what_the_step_removed,
                    test_the_core_is_picked_by_name_not_by_sort_order,
-                   test_a_menu_entry_names_a_payload_that_is_there]:
+                   test_a_menu_entry_names_a_payload_that_is_there,
+                   test_an_entry_copied_from_a_label_carries_the_edits_made_before_it,
+                   test_serial_console_on_the_stock_menus_is_the_entry_that_was_booted,
+                   test_a_missing_from_label_is_refused_before_either_file_is_written]:
             # One test crashing must not stop the rest: the count of failures is only honest
             # if every test ran. The traceback still goes to stderr, because a crash's location
             # is the useful half and a one-line summary loses it.

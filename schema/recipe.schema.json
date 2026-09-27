@@ -1127,6 +1127,7 @@
     },
     "menuEntry": {
       "type": "object",
+      "additionalProperties": false,
       "required": [
         "label",
         "menu_label"
@@ -1138,6 +1139,11 @@
         },
         "menu_label": {
           "type": "string"
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+$",
+          "description": "copy KERNEL/LINUX, COM32, INITRD and APPEND from this LABEL in each target file; append: then replaces every parameter it names, by key, and adds the rest"
         },
         "kernel": {
           "type": "string"
@@ -1160,6 +1166,16 @@
             "bottom"
           ],
           "default": "bottom"
+        }
+      },
+      "dependentSchemas": {
+        "from": {
+          "properties": {
+            "kernel": false,
+            "linux": false,
+            "com32": false,
+            "initrd": false
+          }
         }
       }
     }

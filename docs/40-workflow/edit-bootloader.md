@@ -33,9 +33,15 @@ cannot be written to.
   add:
     label: mytools
     menu_label: "Slax with my tools"
-    kernel: /slax/boot/vmlinuz
-    append: "vga=normal initrd=/slax/boot/initrfs.img rw printk.time=0 automount noload=05-chromium"
+    from: default
+    append: "noload=05-chromium"
 ```
+
+`from: default` copies each file's `default` entry as it stands, then applies `append:` by key, so
+the new entry boots what the menu already boots plus your parameter — including whatever an earlier
+recipe, or the build of the image you started from, did to that line. `kernel:` and `append:` written
+out in full still work, and carry none of that
+([`boot.menu`](../90-reference/verbs.md#bootmenu---bootcmdline-)).
 
 **Prefer adding an entry over changing the default.** It leaves a way back if the change turns out to
 be wrong, which matters when the only feedback channel is a boot that either works or does not.

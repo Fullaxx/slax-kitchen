@@ -2,7 +2,10 @@
 
 **Status: boot-verified** — entry present in both menus on all four targets, and booted through it
 on **all four** via isolinux, GRUB/OVMF and usb-storage: twelve boots, all three livekit markers
-every time.
+every time. Since #50 the entry is copied from each menu's `default` rather than written out; on
+the stock menus the copy in `isolinux.cfg`, and the GRUB entry mirrored from it, are byte for byte
+the entry those boots used (compared on all four targets, 2026-09-27). The copy in `syslinux.cfg`
+also carries that file's `perchdir=resume`, and no boot here reads `syslinux.cfg`.
 
 ```sh
 kitchen apply serial-console
@@ -32,17 +35,37 @@ tiers do.
 
 ## What it adds
 
-```
-LABEL serial
-  MENU LABEL Slax (serial console on ttyS0)
-  KERNEL /slax/boot/vmlinuz
-  APPEND vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw
-         printk.time=0 consoleblank=0 automount console=tty0 console=ttyS0,115200n8
+A copy of the menu's `default` entry, with the serial console added:
+
+```yaml
+- verb: boot.menu
+  targets: [isolinux.cfg, syslinux.cfg]
+  add:
+    label: serial
+    menu_label: "Slax (serial console on {{port}})"
+    from: default
+    append: "console=tty0 console={{port}},{{speed}}n8"
 ```
 
-Into **both** `isolinux.cfg` (CD) and `syslinux.cfg` (USB/HDD/UEFI). Since
-`EFI/Boot/syslinux.cfg` is one line — `INCLUDE /slax/boot/syslinux.cfg` — the UEFI menu picks it up
-for free.
+On a stock `isolinux.cfg` that is one entry, each directive on one line:
+
+```
+LABEL serial
+MENU LABEL Slax (serial console on ttyS0)
+KERNEL /slax/boot/vmlinuz
+APPEND vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw printk.time=0 consoleblank=0 automount console=tty0 console=ttyS0,115200n8
+```
+
+Into **both** `isolinux.cfg` (CD) and `syslinux.cfg` (USB/HDD/UEFI), each copying its own `default`.
+`syslinux.cfg`'s default resumes the saved session, so its copy carries `perchdir=resume` too and
+does the same on a USB install. Since `EFI/Boot/syslinux.cfg` is one line — `INCLUDE
+/slax/boot/syslinux.cfg` — the UEFI menu picks it up for free.
+
+**Copied, not written out, so it carries the edits made before it** (#50). It used to spell out
+stock Slax's command line: after [`boot-cmdline`](boot-cmdline.md) it still had `automount` and
+lacked `toram`, and on an image whose own build had removed `automount` — the flag
+[issue 12](../30-inventory/known-upstream-bugs.md) says cannot be negated — it put it back. A
+build on another project's image gets that image's default line, whatever its build did to it.
 
 ### `console=` twice, and the order is the whole recipe
 
@@ -133,6 +156,7 @@ qemu-system-x86_64 -m 2048 -cdrom out.iso -display none -serial file:/tmp/boot.l
 | with | why |
 |---|---|
 | `uefi-bootable` | the GRUB menu is generated from `isolinux.cfg`, so the serial entry is mirrored automatically — but **apply `uefi-bootable` last** or it will not see this entry |
+| `boot-cmdline` | in either order: before this recipe, its edits are in the `default` the entry copies; after it, they are made to this entry as to every other |
 | `boot.cmdline` | to make serial the *default* rather than an extra entry, on a headless build |
 | `rootcopy-overlay` | drop a `preinit.sh` that writes markers to `/dev/console`, and they land in the same log |
 
@@ -156,5 +180,9 @@ no visible output whatsoever — reversible only by editing the ISO again.
 - **The bootloader menu itself is not on the serial port.** SYSLINUX needs `SERIAL 0 115200` as a
   global directive for that, which this recipe does not add — it would change the menu for every
   entry, including the stock ones. You see the menu on screen and the kernel onward on serial.
-- **`printk.time=0` is inherited** from the stock command line, so messages carry no timestamps.
-  Add `printk.time=1` to the `append` if you are timing boot stages.
+- **`printk.time=0` comes with the copy** of the stock `default`, so messages carry no timestamps.
+  If you are timing boot stages, a `boot.cmdline` step with `append: [printk.time=1]` replaces it
+  by key — on every entry, or with `labels: [serial]` on this one after it.
+- **A menu with no `LABEL default` is refused.** The entry is copied from `default` in each file,
+  so a base image whose build renamed or removed it cannot serve this recipe: `kitchen apply`
+  names the file and the labels it has, and writes neither file.

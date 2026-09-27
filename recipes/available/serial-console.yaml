@@ -34,13 +34,20 @@ steps:
   # userspace output. tty0 now comes first and the serial port last, which makes the
   # entry do what its name says. The screen still shows kernel messages; what moves is
   # /dev/console, and therefore login and everything init prints.
+  #
+  # COPIED FROM `default`, NOT WRITTEN OUT. This entry used to spell out stock Slax's
+  # command line, `automount` included, so it carried none of the edits made before it:
+  # after boot-cmdline it kept `automount` and lacked `toram`, and on an image whose own
+  # build had removed `automount` -- the flag issue 12 says cannot be negated -- it put it
+  # back (#50). `from: default` copies each file's default entry as it stands; the two
+  # console= tokens replace any console= it has. On the stock menus the isolinux.cfg entry
+  # is byte-for-byte the one this recipe wrote before, which is the entry the boot tests
+  # booted. In syslinux.cfg it also carries the default's `perchdir=resume`, so on a USB
+  # install it resumes the saved session as the default entry does.
   - verb: boot.menu
     targets: [isolinux.cfg, syslinux.cfg]
     add:
       label: serial
       menu_label: "Slax (serial console on {{port}})"
-      kernel: /slax/boot/vmlinuz
-      append: >-
-        vga=normal initrd=/slax/boot/initrfs.img load_ramdisk=1 prompt_ramdisk=0 rw
-        printk.time=0 consoleblank=0 automount
-        console=tty0 console={{port}},{{speed}}n8
+      from: default
+      append: "console=tty0 console={{port}},{{speed}}n8"

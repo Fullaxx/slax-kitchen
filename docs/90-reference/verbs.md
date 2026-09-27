@@ -320,6 +320,11 @@ foreign architecture survives into the image.
 > `strpi:` for `strip:`, a field that only ever existed in a docstring. Note that
 > `additionalProperties` would *not* work here: it only sees `properties` declared in the same
 > schema object, not the ones an `if`/`then` branch introduces.
+>
+> That covers a step's own keys. An object nested inside a step is closed only where its own
+> schema says so: `boot.menu`'s `add:` is. The entries of `bundle.files`, `rootcopy.files`,
+> `iso.files` and `initramfs.files`, `initramfs.patch`'s edits, and `boot.branding`'s `{src: …}`
+> form are not yet, so a misspelt key inside one of those still passes validation.
 
 ### `bundle.script` ◐ chroot
 
@@ -397,15 +402,31 @@ filesystem the system is about to boot into. An `exit` here ends the boot.
   targets: [isolinux.cfg, syslinux.cfg]     # default: both
   add: {label: mine, menu_label: "…", kernel: /slax/boot/vmlinuz, append: "…"}
 
+- verb: boot.menu
+  add: {label: quiet, menu_label: "…", from: default, append: "quiet"}   # a copy of `default`
+
 - verb: boot.cmdline
   append: ["noload=05-chromium"]            # edits existing APPEND lines
   remove: ["automount"]                     # by key: drops `automount` and `automount=x`
-  labels: [slax]                            # optional: restrict to these LABELs
+  labels: [default]                         # optional: restrict to these LABELs
 ```
 
 `append` and `remove` are **arrays**, and the step reports how many APPEND lines it actually
 changed — re-applying it says `0 entries`, not the entry count. A step with neither field is
 refused rather than silently doing nothing.
+
+**`from:` copies an entry the menu already has, as it has it by then.** An entry written out in full
+carries none of the edits made before it: `serial-console` used to spell out stock Slax's command
+line, so after `boot-cmdline` its entry still had `automount`, and on an image whose own build had
+removed it, the entry put it back (#50). With `from: <label>`, each target file's `KERNEL` or
+`LINUX`, `COM32`, `INITRD` and `APPEND` are copied from that `LABEL` in the same file — `MENU` lines
+are not — and `append:` is then applied by key: every parameter it names is dropped from the copy,
+and then all of its own are added at the end. So `append: "console=tty0 console=ttyS0,115200n8"`
+replaces whatever `console=` the source had and keeps both of its own. `from:` cannot be given with
+`kernel`, `linux`, `com32` or `initrd`, since those are what it copies. A target file with no such
+`LABEL`, or whose `LABEL` boots nothing (a `MENU DISABLED` entry), is refused; so is a copied kernel
+that is not in the tree. Every target is read and every refusal made before anything is written, so
+a refusal leaves both files as they were.
 
 **Use `LINUX`, not `KERNEL`, for a non-bzImage payload** — see
 [edit-bootloader](../40-workflow/edit-bootloader.md).
@@ -416,9 +437,10 @@ a step of the same recipe that *will run* is refused — the entry would be writ
 and boot nothing. "will run" is what makes `--dry-run` work: `boot.payload` installs nothing under a
 dry run, so existence alone would refuse a plan that is perfectly fine. Only absolute paths are
 checked; isolinux also accepts one relative to the config it appears in, which cannot be resolved
-before the entry is placed. `append` is a kernel command line and is not inspected, so an
-`initrd=` inside it is not checked. Paths are compared after normalising, so `/slax/boot/x` and
-`//slax/boot/./x` are the same file rather than a refusal.
+before the entry is placed. An entry copied with `from:` is checked after copying, once per file.
+`append` is a kernel command line and is not inspected, so an `initrd=` inside it is not checked.
+Paths are compared after normalising, so `/slax/boot/x` and `//slax/boot/./x` are the same file
+rather than a refusal.
 
 This is what a `when:`-guarded payload with an unguarded menu step used to produce: both guarded
 steps skipped, the entry written anyway, `kitchen apply` exit 0.

@@ -144,7 +144,8 @@ perchdir=new perchsize=32GB
 # boot an ISO stored on an existing partition
 from=/dev/sda2/isos/slax-64bit-debian-12.2.0.iso
 
-# headless, for CI — the serial-console recipe bakes this into a menu entry
+# headless: no desktop, and everything on the serial port. The serial-console recipe's entry
+# has `console=tty0 console=ttyS0,115200n8` instead, which keeps kernel messages on screen too
 text console=ttyS0,115200n8
 
 # find out where it is failing

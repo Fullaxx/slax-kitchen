@@ -21,7 +21,9 @@ after   APPEND vga=normal initrd=/slax/boot/initrfs.img … consoleblank=0 toram
 It edits the `APPEND` line of **existing** entries rather than adding a new one, so the parameters
 apply however the machine boots — including whichever entry the user actually picks.
 [`boot.menu`](../90-reference/verbs.md#bootmenu---bootcmdline-) is the verb for adding a whole new
-entry; [`serial-console`](serial-console.md) is an example of that.
+entry; [`serial-console`](serial-console.md) is an example of that. An entry added later keeps these
+edits when it is copied from one that has them, with `boot.menu`'s `from:`, as `serial-console`'s is
+from `default`; an entry written out in full carries none of them.
 
 ## `append` adds, `remove` drops by key
 
@@ -30,7 +32,7 @@ entry; [`serial-console`](serial-console.md) is an example of that.
   append: [toram]
 - verb: boot.cmdline
   remove: [automount]         # drops both `automount` and `automount=x`
-  labels: [slax]              # optional: restrict to these LABELs
+  labels: [default]           # optional: restrict to these LABELs
 ```
 
 Removal is **by key**, so `automount` matches a bare flag and a `key=value` form alike. Appending a

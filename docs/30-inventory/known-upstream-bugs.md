@@ -154,7 +154,9 @@ net effect of booting with `noautomount` is that `/media/*` entries are still wr
 `/etc/fstab` at boot, but no new hotplug mounts appear afterwards.
 
 **Workaround:** omit `automount` rather than negating it. The stock menu entries include it, so it
-has to be removed from the `APPEND` line — `boot.cmdline` can do that.
+has to be removed from the `APPEND` line — `boot.cmdline` can do that. An entry added afterwards has
+to leave it out too: one copied with `boot.menu`'s `from:` inherits the removal, and one written out
+in full does not — which is how `serial-console` put it back before #50.
 
 The same substring-matching pattern applies to `debug`, `perch` and `toram`; only `text` is
 word-anchored (`grep -q -w`). `perch` is the one case where the loose match is intentional, since
