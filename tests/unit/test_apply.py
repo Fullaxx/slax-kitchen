@@ -1180,7 +1180,7 @@ def test_boot_uefi_replaces_an_esp_it_built_and_refuses_any_other():
 
 
 def test_boot_uefi_refuses_before_it_writes_anything():
-    """A refused ESP, or a build that fails partway, leaves the tree as it was (#49).
+    """A refused ESP, or a build that fails before its renames, leaves the tree as it was (#49).
 
     Measured 2026-09-26, before the ESP was judged: on an image that already had one,
     boot.uefi rewrote boot/grub/grub.cfg and then failed at mkfs.vfat, so apply exited 1
@@ -1256,6 +1256,80 @@ def test_boot_uefi_refuses_before_it_writes_anything():
               ["efi.img"])
     finally:
         apply.shutil.which = saved
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_boot_uefi_never_leaves_an_esp_without_its_menu():
+    """A failure between boot.uefi's two renames left a new ESP and no grub.cfg (#55).
+
+    Measured 2026-09-26 on a stock unpack, with os.replace failing for grub.cfg alone: the
+    tree held boot/efi.img and no boot/grub/grub.cfg, nothing was journaled, and the re-run
+    called that ESP "the one the image came with". The loader in the ESP does nothing but
+    load /boot/grub/grub.cfg, so grub.cfg now goes in first. Each rename fails in turn here,
+    on a tree with no ESP and on one with an ESP boot.uefi built, and the new ESP is never
+    in the tree without the new menu. The tools are stubbed, as the test above stubs them:
+    the gates job has neither GRUB nor mtools.
+    """
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    saved_which, saved_run, real_replace = apply.shutil.which, apply.subprocess.run, os.replace
+    try:
+        work = os.path.join(tmp, "work")
+        cfg = os.path.join(work, "iso", "slax", "boot", "isolinux.cfg")
+        os.makedirs(os.path.dirname(cfg))
+        with open(cfg, "w") as f:
+            f.write("LABEL default\n  KERNEL /slax/boot/vmlinuz\n  APPEND vga=normal\n")
+        boot = os.path.join(work, "iso", "boot")
+        esp, grub_cfg = os.path.join(boot, "efi.img"), os.path.join(boot, "grub", "grub.cfg")
+        built = fat12_image(apply.ESP_LABEL, {apply.ESP_LOADER: pe_head(signed=False)})
+
+        def stub(cmd, **_kw):
+            if cmd[0] == "grub-mkstandalone":
+                with open(cmd[cmd.index("-o") + 1], "wb") as f:
+                    f.write(b"MZ")
+            elif cmd[0] == "mkfs.vfat":
+                with open(cmd[-2], "wb") as f:
+                    f.write(b"the new ESP")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        apply.shutil.which = lambda t: "/usr/bin/" + t
+        apply.subprocess.run = stub
+
+        for tree, before in (("a stock tree", None), ("a tree with an ESP it built", built)):
+            for failing in ("boot/grub/grub.cfg", "boot/efi.img"):
+                shutil.rmtree(boot, ignore_errors=True)
+                os.makedirs(os.path.dirname(grub_cfg))
+                if before:
+                    with open(esp, "wb") as f:
+                        f.write(before)
+                    with open(grub_cfg, "w") as f:
+                        f.write("the old menu\n")
+
+                def replace(src, dst, *a, _failing=failing, **k):
+                    if str(dst).endswith(_failing):
+                        raise OSError(1, "injected", str(dst))
+                    return real_replace(src, dst, *a, **k)
+                os.replace = replace
+                try:
+                    apply.v_boot_uefi(apply.Ctx(work, tmp, "uefi-bootable"),
+                                      {"verb": "boot.uefi"})
+                    raised = False
+                except OSError:
+                    raised = True
+                finally:
+                    os.replace = real_replace
+                what = f"{tree}, the {failing} rename failing"
+                check(f"{what}: the failure reached the verb (fixture)", raised, True)
+                new_esp = os.path.isfile(esp) and open(esp, "rb").read() == b"the new ESP"
+                new_cfg = (os.path.isfile(grub_cfg)
+                           and open(grub_cfg).read() not in ("the old menu\n",))
+                check(f"{what}: no new ESP without the new grub.cfg",
+                      new_esp and not new_cfg, False)
+                check(f"{what}: nothing staged is left",
+                      [n for d in (boot, os.path.dirname(grub_cfg)) for n in os.listdir(d)
+                       if n.endswith(".new")], [])
+    finally:
+        apply.shutil.which, apply.subprocess.run = saved_which, saved_run
+        os.replace = real_replace
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -3117,6 +3191,7 @@ def main():
                    test_boot_payload_copies_a_local_file_and_records_it,
                    test_boot_uefi_replaces_an_esp_it_built_and_refuses_any_other,
                    test_boot_uefi_refuses_before_it_writes_anything,
+                   test_boot_uefi_never_leaves_an_esp_without_its_menu,
                    test_a_long_pack_hint_survives_the_round_trip,
                    test_a_recipe_listed_twice_is_refused,
                    test_a_recipe_named_by_path_takes_its_vars,

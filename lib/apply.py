@@ -2892,6 +2892,13 @@ def v_boot_uefi(ctx: Ctx, step: dict) -> None:
         # the files they replace and renamed over them only once both are whole, so a
         # failure anywhere before that leaves grub.cfg and the ESP the image came with as
         # they were -- the partway failure above was grub.cfg written before mkfs.vfat ran.
+        #
+        # AND grub.cfg IS RENAMED FIRST. Two renames are two steps, and the loader in the ESP
+        # does one thing: load /boot/grub/grub.cfg (early.cfg, above). With the ESP first, a
+        # failure between them left a new ESP and no grub.cfg on a stock tree, unjournaled,
+        # and the re-run called that ESP "the one the image came with" (#55). grub.cfg first
+        # leaves either a grub.cfg no ESP points at, or an ESP this verb built on an earlier
+        # run loading the new menu -- never an ESP with no menu.
         new = os.path.join(tmp, "efi.img")
         parts = ESP_LOADER.split("/")[:-1]
         for cmd in (["mkfs.vfat", "-C", "-F", "12", "-n", ESP_LABEL, new, str(img_kib)],
@@ -2903,7 +2910,7 @@ def v_boot_uefi(ctx: Ctx, step: dict) -> None:
                 raise RuntimeError(f"{cmd[0]} failed: {rr.stderr.strip()}")
 
         cfg = os.path.join(grub_dir, "grub.cfg")
-        staged = {img: img + ".new", cfg: cfg + ".new"}
+        staged = {cfg: cfg + ".new", img: img + ".new"}     # renamed in this order
         os.makedirs(grub_dir, exist_ok=True)
         try:
             shutil.move(new, staged[img])       # the temp dir may be another filesystem
