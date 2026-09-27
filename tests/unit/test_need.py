@@ -10,7 +10,9 @@ need.require() first and refuses, exit 2, naming the package.
 
 Two copies of the tool-to-package table exist -- kitchen's TOOLS (shell, for doctor and
 kitchen test) and need.TOOL_PKG (Python) -- so the test here that they agree is what keeps
-a fix in one from quietly disagreeing with the other.
+a fix in one from quietly disagreeing with the other. The same table is what `doctor
+--report` prints a version for, one row per tool, and a row that asked a tool the wrong way
+printed its usage error instead (#58): that is tested here too.
 
 Run directly: python3 tests/unit/test_need.py
 """
@@ -66,6 +68,44 @@ def test_the_two_tables_agree():
         check(f"{tool}: kitchen's TOOLS and need.TOOL_PKG name one package", shell[tool], py[tool])
 
 
+def test_every_tool_row_is_a_version_not_a_refusal():
+    """`kitchen doctor --report` printed OpenSSH's usage error where ssh's version belongs (#58).
+
+    tool_version gives every tool without a case of its own `--version`. ssh joined the TOOLS
+    table in 46d163e with no case, OpenSSH takes no long options, and every report filed since
+    -- the six in #50 to #55 -- carried `ssh  unknown option -- -`. The block exists to carry
+    versions, and this was the version the boot host's error hints were captured against.
+
+    So: kitchen's own tool_version, run over every tool in TOOLS that this machine has, and a
+    row that reads as a refusal, or says nothing, fails. A tool that is not installed has no
+    row to check. Measured 2026-09-27: 0.15 s for 22 installed tools, in one sh that runs
+    tool_version for each, and it fails the kitchen before #58's case on ssh's row.
+    """
+    import re
+    text = open(os.path.join(ROOT, "kitchen")).read()
+
+    def func(name):
+        return re.search(rf"(?ms)^{re.escape(name)}\(\) \{{\n.*?^\}}\n", text).group(0)
+    have = re.search(r"(?m)^have\(\) \{.*\}$", text).group(0)
+    tools = "TOOLS='" + text.split("TOOLS='", 1)[1].split("'", 1)[0] + "'"
+    script = "\n".join([
+        have, func("have_tool"), func("tool_version"), tools,
+        """printf '%s\\n' "$TOOLS" | while IFS='|' read -r bin _pkg _why; do""",
+        """    have_tool "$bin" && printf '%s\\t%s\\n' "$bin" "$(tool_version "$bin")" """,
+        "done"])
+    r = subprocess.run(["sh", "-c", script], capture_output=True, text=True,
+                       stdin=subprocess.DEVNULL)
+    rows = [ln.split("\t", 1) for ln in r.stdout.splitlines()]
+    # A fixture guard, not a claim about kitchen: every machine that runs this has git.
+    check("the extracted functions ran and found installed tools",
+          (r.returncode, any(b == "git" for b, _ in rows)), (0, True))
+    refusal = re.compile(r"unknown option|unrecognized option|invalid option|illegal option"
+                         r"|usage:", re.I)
+    for tool, version in rows:
+        check(f"{tool}'s row in doctor --report, {version!r}, is a version",
+              bool(version.strip()) and not refusal.search(version), True)
+
+
 def test_missing_names_the_package():
     box = tempfile.mkdtemp(prefix="need-")
     saved = os.environ.get("PATH", "")
@@ -115,7 +155,8 @@ def main():
     _tmpdir = os.environ.get("TMPDIR")
     os.environ["TMPDIR"] = box
     try:
-        for fn in [test_the_two_tables_agree, test_missing_names_the_package,
+        for fn in [test_the_two_tables_agree, test_every_tool_row_is_a_version_not_a_refusal,
+                   test_missing_names_the_package,
                    test_every_command_refuses_instead_of_crashing]:
             # One test crashing must not stop the rest: the count of failures is only honest
             # if every test ran. The traceback still goes to stderr, because a crash's location

@@ -325,6 +325,9 @@ tool_version() {
         # ShellCheck prints a banner first; the version is on the second line.
         shellcheck)            _o="shellcheck $(timeout 5 shellcheck --version </dev/null 2>&1 \
                                     | sed -n 's/^version: //p' | head -1)" ;;
+        # OpenSSH takes -V and no long options: --version got "unknown option -- -" and its
+        # usage, which is what this row printed from 46d163e, which added ssh, until #58.
+        ssh)                   _o=$(timeout 5 ssh -V </dev/null 2>&1) ;;
         *)                     _o=$(timeout 5 "$_t" --version </dev/null 2>&1) ;;
     esac
     printf '%s' "$(printf '%s' "$_o" | head -1 | cut -c1-58)"
