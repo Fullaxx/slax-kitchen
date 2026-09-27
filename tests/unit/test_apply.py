@@ -519,7 +519,7 @@ def test_unknown_override_is_rejected():
             compat: {flavours: [debian], arch: [64bit], privilege: none}
             vars: {bundle: 07-x}
             steps:
-              - {verb: bundle.files, bundle: "{{bundle}}", files: []}
+              - {verb: bundle.files, bundle: "{{bundle}}", files: [{dest: /x, content: ""}]}
             """))
     check("a declared var is accepted",
           validate_file(path, {"bundle": "20-y"}), [])
@@ -934,7 +934,7 @@ def test_network_is_declared_where_it_is_used():
     check("found the urlopen verbs at all", bool(fetchers), True)
     for v in sorted(fetchers):
         declares = apply.VERB_REQUIRES.get(v, {}).get("network") is True
-        infers = v in apply._URL_SRC_VERBS
+        infers = v in apply._URL_SRC_VERBS or v in apply._URL_FILE_VERBS
         check(f"{v} declares or infers network", declares or infers, True)
 
 
@@ -2234,6 +2234,153 @@ def test_bundle_files_refuses_a_setuid_mode():
             os.unlink(sb)
 
 
+def test_bundle_files_fetches_a_pinned_url_itself():
+    """A bundle.files `url:` entry is fetched by the engine and held to its sha256 (#59).
+
+    A single pinned download into a bundle took bundle.script: privilege: chroot, the whole
+    stack unpacked as the build root, network inside it and a downloader in the image --
+    and a record that is the script's own account, which passed --strict with a sha256
+    the file did not have (#59, measured at 7d5f7a0). Before #59 a `url:` entry validated,
+    since the schema left entries open, and then died in _place_files with a bare
+    KeyError: 'src'. The engine now fetches it, as boot.payload does, and refuses a
+    mismatch. urlopen is replaced here, since a commit gate cannot reach the network; the
+    subject is what the engine does with what it hands back.
+    """
+    import ast
+    import hashlib
+    import io
+    import json
+    import tempfile
+    import urllib.error
+
+    import jsonschema
+
+    payload = b"\x7fELF" + b"a static binary" * 64
+    good = hashlib.sha256(payload).hexdigest()
+    asked = []
+
+    def fake(url, timeout=None):
+        asked.append(url)
+        if url.endswith("/gone"):
+            raise urllib.error.URLError("no route to host")
+        return io.BytesIO(payload)
+    saved = apply.urllib.request.urlopen
+    apply.urllib.request.urlopen = fake
+    work = tempfile.mkdtemp()
+    try:
+        ctx = apply.Ctx(work, work, "t")
+        said = []
+        ctx.say = said.append
+        entry = {"dest": "/usr/local/bin/jq", "url": "https://example.org/jq", "sha256": good,
+                 "upstream_source": "https://example.org/jq/source/", "mode": "0755"}
+
+        def fetch(*specs):
+            root = tempfile.mkdtemp(dir=work)
+            try:
+                return apply._fetch_files(ctx, root, list(specs), "bundle.files"), root, ""
+            except RuntimeError as e:
+                return None, root, str(e)
+
+        unmoded = {k: e for k, e in entry.items() if k != "mode"}
+        got, root, _ = fetch(entry, dict(unmoded, dest="/usr/share/jq/data"))
+        jq = os.path.join(root, "usr", "local", "bin", "jq")
+        check("the download is placed, byte for byte", open(jq, "rb").read(), payload)
+        check("...with the mode the entry asks for", oct(os.stat(jq).st_mode & 0o7777), "0o755")
+        data = os.path.join(root, "usr", "share", "jq", "data")
+        check("...and 0644 when it asks for none, whatever the umask",
+              oct(os.stat(data).st_mode & 0o7777), "0o644")
+        check("it records what it fetched, checked", got and got[0], {
+            "path": "usr/local/bin/jq", "sha256": good, "url": "https://example.org/jq",
+            "upstream_source": "https://example.org/jq/source/", "pinned": True,
+            "checked": True})
+
+        _got, root, err = fetch(dict(entry, sha256="0" * 64))
+        check("a sha256 mismatch is refused, naming the URL and both hashes",
+              all(x in err for x in ("https://example.org/jq", "0" * 64, good)), True)
+        check("...and leaves nothing behind", [f for _d, _s, fs in os.walk(root) for f in fs], [])
+        _got, root, err = fetch(dict(entry, url="https://example.org/gone"))
+        check("a fetch that fails is refused, naming the URL",
+              "could not fetch https://example.org/gone" in err, True)
+        check("...and leaves nothing behind", [f for _d, _s, fs in os.walk(root) for f in fs], [])
+        before = len(asked)
+        _got, root, err = fetch(dict(entry, mode="4755"))
+        check("setuid is refused before anything is fetched",
+              ("setuid" in err, len(asked)), (True, before))
+        root = tempfile.mkdtemp(dir=work)
+        os.makedirs(os.path.join(root, "usr", "local", "bin"))
+        open(os.path.join(root, "usr", "local", "bin", "jq"), "w").close()
+        try:
+            apply._fetch_files(ctx, root, [entry], "bundle.files")
+            check("a path another entry wrote is refused", "written", "refused")
+        except RuntimeError as e:
+            check("a path another entry wrote is refused", "another entry" in str(e), True)
+
+        for spec, want in (({"dest": "/x"}, "needs one of src, content or url"),
+                           ({"dest": "/x", "src": "https://example.org/x"},
+                            "a download goes in url:")):
+            try:
+                apply._place_files(ctx, tempfile.mkdtemp(dir=work), [spec], "bundle.files")
+                check(f"{spec}: refused by name", "placed", "refused")
+            except RuntimeError as e:
+                check(f"{spec}: refused by name", want in str(e), True)
+
+        before = len(asked)
+        dry = apply.Ctx(work, work, "t", dry=True)
+        dry.say = said.append
+        apply.v_bundle_files(dry, {"verb": "bundle.files", "bundle": "17-jq", "files": [entry]})
+        check("a dry run fetches nothing and says what it would",
+              (len(asked), said[-1]), (before, "would fetch https://example.org/jq as "
+                                               "/usr/local/bin/jq in 17-jq.sb"))
+    finally:
+        apply.urllib.request.urlopen = saved
+        shutil.rmtree(work, ignore_errors=True)
+
+    step = {"verb": "bundle.files", "bundle": "17-jq", "files": [entry]}
+    check("a url: entry needs the network at preflight",
+          apply.step_requires(step).get("network"), True)
+    check("...and a content-only step does not",
+          apply.step_requires({"verb": "bundle.files", "bundle": "17-x",
+                               "files": [{"dest": "/x", "content": "x"}]}).get("network"),
+          None)
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    v = jsonschema.Draft202012Validator(
+        json.load(open(os.path.join(here, "..", "..", "schema", "recipe.schema.json"))))
+    url = {k: e for k, e in entry.items() if k != "mode"}
+
+    def valid(files):
+        return not list(v.iter_errors({
+            "apiVersion": "slax-kitchen/v1", "kind": "Recipe",
+            "metadata": {"name": "files-probe", "summary": "a bundle.files schema probe"},
+            "steps": [{"verb": "bundle.files", "bundle": "17-jq", "files": files}]}))
+    for what, files, want in (
+            ("a url: entry with its sha256: and upstream_source:", [url], True),
+            ("content: and src: entries, as before",
+             [{"dest": "/a", "content": "x", "mode": "0755"}, {"dest": "/b", "src": "./b"}], True),
+            ("url: without sha256:", [{k: e for k, e in url.items() if k != "sha256"}], False),
+            ("url: without upstream_source:",
+             [{k: e for k, e in url.items() if k != "upstream_source"}], False),
+            ("sha256: without url:", [{"dest": "/a", "content": "x", "sha256": good}], False),
+            ("src: and url: in one entry", [dict(url, src="./b")], False),
+            ("an entry with none of the three", [{"dest": "/a"}], False),
+            ("a misspelt key", [{"dest": "/a", "content": "x", "mdoe": "0644"}], False),
+            ("an integer mode", [{"dest": "/a", "content": "x", "mode": 755}], False),
+            ("no entries at all", [], False)):
+        check(f"schema: {what}", valid(files), want)
+
+    # Downloads go in last, so nothing overwrites one, and the record is made from them.
+    tree = ast.parse(open(os.path.join(here, "..", "..", "lib", "apply.py")).read())
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "v_bundle_files")
+    calls = [ast.unparse(n.func) for n in ast.walk(fn) if isinstance(n, ast.Call)]
+    order = [c for c in calls if c in ("_place_files", "_fetch_files", "_make_bundle")]
+    check("v_bundle_files places, then fetches, then builds", order,
+          ["_place_files", "_fetch_files", "_make_bundle"])
+    check("...and records what it fetched", any(
+        isinstance(n, ast.Call) and ast.unparse(n.func) == "ctx.prov"
+        and any(k.arg == "fetched" for k in n.keywords) for n in ast.walk(fn)), True)
+
+
 def test_iso_files_actually_writes_into_the_iso_tree():
     """`iso.files` was implemented, documented, listed as shipped -- and run by nothing.
 
@@ -3499,6 +3646,7 @@ def main():
                    test_fromtarball_refuses_privileged_members,
                    test_all_root_is_per_verb,
                    test_bundle_files_refuses_a_setuid_mode,
+                   test_bundle_files_fetches_a_pinned_url_itself,
                    test_iso_files_actually_writes_into_the_iso_tree,
                    test_relax_modes_widens_without_granting,
                    test_apt_reinstall_is_opt_in,

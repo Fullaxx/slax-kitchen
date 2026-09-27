@@ -70,9 +70,9 @@ image it builds and must not publish; see [below](#the-image-ci-builds-and-never
 
 Source is attached for what the build compiled, built or modified. Everything included as its
 upstream published it — Slax's own parts, Debian packages, a vendor's tarball, a single file a
-script downloaded — is listed in `SOURCES.md` with the place that upstream publishes its source:
-linux-live and the repositories it names, `snapshot.debian.org` for each Debian source version, the
-recipe's `upstream_source` for a download. Where a download goes in a recipe:
+recipe or a script downloaded — is listed in `SOURCES.md` with the place that upstream publishes
+its source: linux-live and the repositories it names, `snapshot.debian.org` for each Debian source
+version, the recipe's `upstream_source` for a download. Where a download goes in a recipe:
 [a file the build downloads](../90-reference/verbs.md#a-file-the-build-downloads).
 
 **What weakens a pointer is said, not smoothed over.** A download with no `upstream_source`, and one

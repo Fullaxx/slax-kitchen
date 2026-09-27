@@ -218,21 +218,7 @@
                 "description": "pull this member out of a downloaded .zip/.tar.*; sha256 is checked against the archive"
               },
               "upstream_source": {
-                "description": "where the upstream publishes the source of what this step installs unmodified -- a URL, or several; recorded in the image's provenance and listed by `kitchen sources`",
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "pattern": "^https?://"
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "pattern": "^https?://"
-                    },
-                    "minItems": 1
-                  }
-                ]
+                "$ref": "#/$defs/upstreamSource"
               }
             },
             "dependentRequired": {
@@ -516,21 +502,7 @@
                           "description": "ship the source and key in the bundle, so the live system trusts the repo and can upgrade from it"
                         },
                         "upstream_source": {
-                          "description": "where the upstream publishes the source of what this step installs unmodified -- a URL, or several; recorded in the image's provenance and listed by `kitchen sources`",
-                          "oneOf": [
-                            {
-                              "type": "string",
-                              "pattern": "^https?://"
-                            },
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "pattern": "^https?://"
-                              },
-                              "minItems": 1
-                            }
-                          ]
+                          "$ref": "#/$defs/upstreamSource"
                         }
                       }
                     }
@@ -648,8 +620,72 @@
               },
               "files": {
                 "type": "array",
+                "minItems": 1,
                 "items": {
-                  "type": "object"
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "dest"
+                  ],
+                  "properties": {
+                    "dest": {
+                      "type": "string",
+                      "description": "where the file goes in the image"
+                    },
+                    "src": {
+                      "type": "string",
+                      "description": "a file or directory beside the recipe, copied in; kitchen sources checks it against the recorded commit"
+                    },
+                    "content": {
+                      "type": "string",
+                      "description": "the file's text, written as given"
+                    },
+                    "url": {
+                      "type": "string",
+                      "pattern": "^https?://",
+                      "description": "downloaded at build time and refused unless its sha256 is `sha256:`; kitchen sources lists it as a prebuilt part of the bundle"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "upstream_source": {
+                      "$ref": "#/$defs/upstreamSource"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "pattern": "^[0-7]{3,4}$"
+                    }
+                  },
+                  "oneOf": [
+                    {
+                      "required": [
+                        "src"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "content"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "url"
+                      ]
+                    }
+                  ],
+                  "dependentRequired": {
+                    "url": [
+                      "sha256",
+                      "upstream_source"
+                    ],
+                    "sha256": [
+                      "url"
+                    ],
+                    "upstream_source": [
+                      "url"
+                    ]
+                  }
                 }
               }
             }
@@ -720,21 +756,7 @@
                 "type": "boolean"
               },
               "upstream_source": {
-                "description": "where the upstream publishes the source of what this step installs unmodified -- a URL, or several; recorded in the image's provenance and listed by `kitchen sources`",
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "pattern": "^https?://"
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "pattern": "^https?://"
-                    },
-                    "minItems": 1
-                  }
-                ]
+                "$ref": "#/$defs/upstreamSource"
               }
             }
           }
@@ -801,21 +823,7 @@
                 }
               },
               "upstream_source": {
-                "description": "where the upstream publishes the source of what this step installs unmodified -- a URL, or several; recorded in the image's provenance and listed by `kitchen sources`",
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "pattern": "^https?://"
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "pattern": "^https?://"
-                    },
-                    "minItems": 1
-                  }
-                ]
+                "$ref": "#/$defs/upstreamSource"
               },
               "declares": {
                 "type": "array",
@@ -1178,6 +1186,23 @@
           }
         }
       }
+    },
+    "upstreamSource": {
+      "description": "where the upstream publishes the source of what this step installs unmodified -- a URL, or several; recorded in the image's provenance and listed by `kitchen sources`",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^https?://"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^https?://"
+          },
+          "minItems": 1
+        }
+      ]
     }
   }
 }

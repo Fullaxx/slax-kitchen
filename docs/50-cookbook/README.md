@@ -2,13 +2,13 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Thirty-five recipes ship today.** Every one is built and structurally asserted on all four
-targets by CI (or on the subset its `compat:` block declares) — with three exceptions:
-[`all-browsers`](all-browsers.md), [`tor-browser`](tor-browser.md) and
-[`firmware-refresh`](firmware-refresh.md) are built weekly rather than on every push, because four
-sha256-pinned vendor keys, a version-pinned Tor Browser tarball and 65 files fetched from
-linux-firmware mirrors are external dependencies — someone else's release should not redden
-master. See
+**Thirty-six recipes ship today.** Every one is built and structurally asserted on all four
+targets by CI (or on the subset its `compat:` block declares) — with four exceptions:
+[`all-browsers`](all-browsers.md), [`tor-browser`](tor-browser.md),
+[`firmware-refresh`](firmware-refresh.md) and [`bundle-from-url`](bundle-from-url.md) are built
+weekly rather than on every push, because four sha256-pinned vendor keys, a version-pinned Tor
+Browser tarball, 65 files fetched from linux-firmware mirrors and a version-pinned binary from
+github.com are external dependencies — someone else's release should not redden master. See
 [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) and [CI](../60-testing/ci.md). Each page opens with the rung of
 the [verification ladder](../../CONTRIBUTING.md) it actually reached — `matrix-verified`,
 `artifact boot-verified`, `boot-verified` or `runtime-verified` — and the `95-status-vocab` gate
@@ -70,6 +70,7 @@ to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
 | [`branding`](branding.md) | hostname, version string and login banner, from a 4 KiB override bundle | ○ |
 | [`bundle-from-dir`](bundle-from-dir.md) | pack a directory of your own files as a filesystem root | ○ |
 | [`bundle-from-tarball`](bundle-from-tarball.md) | fetch a published release tarball, verify it, pack it | ○ |
+| [`bundle-from-url`](bundle-from-url.md) | put one pinned download in a bundle — a static binary, an installer — with no chroot | ○ |
 | [`bundle-from-txz`](bundle-from-txz.md) | pinned Slackware `.txz` via `installpkg` — the supported Slackware route | ◐ |
 | [`renumber-bundles`](renumber-bundles.md) | change a bundle's place in the stack without rebuilding it | ○ |
 | [`preinit-hook`](preinit-hook.md) | run your own code on the assembled filesystem, just before boot | ○ |
@@ -113,12 +114,12 @@ shipped bundle is for **removal only**; nothing else needs it.
 
 ## Flavour coverage
 
-**Twenty-four of the thirty-five work on all four targets.** Counted from the `compat:` blocks:
+**Twenty-five of the thirty-six work on all four targets.** Counted from the `compat:` blocks:
 eight are Debian-only (`add-packages`, `all-browsers`, `chromium-current`, `debian-browsers`,
 `firefox-esr`, `firmware-refresh`, `libreoffice`, `tor-browser`), two are Slackware-only
 (`bundle-from-txz`, `fix-slackware-bugs`), and three ship 64-bit vendor builds only
-(`all-browsers`, `bundle-from-tarball`, `tor-browser`). So a target's matrix runs 33 recipes on
-debian-64bit, 30 on debian-32bit, 27 on slackware-64bit and 26 on slackware-32bit. The one that
+(`all-browsers`, `bundle-from-tarball`, `tor-browser`). So a target's matrix runs 34 recipes on
+debian-64bit, 31 on debian-32bit, 28 on slackware-64bit and 27 on slackware-32bit. The one that
 most often surprises people:
 
 | | |

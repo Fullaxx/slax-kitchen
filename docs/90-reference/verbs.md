@@ -54,13 +54,13 @@ redistribution:
 
 | Field | On | What it says |
 |---|---|---|
-| `upstream_source` | `boot.payload`, `bundle.fromTarball`, `bundle.script`, each `apt.sources` entry | where the publisher of something installed **unmodified** keeps its source: a URL, or a list of them |
+| `upstream_source` | `boot.payload`, `bundle.fromTarball`, `bundle.script`, each `apt.sources` entry, each `bundle.files` `url:` entry (required there) | where the publisher of something installed **unmodified** keeps its source: a URL, or a list of them |
 | `declares` | `bundle.script` | binaries the script **compiled**, each with `path`, `source_url`, `source_sha256` and optionally `license` |
 | `redistribution` | the recipe | `allowed: false` and a `why:` when an image containing this recipe's output must not be published |
 
 A download with no `upstream_source` is a warning, and unresolved under `kitchen sources --strict`;
 so is a download the recipe pinned no `sha256:` for, because what it fetched is whatever that server
-served that day. An ELF file that a `bundle.script` leaves behind that no package **vouches for** —
+served that day. A `bundle.files` `url:` entry cannot be written without either. An ELF file that a `bundle.script` leaves behind that no package **vouches for** —
 no package owns it, or its bytes are not the ones the owning package recorded an md5 for — and that
 no `declares:` entry names is always unresolved: something was compiled or overwritten, and nothing
 says from what. On Slackware, whose package database records no checksums, ownership is all there
@@ -74,15 +74,34 @@ recipe-relative path without it. `bundle.fromTarball` and `initramfs.busybox` ar
 what they take in is a download or a build output, described by `upstream_source`
 or a build claim. `boot.payload` takes either, and is not an exception — a URL is described by
 `upstream_source`, and a local file is recorded like any other file copied in from a checkout.
+`bundle.files` is the same: a `url:` entry is a download, and a `src:` entry a file copied in.
 
 ### A file the build downloads
 
 A file the build downloads goes through a verb that records the download:
-[`bundle.fromTarball`](#bundlefromtarball-), given the tarball's URL, for a tarball, and
-[`bundle.script`](#bundlescript--chroot) for anything else — an installer, a font, a data file. The
-script downloads the file, checks it against a sha256 the recipe pins, and prints a
-`KITCHEN-FETCHED` line. `kitchen sources` then lists the file with the step's `upstream_source`,
-in a bundle classed `ours`:
+[`bundle.fromTarball`](#bundlefromtarball-), given the tarball's URL, for a tarball, and a
+[`bundle.files`](#bundlefiles-) `url:` entry for a single file — an installer, a font, a data file,
+a static binary:
+
+```yaml
+- verb: bundle.files
+  bundle: 30-installer
+  files:
+    - dest: /opt/tool/setup.exe
+      url: https://example.org/tool/releases/tool-1.0-setup.exe
+      sha256: "…"                                    # pinned when the recipe is written
+      upstream_source: https://example.org/tool/source/
+```
+
+The engine downloads the file and refuses it unless its sha256 is the one pinned, and `kitchen
+sources` lists it as a prebuilt part of the bundle: a download installed unmodified, pointing at its
+`upstream_source`. That needs no chroot and nothing in the image — the step is `privilege: none` —
+and [`bundle-from-url`](../50-cookbook/bundle-from-url.md) is a recipe that does exactly this (#59).
+
+A download that is part of work a script has to do anyway goes through
+[`bundle.script`](#bundlescript--chroot). The script downloads the file, checks it against a sha256
+the recipe pins, and prints a `KITCHEN-FETCHED` line. `kitchen sources` then lists the file with the
+step's `upstream_source`, in a bundle classed `ours`:
 
 ```yaml
 - verb: bundle.script
@@ -107,15 +126,16 @@ network inside the chroot, and a downloader in the image. Stock Slax has `wget` 
 targets. On Slackware it verifies no TLS certificate until `/etc/ssl/cert.pem` exists, which
 `fix-slackware-bugs` writes ([issue 13](../30-inventory/known-upstream-bugs.md)).
 
-The obvious shortcut does not get through: a file staged where git ignores it and copied in by
-`bundle.files` is an input the recorded commit does not hold, so it is unresolved.
+The obvious shortcut does not get through: a file staged where git ignores it and copied in by a
+`bundle.files` `src:` entry is an input the recorded commit does not hold, so it is unresolved.
 `kitchen sources --allow-dirty` accepts it, and `ci/release-assets.sh` never passes that flag.
 Committing the file instead is what `00-no-binaries` exists to refuse, for a Windows payload or a
 large file.
 
-A prebuilt ELF binary that no package ships reaches a bundle accounted for only inside a tarball
-today. One that a `bundle.script` leaves behind is unresolved unless `declares:` names it, and
-`declares:` is for what the script compiled ([#52](https://github.com/Fullaxx/slax-kitchen/issues/52)).
+A prebuilt ELF binary that no package ships is accounted for when the engine fetched it: through a
+`bundle.files` `url:` entry, or inside a tarball. One that a `bundle.script` leaves behind is
+unresolved unless `declares:` names it, and `declares:` is for what the script compiled
+([#52](https://github.com/Fullaxx/slax-kitchen/issues/52)).
 
 ---
 
@@ -144,7 +164,7 @@ mksquashfs SRC DST -comp xz -b 1024K -Xbcj x86 -always-use-fragments -noappend
 
 ### `bundle.files` ○
 
-Build a bundle from files given inline or by path.
+Build a bundle from files given inline, by path, or by URL.
 
 ```yaml
 - verb: bundle.files
@@ -153,12 +173,25 @@ Build a bundle from files given inline or by path.
     - {dest: /etc/hostname, content: "myhost\n"}
     - {dest: /usr/bin/tool, src: ./tool, mode: "0755"}
     - {dest: /opt/data, src: ./datadir}        # a directory is copied recursively
+    - dest: /usr/local/bin/jq                   # downloaded, and refused unless it matches
+      url: https://example.org/jq/jq-linux-amd64
+      sha256: "…"
+      upstream_source: https://example.org/jq/source/
+      mode: "0755"
 ```
 
-The same shape as [`rootcopy.files`](#rootcopyfiles-), but the result is a real bundle. Worth the
+[`rootcopy.files`](#rootcopyfiles-)' shape plus `url:`, but the result is a real bundle. Worth the
 difference when you want the files to be one movable file, to be skippable with `noload=`, or to sit
 at a defined point in the stack — rootcopy always lands in the writable layer and cannot be turned
 off at the boot prompt.
+
+Each entry takes exactly one of `content`, `src` or `url`, and the entries are schema-closed, so a
+misspelt key is refused. A `url:` entry needs `sha256:` and `upstream_source:`: the engine downloads
+the file, refuses it unless its sha256 is the one pinned, and records it, so `kitchen sources` lists
+it as a prebuilt part of the bundle with its source ([a file the build downloads](#a-file-the-build-downloads)).
+A download's mode is `0644` unless the entry gives one. Downloads are placed after the other
+entries, and one that lands on a path another entry wrote is refused. There is no mirror list and no
+cache: every build fetches, and a dry run fetches nothing.
 
 ### `bundle.fromDir` ○
 
@@ -322,9 +355,10 @@ foreign architecture survives into the image.
 > schema object, not the ones an `if`/`then` branch introduces.
 >
 > That covers a step's own keys. An object nested inside a step is closed only where its own
-> schema says so: `boot.menu`'s `add:` is. The entries of `bundle.files`, `rootcopy.files`,
-> `iso.files` and `initramfs.files`, `initramfs.patch`'s edits, and `boot.branding`'s `{src: …}`
-> form are not yet, so a misspelt key inside one of those still passes validation.
+> schema says so: `boot.menu`'s `add:` and `bundle.files`' entries are. The entries of
+> `rootcopy.files`, `iso.files` and `initramfs.files`, `initramfs.patch`'s edits, and
+> `boot.branding`'s `{src: …}` form are not yet, so a misspelt key inside one of those still passes
+> validation.
 
 ### `bundle.script` ◐ chroot
 

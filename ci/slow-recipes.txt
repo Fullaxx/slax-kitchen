@@ -18,3 +18,4 @@
 all-browsers  weekly, not per-push: four sha256-pinned vendor keys are an external dependency (456 s, and a key rotation would redden master)
 tor-browser   weekly, not per-push: a version-pinned 138 MB tarball from dist.torproject.org is an external dependency, and a Tor Browser release would redden master
 firmware-refresh  weekly, not per-push: 65 sha256-pinned files fetched from linux-firmware mirrors (git.kernel.org answered 503 to a burst while they were measured) are an external dependency
+bundle-from-url  weekly, not per-push: a version-pinned binary from github.com is an external dependency; the fetch itself is tested in-process on every push (test_bundle_files_fetches_a_pinned_url_itself), and the recipe measured 4 s a target

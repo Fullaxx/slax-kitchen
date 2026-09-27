@@ -64,8 +64,8 @@ not a substitute for it.
 
 ## Extending it
 
-`bundle.files` takes `src:` as well as `content:`, and a directory source is copied recursively, so
-wallpaper and a Fluxbox style go in the same bundle:
+`bundle.files` takes `src:` and `url:` as well as `content:`, and a directory source is copied
+recursively, so wallpaper and a Fluxbox style go in the same bundle:
 
 ```yaml
 - verb: bundle.files

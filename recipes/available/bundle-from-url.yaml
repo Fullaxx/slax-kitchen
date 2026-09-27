@@ -1,0 +1,53 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: bundle-from-url
+  summary: Put one pinned download into a bundle, checked by the engine, with no chroot
+  tags: [bundle, template, download]
+compat:
+  flavours: [debian, slackware]
+  # Both arches, because jq publishes a static binary for each. Check yours before
+  # copying this: bundle-from-tarball's fzf publishes no i386 at all.
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  bundle: 17-jq
+  version: "1.8.2"
+  # From the release's own sha256sum.txt, and checked against the files it names.
+  sha256_64bit: "b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f"
+  sha256_32bit: "ba996e8ce436973e2f39e2639405a37e8c81ba8c722b71c83996278ad0af16dd"
+steps:
+  # jq, the JSON processor: a single statically linked binary, which makes it the honest
+  # example of a file that is not a tarball. bundle.fromTarball takes only an archive, and
+  # boot.payload writes only under slax/; before #59 the one route into a bundle was
+  # bundle.script, with a chroot, the whole stack unpacked as the build root, network
+  # inside it, and a record that was the script's own account.
+  #
+  # A `url:` entry is fetched by the engine, refused unless its sha256 is the one pinned
+  # here, and recorded, so `kitchen sources` lists the file as a download installed
+  # unmodified -- a prebuilt part of this bundle, pointing at `upstream_source`. The
+  # binary is ELF, and that is fine: the engine fetched it, so nothing is left for a
+  # `declares:` to vouch for (#52).
+  #
+  # One step per arch, because the URL and the pin differ. `when:` means only one runs,
+  # so the bundle is still produced once.
+  - verb: bundle.files
+    when: arch==64bit
+    bundle: "{{bundle}}"
+    files:
+      - dest: /usr/local/bin/jq
+        url: "https://github.com/jqlang/jq/releases/download/jq-{{version}}/jq-linux-amd64"
+        sha256: "{{sha256_64bit}}"
+        # The release's own tag: where the source of this exact binary lives.
+        upstream_source: "https://github.com/jqlang/jq/tree/jq-{{version}}"
+        mode: "0755"
+  - verb: bundle.files
+    when: arch==32bit
+    bundle: "{{bundle}}"
+    files:
+      - dest: /usr/local/bin/jq
+        url: "https://github.com/jqlang/jq/releases/download/jq-{{version}}/jq-linux-i386"
+        sha256: "{{sha256_32bit}}"
+        upstream_source: "https://github.com/jqlang/jq/tree/jq-{{version}}"
+        mode: "0755"

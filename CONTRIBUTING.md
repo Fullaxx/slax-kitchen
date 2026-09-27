@@ -421,8 +421,9 @@ A recipe we can take needs:
   and that constraint then applies to every recipe beside it. `remove-bundle` is the one recipe that
   removes; list it first and the rest compose in any order
 - **matrix-verified on all four targets**, or a `compat:` block that explains the skip
-- **where the source is**, for anything it downloads: `upstream_source:` on the step or the apt
-  repository, a `KITCHEN-FETCHED` line for each file a `bundle.script` downloads into the image,
+- **where the source is**, for anything it downloads: `upstream_source:` on the step, the apt
+  repository or the `bundle.files` `url:` entry, a `KITCHEN-FETCHED` line for each file a
+  `bundle.script` downloads into the image,
   `declares:` for anything a `bundle.script` compiles, and `redistribution: {allowed: false, why:
   …}` if an image containing it must not be published — see
   [saying where the source is](docs/90-reference/verbs.md#saying-where-the-source-is). The matrix

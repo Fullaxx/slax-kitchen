@@ -635,6 +635,61 @@ def test_markdown_renders():
     check("has the summary table", "| prebuilt | 1 |" in md, True)
 
 
+def _files_recipe(fetched, inputs=()):
+    step = {"verb": "bundle.files", "output": "slax/modules/17-jq.sb", "output_sha256": H["7"]}
+    if fetched is not None:
+        step["fetched"] = fetched
+    if inputs:
+        step["local_inputs"] = list(inputs)
+    return {"recipe": "bundle-from-url", "steps": [step]}
+
+
+def test_a_file_bundle_files_downloaded_is_a_prebuilt_part_of_its_bundle():
+    """A bundle.files `url:` entry is a download the engine checked: a prebuilt part (#59).
+
+    Before #59 a single pinned download reached a bundle through bundle.script, whose record
+    is what the script says it fetched, or as a staged file bundle.files copied in, which is
+    unresolved unless the commit holds it -- and a prebuilt ELF binary was unresolved either
+    way (#52 (a)). Now the engine fetches the file and refuses a sha256 mismatch, so the
+    record is its own: the bundle is ours, and the file a prebuilt part pointing upstream.
+    """
+    jq = {"path": "usr/local/bin/jq", "sha256": H["8"], "url": "https://example.org/jq",
+          "upstream_source": "https://example.org/jq/source/", "pinned": True, "checked": True}
+    doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe([jq])]), strict=True)
+    comp = doc["components"][0]
+    check("the bundle is ours, resolved under --strict", (comp["class"], doc["unresolved"]),
+          ("ours", []))
+    check("the download is a prebuilt part pointing upstream", comp.get("parts"), [
+        {"member": "usr/local/bin/jq", "class": "prebuilt", "by": "bundle-from-url",
+         "source": "https://example.org/jq", "source_sha256": H["8"],
+         "upstream_source": "https://example.org/jq/source/", "pinned": True}])
+    check("SOURCES.md lists it with its source",
+          "- `slax/modules/17-jq.sb:usr/local/bin/jq` — <https://example.org/jq> — source: "
+          "https://example.org/jq/source/" in sources.markdown(doc), True)
+    # No validated recipe can leave upstream_source out; the record is still read the way
+    # a download's is, a weak pointer said out loud.
+    bare = {k: v for k, v in jq.items() if k != "upstream_source"}
+    doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe([bare])]))
+    check("no upstream_source: a warning",
+          any("names no upstream_source" in w for w in doc["warnings"]), True)
+    doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe([bare])]), strict=True)
+    check("...and unresolved under --strict", len(doc["unresolved"]), 1)
+    # A staged src: entry in the same step still has to be what the commit holds.
+    staged = {"root": "project", "path": "recipes/available/x.files", "kind": "dir",
+              "digest": H["1"], "in_archive": False}
+    doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe([jq], [staged])]))
+    check("a staged src: beside it is still unresolved",
+          [u["path"] for u in doc["unresolved"]], ["(recipe bundle-from-url)"])
+    doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe(None)]))
+    check("no downloads: no parts, as before", doc["components"][0].get("parts"), None)
+    # SOURCES.md says firmware a script fetched was "copied from linux-firmware", which is
+    # firmware-refresh's claim; a `url:` entry can fetch a firmware file from anywhere.
+    fw = dict(jq, path="usr/lib/firmware/vendor/x.bin")
+    doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe([fw])]))
+    check("a firmware file a url: entry fetched is not counted as linux-firmware's",
+          doc["firmware"]["fetched_firmware"], 0)
+
+
 def main():
     for fn in [test_stock_files_are_slax_by_hash,
                test_a_renumbered_stock_bundle_is_still_slax,
@@ -668,7 +723,8 @@ def main():
                test_what_a_recipe_copies_in_must_be_in_the_source_archive,
                test_a_file_from_a_build_host_package_points_at_that_package,
                test_the_recorded_digest_is_the_one_git_computes,
-               test_markdown_renders]:
+               test_markdown_renders,
+               test_a_file_bundle_files_downloaded_is_a_prebuilt_part_of_its_bundle]:
         # One test crashing must not stop the rest: the count of failures is only honest
         # if every test ran. The traceback still goes to stderr, because a crash's location
         # is the useful half and a one-line summary loses it.

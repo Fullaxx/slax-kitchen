@@ -54,10 +54,11 @@ weekly run:
 **The bar for `ci/slow-recipes.txt` is not "slow".** It is that the recipe's failure mode is
 *external* — something outside this repository breaks it — so running it per-push converts someone
 else's change into a red master at a cadence nobody can act on. Being merely expensive is not
-enough; cost is not a reason to stop checking. Today the file holds three entries, each an
+enough; cost is not a reason to stop checking. Today the file holds four entries, each an
 external dependency: `all-browsers`, whose four vendor signing keys are pinned by sha256 and will
-rotate; `tor-browser`, a version-pinned 138 MB download; and `firmware-refresh`, 65 sha256-pinned
-files fetched from linux-firmware mirrors.
+rotate; `tor-browser`, a version-pinned 138 MB download; `firmware-refresh`, 65 sha256-pinned
+files fetched from linux-firmware mirrors; and `bundle-from-url`, a version-pinned binary from
+github.com, whose fetch the unit gate tests in-process on every push.
 
 Each skip is printed with its reason. A matrix that quietly ran less than it looks like would be
 worse than a slow one:

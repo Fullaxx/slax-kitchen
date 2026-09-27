@@ -121,6 +121,9 @@ def _have_cap(cap: str) -> bool:
 # must actually urlopen a `src`; anything that urlopens and is NOT here is a preflight
 # that lies, which is what tests/unit/test_apply.py checks against the AST.
 _URL_SRC_VERBS = ("boot.payload", "bundle.fromTarball")
+# Verbs whose `files:` entries fetch a `url:`: bundle.files, since #59. The same rule as
+# above, held to the code by the same test.
+_URL_FILE_VERBS = ("bundle.files",)
 
 
 def step_requires(step: dict) -> dict:
@@ -132,6 +135,10 @@ def step_requires(step: dict) -> dict:
     # nothing, and `kitchen build` unpacked 436 MiB before dying at the download.
     # test_network_is_declared_where_it_is_used keeps the list honest against the code.
     if step.get("verb") in _URL_SRC_VERBS and re.match(r"^https?://", str(step.get("src", ""))):
+        req["network"] = True
+    if step.get("verb") in _URL_FILE_VERBS and any(
+            isinstance(f, dict) and re.match(r"^https?://", str(f.get("url", "")))
+            for f in step.get("files") or []):
         req["network"] = True
     # `network: true` on any step. bundle.script's docstring has promised this for
     # months and nothing read it, because $defs/step was open and the key validated
@@ -1790,16 +1797,39 @@ def _make_bundle(ctx: "Ctx", src_dir: str, name: str, verb: str,
     return target
 
 
+def _mode_of(spec: dict, verb: str, default: int | None = None) -> int | None:
+    """The permission bits a files: entry asks for, or `default` when it asks for none."""
+    if "mode" not in spec:
+        return default
+    mode = int(str(spec["mode"]), 8)
+    # A recipe may not ask for setuid/setgid here. bundle.files is privilege: none and
+    # builds with -all-root, so `mode: "4755"` would be a setuid ROOT binary requested by
+    # a line of YAML that reads like an ordinary permission. bundle.script (chroot) is the
+    # route if it is real.
+    if mode & (stat.S_ISUID | stat.S_ISGID):
+        raise RuntimeError(
+            f"{verb}: mode {spec['mode']!r} on {spec.get('dest')!r} sets "
+            f"setuid/setgid. This verb is privilege: none and its output runs "
+            f"as root at boot; use bundle.script if that is genuinely needed.")
+    return mode
+
+
 def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
-    """Write a list of {dest, src|content, mode} specs under root."""
+    """Write a list of {dest, src|content, mode} specs under root. A `url:` entry is not
+    placed here: bundle.files fetches those itself, after these (_fetch_files)."""
     for spec in files:
         dest = _under(root, spec["dest"], verb)
+        mode = _mode_of(spec, verb)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         if "content" in spec:
             with open(dest, "w") as f:
                 f.write(spec["content"])
-        else:
+        elif "src" in spec:
             src = spec["src"]
+            if re.match(r"^https?://", str(src)):
+                raise RuntimeError(
+                    f"{verb}: {spec['dest']}: src: is a path beside the recipe, and {src} is "
+                    f"a URL -- a download goes in url:, with its sha256: and upstream_source:")
             local = ctx.local(src)
             if os.path.isdir(local):
                 shutil.copytree(local, dest, dirs_exist_ok=True, symlinks=True)
@@ -1807,19 +1837,65 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
                 shutil.copy2(local, dest)
             else:
                 raise RuntimeError(f"{verb}: source not found: {local}")
-        if "mode" in spec:
-            _mode = int(str(spec["mode"]), 8)
-            # A recipe may not ask for setuid/setgid here. bundle.files is
-            # privilege: none and now builds with -all-root, so `mode: "4755"` would be
-            # a setuid ROOT binary requested by a line of YAML that reads like an
-            # ordinary permission. bundle.script (chroot) is the route if it is real.
-            if _mode & (stat.S_ISUID | stat.S_ISGID):
-                raise RuntimeError(
-                    f"{verb}: mode {spec['mode']!r} on {spec.get('dest')!r} sets "
-                    f"setuid/setgid. This verb is privilege: none and its output runs "
-                    f"as root at boot; use bundle.script if that is genuinely needed.")
-            os.chmod(dest, _mode)
+        else:
+            raise RuntimeError(f"{verb}: {spec['dest']} needs one of src, content or url")
+        if mode is not None:
+            os.chmod(dest, mode)
         ctx.say(f"  {spec['dest']}")
+
+
+def _fetch_files(ctx: "Ctx", root: str, files: list, verb: str) -> list[dict]:
+    """Download each {dest, url, sha256, upstream_source, mode} spec to its dest under root.
+
+    WHY THIS EXISTS. A single pinned download -- an installer, a static binary -- had no
+    verb of its own. bundle.fromTarball takes only an archive, boot.payload writes only
+    under slax/, and bundle.script costs a chroot: the whole stack unpacked as the build
+    root, network inside it, a downloader in the image, and a record that is what the
+    script said it fetched (#59). Here the engine fetches the file and refuses it unless
+    its sha256 is the one the recipe pins, as boot.payload does, so `kitchen sources` can
+    list it as a download installed unmodified: a prebuilt part of the bundle.
+
+    Called by v_bundle_files itself, not from _place_files, because the test that holds
+    network declarations to the code attributes an urlopen to its function's direct
+    callers. Returns what goes into the step's `fetched` record.
+    """
+    import http.client
+    fetched = []
+    for spec in files:
+        dest = _under(root, spec["dest"], verb)
+        mode = _mode_of(spec, verb, default=0o644)
+        url, want = spec["url"], spec.get("sha256")
+        if not want:
+            raise RuntimeError(f"{verb}: {spec['dest']}: url: needs the sha256: the download "
+                               f"must match")
+        # Downloads go in after every other entry, so nothing can overwrite one -- and one
+        # may not land on a path another entry wrote, or inside a directory it copied.
+        if os.path.lexists(dest):
+            raise RuntimeError(f"{verb}: {spec['dest']} is also written by another entry of "
+                               f"this step; a path in a bundle holds one file, and this one "
+                               f"is a download")
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        part = dest + ".part"
+        try:
+            with urllib.request.urlopen(url, timeout=120) as r, open(part, "wb") as f:
+                shutil.copyfileobj(r, f)
+        except (OSError, ValueError, http.client.HTTPException) as e:
+            if os.path.lexists(part):
+                os.unlink(part)
+            raise RuntimeError(f"{verb}: {spec['dest']}: could not fetch {url}: {e}") from None
+        got = sha256(part)
+        if got != want:
+            os.unlink(part)
+            raise RuntimeError(f"{verb}: {spec['dest']}: sha256 mismatch for {url}\n"
+                               f"  want {want}\n  got  {got}")
+        os.replace(part, dest)
+        os.chmod(dest, mode)
+        ctx.say(f"  {spec['dest']}  <- {url} (sha256 {got[:16]}..., as pinned)")
+        fetched.append({"path": os.path.relpath(dest, os.path.realpath(root)),
+                        "sha256": got, "url": url,
+                        "upstream_source": spec.get("upstream_source"),
+                        "pinned": True, "checked": True})
+    return fetched
 
 
 @verb("bundle.fromDir")
@@ -1842,12 +1918,13 @@ def v_bundle_fromdir(ctx: Ctx, step: dict) -> None:
 
 @verb("bundle.files")
 def v_bundle_files(ctx: Ctx, step: dict) -> None:
-    """Build a bundle from a list of files given inline or by path.
+    """Build a bundle from a list of files given inline, by path, or by URL.
 
-    The same shape as rootcopy.files, but the result is a real bundle rather than a
+    rootcopy.files' shape plus `url:`, and the result is a real bundle rather than a
     rootcopy drop. Worth the difference when you want the files to be one movable file,
     to be skippable with noload=, or to sit at a defined point in the stack -- rootcopy
-    always lands in the writable layer and cannot be turned off at the boot prompt.
+    always lands in the writable layer and cannot be turned off at the boot prompt. A
+    `url:` entry is downloaded and checked against its `sha256:` (_fetch_files, #59).
     """
     files = step.get("files") or []
     if not files:
@@ -1855,15 +1932,21 @@ def v_bundle_files(ctx: Ctx, step: dict) -> None:
     name = _bundle_name(step["bundle"], "bundle.files")
     if ctx.dry:
         for spec in files:
-            ctx.say(f"would add {spec['dest']} to {name}")
+            ctx.say(f"would fetch {spec['url']} as {spec['dest']} in {name}" if "url" in spec
+                    else f"would add {spec['dest']} to {name}")
         return
     import tempfile
     work = tempfile.mkdtemp(prefix="kitchen-bf-", dir=os.path.dirname(os.path.abspath(ctx.work)))
     try:
         root = os.path.join(work, "root")
         os.makedirs(root)
-        _place_files(ctx, root, files, "bundle.files")
+        _place_files(ctx, root, [f for f in files if "url" not in f], "bundle.files")
+        # Downloads last, so no entry after them can overwrite one: what the record says
+        # was downloaded is what the bundle holds.
+        fetched = _fetch_files(ctx, root, [f for f in files if "url" in f], "bundle.files")
         _make_bundle(ctx, root, name, "bundle.files", all_root=True)
+        if fetched:
+            ctx.prov(fetched=fetched)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
