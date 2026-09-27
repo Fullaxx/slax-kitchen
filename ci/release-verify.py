@@ -9,18 +9,21 @@ is 1; a directory that passes exits 0. Nothing is fetched and nothing is uploade
 What it refuses:
 
   - a SHA256SUMS that does not list exactly the files present, or a hash that is wrong
-  - a release-index.json that disagrees with the directory
-  - a provenance record, sources manifest or image whose sha256 do not agree
-  - anything `kitchen sources` left unresolved, and any recipe marked not redistributable
-  - something built here whose source is not among the assets
+  - a release-index.json that disagrees with the directory, or is not the v2 index that
+    lists every image
+  - for each image: a provenance record, sources manifest or image whose sha256 do not
+    agree; anything `kitchen sources` left unresolved in it, or any recipe marked not
+    redistributable; something built in it whose source is not among the assets that
+    serve it
+  - images built from different kitchen or project commits: one release is one version
   - a project archive whose submodules are missing, or differ from the recorded pins
   - an asset of 2 GiB or more, more than 1000 assets (GitHub's limits), or a name GitHub
     would rename
   - in any of the three records, a place inside this machine's kitchen or project checkout
     or its home directory -- the same rule `kitchen pack` applies to the provenance
-  - with an image attached: Slax's firmware bundle without the copyright files of its Debian
-    firmware packages, which firmware-refresh reinstalls (the b43 files in that bundle never
-    had a license text, and are kept)
+  - with an image attached: Slax's firmware bundle in it without the copyright files of its
+    Debian firmware packages, which firmware-refresh reinstalls (the b43 files in that bundle
+    never had a license text, and are kept)
   - with --assert-no-images: an image attached, or any asset whose CONTENT is an ISO 9660
     image, a squashfs, an ELF or PE executable, or a FAT filesystem -- checked by magic
     bytes, not by name
@@ -157,7 +160,6 @@ def verify(outdir: str, assert_no_images: bool = False) -> list[str]:
     except ValueError as e:
         return problems + [f"release-index.json: not JSON ({e})"]
     assets = {a.get("name"): a for a in index.get("assets") or []}
-    image = index.get("image") or {}
     for n in sorted(set(assets) - files):
         bad(f"release-index.json names {n}, which is not here")
     for n in sorted(files - set(assets) - {"release-index.json"}):
@@ -166,66 +168,107 @@ def verify(outdir: str, assert_no_images: bool = False) -> list[str]:
         if n in files and a.get("sha256") != sums.get(n):
             bad(f"{n}: release-index.json and SHA256SUMS disagree on its sha256")
 
-    def one(role: str, suffix: str) -> tuple[str | None, dict | None]:
-        found = [n for n, a in assets.items() if a.get("role") == role and n.endswith(suffix)]
-        if len(found) != 1:
-            bad(f"expected one {role} asset ending {suffix}, found {len(found)}")
-            return None, None
-        try:
-            return found[0], json.load(open(os.path.join(outdir, found[0])))
-        except (OSError, ValueError) as e:
-            bad(f"{found[0]}: not readable JSON ({e})")
-            return found[0], None
-
     # BEFORE the records are read, so a directory whose provenance is unreadable is still
     # told about the ISO sitting in it rather than only about the JSON.
+    images = index.get("images") if isinstance(index.get("images"), list) else []
     if assert_no_images:
-        if image.get("attached"):
+        if any(im.get("attached") for im in images):
             bad("--assert-no-images, and release-index.json says an image is attached")
         for n in sorted(files):
             kind = content_kind(os.path.join(outdir, n))
             if kind:
                 bad(f"--assert-no-images, and {n} is {kind}")
 
-    _pn, prov = one("provenance", ".provenance.json")
-    _sn, src = one("sources", ".sources.json")
-    if prov is None or src is None:
+    # SEVERAL IMAGES, ONE SET (#54). v1 held one image; no release was ever published with
+    # it, so there is no v1 to keep reading.
+    if index.get("schema") != "slax-kitchen/release-index/v2" or not images:
+        bad(f"release-index.json is {index.get('schema')!r}, not the "
+            "slax-kitchen/release-index/v2 index that lists every image")
         return problems
 
-    # --- one image, the same everywhere ---------------------------------------------
-    want = image.get("sha256")
-    if not want:
-        bad("release-index.json names no image sha256")
-    if ((prov.get("pack") or {}).get("iso") or {}).get("sha256") != want:
-        bad("the provenance record is for a different image than release-index.json names")
-    if (src.get("image") or {}).get("sha256") != want:
-        bad("the sources manifest is for a different image than release-index.json names")
-    attached = [n for n, a in assets.items() if a.get("role") == "image"]
-    if image.get("attached"):
-        if len(attached) != 1:
-            bad(f"release-index.json says the image is attached; {len(attached)} image assets are")
-        elif attached[0] in files and sums.get(attached[0]) != want:
-            bad(f"{attached[0]}: not the image the provenance describes")
-    elif attached:
-        bad("release-index.json says no image is attached, but one is")
+    def record(im: dict, key: str, role: str) -> dict | None:
+        name = im.get(key)
+        a = assets.get(name)
+        if not name or a is None or a.get("role") != role:
+            bad(f"{im.get('name')}: release-index.json links no {role} asset as its {key}")
+            return None
+        try:
+            return json.load(open(os.path.join(outdir, name)))
+        except (OSError, ValueError) as e:
+            bad(f"{name}: not readable JSON ({e})")
+            return None
 
-    # --- what the manifest says -----------------------------------------------------
-    for u in src.get("unresolved") or []:
-        bad(f"unresolved in the image: {u.get('path')}: {u.get('reason')}")
-    for r in src.get("not_redistributable") or []:
-        bad(f"{r.get('recipe')} must not be in a published image: {r.get('why')}")
+    served = {n: set(a.get("images") or []) for n, a in assets.items()}
+    described = {im.get("name") for im in images if im.get("attached")}
+    records: dict[str, tuple] = {}
+    for im in images:
+        name = im.get("name")
+        prov, src = record(im, "provenance", "provenance"), record(im, "sources", "sources")
+        if im.get("sources_md") not in assets:
+            bad(f"{name}: release-index.json links no SOURCES.md")
+        if prov is None or src is None:
+            continue
+        records[name] = (prov, src)
 
-    covered = {c for a in assets.values() for c in a.get("covers") or []}
-    for comp in src.get("components") or []:
-        if comp.get("class") == "built" and comp.get("path") not in covered:
-            bad(f"{comp.get('path')} was built here and its source is not attached")
-        for part in comp.get("parts") or []:
-            key = f"{comp.get('path')}:{part.get('member')}"
-            if part.get("class") == "built" and key not in covered:
-                bad(f"{key} was built here and its source is not attached")
+        # --- each image, the same everywhere ----------------------------------------
+        want = im.get("sha256")
+        if not want:
+            bad(f"{name}: release-index.json names no sha256 for it")
+        if ((prov.get("pack") or {}).get("iso") or {}).get("sha256") != want:
+            bad(f"{name}: its provenance record is for a different image than "
+                "release-index.json names")
+        if (src.get("image") or {}).get("sha256") != want:
+            bad(f"{name}: its sources manifest is for a different image than "
+                "release-index.json names")
+        if im.get("attached"):
+            a = assets.get(name)
+            if not a or a.get("role") != "image":
+                bad(f"release-index.json says {name} is attached, and no image asset is "
+                    "named that")
+            elif name in files and sums.get(name) != want:
+                bad(f"{name}: not the image its provenance describes")
 
-    trees = {"(kitchen)": prov.get("kitchen"), "(project)": prov.get("project")}
-    for label, state in trees.items():
+        # --- what its manifest says --------------------------------------------------
+        for u in src.get("unresolved") or []:
+            bad(f"{name}: unresolved in the image: {u.get('path')}: {u.get('reason')}")
+        for r in src.get("not_redistributable") or []:
+            bad(f"{name}: {r.get('recipe')} must not be in a published image: {r.get('why')}")
+
+        # Only the sources that say they serve THIS image count for it: a GRUB source
+        # another image fetched says nothing about the GRUB this one built.
+        covered = {c for n, a in assets.items() if name in served[n]
+                   for c in a.get("covers") or []}
+        for comp in src.get("components") or []:
+            if comp.get("class") == "built" and comp.get("path") not in covered:
+                bad(f"{name}: {comp.get('path')} was built here and its source is not "
+                    "attached")
+            for part in comp.get("parts") or []:
+                key = f"{comp.get('path')}:{part.get('member')}"
+                if part.get("class") == "built" and key not in covered:
+                    bad(f"{name}: {key} was built here and its source is not attached")
+
+        fw = src.get("firmware") or {}
+        if im.get("attached") and fw.get("stock_bundle") and not fw.get("license_texts"):
+            bad(f"{name} carries Slax's firmware bundle without the copyright files of its "
+                "Debian firmware packages; add firmware-refresh, which reinstalls them, or "
+                "leave the firmware out with remove-bundle")
+
+    for n, a in sorted(assets.items()):
+        if a.get("role") == "image" and n not in described:
+            bad(f"{n} is attached, and release-index.json lists no attached image of that "
+                "name")
+
+    # --- one version: the same commits, and their archives, once --------------------
+    trees = {}
+    for name, (prov, _src) in sorted(records.items()):
+        for label, key in (("(kitchen)", "kitchen"), ("(project)", "project")):
+            state = prov.get(key)
+            commit = (state or {}).get("commit")
+            seen = trees.setdefault(label, (name, state))
+            if commit != (seen[1] or {}).get("commit"):
+                bad(f"{name} and {seen[0]} were built from different {key} commits; one "
+                    "release is one version")
+    for label, (_name, state) in sorted(trees.items()):
         holders = [n for n, a in assets.items() if label in (a.get("covers") or [])]
         if state and state.get("commit") and not holders:
             bad(f"no archive of the {label.strip('()')} tree at {state['commit'][:12]}")
@@ -235,18 +278,15 @@ def verify(outdir: str, assert_no_images: bool = False) -> list[str]:
 
     # Checked against where this machine really is, not against how a path looks: an
     # image's own /root/... and /var/lib/... are ordinary, and a shape rule refused them.
-    # See build_machine_hits. One walk over all three, so those places are found once.
-    for hit in build_machine_hits({"provenance": prov, "sources manifest": src,
-                                   "release-index.json": index}):
+    # See build_machine_hits. One walk over every record, so those places are found once.
+    docs = {"release-index.json": index}
+    for name, (prov, src) in records.items():
+        docs[f"{name}'s provenance"] = prov
+        docs[f"{name}'s sources manifest"] = src
+    for hit in build_machine_hits(docs):
         bad(f"a record names a place on this machine: {hit}")
 
-    fw = src.get("firmware") or {}
-    if image.get("attached") and fw.get("stock_bundle") and not fw.get("license_texts"):
-        bad("the image carries Slax's firmware bundle without the copyright files of its Debian "
-            "firmware packages; add firmware-refresh, which reinstalls them, or leave the firmware "
-            "out with remove-bundle")
-
-    if assert_no_images and attached:
+    if assert_no_images and any(a.get("role") == "image" for a in assets.values()):
         bad("--assert-no-images, and an image asset is listed")
     return problems
 

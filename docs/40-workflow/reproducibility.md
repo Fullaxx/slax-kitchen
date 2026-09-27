@@ -197,7 +197,8 @@ the project archives with no timestamps (`git archive` of the recorded commits, 
 and each source package as a tar with fixed metadata. Measured on the `tor` image at commit
 `6419fa4`: two runs, each downloading GRUB's source package from Launchpad again, wrote identical
 `SHA256SUMS`. Anyone with the same image and commit can regenerate the source set and compare hashes,
-which is a check a rebuild of the ISO cannot offer. See
+which is a check a rebuild of the ISO cannot offer. It is also why several images built from one
+commit can share one set of archives in a release: each image's `--fetch` writes the same bytes. See
 [publishing an image](publishing-images.md).
 
 ## What is never reproducible, and does not need to be

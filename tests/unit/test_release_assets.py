@@ -60,9 +60,11 @@ def tar_add(t, name, data):
     t.addfile(info, io.BytesIO(data))
 
 
-def build(d, *, attached=False, submodule_files=True, firmware=None, extra=None,
+def build(d, *, names=("x",), attached=False, submodule_files=True, firmware=None, extra=None,
           prov_extra=None, src_extra=None):
-    """Write a passing assets directory into d, with optional breakage."""
+    """Write a passing assets directory into d, with optional breakage. Each name is an
+    image, and the kitchen archive and GRUB's source are shared by all of them, the way
+    ci/release-assets.sh writes a set of images built from one commit."""
     kit = "slax-kitchen-aaaaaaaaaaaa-source.tar.gz"
     with tarfile.open(os.path.join(d, kit), "w:gz") as t:
         tar_add(t, "slax-kitchen/README.md", b"readme\n")
@@ -72,52 +74,66 @@ def build(d, *, attached=False, submodule_files=True, firmware=None, extra=None,
     grub = "grub2-unsigned_2.12-1ubuntu7.3.source.tar"
     with tarfile.open(os.path.join(d, grub), "w") as t:
         tar_add(t, "grub2-unsigned_2.12-1ubuntu7.3/grub2-unsigned_2.12-1ubuntu7.3.dsc", b"Format: 3.0\n")
-    prov = {"schema": "slax-kitchen/provenance/v1",
-            "kitchen": {"commit": COMMIT, "describe": "aaaaaaa", "dirty": False,
-                        "submodules": {"vendor/linux-live": LIVEKIT}},
-            "pack": {"iso": {"name": "x.iso", "sha256": IMG, "size": 3}}}
-    prov.update(prov_extra or {})
-    src = {"schema": "slax-kitchen/sources/v1", "image": {"name": "x.iso", "sha256": IMG},
-           "components": [{"path": "boot/efi.img", "class": "built", "what": "GRUB EFI image"},
-                          {"path": "slax/modules/01-core.sb", "class": "slax"}],
-           "unresolved": [], "not_redistributable": [], "warnings": [],
-           "firmware": firmware or {"stock_bundle": False, "license_texts": []}}
-    src.update(src_extra or {})
-    json.dump(prov, open(os.path.join(d, "x.iso.provenance.json"), "w"))
-    json.dump(src, open(os.path.join(d, "x.sources.json"), "w"))
-    open(os.path.join(d, "x.SOURCES.md"), "w").write("# Sources\n")
-    roles = {kit: ("source", ["(kitchen)"], ["slax-kitchen at the recorded commit, with submodules"]),
-             grub: ("source", ["boot/efi.img"], ["source of GRUB EFI image"]),
-             "x.iso.provenance.json": ("provenance", None, None),
-             "x.sources.json": ("sources", None, None),
-             "x.SOURCES.md": ("sources", None, None)}
-    if attached:
-        open(os.path.join(d, "x.iso"), "wb").write(b"iso")
-        roles["x.iso"] = ("image", None, None)
+    isos = [f"{n}.iso" for n in names]
+    roles = {kit: ("source", ["(kitchen)"], ["slax-kitchen at the recorded commit, with submodules"],
+                   isos),
+             grub: ("source", ["boot/efi.img"], ["source of GRUB EFI image"], isos)}
+    images = []
+    for i, n in enumerate(names):
+        iso = f"{n}.iso"
+        if attached:
+            open(os.path.join(d, iso), "wb").write(f"iso {n}".encode())
+            roles[iso] = ("image", None, None, [iso])
+        # An attached image has to be the one the records describe.
+        image_sha = sha(os.path.join(d, iso)) if attached else (IMG if i == 0 else f"{i:x}" * 64)
+        prov = {"schema": "slax-kitchen/provenance/v1",
+                "kitchen": {"commit": COMMIT, "describe": "aaaaaaa", "dirty": False,
+                            "submodules": {"vendor/linux-live": LIVEKIT}},
+                "pack": {"iso": {"name": iso, "sha256": image_sha, "size": 3}}}
+        prov.update(prov_extra or {})
+        src = {"schema": "slax-kitchen/sources/v1", "image": {"name": iso, "sha256": image_sha},
+               "components": [{"path": "boot/efi.img", "class": "built", "what": "GRUB EFI image"},
+                              {"path": "slax/modules/01-core.sb", "class": "slax"}],
+               "unresolved": [], "not_redistributable": [], "warnings": [],
+               "firmware": firmware or {"stock_bundle": False, "license_texts": []}}
+        src.update(src_extra or {})
+        json.dump(prov, open(os.path.join(d, f"{iso}.provenance.json"), "w"))
+        json.dump(src, open(os.path.join(d, f"{n}.sources.json"), "w"))
+        open(os.path.join(d, f"{n}.SOURCES.md"), "w").write("# Sources\n")
+        roles[f"{iso}.provenance.json"] = ("provenance", None, None, [iso])
+        roles[f"{n}.sources.json"] = ("sources", None, None, [iso])
+        roles[f"{n}.SOURCES.md"] = ("sources", None, None, [iso])
+        images.append({"name": iso, "sha256": image_sha, "size": 3, "attached": attached,
+                       "provenance": f"{iso}.provenance.json", "sources": f"{n}.sources.json",
+                       "sources_md": f"{n}.SOURCES.md"})
     for name, (content, role) in (extra or {}).items():
         open(os.path.join(d, name), "wb").write(content)
-        roles[name] = (role, None, None)
+        roles[name] = (role, None, None, None)
     assets = []
-    for name, (role, covers, what) in sorted(roles.items()):
-        a = {"name": name, "role": role, "sha256": sha(os.path.join(d, name)),
-             "size": os.path.getsize(os.path.join(d, name))}
+    for name, (role, covers, what, serves) in sorted(roles.items()):
+        a = {"name": name, "role": role}
         if covers:
             a["covers"] = covers
         if what:
             a["what"] = what
+        if serves:
+            a["images"] = serves
         assets.append(a)
-    image_sha = sha(os.path.join(d, "x.iso")) if attached else IMG
-    if attached:
-        # An attached image has to be the one the records describe.
-        for doc_name in ("x.iso.provenance.json", "x.sources.json"):
-            doc = json.load(open(os.path.join(d, doc_name)))
-            (doc.get("pack") or doc)["iso" if "pack" in doc else "image"]["sha256"] = image_sha
-            json.dump(doc, open(os.path.join(d, doc_name), "w"))
-        for a in assets:
-            a["sha256"] = sha(os.path.join(d, a["name"]))
-    json.dump({"schema": "slax-kitchen/release-index/v1",
-               "image": {"name": "x.iso", "sha256": image_sha, "attached": attached},
-               "assets": assets}, open(os.path.join(d, "release-index.json"), "w"))
+    json.dump({"schema": "slax-kitchen/release-index/v2", "images": images, "assets": assets},
+              open(os.path.join(d, "release-index.json"), "w"))
+    rehash(d)
+
+
+def rehash(d):
+    """Put every asset's sha256 and size in the index, and write SHA256SUMS, after a test
+    has edited a file on purpose -- so that edit is the only thing wrong."""
+    path = os.path.join(d, "release-index.json")
+    idx = json.load(open(path))
+    for a in idx["assets"]:
+        f = os.path.join(d, a["name"])
+        if os.path.isfile(f):
+            a["sha256"], a["size"] = sha(f), os.path.getsize(f)
+    json.dump(idx, open(path, "w"))
     write_sums(d)
 
 
@@ -148,27 +164,34 @@ def assembler():
     return body.split("\nPY\n", 1)[0]
 
 
-def assemble(fetch_tree, assets_records):
-    """Run that program over a fetch directory, as release-assets.sh does. Returns
-    (returncode, output, the directory it wrote)."""
+def assemble(fetch_tree, assets_records, more=(), commits=None):
+    """Run that program over fetch directories, as release-assets.sh does: one image's
+    fetch tree and sources records, plus `more` (tree, records) pairs for further images,
+    each built from the kitchen commit `commits` names for it. Returns (returncode, output,
+    the directory it wrote)."""
     tmp = tempfile.mkdtemp()
     out = os.path.join(tmp, "out")
     work = os.path.join(tmp, "tmp")
-    os.makedirs(os.path.join(work, "fetch"))
     os.makedirs(out)
-    for path, data in fetch_tree.items():
-        full = os.path.join(work, "fetch", path)
-        os.makedirs(os.path.dirname(full), exist_ok=True)
-        open(full, "w").write(data)
-    json.dump({"assets": assets_records, "kitchen": {"commit": COMMIT}},
-              open(os.path.join(work, "sources.json"), "w"))
-    open(os.path.join(work, "SOURCES.md"), "w").write("# sources\n")
-    iso = os.path.join(tmp, "slax-x-1.0.iso")
-    open(iso, "w").write("not really an image")
-    open(iso + ".provenance.json", "w").write("{}\n")
+    isos = []
+    for i, (tree, records) in enumerate([(fetch_tree, assets_records), *more], 1):
+        os.makedirs(os.path.join(work, str(i), "fetch"))
+        for path, data in tree.items():
+            full = os.path.join(work, str(i), "fetch", path)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            open(full, "w").write(data)
+        iso = os.path.join(tmp, f"slax-x{i}-1.0.iso")
+        json.dump({"assets": records, "kitchen": {"commit": COMMIT},
+                   "image": {"name": os.path.basename(iso), "sha256": IMG, "size": 1}},
+                  open(os.path.join(work, str(i), "sources.json"), "w"))
+        open(os.path.join(work, str(i), "SOURCES.md"), "w").write("# sources\n")
+        open(iso, "w").write("not really an image")
+        commit = (commits or [])[i - 1] if commits else COMMIT
+        json.dump({"kitchen": {"commit": commit}}, open(iso + ".provenance.json", "w"))
+        isos.append(iso)
     prog = os.path.join(tmp, "assemble.py")
     open(prog, "w").write(assembler())
-    r = subprocess.run([sys.executable, prog, iso, out, work, "0"],
+    r = subprocess.run([sys.executable, prog, out, work, "0", *isos],
                        capture_output=True, text=True)
     return r.returncode, r.stdout + r.stderr, out
 
@@ -380,6 +403,107 @@ def test_release_notes_use_the_claim_when_given_assets():
               "SHA256SUMS" in p.stdout and "not byte-reproducible" in p.stdout, True)
 
 
+def test_several_images_built_from_one_commit_are_one_set():
+    """#54: the procedure held one image per release. A second image was refused ("not
+    empty"), and a hand-merged set failed verification ("expected one provenance asset")
+    while redistribution-claim.py described the first image alone. slax-wine builds five
+    images from one commit. Now they go in together: each image's records, and the sources
+    they share once, saying which images each serves."""
+    grub = {"grub2_2.12/g.dsc": "x"}
+    rec = [{"file": "grub2_2.12/g.dsc", "what": "GRUB", "for": "boot/efi.img"}]
+    rc, out, dest = assemble(grub, rec, more=[(grub, rec)])
+    check("two images assemble", (rc, "Traceback" in out), (0, False))
+    index = json.load(open(os.path.join(dest, "release-index.json")))
+    check("the index is v2 and lists both", (index["schema"],
+                                             [im["name"] for im in index["images"]]),
+          ("slax-kitchen/release-index/v2", ["slax-x1-1.0.iso", "slax-x2-1.0.iso"]))
+    tars = [a for a in index["assets"] if a["name"].endswith(".source.tar")]
+    check("the shared source is carried once, serving both",
+          [(a["name"], a["images"]) for a in tars],
+          [("grub2_2.12.source.tar", ["slax-x1-1.0.iso", "slax-x2-1.0.iso"])])
+    for im in index["images"]:
+        check(f"{im['name']} has its own records",
+              all(os.path.isfile(os.path.join(dest, im[k]))
+                  for k in ("provenance", "sources", "sources_md")), True)
+
+
+def test_images_from_different_commits_are_not_one_release():
+    """The kitchen and project archives are per commit, so a set is one version: images
+    built from two commits would need two of each and say nothing about which is which."""
+    rc, out, _ = assemble({}, [], more=[({}, [])], commits=[COMMIT, "c" * 40])
+    check("refused", rc, 1)
+    check("naming both and why", "one release is one version" in out
+          and "slax-x2-1.0.iso" in out, True)
+
+
+def test_a_source_two_images_fetched_differently_is_refused():
+    """A set carries a shared source once, under one name. If two images fetched different
+    bytes under that name, one of them would be described by the other's source."""
+    rc, out, _ = assemble({"grub2_2.12/g.dsc": "x"}, [],
+                          more=[({"grub2_2.12/g.dsc": "not x"}, [])])
+    check("refused", rc, 1)
+    check("naming the source", "grub2_2.12.source.tar" in out and "not the same bytes" in out,
+          True)
+
+
+def test_each_image_in_a_set_is_held_to_its_own_records():
+    """The per-image half of #54: every image's provenance, sources manifest and built
+    parts are checked for that image, and a source counts only for the images it serves."""
+    with Fixture(names=("x", "y")) as d:
+        check("a set of two images passes", verify_mod.verify(d, assert_no_images=True), [])
+    with Fixture(names=("x", "y")) as d:
+        path = os.path.join(d, "y.iso.provenance.json")
+        doc = json.load(open(path))
+        doc["pack"]["iso"]["sha256"] = IMG               # x's image, in y's record
+        json.dump(doc, open(path, "w"))
+        rehash(d)
+        check("a record for the other image is named",
+              mentions(verify_mod.verify(d), "y.iso: its provenance record is for a different"),
+              True)
+    with Fixture(names=("x", "y")) as d:
+        idx = json.load(open(os.path.join(d, "release-index.json")))
+        for a in idx["assets"]:
+            if a["name"].startswith("grub2"):
+                a["images"] = ["x.iso"]
+        json.dump(idx, open(os.path.join(d, "release-index.json"), "w"))
+        write_sums(d)
+        p = verify_mod.verify(d)
+        check("GRUB's source serving only x leaves y's GRUB unaccounted",
+              (mentions(p, "y.iso: boot/efi.img was built here"),
+               mentions(p, "x.iso: boot/efi.img")), (True, False))
+    with Fixture(names=("x", "y")) as d:
+        path = os.path.join(d, "y.iso.provenance.json")
+        doc = json.load(open(path))
+        doc["kitchen"]["commit"] = "c" * 40
+        json.dump(doc, open(path, "w"))
+        rehash(d)
+        check("images from two commits",
+              mentions(verify_mod.verify(d), "built from different kitchen commits"), True)
+    with Fixture() as d:
+        idx = json.load(open(os.path.join(d, "release-index.json")))
+        idx = {"schema": "slax-kitchen/release-index/v1", "image": idx["images"][0],
+               "assets": idx["assets"]}
+        json.dump(idx, open(os.path.join(d, "release-index.json"), "w"))
+        write_sums(d)
+        check("a v1 index is refused, saying what it wants",
+              mentions(verify_mod.verify(d), "not the slax-kitchen/release-index/v2"), True)
+
+
+def test_the_claim_names_every_image():
+    """redistribution-claim.py read index["image"] and the first sources manifest it found:
+    given two images, it described the first alone and left the second's manifest out."""
+    with Fixture(names=("x", "y")) as d:
+        text = claim_mod.claim(d)
+        check("both images, each with its hash", all(
+            f"`{n}.iso`, sha256" in text for n in ("x", "y")), True)
+        check("both manifests", all(f"`{n}.SOURCES.md` and `{n}.sources.json`" in text
+                                    for n in ("x", "y")), True)
+        check("records only: said once", text.count("No image is attached"), 1)
+    with Fixture(names=("x", "y"), attached=True) as d:
+        check("attached: says how many", "This release attaches 2 images" in claim_mod.claim(d),
+              True)
+
+
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
     # 1 of this file's 2 mkdtemp() calls had no cleanup on 2026-09-18, so running it by hand left
@@ -418,7 +542,12 @@ def main():
                    test_an_attached_image_carries_its_firmware_licenses,
                    test_the_claim_names_what_is_attached,
                    test_the_claim_says_only_what_the_directory_shows,
-                   test_release_notes_use_the_claim_when_given_assets]:
+                   test_release_notes_use_the_claim_when_given_assets,
+                   test_several_images_built_from_one_commit_are_one_set,
+                   test_images_from_different_commits_are_not_one_release,
+                   test_a_source_two_images_fetched_differently_is_refused,
+                   test_each_image_in_a_set_is_held_to_its_own_records,
+                   test_the_claim_names_every_image]:
             # One test crashing must not stop the rest: the count of failures is only honest
             # if every test ran. The traceback still goes to stderr, because a crash's location
             # is the useful half and a one-line summary loses it.

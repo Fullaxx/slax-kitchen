@@ -49,7 +49,7 @@ BLOB="https://github.com/${SLUG:-Fullaxx/slax-kitchen}/blob/$TAG"
 if [ -n "${RELEASE_ASSETS:-}" ]; then
     REDISTRIBUTION=$(python3 "$REPO_ROOT/ci/redistribution-claim.py" "$RELEASE_ASSETS") || exit 1
     ATTACHED=$(python3 -c 'import json,sys
-print("yes" if ((json.load(open(sys.argv[1])).get("image") or {}).get("attached")) else "no")' \
+print("yes" if any(im.get("attached") for im in json.load(open(sys.argv[1]))["images"]) else "no")' \
         "$RELEASE_ASSETS/release-index.json") || exit 1
 else
     REDISTRIBUTION="## Redistribution
@@ -68,7 +68,7 @@ support Slax upstream."
 fi
 
 if [ "${ATTACHED:-no}" = yes ]; then
-    IMAGE_CHECKSUM_NOTE="The attached image's checksum is in \`SHA256SUMS\`, which checks the download. It does
+    IMAGE_CHECKSUM_NOTE="Each attached image's checksum is in \`SHA256SUMS\`, which checks the download. It does
 not promise that a rebuild matches, because **images are not byte-reproducible**:
 \`genisoimage\` varies both the volume timestamps and the extent order, and an identical
 tree rebuilt elsewhere has been measured differing in 99.9% of its sectors. See
