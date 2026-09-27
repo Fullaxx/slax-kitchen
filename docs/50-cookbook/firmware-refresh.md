@@ -201,6 +201,10 @@ firmware-refresh: amdgpu/navi10_ta.bin already exists below this bundle; refusin
 firmware-refresh: LICENSES/LICENCE.Abilis has sha256 8116433f…, pinned 0000000000…
 ```
 
+Each file's `KITCHEN-FETCHED` line is then checked by the engine against the file in the bundle, so
+`kitchen sources` lists the 65 as prebuilt parts of `09-firmware-linux.sb`, each with its sha256 and
+the tag's `upstream_source` (#52).
+
 To regenerate both lists after the base or the tag moves, unpack a **stock** image and run:
 
 ```sh

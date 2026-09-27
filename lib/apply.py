@@ -1071,8 +1071,9 @@ FETCHED_LINE = re.compile(r"^KITCHEN-FETCHED ([0-9a-f]{64}) (\S+) (\S+)$")
 def _fetched_lines(stdout: str) -> list[dict]:
     """What a bundle.script says it fetched: `KITCHEN-FETCHED <sha256> <path> <url>` lines.
 
-    A script knows what it downloaded and the engine cannot, so the script says so, and
-    the engine records it. firmware-refresh prints one per linux-firmware file.
+    A script knows what it downloaded and the engine cannot see, so the script says so;
+    firmware-refresh prints one per linux-firmware file. What each line says about the
+    file is then checked against the bundle (_check_fetched); where it came from is not.
     """
     out = []
     for ln in stdout.splitlines():
@@ -1080,6 +1081,56 @@ def _fetched_lines(stdout: str) -> list[dict]:
         if m:
             out.append({"sha256": m.group(1), "path": provenance.in_image(m.group(2)),
                         "url": m.group(3)})
+    return out
+
+
+def _check_fetched(root: str, keep: list[str], lines: list[dict]) -> list[dict]:
+    """Each KITCHEN-FETCHED line, held to the file the script left in the bundle (#52).
+
+    WHY THIS EXISTS. The engine recorded a line as the script printed it and checked it
+    against nothing, so a line naming a sha256 the file did not have passed `kitchen
+    sources --strict` (measured for #59 at 7d5f7a0). A line now has to name a regular file
+    this bundle holds -- one the script added or changed, and not excluded -- whose sha256
+    is the one the line gives, or the step fails and nothing is built. A line that passes
+    describes bytes the engine has seen, so `kitchen sources` can count its file, ELF
+    included, as a download rather than as unowned compiled code. The URL it cannot check:
+    where the bytes came from remains the script's word.
+
+    A path through a merged-/usr link -- `lib/firmware/x`, where lib is a symlink to
+    usr/lib -- is recorded under usr/, where the delta has the file. The link is read as
+    text, never followed on the host.
+    """
+    kept = set(keep)
+    out, bad, seen = [], [], set()
+    for f in lines:
+        p = os.path.normpath(f["path"])
+        top, _, rest = p.partition("/")
+        link = os.path.join(root, top)
+        if (p not in kept and rest and os.path.islink(link)
+                and os.readlink(link).strip("/") == f"usr/{top}" and f"usr/{p}" in kept):
+            p = f"usr/{p}"
+        full = os.path.join(root, p)
+        if p not in kept:
+            bad.append(f"{f['path']}: not in this bundle -- the script did not add or change "
+                       f"it, or it is on the exclusion list")
+        elif os.path.islink(full) or not os.path.isfile(full):
+            bad.append(f"{f['path']}: not a regular file; a KITCHEN-FETCHED line names the "
+                       f"downloaded file itself")
+        else:
+            got = sha256(full)
+            if got != f["sha256"]:
+                bad.append(f"{f['path']}: the line says sha256 {f['sha256'][:16]}..., the file "
+                           f"in the bundle is {got[:16]}...")
+            elif (p, got) not in seen:
+                seen.add((p, got))
+                out.append(dict(f, path=p, checked=True))
+    if bad:
+        raise RuntimeError(
+            f"bundle.script: {len(bad)} KITCHEN-FETCHED line(s) do not match what the script "
+            f"left in the bundle:\n  " + "\n  ".join(bad[:10])
+            + ("\n  ..." if len(bad) > 10 else "")
+            + "\n  A line is the record of one downloaded file: its sha256 as installed and "
+              "its path in the image. Nothing was built.")
     return out
 
 
@@ -2281,7 +2332,8 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
             raise RuntimeError(f"bundle.script: script failed (exit {r.returncode}):\n"
                                + (r.stderr.strip() or r.stdout.strip())[-1500:])
         if r.stdout.strip():
-            shown = [ln for ln in r.stdout.strip().splitlines() if not FETCHED_LINE.match(ln)]
+            shown = [ln for ln in r.stdout.strip().splitlines()
+                     if not FETCHED_LINE.match(ln.strip())]
             for ln in shown[-8:]:
                 ctx.say(f"  | {ln[:110]}")
         os.unlink(sp)
@@ -2315,6 +2367,9 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
         if not keep:
             raise RuntimeError("bundle.script: the script changed nothing that survives "
                                "the exclusion list; nothing to package")
+        # EVERY KITCHEN-FETCHED LINE IS HELD TO THE FILE IT NAMES (#52): here, while the
+        # build root still holds the delta, and before anything is staged or built.
+        fetched = _check_fetched(root, keep, _fetched_lines(r.stdout))
 
         stage = os.path.join(build, "stage")
         _stage_delta(root, keep, stage)
@@ -2323,7 +2378,7 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
         ctx.prov(script_sha256=hashlib.sha256(script.encode()).hexdigest(),
                  network=bool(step.get("network")) or None,
                  upstream_source=step.get("upstream_source"),
-                 fetched=_fetched_lines(r.stdout) or None,
+                 fetched=fetched or None,
                  installed=_status_changes(before_status, after_status) or None,
                  # Recorded because _status_changes cannot see it: it filters both
                  # sides on " installed" and then walks the AFTER side only, so a

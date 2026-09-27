@@ -690,6 +690,45 @@ def test_a_file_bundle_files_downloaded_is_a_prebuilt_part_of_its_bundle():
           doc["firmware"]["fetched_firmware"], 0)
 
 
+def test_a_binary_a_script_reported_downloading_is_prebuilt():
+    """A prebuilt ELF a script downloaded is a download when the engine checked its line (#52).
+
+    Measured at 0dd1b53 for #52 (a): jq's static binary, fetched by bundle.script with a
+    KITCHEN-FETCHED line and an upstream_source, was unresolved -- no package owns it and
+    no `declares:` names it -- while a local tarball of the same bytes passed --strict. The
+    engine now checks each line against the file the script left, so a line recorded as
+    checked, naming the path and sha256 the ELF check recorded, is a prebuilt part. A line
+    recorded before the check vouches for nothing, and neither does one naming other bytes.
+    """
+    def recipe(fetched, declared=False):
+        r = _script_recipe(declared=declared)
+        r["steps"][0].update(fetched=fetched, network=True,
+                             upstream_source="https://example.org/tool/source/")
+        return r
+    line = {"sha256": H["8"], "path": "usr/local/bin/tool", "url": "https://example.org/tool",
+            "checked": True}
+    doc = run({"slax/modules/07-tool.sb": H["7"]}, prov([recipe([line])]), strict=True)
+    check("a checked download resolves, under --strict", doc["unresolved"], [])
+    comp = (doc["components"] or [{}])[0]
+    check("...as a prebuilt part pointing upstream", comp.get("parts"), [
+        {"member": "usr/local/bin/tool", "class": "prebuilt", "by": "tool",
+         "source": "https://example.org/tool", "source_sha256": H["8"],
+         "upstream_source": "https://example.org/tool/source/"}])
+    check("...and not repeated in the unchecked list", comp.get("fetched"), None)
+    check("the note keeps the script's account and says what was checked",
+          "the script's own account; each file it reported was checked against the bundle"
+          in (comp.get("note") or ""), True)
+    for what, bad in (("naming other bytes", dict(line, sha256=H["9"])),
+                      ("recorded before the check", {k: v for k, v in line.items()
+                                                     if k != "checked"})):
+        doc = run({"slax/modules/07-tool.sb": H["7"]}, prov([recipe([bad])]))
+        check(f"a line {what} leaves the ELF unresolved", len(doc["unresolved"]), 1)
+    doc = run({"slax/modules/07-tool.sb": H["7"]}, prov([recipe([line], declared=True)]))
+    check("declared as compiled and reported as downloaded: unresolved",
+          "both declares and reports downloading" in
+          ((doc["unresolved"] or [{}])[0].get("reason") or ""), True)
+
+
 def main():
     for fn in [test_stock_files_are_slax_by_hash,
                test_a_renumbered_stock_bundle_is_still_slax,
@@ -724,7 +763,8 @@ def main():
                test_a_file_from_a_build_host_package_points_at_that_package,
                test_the_recorded_digest_is_the_one_git_computes,
                test_markdown_renders,
-               test_a_file_bundle_files_downloaded_is_a_prebuilt_part_of_its_bundle]:
+               test_a_file_bundle_files_downloaded_is_a_prebuilt_part_of_its_bundle,
+               test_a_binary_a_script_reported_downloading_is_prebuilt]:
         # One test crashing must not stop the rest: the count of failures is only honest
         # if every test ran. The traceback still goes to stderr, because a crash's location
         # is the useful half and a one-line summary loses it.

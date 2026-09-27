@@ -489,9 +489,10 @@ sources  slax-tor-12.2.0.iso  (base debian-64bit-12.2.0)
 step that made it is unresolved, not attributed to that step or to the recipe's journal entry. So
 is a `bundle.script` bundle holding an ELF file that no package **vouches for** — one no package
 owns, or one whose bytes differ from the md5 its package recorded, which is what a script
-overwriting `/usr/bin/ssh` leaves behind — and that no `declares:` entry names. So is an image built
-from a dirty kitchen tree, a busybox whose build claim does not match the binary, and an ISO whose
-sha256 is not the one its provenance records.
+overwriting `/usr/bin/ssh` leaves behind — and that no `declares:` entry names and no
+`KITCHEN-FETCHED` line reports downloading (the engine checks each line against the file). So is an
+image built from a dirty kitchen tree, a busybox whose build claim does not match the binary, and an
+ISO whose sha256 is not the one its provenance records.
 
 **`slax/boot/initrfs.img`, when a recipe has repacked it, is counted rather than asserted.** Its
 members are read straight out of the image (the cpio is parsed here, so no privilege and no `cpio`

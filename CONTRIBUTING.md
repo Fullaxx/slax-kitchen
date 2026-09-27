@@ -423,7 +423,7 @@ A recipe we can take needs:
 - **matrix-verified on all four targets**, or a `compat:` block that explains the skip
 - **where the source is**, for anything it downloads: `upstream_source:` on the step, the apt
   repository or the `bundle.files` `url:` entry, a `KITCHEN-FETCHED` line for each file a
-  `bundle.script` downloads into the image,
+  `bundle.script` downloads into the image (the engine checks each line against the file),
   `declares:` for anything a `bundle.script` compiles, and `redistribution: {allowed: false, why:
   …}` if an image containing it must not be published — see
   [saying where the source is](docs/90-reference/verbs.md#saying-where-the-source-is). The matrix

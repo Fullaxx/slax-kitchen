@@ -60,11 +60,13 @@ redistribution:
 
 A download with no `upstream_source` is a warning, and unresolved under `kitchen sources --strict`;
 so is a download the recipe pinned no `sha256:` for, because what it fetched is whatever that server
-served that day. A `bundle.files` `url:` entry cannot be written without either. An ELF file that a `bundle.script` leaves behind that no package **vouches for** —
-no package owns it, or its bytes are not the ones the owning package recorded an md5 for — and that
-no `declares:` entry names is always unresolved: something was compiled or overwritten, and nothing
-says from what. On Slackware, whose package database records no checksums, ownership is all there
-is, which is why `declares:` exists.
+served that day. A `bundle.files` `url:` entry cannot be written without either.
+
+An ELF file that a `bundle.script` leaves behind that no package **vouches for** — no package owns
+it, or its bytes are not the ones the owning package recorded an md5 for — is unresolved unless a
+`declares:` entry names it or a `KITCHEN-FETCHED` line reports downloading it: otherwise something
+was compiled or overwritten, and nothing says from what. On Slackware, whose package database
+records no checksums, ownership is all there is, which is why `declares:` exists.
 
 **A local `src:` needs nothing extra, only a commit.** Files a verb copies in from beside the recipe
 go through one resolver, which records their path in the kitchen or project checkout and their
@@ -100,8 +102,8 @@ and [`bundle-from-url`](../50-cookbook/bundle-from-url.md) is a recipe that does
 
 A download that is part of work a script has to do anyway goes through
 [`bundle.script`](#bundlescript--chroot). The script downloads the file, checks it against a sha256
-the recipe pins, and prints a `KITCHEN-FETCHED` line. `kitchen sources` then lists the file with the
-step's `upstream_source`, in a bundle classed `ours`:
+the recipe pins, and prints a `KITCHEN-FETCHED` line giving that sha256. `kitchen sources` then lists
+the file as a prebuilt part of the script's bundle, pointing at the step's `upstream_source`:
 
 ```yaml
 - verb: bundle.script
@@ -116,12 +118,14 @@ step's `upstream_source`, in a bundle classed `ours`:
     wget -nv -O /opt/tool/setup.exe "$url"
     got=$(sha256sum /opt/tool/setup.exe | cut -d' ' -f1)
     [ "$got" = "$want" ] || { echo "sha256 mismatch: $got" >&2; exit 1; }
-    echo "KITCHEN-FETCHED $got opt/tool/setup.exe $url"
+    echo "KITCHEN-FETCHED $want opt/tool/setup.exe $url"
 ```
 
-The engine records the line as the script prints it, and checks it against nothing: a line naming
-the wrong sha256 passes `kitchen sources --strict`. The pin is the script's own check, which is why a
-mismatch has to fail the step. The route costs what `bundle.script` costs: `privilege: chroot`,
+The engine checks each line against the file the script left: a line naming a path the bundle does
+not hold, or a sha256 that file does not have, fails the step, and nothing is built. So a line
+printing the **pinned** sha256, as this one does, makes the engine hold the file to the pin too. What
+it cannot check is the URL: where the bytes came from is the script's word, and `upstream_source` is
+the pointer that matters. The route costs what `bundle.script` costs: `privilege: chroot`,
 network inside the chroot, and a downloader in the image. Stock Slax has `wget` on all four
 targets. On Slackware it verifies no TLS certificate until `/etc/ssl/cert.pem` exists, which
 `fix-slackware-bugs` writes ([issue 13](../30-inventory/known-upstream-bugs.md)).
@@ -132,10 +136,12 @@ The obvious shortcut does not get through: a file staged where git ignores it an
 Committing the file instead is what `00-no-binaries` exists to refuse, for a Windows payload or a
 large file.
 
-A prebuilt ELF binary that no package ships is accounted for when the engine fetched it: through a
-`bundle.files` `url:` entry, or inside a tarball. One that a `bundle.script` leaves behind is
-unresolved unless `declares:` names it, and `declares:` is for what the script compiled
-([#52](https://github.com/Fullaxx/slax-kitchen/issues/52)).
+A prebuilt ELF binary that no package ships is accounted for when the engine fetched it, through a
+`bundle.files` `url:` entry or inside a tarball, and when a script reported downloading it in a
+`KITCHEN-FETCHED` line the engine checked ([#52](https://github.com/Fullaxx/slax-kitchen/issues/52)).
+`declares:` is for what a script compiled. A tree staged outside the build, such as a Flatpak
+installed from Flathub, has no route yet
+([#60](https://github.com/Fullaxx/slax-kitchen/issues/60)).
 
 ---
 
@@ -390,10 +396,13 @@ line on stdout of the form
 KITCHEN-FETCHED <sha256> <path in the image> <url>
 ```
 
-is recorded in the image's provenance and left out of the output shown. `firmware-refresh` prints one
-per linux-firmware file, and [a file the build downloads](#a-file-the-build-downloads) shows the
-shape for one. ELF files the step leaves behind that no package database owns are recorded too,
-with their sha256.
+is checked against the file the script left, recorded in the image's provenance, and left out of the
+output shown. The path must be a regular file the script added or changed, with that sha256, or the
+step fails; a path through a merged-/usr link, such as `lib/firmware/x`, is recorded as the bundle
+holds it, under `usr/`. `kitchen sources` lists each such file as a prebuilt part of the bundle.
+`firmware-refresh` prints one per linux-firmware file, and
+[a file the build downloads](#a-file-the-build-downloads) shows the shape for one. ELF files the step
+leaves behind that no package database owns are recorded too, with their sha256.
 
 `upstream_source:` says where what the script fetched is published, and `declares:` names what it
 compiled; see [saying where the source is](#saying-where-the-source-is). A package the script

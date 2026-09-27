@@ -2372,13 +2372,93 @@ def test_bundle_files_fetches_a_pinned_url_itself():
     tree = ast.parse(open(os.path.join(here, "..", "..", "lib", "apply.py")).read())
     fn = next(n for n in ast.walk(tree)
               if isinstance(n, ast.FunctionDef) and n.name == "v_bundle_files")
-    calls = [ast.unparse(n.func) for n in ast.walk(fn) if isinstance(n, ast.Call)]
+    calls = [ast.unparse(n.func) for n in sorted(
+        (n for n in ast.walk(fn) if isinstance(n, ast.Call)),
+        key=lambda n: (n.lineno, n.col_offset))]
     order = [c for c in calls if c in ("_place_files", "_fetch_files", "_make_bundle")]
     check("v_bundle_files places, then fetches, then builds", order,
           ["_place_files", "_fetch_files", "_make_bundle"])
     check("...and records what it fetched", any(
         isinstance(n, ast.Call) and ast.unparse(n.func) == "ctx.prov"
         and any(k.arg == "fetched" for k in n.keywords) for n in ast.walk(fn)), True)
+
+
+def test_a_fetched_line_is_held_to_the_file_it_names():
+    """A KITCHEN-FETCHED line must name a file the bundle holds, with that file's sha256 (#52).
+
+    The engine recorded each line as the script printed it and checked it against nothing:
+    measured for #59 at 7d5f7a0, a script wrote `not what the line says` and printed a line
+    giving its sha256 as 0000..., and the image passed `kitchen sources --strict` with the
+    false hash recorded. A line is now held to the file the script left, while the build
+    root still holds the delta, and a bundle is built only if every line matches -- which is
+    what lets `kitchen sources` count a reported download, ELF or not, as a download.
+    """
+    import ast
+    import tempfile
+    root = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(root, "usr", "lib", "firmware"))
+        os.makedirs(os.path.join(root, "opt", "tool"))
+        os.makedirs(os.path.join(root, "opt", "dir"))
+        os.symlink("usr/lib", os.path.join(root, "lib"))          # merged /usr, as Debian's
+        with open(os.path.join(root, "opt", "tool", "setup.exe"), "w") as f:
+            f.write("not what the line says\n")
+        with open(os.path.join(root, "usr", "lib", "firmware", "x.bin"), "wb") as f:
+            f.write(b"firmware")
+        os.symlink("setup.exe", os.path.join(root, "opt", "tool", "link"))
+        keep = ["opt", "opt/dir", "opt/tool", "opt/tool/link", "opt/tool/setup.exe",
+                "usr/lib/firmware", "usr/lib/firmware/x.bin"]
+        real = "9981eacd22f0cb19635413ce8db277b9301f03015892420123929934275a994c"
+        fw = apply.sha256(os.path.join(root, "usr", "lib", "firmware", "x.bin"))
+
+        def line(path, sha):
+            return {"sha256": sha, "path": path, "url": "https://example.org/" + path}
+
+        def verdict(*lines):
+            try:
+                return apply._check_fetched(root, keep, list(lines)), ""
+            except RuntimeError as e:
+                return None, str(e)
+
+        got, _ = verdict(line("opt/tool/setup.exe", real), line("opt/tool/setup.exe", real),
+                         line("lib/firmware/x.bin", fw))
+        check("a true line is kept, checked, once; a merged-/usr path is recorded under usr/",
+              [(g["path"], g["checked"]) for g in got or []],
+              [("opt/tool/setup.exe", True), ("usr/lib/firmware/x.bin", True)])
+        _, err = verdict(line("opt/tool/setup.exe", "0" * 64))
+        check("#59's lie is refused, naming the path and both hashes",
+              all(x in err for x in ("opt/tool/setup.exe", "0000000000000000",
+                                     real[:16], "Nothing was built")), True)
+        for what, path, sha, want in (
+                ("a path the script did not add or change", "etc/passwd", real,
+                 "not in this bundle"),
+                ("a symlink", "opt/tool/link", real, "not a regular file"),
+                ("a directory", "opt/dir", real, "not a regular file")):
+            _, err = verdict(line(path, sha))
+            check(f"{what}: refused", want in err, True)
+        _, err = verdict(line("etc/passwd", real), line("opt/tool/setup.exe", "0" * 64))
+        check("every bad line is named in one refusal", err.startswith(
+            "bundle.script: 2 KITCHEN-FETCHED line(s)"), True)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+    # Held where the delta still exists, and before anything is staged or built; and what
+    # is recorded is the checked list, not the lines as printed.
+    here = os.path.dirname(os.path.abspath(__file__))
+    tree = ast.parse(open(os.path.join(here, "..", "..", "lib", "apply.py")).read())
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "v_bundle_script")
+    order = [ast.unparse(n.func) for n in sorted(
+        (n for n in ast.walk(fn) if isinstance(n, ast.Call)),
+        key=lambda n: (n.lineno, n.col_offset))
+        if ast.unparse(n.func) in ("_check_fetched", "_stage_delta", "_make_bundle")]
+    check("v_bundle_script checks the lines before it stages or builds", order,
+          ["_check_fetched", "_stage_delta", "_make_bundle"])
+    prov = [n for n in ast.walk(fn) if isinstance(n, ast.Call)
+            and ast.unparse(n.func) == "ctx.prov"]
+    check("...and records the checked list", [ast.unparse(k.value) for n in prov
+                                             for k in n.keywords if k.arg == "fetched"],
+          ["fetched or None"])
 
 
 def test_iso_files_actually_writes_into_the_iso_tree():
@@ -3647,6 +3727,7 @@ def main():
                    test_all_root_is_per_verb,
                    test_bundle_files_refuses_a_setuid_mode,
                    test_bundle_files_fetches_a_pinned_url_itself,
+                   test_a_fetched_line_is_held_to_the_file_it_names,
                    test_iso_files_actually_writes_into_the_iso_tree,
                    test_relax_modes_widens_without_granting,
                    test_apt_reinstall_is_opt_in,

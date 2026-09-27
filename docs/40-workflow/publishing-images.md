@@ -78,7 +78,9 @@ version, the recipe's `upstream_source` for a download. Where a download goes in
 **What weakens a pointer is said, not smoothed over.** A download with no `upstream_source`, and one
 the recipe pinned no sha256 for — what it fetched is what that server served that day — are
 warnings, and `kitchen sources --strict` makes them unresolved instead. A bundle a script wrote with
-network access carries that fact, because what came over the connection is the script's own account.
+network access carries that fact, because what came over the connection is the script's own
+account: each file it reported is checked against the bundle, and one it did not report is not
+seen.
 A repacked initramfs is opened and its members counted against the stock manifest, so "the parts
 that are Slax's are Slax's" is a count rather than a claim.
 
