@@ -136,9 +136,9 @@ The obvious shortcut does not get through: a file staged where git ignores it an
 Committing the file instead is what `00-no-binaries` exists to refuse, for a Windows payload or a
 large file.
 
-A prebuilt ELF binary that no package ships is accounted for when the engine fetched it, through a
-`bundle.files` `url:` entry or inside a tarball, and when a script reported downloading it in a
-`KITCHEN-FETCHED` line the engine checked ([#52](https://github.com/Fullaxx/slax-kitchen/issues/52)).
+A prebuilt ELF binary that no package ships is accounted for when it arrives as a download: a
+`bundle.files` `url:` entry, a `bundle.fromTarball` archive, or a `KITCHEN-FETCHED` line the engine
+checked ([#52](https://github.com/Fullaxx/slax-kitchen/issues/52)).
 `declares:` is for what a script compiled. A tree staged outside the build, such as a Flatpak
 installed from Flathub, has no route yet
 ([#60](https://github.com/Fullaxx/slax-kitchen/issues/60)).
@@ -194,10 +194,11 @@ off at the boot prompt.
 Each entry takes exactly one of `content`, `src` or `url`, and the entries are schema-closed, so a
 misspelt key is refused. A `url:` entry needs `sha256:` and `upstream_source:`: the engine downloads
 the file, refuses it unless its sha256 is the one pinned, and records it, so `kitchen sources` lists
-it as a prebuilt part of the bundle with its source ([a file the build downloads](#a-file-the-build-downloads)).
-A download's mode is `0644` unless the entry gives one. Downloads are placed after the other
-entries, and one that lands on a path another entry wrote is refused. There is no mirror list and no
-cache: every build fetches, and a dry run fetches nothing.
+it as a prebuilt part of the bundle with its source
+([a file the build downloads](#a-file-the-build-downloads)). A download's mode is `0644` unless the
+entry gives one. Downloads are placed after the other entries, and one that lands on a path another
+entry wrote is refused. There is no mirror list and no cache: every build fetches, and a dry run
+fetches nothing.
 
 ### `bundle.fromDir` ○
 
@@ -397,9 +398,10 @@ KITCHEN-FETCHED <sha256> <path in the image> <url>
 ```
 
 is checked against the file the script left, recorded in the image's provenance, and left out of the
-output shown. The path must be a regular file the script added or changed, with that sha256, or the
-step fails; a path through a merged-/usr link, such as `lib/firmware/x`, is recorded as the bundle
-holds it, under `usr/`. `kitchen sources` lists each such file as a prebuilt part of the bundle.
+output shown. The path must be a regular file the script added or changed and the bundle keeps,
+with that sha256, or the step fails; a path through a merged-/usr link, such as `lib/firmware/x`,
+is recorded as the bundle holds it, under `usr/`. `kitchen sources` lists each such file as a
+prebuilt part of the bundle.
 `firmware-refresh` prints one per linux-firmware file, and
 [a file the build downloads](#a-file-the-build-downloads) shows the shape for one. ELF files the step
 leaves behind that no package database owns are recorded too, with their sha256.

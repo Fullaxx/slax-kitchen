@@ -39,7 +39,7 @@ alongside the kitchen's.
 |---|---|
 | `kitchen build` | nothing new; `kitchen pack` writes `<iso>.provenance.json` beside the image |
 | [`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict) | a file whose sha256 matches neither the stock image nor a recorded step; an image built from a dirty kitchen checkout; a file a recipe copied in that its commit does not hold |
-| `ci/release-assets.sh` | everything `sources` refuses, for each image, run without `--allow-dirty`; images built from different kitchen or project commits; a source two images fetched under one name with different bytes; a kitchen or project checkout with uncommitted changes; an asset name GitHub would rename; a non-empty output directory |
+| `ci/release-assets.sh` | everything `sources` refuses, for each image, run without `--allow-dirty`; images built from different kitchen or project commits; two images with one file name; a source two images fetched under one name with different bytes; a kitchen or project checkout with uncommitted changes; an asset name GitHub would rename; a non-empty output directory |
 | `ci/release-verify.py` | see below |
 
 `release-assets.sh` never passes `kitchen sources --allow-dirty`, so no set it assembles rests on

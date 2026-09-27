@@ -381,7 +381,8 @@ pass either. The upload is a workflow artifact of `out/tor-assets/` only, not a 
 
 Weekly rather than per push for the same reason `tor-browser` is on the slow list: the download is
 an external dependency. The verify gate's own logic is unit-tested on every push by
-`tests/unit/test_release_assets.py`, which breaks a fixture directory one way at a time.
+`tests/unit/test_release_assets.py`, which breaks a fixture directory one way at a time. This job
+assembles one image; a set of several, from one commit, is exercised only by that file's fixtures.
 
 ## Releases
 

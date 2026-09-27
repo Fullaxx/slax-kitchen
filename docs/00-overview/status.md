@@ -122,7 +122,7 @@ clear message naming what *is* available, rather than silently skipping.
 
 ### Recipes
 
-**35.** The remaining gaps are the ones that need real engineering rather than YAML:
+**36.** The remaining gaps are the ones that need real engineering rather than YAML:
 
 | | |
 |---|---|
@@ -139,7 +139,7 @@ different things.
 
 | rung | pages |
 |---|---|
-| `matrix-verified` — builds and passes structure assertions on its declared targets | 14 |
+| `matrix-verified` — builds and passes structure assertions on its declared targets | 15 |
 | `artifact boot-verified` — booted, and `testkit` confirms the artifact reached the union | 4 |
 | `boot-verified` — booted to `slax login:` with all three livekit markers | 13 |
 | `runtime-verified` — the feature was watched working | 4 |

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Unit tests for ci/release-verify.py and ci/redistribution-claim.py, on a fixture
-assets directory -- no ISO, no network.
+"""Unit tests for ci/release-verify.py, ci/redistribution-claim.py and the assembler in
+ci/release-assets.sh, on fixtures -- no ISO, no network.
 
-The fixture is what ci/release-assets.sh writes for an image with one built component
-(GRUB's EFI image) and the kitchen tree with one submodule. Each negative case breaks it
-in exactly one way that a real release could, and requires the gate to name it.
+The assets fixture is what ci/release-assets.sh writes for one image, or for several built
+from one commit (#54): each with one built component (GRUB's EFI image), sharing GRUB's
+source and the kitchen tree with one submodule. Each negative case breaks it in exactly one
+way that a real release could, and requires the gate to name it. The assembler -- the
+Python release-assets.sh runs -- is run as a program over one fetch directory per image.
 """
 import hashlib
 import io

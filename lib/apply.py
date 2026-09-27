@@ -1917,8 +1917,8 @@ def _fetch_files(ctx: "Ctx", root: str, files: list, verb: str) -> list[dict]:
         mode = _mode_of(spec, verb, default=0o644)
         url, want = spec["url"], spec.get("sha256")
         if not want:
-            raise RuntimeError(f"{verb}: {spec['dest']}: url: needs the sha256: the download "
-                               f"must match")
+            raise RuntimeError(f"{verb}: {spec['dest']}: a url: entry needs a sha256:, which "
+                               f"the download must match")
         # Downloads go in after every other entry, so nothing can overwrite one -- and one
         # may not land on a path another entry wrote, or inside a directory it copied.
         if os.path.lexists(dest):

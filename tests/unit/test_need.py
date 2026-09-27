@@ -72,9 +72,10 @@ def test_every_tool_row_is_a_version_not_a_refusal():
     """`kitchen doctor --report` printed OpenSSH's usage error where ssh's version belongs (#58).
 
     tool_version gives every tool without a case of its own `--version`. ssh joined the TOOLS
-    table in 46d163e with no case, OpenSSH takes no long options, and every report filed since
-    -- the six in #50 to #55 -- carried `ssh  unknown option -- -`. The block exists to carry
-    versions, and this was the version the boot host's error hints were captured against.
+    table in 46d163e with no case, OpenSSH takes no long options, and every report since that
+    carries the block -- #50 to #55, #58 and #59 -- had `ssh  unknown option -- -` in it. The
+    block exists to carry versions, and this was the version the boot host's error hints
+    were captured against.
 
     So: kitchen's own tool_version, run over every tool in TOOLS that this machine has, and a
     row that reads as a refusal, or says nothing, fails. A tool that is not installed has no
