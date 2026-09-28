@@ -165,7 +165,7 @@ Build a bundle from files given inline, by path, or by URL.
   files:
     - {dest: /etc/hostname, content: "myhost\n"}
     - {dest: /usr/bin/tool, src: ./tool, mode: "0755"}
-    - {dest: /opt/data, src: ./datadir}        # a directory is copied recursively
+    - {dest: /opt/data, src: ./datadir}        # a directory, copied with its links
     - dest: /usr/local/bin/jq                   # downloaded, and held to a pinned sha256
       url: https://example.org/jq/jq-linux-amd64
       sha256: "…"
@@ -186,6 +186,14 @@ may give `upstream_source:`, which is where the report points for it. A download
 unless the entry gives one. Downloads are placed after the other entries, and one that lands on a path another
 entry wrote is refused. There is no mirror list and no cache: every build fetches, and a dry run
 fetches nothing.
+
+A `src:` directory is copied whole. Its symlinks stay symlinks, and a file with several names in
+it is copied once and linked under the others, so a staged Flatpak, whose ostree objects are
+hardlinks to the deployed files, costs what the stage does
+([#64](https://github.com/Fullaxx/slax-kitchen/issues/64)). Links are kept within one entry, not
+across entries. A `src:` or `content:` entry that lands on a file an earlier entry placed
+replaces it, and one that would reach outside the bundle through a symlink an earlier entry
+placed is refused.
 
 ### `bundle.fromDir` ○
 

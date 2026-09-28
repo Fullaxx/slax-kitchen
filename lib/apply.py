@@ -1743,6 +1743,59 @@ def _mode_of(spec: dict, verb: str, default: int | None = None) -> int | None:
     return mode
 
 
+def _unlink_file(path: str) -> None:
+    """Remove a file or symlink at `path`, so what is written there next is a new inode.
+
+    Writing into an existing file writes every other name that file has, and writing
+    through a symlink writes wherever it points. Once _copy_tree keeps hardlinks (#64), a
+    later entry landing on one name of a linked file would change all of them.
+    """
+    if os.path.islink(path) or os.path.isfile(path):
+        os.unlink(path)
+
+
+def _copy_tree(root: str, local: str, dest: str, verb: str) -> None:
+    """Copy the directory `local` to `dest` under `root`, keeping its hardlinks.
+
+    copytree alone writes every name as a separate file. A staged Flatpak holds its ostree
+    objects as hardlinks to the deployed files, and slax-wine measured its 3.2 GB stage
+    becoming a 7.4 GB copy. On one 100 MiB file under ten names, the copy was 1000 MiB of
+    ten inodes, and the apply took 32 s against 3.7 s for bundle.fromDir (#64). Here a
+    later name for a file already copied from this tree is linked to that copy.
+    Everything else is copytree's own: symlinks stay symlinks, copy2 keeps modes and
+    times, and directories merge into ones an earlier entry made. Links are kept within
+    one entry's tree and not across entries, because an entry's `mode:` would otherwise
+    change another entry's file through the shared inode.
+
+    Each destination directory is checked before copytree creates it. Where an earlier entry
+    had left a symlink and this tree has a directory, copytree followed the link and wrote
+    the rest of the tree wherever it pointed, outside the bundle; measured on fde3e93 with
+    an absolute link. `ignore` is the hook copytree calls for each directory before making
+    it, and it ignores nothing here. A file landing on such a symlink is _unlink_file's case.
+    """
+    base = os.path.realpath(root)
+    seen: dict = {}
+
+    def contained(src_dir: str, names: list) -> tuple:
+        there = os.path.join(dest, os.path.relpath(src_dir, local))
+        _under(base, os.path.relpath(there, base), verb, "copied directory")
+        return ()
+
+    def copy(src: str, dst: str) -> str:
+        st = os.lstat(src)
+        _unlink_file(dst)
+        if st.st_nlink > 1 and (st.st_dev, st.st_ino) in seen:
+            os.link(seen[(st.st_dev, st.st_ino)], dst)
+            return dst
+        shutil.copy2(src, dst)
+        if st.st_nlink > 1:
+            seen[(st.st_dev, st.st_ino)] = dst
+        return dst
+
+    shutil.copytree(local, dest, dirs_exist_ok=True, symlinks=True,
+                    ignore=contained, copy_function=copy)
+
+
 def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
     """Write a list of {dest, src|content, mode} specs under root. A `url:` entry is not
     placed here: bundle.files fetches those itself, after these (_fetch_files)."""
@@ -1751,6 +1804,7 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
         mode = _mode_of(spec, verb)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         if "content" in spec:
+            _unlink_file(dest)
             with open(dest, "w") as f:
                 f.write(spec["content"])
         elif "src" in spec:
@@ -1761,8 +1815,9 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
                     f"a URL -- a download goes in url:")
             local = ctx.local(src)
             if os.path.isdir(local):
-                shutil.copytree(local, dest, dirs_exist_ok=True, symlinks=True)
+                _copy_tree(root, local, dest, verb)
             elif os.path.isfile(local):
+                _unlink_file(dest)
                 shutil.copy2(local, dest)
             else:
                 raise RuntimeError(f"{verb}: source not found: {local}")

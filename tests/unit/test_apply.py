@@ -2329,6 +2329,86 @@ def test_bundle_files_fetches_a_pinned_url_itself():
         and any(k.arg == "fetched" for k in n.keywords) for n in ast.walk(fn)), True)
 
 
+def test_a_staged_tree_keeps_its_hardlinks():
+    """bundle.files copied a staged directory with copytree, which writes every name as a
+    new file (#64). A Flatpak stage holds its ostree objects as hardlinks to the deployed
+    files: slax-wine measured 3.2 GB becoming a 7.4 GB copy, and one 100 MiB file under
+    ten names took 32 s to apply, against 3.7 s through bundle.fromDir.
+
+    The second half is the hazard that keeping links creates. Once two names share an inode,
+    a later entry writing one of them would write both.
+    """
+    import tempfile
+    work = tempfile.mkdtemp()
+    stage = os.path.join(work, "stage")
+    os.makedirs(os.path.join(stage, "objects"))
+    os.makedirs(os.path.join(stage, "deploy"))
+    first = os.path.join(stage, "objects", "blob")
+    open(first, "w").write("data")
+    os.link(first, os.path.join(stage, "deploy", "blob"))
+    os.link(first, os.path.join(stage, "top"))
+    ctx = apply.Ctx(work, work, "t")
+    ctx.say = lambda *a: None
+    root = os.path.join(work, "root")
+    os.makedirs(root)
+
+    apply._place_files(ctx, root, [{"dest": "/opt/stage", "src": stage}], "bundle.files")
+    names = [os.path.join(root, "opt", "stage", p) for p in ("objects/blob", "deploy/blob", "top")]
+    check("three names in the stage are one inode in the copy",
+          len({os.stat(p).st_ino for p in names}), 1)
+
+    apply._place_files(ctx, root, [{"dest": "/opt/stage/top", "content": "mine"}],
+                       "bundle.files")
+    check("a later entry writing one name leaves the others alone",
+          [open(p).read() for p in names], ["data", "data", "mine"])
+    check("and the other two still share their inode",
+          os.stat(names[0]).st_ino == os.stat(names[1]).st_ino, True)
+
+
+def test_a_later_entry_cannot_write_through_an_earlier_entrys_symlink():
+    """bundle.files merges each directory entry into what earlier entries placed, and
+    copytree follows a symlink it finds there. On fde3e93, one entry shipping `link` as an
+    absolute symlink to a directory, and a later one with a real `link/` directory, wrote
+    the later tree outside the bundle root. A symlink to a file did the same for a file:
+    copy2 opened it and wrote wherever it pointed. This is the recipe-named-path escape
+    that _under exists to stop, reached one directory down.
+    """
+    import tempfile
+    work = tempfile.mkdtemp()
+    outside = os.path.join(work, "outside")
+    os.makedirs(outside)
+    target = os.path.join(outside, "target")
+    open(target, "w").write("theirs")
+    first = os.path.join(work, "first")
+    os.makedirs(first)
+    os.symlink(outside, os.path.join(first, "link"))
+    os.symlink(target, os.path.join(first, "file"))
+    second = os.path.join(work, "second")
+    os.makedirs(os.path.join(second, "link", "sub"))
+    open(os.path.join(second, "link", "sub", "pwned"), "w").write("x")
+    third = os.path.join(work, "third")
+    os.makedirs(third)
+    open(os.path.join(third, "file"), "w").write("mine")
+    ctx = apply.Ctx(work, work, "t")
+    ctx.say = lambda *a: None
+    root = os.path.join(work, "root")
+    os.makedirs(root)
+
+    try:
+        apply._place_files(ctx, root, [{"dest": "/opt/app", "src": first},
+                                       {"dest": "/opt/app", "src": second}], "bundle.files")
+        check("a directory merged through a symlink is refused", "placed", "refused")
+    except RuntimeError as e:
+        check("a directory merged through a symlink is refused", "outside the tree" in str(e),
+              True)
+    check("and nothing was written where it pointed", sorted(os.listdir(outside)), ["target"])
+
+    apply._place_files(ctx, root, [{"dest": "/opt/app", "src": third}], "bundle.files")
+    check("a file landing on a symlink replaces it", open(target).read(), "theirs")
+    check("with the entry's own file", open(os.path.join(root, "opt", "app", "file")).read(),
+          "mine")
+
+
 def test_iso_files_actually_writes_into_the_iso_tree():
     """`iso.files` was implemented, documented, listed as shipped -- and run by nothing.
 
@@ -3593,6 +3673,8 @@ def main():
                    test_all_root_is_per_verb,
                    test_bundle_files_refuses_a_setuid_mode,
                    test_bundle_files_fetches_a_pinned_url_itself,
+                   test_a_staged_tree_keeps_its_hardlinks,
+                   test_a_later_entry_cannot_write_through_an_earlier_entrys_symlink,
                    test_iso_files_actually_writes_into_the_iso_tree,
                    test_relax_modes_widens_without_granting,
                    test_apt_reinstall_is_opt_in,
