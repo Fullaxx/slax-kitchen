@@ -32,6 +32,9 @@ here.
 
 ## Setting one up
 
+The file goes at the root of your project: this checkout, or the project that vendors it, whose
+file is read first ([#66](https://github.com/Fullaxx/slax-kitchen/issues/66)). From there:
+
 ```sh
 cp boot-host.example.ini boot-host.ini
 chmod 600 boot-host.ini
@@ -40,7 +43,8 @@ $EDITOR boot-host.ini
 ```
 
 `boot-host.ini` is **gitignored, and refused by the commit gates**
-([`ci/checks/10-no-dnc.sh`](../../ci/checks/10-no-dnc.sh)). It names your machine and your
+([`ci/checks/10-no-dnc.sh`](../../ci/checks/10-no-dnc.sh)); a project vendoring the kitchen lists it
+in its own `.gitignore`. It names your machine and your
 account, which is nobody else's business — and it is not merely private, it is the file
 that decides which machine an image is sent to and booted on. A fork that committed one
 would point every cloner's boot tests at the fork author's machine, and the clone would

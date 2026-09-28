@@ -139,6 +139,37 @@ def test_a_good_config_is_read_exactly():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_a_projects_boot_host_ini_is_read_before_the_kitchens():
+    """Each project keeps its own boot-host.ini at its root, gitignored. A project vendoring
+    the kitchen had to put its copy inside the submodule, the only place read, which is a
+    checkout it moves at every pin bump. slax-wine keeps its at its root, where nothing
+    read it (#66, and #44 before it).
+
+    The kitchen's directory is a scratch one here, so the real file is never read, and the
+    project is named by PROJECT_ROOT, one of the two ways provenance.project_root finds it.
+    """
+    box = tempfile.mkdtemp(prefix="bh-project-")
+    kitchen, project = os.path.join(box, "kitchen"), os.path.join(box, "project")
+    os.makedirs(kitchen)
+    os.makedirs(project)
+    write_cfg(kitchen, "[boot-host]\nhost = kitchen-host\nscratch = /srv/k\n")
+    write_cfg(project, "[boot-host]\nhost = project-host\nscratch = /srv/p\n")
+    saved, env = boot_host.REPO_ROOT, os.environ.get("PROJECT_ROOT")
+    boot_host.REPO_ROOT, os.environ["PROJECT_ROOT"] = kitchen, project
+    try:
+        check("the project's file is read", boot_host.load(env={}).host, "project-host")
+        os.unlink(os.path.join(project, "boot-host.ini"))
+        check("the kitchen's, when the project has none", boot_host.load(env={}).host,
+              "kitchen-host")
+    finally:
+        boot_host.REPO_ROOT = saved
+        if env is None:
+            os.environ.pop("PROJECT_ROOT", None)
+        else:
+            os.environ["PROJECT_ROOT"] = env
+        shutil.rmtree(box, ignore_errors=True)
+
+
 def test_a_world_writable_config_is_refused():
     """Anyone who can write it can redirect every boot test to a machine of their own."""
     d = tempfile.mkdtemp(prefix="bh-perm-")
@@ -295,8 +326,10 @@ def test_a_missing_option_value_is_refused_not_crashed():
     try:
         repo = new_repo(tmp, "repo")
         os.makedirs(os.path.join(repo, "lib"))
-        shutil.copy2(os.path.join(ROOT, "lib", "boot_host.py"),
-                     os.path.join(repo, "lib", "boot_host.py"))
+        # provenance.py too: boot_host.py asks it where the project is (#66), and every
+        # checkout, the tree sent to a boot host included, has both.
+        for f in ("boot_host.py", "provenance.py"):
+            shutil.copy2(os.path.join(ROOT, "lib", f), os.path.join(repo, "lib", f))
         write_cfg(repo, GOOD)
         for args in (["test", "--iso", "x.iso", "--golden"],
                      ["test", "--iso"],
@@ -572,8 +605,10 @@ def test_active_answers_with_a_status():
     try:
         repo = new_repo(tmp, "repo")
         os.makedirs(os.path.join(repo, "lib"))
-        shutil.copy2(os.path.join(ROOT, "lib", "boot_host.py"),
-                     os.path.join(repo, "lib", "boot_host.py"))
+        # provenance.py too: boot_host.py asks it where the project is (#66), and every
+        # checkout, the tree sent to a boot host included, has both.
+        for f in ("boot_host.py", "provenance.py"):
+            shutil.copy2(os.path.join(ROOT, "lib", f), os.path.join(repo, "lib", f))
 
         def active(env_extra=None):
             env = dict(os.environ)
@@ -674,6 +709,7 @@ def main():
     try:
         for fn in [test_every_bad_config_is_refused,
                    test_a_good_config_is_read_exactly,
+                   test_a_projects_boot_host_ini_is_read_before_the_kitchens,
                    test_a_world_writable_config_is_refused,
                    test_a_tracked_config_is_refused,
                    test_the_private_address_table,

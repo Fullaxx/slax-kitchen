@@ -116,6 +116,10 @@ test: [structure]
 7. **Build from the project's root,** where `work/` and `out/` are written:
    `vendor/slax-kitchen/kitchen build myproduct`. `--keep` leaves the work tree for checks of the
    project's own.
+8. **Configure the engine from the project's root.** A `boot-host.ini` there is what the vendored
+   engine reads, before any in its own checkout; list it in the project's `.gitignore`.
+   `vendor/slax-kitchen/kitchen doctor --install-hooks` links the project's own `ci/hooks/` into
+   the project's repository.
 
 ## Bundle numbers
 
@@ -199,8 +203,6 @@ Offered as follow-ups rather than decided:
 - engine gates that run over a project's own tree, so no project copies them;
 - vars for `iso-identity`'s application id and preparer, and for what `boot-cmdline` appends.
   slax-wine writes its own identity recipe because those are fixed;
-- operator configuration and hooks that work from a project vendoring the engine as a submodule:
-  `boot-host.ini` is read only from the engine's checkout, and `doctor --install-hooks` fails there;
 - `kitchen test --structure` options for a project's own checks — a size limit, and lists of
   modules to require or forbid — so a project need not call `iso_assert.py` itself, as slax-wine
   does.
@@ -215,7 +217,7 @@ directly:
 |---|---|
 | 1. `requires` resolves against the working directory (#43) | superseded: a consumer takes the base's image, not its recipes |
 | 2. `vars:` on a profile entry named by path are dropped (#46) | fixed in `f2ea7d2` |
-| 3. operator configuration is read only from the engine's checkout (#44) | superseded: every project vendors the engine directly, as slax-wine does |
+| 3. operator configuration is read only from the engine's checkout (#44) | superseded: every project vendors the engine directly, as slax-wine does. A vendored engine reads the project's `boot-host.ini` since #66 |
 | 4. provenance records one superproject (#45) | superseded: a build has one project above the engine again, and records the base image by sha256 |
 | 5. `kitchen version` drops the commit inside a submodule | fixed in the commit that added this page |
 | 6. `kitchen build` cannot pass the volume id | stale: it has since `6419fa4` |

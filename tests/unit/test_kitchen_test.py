@@ -150,11 +150,11 @@ class Fixture:
         self.keys_rc = "0"
 
     def with_boot_host(self):
-        """A configured boot host: the file kitchen_test looks for, and the driver.
+        """A configured boot host: the file, and the driver that reads it.
 
-        BOTH, because the hook checks the file exists before spending a python start --
-        and because `python3 <missing file>` also exits 2, which is the code that means
-        "the configuration was refused".
+        BOTH: the file, which the driver reads, and the driver, because kitchen_test asks
+        it only when lib/boot_host.py exists -- `python3 <missing file>` also exits 2, which
+        is the code that means "the configuration was refused".
         """
         write(os.path.join(self.repo, "boot-host.ini"),
               "[boot-host]\nhost = kvmbox\nscratch = /srv/s\n")

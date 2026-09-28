@@ -442,6 +442,16 @@ doctor_report() {
     echo "--- end ---"
 }
 
+# Where `doctor --install-hooks` puts hooks: the repository of the project that vendors
+# this checkout -- found by lib/provenance.py, as the provenance record finds it -- or this
+# checkout's own, and the hooks directory git names there. `--git-path`, not .git/hooks:
+# in a worktree, or with core.hooksPath, that is somewhere else.
+hooks_where() {
+    _top=$(python3 "$REPO_ROOT/lib/provenance.py" project-root 2>/dev/null) || _top=$REPO_ROOT
+    _hooks=$(git -C "$_top" rev-parse --git-path hooks 2>/dev/null) || return 1
+    case $_hooks in /*) ;; *) _hooks=$_top/$_hooks ;; esac
+}
+
 cmd_doctor() {
     _strict=0
     case "${1:-}" in
@@ -450,12 +460,23 @@ cmd_doctor() {
         --strict)  _strict=1; shift ;;
     esac
     if [ "${1:-}" = "--install-hooks" ]; then
-        [ -d "$REPO_ROOT/.git" ] || die "not a git repo: $REPO_ROOT"
-        for h in pre-commit pre-push; do
-            ln -sf "../../ci/hooks/$h" "$REPO_ROOT/.git/hooks/$h"
-            printf '  %sok%s  installed .git/hooks/%s -> ci/hooks/%s\n' "$G" "$O" "$h" "$h"
+        # The project's hooks into the project's repository when this checkout is vendored,
+        # this checkout's own otherwise. It tested for a .git DIRECTORY here, and a
+        # submodule's .git is a file, so a vendored kitchen said "not a git repo" -- and the
+        # hooks it would have installed check the kitchen's tree, not the project (#66).
+        hooks_where || die "not a git repository: $_top"
+        _n=0
+        for _h in "$_top"/ci/hooks/*; do
+            [ -f "$_h" ] || continue
+            mkdir -p "$_hooks" || die "could not create $_hooks"
+            ln -sfr "$_h" "$_hooks/${_h##*/}" || die "could not link $_hooks/${_h##*/}"
+            printf '  %sok%s  installed %s -> ci/hooks/%s\n' "$G" "$O" \
+                "${_hooks#"$_top"/}/${_h##*/}" "${_h##*/}"
+            _n=$((_n + 1))
         done
-        printf '%sHooks are symlinks into ci/hooks/, so they follow the repo.%s\n' "$D" "$O"
+        [ "$_n" -gt 0 ] || die "nothing to install: $_top has no ci/hooks/"
+        printf '%sHooks are symlinks into %s/ci/hooks/, so they follow the repo.%s\n' \
+            "$D" "$_top" "$O"
         return 0
     fi
     printf '%sslax-kitchen doctor%s  (%s)\n\n' "$B" "$O" "$(kitchen_version)"
@@ -468,7 +489,7 @@ cmd_doctor() {
     printf '%s\n' "$_tc" | sed 's/^/  /'
     doctor_tier "$(doctor_caps)"
     printf '\n%shooks%s  ' "$B" "$O"
-    if [ -L "$REPO_ROOT/.git/hooks/pre-commit" ]; then printf '%sinstalled%s\n' "$G" "$O"
+    if hooks_where && [ -L "$_hooks/pre-commit" ]; then printf '%sinstalled%s\n' "$G" "$O"
     else printf '%snot installed%s  (kitchen doctor --install-hooks)\n' "$Y" "$O"; fi
 
     # Capabilities are deliberately NOT part of --strict. Missing KVM is a speed
@@ -577,8 +598,9 @@ Logs and screenshots land in <dir of iso>/boot-tests/.
 
   --local              boot here even if boot-host.ini names a machine with KVM
 
-With a boot-host.ini in the repository root, every boot mode above runs on the machine
-it names and the evidence still lands here. --structure always runs here: it reads the
+With a boot-host.ini at the project's root (this checkout, or the project that
+vendors it), every boot mode above runs on the machine it names and the evidence still
+lands here. --structure always runs here: it reads the
 image, and the image is already here. See docs/60-testing/boot-host.md.
 H
         ;;
@@ -589,7 +611,8 @@ kitchen doctor [options]          what this machine can and cannot build
                        this is what a bug report should carry
   --strict             exit 1 if any tool is missing or a toolchain assertion
                        fails -- for CI, which needs doctor to be able to fail
-  --install-hooks      symlink .git/hooks/{pre-commit,pre-push} into ci/hooks/
+  --install-hooks      symlink each hook in ci/hooks/ into the repository's hooks
+                       directory -- the project's, when this checkout is vendored
 
 With no options: tools, kernel capabilities, and a summary of which recipe
 privilege tiers are runnable here.

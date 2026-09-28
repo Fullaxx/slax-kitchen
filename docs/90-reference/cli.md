@@ -98,9 +98,11 @@ union just before `change_root`, and a structural claim becomes a boot assertion
 
 ## `boot-host [check|clean|show]` — the machine boot tests run on
 
-A `boot-host.ini` in the repository root names a machine with KVM to run the boot modes
-above on, with the evidence landing here as usual. `--structure` is never sent: it reads
-the image, and the image is already here.
+A `boot-host.ini` at the project's root names a machine with KVM to run the boot modes above on,
+with the evidence landing here as usual. The project is this checkout, or the one that vendors it,
+found as [`apply`](#apply-recipe--w-dir--apply---profile-profile) finds it; a file there is read
+before one in this checkout ([#66](https://github.com/Fullaxx/slax-kitchen/issues/66)). `--structure`
+is never sent: it reads the image, and the image is already here.
 
 ```sh
 cp boot-host.example.ini boot-host.ini && chmod 600 boot-host.ini
@@ -613,8 +615,10 @@ this command exists to catch. `--write` regenerates
 ## `doctor [--report|--install-hooks]`
 
 Reports every required tool, the kernel/container capabilities this machine has, and which recipe
-tiers it can therefore run. `--install-hooks` symlinks `.git/hooks/{pre-commit,pre-push}` into
-`ci/hooks/`.
+tiers it can therefore run. `--install-hooks` symlinks each hook in `ci/hooks/` into the hooks
+directory git names for the repository: this checkout's, or, when the kitchen is vendored, the
+project's own `ci/hooks/` into the project's repository. A project with no `ci/hooks/` is told so,
+and the command exits 1.
 
 **`--report` is the one to paste into a bug report.** One plain-text block, no colour, and unlike
 the default view it carries **tool versions** — which is what "works here, fails there" usually

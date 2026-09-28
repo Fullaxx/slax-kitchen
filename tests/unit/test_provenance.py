@@ -291,6 +291,65 @@ def test_a_vendored_kitchen_reports_its_commit():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_a_vendored_kitchen_installs_the_projects_hooks():
+    """`kitchen doctor --install-hooks`, run through a vendored engine, installs the
+    project's hooks into the project's repository (#66).
+
+    It tested for a `.git` DIRECTORY, and a submodule's `.git` is a file, so it died with
+    "not a git repo". slax-wine's docs tell people not to use it, and install its hooks
+    with `ln -sf` by hand. Had the test passed, the hooks it linked would have run the
+    engine's gates over the engine's tree. Here the project is found through provenance.py,
+    as a real submodule makes it, and a project with no ci/hooks/ is told so.
+    """
+    import subprocess
+    tmp = tempfile.mkdtemp(prefix="vendored-hooks-")
+
+    def git(repo, *args):
+        return subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t",
+                               "-c", "protocol.file.allow=always", *args],
+                              check=True, capture_output=True, text=True).stdout
+
+    try:
+        engine = os.path.join(tmp, "engine")
+        os.makedirs(os.path.join(engine, "lib"))
+        shutil.copy2(os.path.join(ROOT, "kitchen"), engine)
+        for f in os.listdir(os.path.join(ROOT, "lib")):
+            if f.endswith(".sh") or f == "provenance.py":
+                shutil.copy2(os.path.join(ROOT, "lib", f), os.path.join(engine, "lib", f))
+        git(engine, "init", "-q")
+        git(engine, "add", "-A")
+        git(engine, "commit", "-q", "-m", "engine")
+        project = os.path.join(tmp, "project")
+        os.makedirs(project)
+        git(project, "init", "-q")
+        git(project, "submodule", "add", "-q", engine, "vendor/slax-kitchen")
+        vendored = os.path.join(project, "vendor", "slax-kitchen")
+        env = {k: v for k, v in os.environ.items() if k != "PROJECT_ROOT"}
+        env["NO_COLOR"] = "1"
+
+        def install():
+            return subprocess.run(["sh", os.path.join(vendored, "kitchen"), "doctor",
+                                   "--install-hooks"], capture_output=True, text=True, env=env)
+
+        p = install()
+        check("a project with no ci/hooks/ is told so",
+              (p.returncode != 0, "nothing to install" in p.stderr), (True, True))
+
+        for h in ("pre-commit", "pre-push"):
+            os.makedirs(os.path.join(project, "ci", "hooks"), exist_ok=True)
+            open(os.path.join(project, "ci", "hooks", h), "w").write("#!/bin/sh\n")
+        p = install()
+        check("the vendored engine installs", (p.returncode, p.stderr), (0, ""))
+        hooks = git(project, "rev-parse", "--git-path", "hooks").strip()
+        hooks = os.path.join(project, hooks) if not os.path.isabs(hooks) else hooks
+        check("each hook links to the project's own",
+              [os.path.realpath(os.path.join(hooks, h)) for h in ("pre-commit", "pre-push")],
+              [os.path.realpath(os.path.join(project, "ci", "hooks", h))
+               for h in ("pre-commit", "pre-push")])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def fake_work(tmp, entries):
     """The least of a work tree finalize() reads -- .kitchen/provenance.json, written through
     append_recipe the way apply writes it -- and an image to hash."""
@@ -437,6 +496,7 @@ def main():
                    test_the_gaps_are_decisions,
                    test_a_local_input_is_recorded_relative_to_its_checkout,
                    test_a_vendored_kitchen_reports_its_commit,
+                   test_a_vendored_kitchen_installs_the_projects_hooks,
                    test_append_records_and_finalize_redacts,
                    test_a_var_naming_the_build_machine_is_noted_before_anything_is_built]:
             # One test crashing must not stop the rest: the count of failures is only honest

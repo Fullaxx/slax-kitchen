@@ -417,7 +417,17 @@ def main() -> int:
     f.add_argument("--iso", required=True)
     f.add_argument("--backend", required=True)
     f.add_argument("--mbr")
+    # For the shell side, so `kitchen doctor --install-hooks` finds the project the way
+    # everything here does, and not by a second copy of the rule (#66).
+    sub.add_parser("project-root", help="print the project that vendors this checkout; "
+                                        "exit 1 when there is none")
     a = ap.parse_args()
+    if a.cmd == "project-root":
+        root = project_root()
+        if root and os.path.realpath(root) != os.path.realpath(REPO):
+            print(root)
+            return 0
+        return 1
     try:
         dest = finalize(a.work, a.iso, a.backend, a.mbr)
     except RuntimeError as e:

@@ -216,14 +216,15 @@ kitchen_test() {
     # when a boot was actually requested, so `kitchen test --structure` -- which reads the
     # image that is already here -- never pays for it and never needs a host at all.
     #
-    # The file first, and not only to save a python start on every boot test for the many
-    # people who have no boot host. `python3 <missing file>` ALSO exits 2, which is the
-    # code meaning "the configuration was refused" -- so without this gate a tree with no
+    # The driver first. `python3 <missing file>` ALSO exits 2, which is the code meaning
+    # "the configuration was refused" -- so without this gate a tree with no
     # lib/boot_host.py refuses to boot at all, citing a configuration that does not exist.
-    # tests/unit/test_kitchen_test.py found that, being exactly such a tree.
+    # tests/unit/test_kitchen_test.py found that, being exactly such a tree. There is no
+    # check for boot-host.ini here any more: it may be at the root of the project that
+    # vendors this checkout, and boot_host.py is what knows where to look (#66).
     boot_host=""
     if [ "$want_kernel$want_bios$want_uefi$want_usb$want_perch" != "00000" ] \
-       && [ -f "$REPO_ROOT/boot-host.ini" ] && [ -f "$REPO_ROOT/lib/boot_host.py" ]; then
+       && [ -f "$REPO_ROOT/lib/boot_host.py" ]; then
         boot_host=$(python3 "$REPO_ROOT/lib/boot_host.py" active)
         _bh_rc=$?
         # Refused, not ignored. A broken boot-host.ini is a question for the person who

@@ -234,6 +234,23 @@ def local_reason(env=None) -> str | None:
     return None
 
 
+def config_root() -> str:
+    """Where boot-host.ini is read: the root of the project that vendors this checkout, when
+    one is there, else this checkout's.
+
+    Each project keeps its own, gitignored, beside its own work. A project vendoring the
+    engine had to put its copy inside the submodule, the only place read, which is a
+    checkout it moves at every pin bump; slax-wine kept its at its root, where nothing read
+    it (#66). The project is found as provenance.project_root finds it: the superproject,
+    or PROJECT_ROOT.
+    """
+    import provenance
+    project = provenance.project_root()
+    if project and os.path.exists(os.path.join(project, CONFIG_NAME)):
+        return project
+    return REPO_ROOT
+
+
 def load(root: str | None = None, env=None) -> Config | None:
     """The boot host, or None when boots stay here. Raises ConfigError, never guesses.
 
@@ -244,7 +261,7 @@ def load(root: str | None = None, env=None) -> Config | None:
     """
     if local_reason(env) is not None:
         return None
-    root = REPO_ROOT if root is None else root
+    root = config_root() if root is None else root
     path = os.path.join(root, CONFIG_NAME)
     if not os.path.exists(path):
         return None
@@ -1938,8 +1955,9 @@ USAGE = """kitchen boot-host -- run boot tests on a machine that has KVM
   kitchen boot-host clean     remove cached images and finished runs there
   kitchen boot-host show      what boot-host.ini says, without connecting
 
-Configured by boot-host.ini in the repository root, which is gitignored. Copy
-boot-host.example.ini to start. Set KITCHEN_BOOT_HOST=local to boot here instead."""
+Configured by boot-host.ini at the root of the project -- this checkout, or the
+project that vendors it -- which is gitignored. Copy boot-host.example.ini to start.
+Set KITCHEN_BOOT_HOST=local to boot here instead."""
 
 
 def main(argv: list) -> int:
@@ -1977,7 +1995,12 @@ def main(argv: list) -> int:
         print(cfg.host)
         return 0
     if cfg is None:
-        why = local_reason() or f"no {CONFIG_NAME} (template: {EXAMPLE_NAME})"
+        import provenance
+        where = [p for p in (provenance.project_root(), REPO_ROOT) if p]
+        where = [p for i, p in enumerate(where)
+                 if os.path.realpath(p) not in map(os.path.realpath, where[:i])]
+        why = local_reason() or (f"no {CONFIG_NAME} in {' or '.join(where)} "
+                                 f"(template: {EXAMPLE_NAME})")
         print(f"boot-host: {why}", file=sys.stderr)
         return EXIT_CONFIG
     if cmd == "show":
