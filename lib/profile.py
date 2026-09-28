@@ -99,15 +99,14 @@ def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print(f"usage: {argv[0]} <profile.yaml> [--base <target>]", file=sys.stderr)
         return 2
-    path = argv[1]
-    if not os.path.isfile(path):
-        # allow a bare profile name
-        cand = os.path.join(ROOT, "profiles", path + ".yaml")
-        if os.path.isfile(cand):
-            path = cand
-        else:
-            print(f"profile not found: {argv[1]}", file=sys.stderr)
-            return 2
+    # A bare name is looked up the way apply looks it up, in one function, since build
+    # hands apply the path this settles on.
+    from apply import profile_path
+    try:
+        path = profile_path(argv[1])
+    except RuntimeError as e:
+        print(e, file=sys.stderr)
+        return 2
 
     problems = validate_file(path)
     if problems:

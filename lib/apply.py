@@ -3905,9 +3905,11 @@ def resolve(names: list[str], search: list[str]) -> list[str]:
         if not hits:
             raise RuntimeError(f"recipe not found: {n} (searched {', '.join(search)})")
         if len(hits) > 1:
+            # From here, since the advice is to name one by path. Relative to this checkout,
+            # a project's copy read "../../recipes/...".
             raise RuntimeError(
                 f"recipe name {n!r} is ambiguous -- it exists in more than one place:\n  "
-                + "\n  ".join(os.path.relpath(h, ROOT) for h in hits)
+                + "\n  ".join(os.path.relpath(h) for h in hits)
                 + "\n  Rename one, or name the file you mean by path.")
         return hits[0]
 
@@ -4128,8 +4130,18 @@ def apply_recipe(path: str, work: str, dry: bool = False,
     return 0
 
 
+def _above() -> list[str]:
+    """The checkouts a bare name is looked up in: this one, then the project that vendors
+    it, when there is one (provenance.project_root: the superproject, or PROJECT_ROOT)."""
+    tops = [ROOT]
+    project = provenance.project_root()
+    if project and os.path.realpath(project) != os.path.realpath(ROOT):
+        tops.append(project)
+    return tops
+
+
 def recipe_search_path() -> list[str]:
-    """Every directory under recipes/, in order, so a fork can just make one.
+    """Every directory under recipes/, in order: this checkout's, then the project's.
 
     `recipes/available/` is this repo's library. A fork keeping its own recipes in
     `recipes/<project>/` gets them resolvable by bare name with no configuration: drop
@@ -4137,16 +4149,24 @@ def recipe_search_path() -> list[str]:
     under recipes/; 90-doc-coverage polices only available/, so a fork owes the upstream
     cookbook nothing.
 
+    A project that vendors the kitchen, as LAYERING.md has every project do, keeps its
+    recipes in its own recipes/, which the same rule reaches. Before, a bare name reached
+    only this checkout and the working directory, and slax-wine named its own recipes by
+    path and changed to its root first (#65).
+
     available/ comes first so this repo's own names win a tie predictably -- but a tie is
     reported rather than resolved, see resolve().
     """
-    base = os.path.join(ROOT, "recipes")
-    if not os.path.isdir(base):
-        return []
-    dirs = sorted(d for d in os.listdir(base)
-                  if os.path.isdir(os.path.join(base, d)) and not d.endswith(".files"))
-    first = [d for d in dirs if d == "available"]
-    return [os.path.join(base, d) for d in first + [d for d in dirs if d != "available"]]
+    out = []
+    for top in _above():
+        base = os.path.join(top, "recipes")
+        if not os.path.isdir(base):
+            continue
+        dirs = sorted(d for d in os.listdir(base)
+                      if os.path.isdir(os.path.join(base, d)) and not d.endswith(".files"))
+        first = [d for d in dirs if d == "available"]
+        out += [os.path.join(base, d) for d in first + [d for d in dirs if d != "available"]]
+    return out
 
 
 def duplicate_recipes(names: list[str]) -> str | None:
@@ -4202,18 +4222,31 @@ def one_name_two_files(paths: list[str]) -> str | None:
 
 
 def profile_path(path: str) -> str:
-    """A profile argument as a file: a path as given, or a name under profiles/.
+    """A profile argument as a file: a path as given, or a name under profiles/, this
+    checkout's or the project's that vendors it.
 
     Stated once because the recipe list and the declared base are read separately and must
     resolve the argument the same way -- `kitchen build minimal` names a profile that is
     not a path, and a base read from the wrong file is worse than one not read at all.
+    lib/profile.py, which `kitchen build` runs first, asks here too. A vendoring project's
+    own profiles were reached only by path (#65), though publishing-images.md has it run
+    `kitchen build myproject`. A name in both places is refused, as a recipe's is.
     """
     if os.path.isfile(path):
         return path
-    cand = os.path.join(ROOT, "profiles", path + ".yaml")
-    if os.path.isfile(cand):
-        return cand
-    raise RuntimeError(f"profile not found: {path}")
+    dirs = [os.path.join(top, "profiles") for top in _above()]
+    hits: dict[str, str] = {}
+    for d in dirs:
+        cand = os.path.join(d, path + ".yaml")
+        if os.path.isfile(cand):
+            hits.setdefault(os.path.realpath(cand), cand)
+    if len(hits) > 1:
+        raise RuntimeError(f"profile name {path!r} is ambiguous -- it exists in more than one "
+                           f"place:\n  " + "\n  ".join(os.path.relpath(h) for h in hits.values())
+                           + "\n  Rename one, or name the file you mean by path.")
+    if hits:
+        return next(iter(hits.values()))
+    raise RuntimeError(f"profile not found: {path} (searched {', '.join(dirs)})")
 
 
 def profile_base(path: str) -> dict:

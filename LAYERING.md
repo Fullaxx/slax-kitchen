@@ -75,7 +75,8 @@ slax-rpgs is the first.
 2. **Pin the base image** by file name and sha256, check the sha256 before a build, and keep the
    image itself out of git: `isos/` in the project's `.gitignore`, as in this repository.
 3. **Write a profile** whose `base:` names the Slax release underneath the base image, and whose
-   `iso:` names the base image itself:
+   `iso:` names the base image itself. A bare name reaches the project's own `recipes/` as well as
+   the engine's:
 
 ```yaml
 apiVersion: slax-kitchen/v1
@@ -86,7 +87,7 @@ base: {flavour: debian, arch: 64bit, version: "12.2.0", iso: isos/slax64-wine-ue
 recipes:
   - name: remove-bundle
     vars: {drop: "^3[01]-notepadpp(32|64)\\.sb$"}
-  - recipes/available/games.yaml
+  - games
   - name: iso-identity
     vars: {volid: MYPRODUCT}
   - uefi-bootable
@@ -112,8 +113,9 @@ test: [structure]
    with no entry pointing at it, and the structure test fails it.
    `kitchen unpack` records which of the two the base image had, and `kitchen pack` warns about
    each one this build will not write. A dropped MBR leaves nothing behind for a test to find.
-7. **Build from the project's root:** `vendor/slax-kitchen/kitchen build profiles/myproduct.yaml`.
-   `--keep` leaves the work tree for checks of the project's own.
+7. **Build from the project's root,** where `work/` and `out/` are written:
+   `vendor/slax-kitchen/kitchen build myproduct`. `--keep` leaves the work tree for checks of the
+   project's own.
 
 ## Bundle numbers
 
@@ -197,8 +199,6 @@ Offered as follow-ups rather than decided:
 - engine gates that run over a project's own tree, so no project copies them;
 - vars for `iso-identity`'s application id and preparer, and for what `boot-cmdline` appends.
   slax-wine writes its own identity recipe because those are fixed;
-- bare recipe names that resolve in the project's own `recipes/`, not only in the engine's and the
-  working directory: slax-wine changes to its root and names its recipes by path;
 - operator configuration and hooks that work from a project vendoring the engine as a submodule:
   `boot-host.ini` is read only from the engine's checkout, and `doctor --install-hooks` fails there;
 - `kitchen test --structure` options for a project's own checks — a size limit, and lists of

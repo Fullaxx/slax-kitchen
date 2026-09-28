@@ -188,6 +188,15 @@ whether the profile lists both or one arrives through another recipe's `compat.r
 recipe's vars and its journal entry are keyed by its name, so only one of them could ever be
 applied.
 
+**A project that vendors the kitchen** gets the same without configuration. The directories under
+its own `recipes/` are searched after the kitchen's, and a bare profile name looks in its
+`profiles/` after the kitchen's, so `vendor/slax-kitchen/kitchen build myproduct` finds
+`profiles/myproduct.yaml` wherever it runs
+([#65](https://github.com/Fullaxx/slax-kitchen/issues/65)). A name in both is an error naming both,
+as above. The project is the superproject git names for the kitchen's checkout. For a kitchen
+copied in rather than added as a submodule, `PROJECT_ROOT=<the project's root>` says where the
+project is. The same answer is the `<project>` the provenance record writes paths against.
+
 `--profile` takes the recipe list **and its per-recipe `vars:` overrides** from a profile instead
 of naming recipes on the command line; the two forms are mutually exclusive. This is how
 `kitchen build` invokes apply, and it is the supported way to change a shipped recipe's values

@@ -544,7 +544,10 @@ def test_recipe_search_path():
     """
     import tempfile
     d = tempfile.mkdtemp(prefix="recipedirs-")
-    saved = apply.ROOT
+    saved, saved_project = apply.ROOT, apply.provenance.project_root
+    # No project above this checkout: the list is this checkout's alone. The function asks
+    # for the project since #65, and a PROJECT_ROOT in the shell would otherwise add to it.
+    apply.provenance.project_root = lambda: None
     try:
         for sub in ("available", "zzz-fork", "aaa-fork", "tor-browser.files"):
             os.makedirs(os.path.join(d, "recipes", sub))
@@ -564,8 +567,64 @@ def test_recipe_search_path():
         apply.ROOT = empty
         check("no recipes/ directory", apply.recipe_search_path(), [])
     finally:
-        apply.ROOT = saved
+        apply.ROOT, apply.provenance.project_root = saved, saved_project
         shutil.rmtree(d, ignore_errors=True)
+
+
+def test_a_vendoring_project_names_its_own_recipes_and_profiles_bare():
+    """A project vendoring the kitchen keeps its recipes in its own recipes/, and a bare
+    name reached only the kitchen's and the working directory (#65). slax-wine named its
+    recipes by path and changed to its root first. Run from anywhere else, its build died
+    with "recipe not found" at step 4, after step 3 had removed the work tree.
+
+    The project is found as provenance.project_root finds it, here through PROJECT_ROOT, so
+    no submodule is needed. A name in both checkouts is refused and both are named, as two
+    directories of one checkout always were. Profiles take the same lookup.
+    """
+    import tempfile
+    box = tempfile.mkdtemp(prefix="vendoring-")
+    kitchen, project = os.path.join(box, "kitchen"), os.path.join(box, "project")
+    for top, rdir, names in ((kitchen, "available", ("shared", "theirs")),
+                             (project, "myproject", ("shared", "mine"))):
+        os.makedirs(os.path.join(top, "recipes", rdir))
+        os.makedirs(os.path.join(top, "profiles"))
+        for n in names:
+            open(os.path.join(top, "recipes", rdir, n + ".yaml"), "w").write("{}\n")
+            open(os.path.join(top, "profiles", n + "-p.yaml"), "w").write("{}\n")
+    saved, env = apply.ROOT, os.environ.get("PROJECT_ROOT")
+    apply.ROOT, os.environ["PROJECT_ROOT"] = kitchen, project
+    try:
+        search = apply.recipe_search_path()
+        check("the project's recipe directories follow the kitchen's",
+              [os.path.relpath(d, box) for d in search],
+              ["kitchen/recipes/available", "project/recipes/myproject"])
+        check("a bare name reaches the project's recipe",
+              apply.resolve(["mine"], search), [os.path.join(project, "recipes", "myproject",
+                                                             "mine.yaml")])
+        check("and still the kitchen's", apply.resolve(["theirs"], search),
+              [os.path.join(kitchen, "recipes", "available", "theirs.yaml")])
+        for what, call in (("recipe", lambda: apply.resolve(["shared"], search)),
+                           ("profile", lambda: apply.profile_path("shared-p"))):
+            try:
+                call()
+                check(f"a {what} name in both checkouts is refused", "picked", "refused")
+            except RuntimeError as e:
+                check(f"a {what} name in both checkouts is refused, naming both",
+                      ("ambiguous" in str(e), "kitchen" in str(e), "project" in str(e)),
+                      (True, True, True))
+        check("a bare profile name reaches the project's profile",
+              apply.profile_path("mine-p"), os.path.join(project, "profiles", "mine-p.yaml"))
+
+        os.environ["PROJECT_ROOT"] = kitchen
+        check("a kitchen that is its own project is searched once",
+              len(apply.recipe_search_path()), 1)
+    finally:
+        apply.ROOT = saved
+        if env is None:
+            os.environ.pop("PROJECT_ROOT", None)
+        else:
+            os.environ["PROJECT_ROOT"] = env
+        shutil.rmtree(box, ignore_errors=True)
 
 
 def test_reserved_bundle_numbers():
@@ -3800,6 +3859,7 @@ def main():
                    test_network_declaration, test_profile_recipe_forms,
                    test_unknown_override_is_rejected,
                    test_recipe_search_path,
+                   test_a_vendoring_project_names_its_own_recipes_and_profiles_bare,
                    test_reserved_bundle_numbers,
                    test_renumber_refuses_reserved,
                    test_link_targets_refused,

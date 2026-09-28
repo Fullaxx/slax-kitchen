@@ -531,7 +531,8 @@ kitchen build <profile> [options]  unpack -> apply -> pack -> test
   --no-test            skip the profile's test list
   --local              run the profile's boot tests here, not on the boot host
 
-<profile> is a name under profiles/ or a path to a Profile YAML.
+<profile> is a name under profiles/ (the kitchen's, or the project's that vendors it)
+or a path to a Profile YAML.
 H
         ;;
       test) cat <<'H'
