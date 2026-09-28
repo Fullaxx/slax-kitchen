@@ -74,7 +74,7 @@ position in the stack and would silently never override anything.
 | you want | use |
 |---|---|
 | files on the live system with **no** squashfs rebuild | [`rootcopy-overlay`](rootcopy-overlay.md) |
-| a published release tarball | [`bundle-from-tarball`](bundle-from-tarball.md) |
+| a published release archive, a tar or a zip | [`bundle-from-tarball`](bundle-from-tarball.md) |
 | one pinned download that is not an archive — a static binary, an installer | [`bundle-from-url`](bundle-from-url.md) |
 | distro packages and their dependencies | [`add-packages`](add-packages.md) |
 | a couple of small config files written inline | [`branding`](branding.md) uses `bundle.files` |

@@ -24,10 +24,10 @@ steps:
   # 2.2 MiB tarball, which makes it an honest example: one download, one file, no
   # dependencies to reason about.
   #
-  # THE CHECKSUM IS NOT OPTIONAL IN SPIRIT. The verb only warns if you omit it, but a
-  # bundle is code that will run as root on every boot of every image you hand out. The
-  # hash is over the ARCHIVE as published, which is the artifact upstream actually signs
-  # their releases against.
+  # THE CHECKSUM IS OPTIONAL, AND THIS RECIPE GIVES ONE. Without it the verb unpacks
+  # whatever the server serves that day, and nothing warns; a bundle is code that will run
+  # as root on every boot of every image you hand out. The hash is over the ARCHIVE as
+  # published, which is the artifact upstream actually signs their releases against.
   #
   # This archive has no leading directory -- `tar tzf` shows exactly one member, `fzf` --
   # so there is nothing to strip. `prefix` is what puts it somewhere sensible: without it

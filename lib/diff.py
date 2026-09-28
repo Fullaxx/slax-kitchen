@@ -216,9 +216,9 @@ def bundle_manifest(container: str, offset: int = 0) -> dict:
                 full = os.path.join(dirpath, n)
                 st = os.lstat(full)
                 # BY st_mode, never by "not a directory, so a file". A bundle may carry
-                # device nodes and fifos -- bundle.fromTarball admits them under
-                # privilege: mknod -- and hashing one would read from the device: a fifo
-                # with no writer blocks forever, and /dev/zero never ends.
+                # device nodes and fifos -- a bundle.script can make them in its chroot --
+                # and hashing one would read from the device: a fifo with no writer blocks
+                # forever, and /dev/zero never ends.
                 if stat.S_ISLNK(st.st_mode):
                     kind = "link"
                 elif stat.S_ISDIR(st.st_mode):

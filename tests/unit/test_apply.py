@@ -2082,6 +2082,161 @@ def test_fromtarball_refuses_privileged_members():
     check("v_bundle_fromtarball calls the refusal", wired, True)
 
 
+def _archive(path: str, entries: list, zip_: bool) -> None:
+    """Write `entries` -- (name, kind, mode, body-or-link-target) -- as a tar or a zip, with
+    Unix modes and one fixed time, the way `zip` and `tar` on a Unix system record them."""
+    import io
+    import tarfile
+    import zipfile
+    when = (2024, 5, 6, 7, 8, 10)
+    if zip_:
+        with zipfile.ZipFile(path, "w") as z:
+            for name, kind, mode, body in entries:
+                info = zipfile.ZipInfo(name + ("/" if kind == "dir" else ""), when)
+                info.create_system = 3
+                ftype = {"dir": 0o040000, "file": 0o100000, "link": 0o120000,
+                         "fifo": 0o010000}[kind]
+                info.external_attr = (ftype | mode) << 16
+                z.writestr(info, (body or "").encode())
+        return
+    import calendar
+    with tarfile.open(path, "w") as t:
+        for name, kind, mode, body in entries:
+            i = tarfile.TarInfo(name)
+            i.mode, i.mtime = mode, calendar.timegm(when)
+            i.type = {"dir": tarfile.DIRTYPE, "file": tarfile.REGTYPE, "link": tarfile.SYMTYPE,
+                      "fifo": tarfile.FIFOTYPE}[kind]
+            if kind == "link":
+                i.linkname = body
+            data = (body or "").encode() if kind == "file" else b""
+            i.size = len(data)
+            t.addfile(i, io.BytesIO(data))
+
+
+def _staged_by_fromtarball(step: dict, arc: str):
+    """Run bundle.fromTarball on `arc` and return what it staged for mksquashfs, by path:
+    (type, mode, mtime, link target or content). _make_bundle is replaced by the snapshot
+    here -- what mksquashfs does with a tree is unchanged by this verb's archive format.
+
+    The directories `prefix:` names are made by the verb as it runs, so their time is the
+    moment of each run, and it is left out. Two runs in different seconds differed there
+    and nowhere else; the pre-commit hook found that, on the run that straddled one."""
+    import stat as stat_mod
+    import tempfile
+    work = tempfile.mkdtemp()
+    os.makedirs(os.path.join(work, "iso", "slax", "modules"))
+    ctx = apply.Ctx(work, work, "t")
+    ctx.say = lambda *a: None
+    seen = {}
+    parts = (step.get("prefix") or "").strip("/").split("/")
+    made = {"/".join(parts[:i]) for i in range(1, len(parts) + 1)} if parts[0] else set()
+
+    def snapshot(_ctx, root, name, verb, all_root=False):
+        for d, dirs, files in os.walk(root):
+            for n in dirs + files:
+                p = os.path.join(d, n)
+                st = os.lstat(p)
+                what = (os.readlink(p) if stat_mod.S_ISLNK(st.st_mode) else
+                        open(p).read() if stat_mod.S_ISREG(st.st_mode) else None)
+                rel = os.path.relpath(p, root)
+                seen[rel] = (stat_mod.S_IFMT(st.st_mode), oct(stat_mod.S_IMODE(st.st_mode)),
+                             None if stat_mod.S_ISLNK(st.st_mode) or rel in made
+                             else int(st.st_mtime), what)
+    real, apply._make_bundle = apply._make_bundle, snapshot
+    try:
+        apply.v_bundle_fromtarball(ctx, dict(step, src=arc))
+    finally:
+        apply._make_bundle = real
+    return seen, work
+
+
+def test_a_zip_unpacks_as_a_tarball_would():
+    """bundle.fromTarball read tar only: a zip failed with tarfile's four-method error, which
+    never says zip (#69). Windows software, games especially, is published as zips, and
+    slax-rpgs ships five.
+
+    The promise is that a zip is not a second route with its own rules. So one list of
+    members is written both ways and must stage the same tree, with the same `strip:`,
+    `prefix:`, modes, times and symlink. Also that a file which is neither archive is named
+    as such, not with tarfile's error.
+    """
+    import tempfile
+    entries = [("app-1.0", "dir", 0o755, None),
+               ("app-1.0/bin", "dir", 0o755, None),
+               ("app-1.0/bin/app", "file", 0o755, "#!/bin/sh\n"),
+               ("app-1.0/README", "file", 0o640, "read me\n"),
+               ("app-1.0/lib", "dir", 0o750, None),
+               ("app-1.0/lib/libx.so.1", "file", 0o644, "elf\n"),
+               ("app-1.0/lib/libx.so", "link", 0o777, "libx.so.1")]
+    box = tempfile.mkdtemp()
+    step = {"verb": "bundle.fromTarball", "bundle": "40-app", "strip": 1, "prefix": "/opt/app"}
+    got = {}
+    for fmt in ("tar", "zip"):
+        arc = os.path.join(box, f"app-1.0.{fmt}")
+        _archive(arc, entries, zip_=fmt == "zip")
+        got[fmt], _ = _staged_by_fromtarball(step, arc)
+    check("a zip stages what the same tar stages", got["zip"], got["tar"])
+    check("under the prefix, with the top directory stripped",
+          sorted(p for p in got["zip"] if p.startswith("opt/app/")),
+          ["opt/app/README", "opt/app/bin", "opt/app/bin/app", "opt/app/lib",
+           "opt/app/lib/libx.so", "opt/app/lib/libx.so.1"])
+    check("a mode survives", got["zip"].get("opt/app/README", (0, ""))[1], "0o640")
+    import stat
+    link = got["zip"].get("opt/app/lib/libx.so", (0, 0, 0, ""))
+    check("a symlink stays one", (link[0], link[3]), (stat.S_IFLNK, "libx.so.1"))
+
+    junk = os.path.join(box, "notes.zip")
+    open(junk, "w").write("not an archive at all\n")
+    try:
+        _staged_by_fromtarball(step, junk)
+        check("a file that is no archive is refused", "unpacked", "refused")
+    except RuntimeError as e:
+        check("a file that is no archive is named as neither", "not a tar or zip" in str(e), True)
+
+
+def test_a_zip_member_is_refused_where_a_tar_member_would_be():
+    """A zip's type and mode come from `external_attr`, read by _ZipMember, and the tar
+    path's refusals only see what that reading hands them. Read wrongly, a zip carries
+    what a tar cannot: an escape through a link, or a setuid binary in a bundle mounted as
+    root on every boot. Each refusal on the tar side came from an incident:
+    GHSA-p2w2-qh4r-jr53 for links, and 89ab73d for setuid. (#69)
+    """
+    import tempfile
+    for label, bad, why in (
+            ("a .. in the name", ("x/../../evil", "file", 0o644, "x"), "unsafe path"),
+            ("an absolute name", ("/etc/evil", "file", 0o644, "x"), "unsafe path"),
+            ("a symlink to an absolute path", ("x", "link", 0o777, "/etc"), "absolute path"),
+            ("a symlink out of the tree", ("a/x", "link", 0o777, "../../etc"), "outside"),
+            ("a setuid file", ("x", "file", 0o4755, "#!/bin/sh\n"), "setuid"),
+            ("a FIFO", ("x", "fifo", 0o644, None), "FIFO")):
+        arc = os.path.join(tempfile.mkdtemp(), "evil.zip")
+        _archive(arc, [bad], zip_=True)
+        try:
+            _staged_by_fromtarball({"verb": "bundle.fromTarball", "bundle": "07-poc"}, arc)
+            check(f"zip with {label}: refused", "unpacked", "refused")
+        except RuntimeError as e:
+            check(f"zip with {label}: refused for the reason", why in str(e), True)
+
+
+def test_a_prefix_cannot_leave_the_bundle():
+    """`prefix:` was joined to the staging root as written. On fde3e93, `prefix: ../../x`
+    unpacked the archive beside the work tree, and the files stayed there after the verb
+    refused the empty bundle that was left. A recipe-named path, contained like any other.
+    """
+    import tempfile
+    box = tempfile.mkdtemp()
+    arc = os.path.join(box, "a.tar")
+    _archive(arc, [("app/hello", "file", 0o644, "hi\n")], zip_=False)
+    try:
+        _staged_by_fromtarball({"verb": "bundle.fromTarball", "bundle": "40-x",
+                                "prefix": "../../escaped"}, arc)
+        check("a prefix outside the bundle is refused", "unpacked", "refused")
+    except RuntimeError as e:
+        check("a prefix outside the bundle is refused", "outside the tree" in str(e), True)
+    check("and nothing was unpacked beside the work tree",
+          [d for d in os.listdir(tempfile.gettempdir()) if d == "escaped"], [])
+
+
 def test_all_root_is_per_verb():
     """Which bundles get -all-root is a per-verb decision, and it cannot be global.
 
@@ -3670,6 +3825,9 @@ def main():
                    test_stage_delta_preserves_what_the_chroot_had,
                    test_both_chroot_verbs_use_one_staging_loop,
                    test_fromtarball_refuses_privileged_members,
+                   test_a_zip_unpacks_as_a_tarball_would,
+                   test_a_zip_member_is_refused_where_a_tar_member_would_be,
+                   test_a_prefix_cannot_leave_the_bundle,
                    test_all_root_is_per_verb,
                    test_bundle_files_refuses_a_setuid_mode,
                    test_bundle_files_fetches_a_pinned_url_itself,

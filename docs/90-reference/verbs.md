@@ -58,13 +58,13 @@ error.
 **A local `src:` is copied in as it is.** Files a verb copies in from beside the recipe go through
 one resolver, which records where they sit in the kitchen or project checkout, so the report can
 name them. Nothing is hashed and nothing is held to a commit: a file the project's build staged
-where git ignores it is as good an input as a committed one. A local tarball `bundle.fromTarball`
+where git ignores it is as good an input as a committed one. A local archive `bundle.fromTarball`
 unpacks is recorded by its name.
 
 ### A file the build downloads
 
 A file the build downloads goes through a verb that records the download:
-[`bundle.fromTarball`](#bundlefromtarball-), given the tarball's URL, for a tarball, and a
+[`bundle.fromTarball`](#bundlefromtarball-), given the archive's URL, for a tar or a zip, and a
 [`bundle.files`](#bundlefiles-) `url:` entry for a single file — an installer, a font, a data file,
 a static binary:
 
@@ -217,6 +217,13 @@ The offline equivalent of upstream's `dir2sb`.
   strip: 1                  # drop the leading myapp-1.0/ directory
   prefix: /opt/myapp        # place under a subdirectory instead of the root
 ```
+
+`src:` is a tar, plain or compressed with gzip, bzip2 or xz, or a zip. The verb tells them apart by
+content, not by name. A zip is held to everything below, member by member. Its modes and symlinks
+come from the Unix attributes a zip made on a Unix system carries, an entry made without them is
+`0644` (`0755` for a directory), and an encrypted zip is refused
+([#69](https://github.com/Fullaxx/slax-kitchen/issues/69)). `prefix:` is held inside the bundle like
+any path a recipe names.
 
 Absolute paths and `..` components in the archive are **refused**, not sanitised — and so
 are link *targets*. A member named `x` that is a symlink to `/etc`, followed by a member

@@ -127,8 +127,7 @@ def test_a_rebuild_is_not_a_change():
     os.symlink("conf", os.path.join(src, "etc", "link"))
     # A FIFO, because entries are classified by st_mode and never opened: a fifo with no
     # writer blocks forever, so a regression here HANGS rather than fails. bundles really
-    # can carry one -- bundle.fromTarball admits fifos and device nodes under
-    # privilege: mknod.
+    # can carry one -- a bundle.script can make fifos and device nodes in its chroot.
     os.mkfifo(os.path.join(src, "etc", "pipe"))
 
     d = tempfile.mkdtemp()

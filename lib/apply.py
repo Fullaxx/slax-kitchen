@@ -465,6 +465,14 @@ def subst(obj, vars_: dict):
 
 # ------------------------------------------------------------------ verbs ----
 
+def _is_zip(archive: str) -> bool:
+    """Whether a file is a zip, by its first bytes: a local file header, the end record of
+    an empty archive, or a spanned archive's marker. Asked of the CONTENT, never the name:
+    a download lands in a file named for where it goes (memtest.bin.part, src.tar)."""
+    with open(archive, "rb") as fh:
+        return fh.read(4) in (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
+
+
 def _extract_member(archive: str, member: str, dest: str) -> None:
     """Pull one file out of a .zip or .tar.* without unpacking the rest.
 
@@ -472,9 +480,7 @@ def _extract_member(archive: str, member: str, dest: str) -> None:
     named after its destination (memtest.bin.part), so a name-based check would send a
     zip to the tar reader.
     """
-    with open(archive, "rb") as fh:
-        magic = fh.read(6)
-    if magic[:4] in (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"):
+    if _is_zip(archive):
         import zipfile
         with zipfile.ZipFile(archive) as z:
             names = z.namelist()
@@ -1942,12 +1948,16 @@ def v_bundle_files(ctx: Ctx, step: dict) -> None:
 
 @verb("bundle.fromTarball")
 def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
-    """Unpack a tarball and pack it as a bundle.
+    """Unpack a tarball or a zip and pack it as a bundle.
 
     `strip: 1` drops a leading directory, the way tar --strip-components does, because
     most published tarballs are wrapped in a versioned top-level folder that you almost
     never want at the root of the union. `prefix:` puts the contents somewhere other than
     the root, e.g. prefix: /opt for a self-contained application tree.
+
+    A zip goes through the same checks as a tar, member by member (_ZipArchive). Software
+    for Windows, games especially, is published as zips, and slax-rpgs ships five; a zip
+    failed here with tarfile's own error, which never mentions zip (#69).
     """
     name = _bundle_name(step["bundle"], "bundle.fromTarball")
     src = step["src"]
@@ -1980,9 +1990,22 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
                  world_readable=world_readable, upstream_source=step.get("upstream_source"))
 
         root = os.path.join(work, "root")
-        dest = os.path.join(root, prefix) if prefix else root
+        os.makedirs(root)
+        # Contained like every other path a recipe names. It was joined as written, and
+        # `prefix: ../../x` unpacked the archive beside the work tree, where it stayed after
+        # the verb refused the empty bundle that was left.
+        dest = _under(root, prefix, "bundle.fromTarball", "prefix") if prefix else root
         os.makedirs(dest, exist_ok=True)
-        with tarfile.open(archive) as t:
+        label = os.path.basename(src)
+        if _is_zip(archive):
+            t = _ZipArchive(archive, label)
+        else:
+            try:
+                t = tarfile.open(archive)
+            except tarfile.ReadError:
+                raise RuntimeError(f"bundle.fromTarball: {label} is not a tar or zip archive "
+                                   f"this can read") from None
+        with t:
             members = []
             for m in t.getmembers():
                 # Refuse absolute paths and .. escapes rather than trusting the archive.
@@ -2072,7 +2095,8 @@ def _refuse_privileged_member(m, verb: str) -> None:
     needs a chroot -- and tarfile's fully_trusted extraction faithfully applies whatever
     the archive asks for. So without this an unpinned tarball could put a setuid-root
     binary in /usr/bin and a device node in /dev, in a bundle that is mounted into the
-    union on every boot. sha256: is optional on this verb; absent, it only warns.
+    union on every boot. sha256: is optional on this verb, and an unpinned archive is
+    checked against nothing.
 
     Refused rather than stripped. Stripping is quieter and would produce a bundle that
     silently does less than the archive said -- and this project would rather stop than
@@ -2101,6 +2125,110 @@ def _refuse_privileged_member(m, verb: str) -> None:
             f"built image -- sha256: is optional here, so the publisher of the URL "
             f"would be deciding. Use bundle.script (privilege: chroot) if it is "
             f"genuinely needed.")
+
+
+class _ZipMember:
+    """One zip entry, dressed as a tarfile member so the tar path's checks read it unchanged.
+
+    The name loses a directory's trailing slash, as tarfile's does. The type and mode come
+    from the Unix half of `external_attr`, which a zip made on a Unix system carries, and a
+    symlink's target is the entry's content. A zip made where there are no modes gets 0644
+    for a file and 0755 for a directory. There are no hardlinks in a zip. The time is read
+    as UTC, so one archive unpacks to the same times on every build machine; the format
+    records a local time and no zone.
+    """
+
+    def __init__(self, info, linkname: str = "") -> None:
+        import calendar
+        self.info = info
+        self.name = info.filename.rstrip("/")
+        unix = info.external_attr >> 16 if info.create_system == 3 else 0
+        kind = stat.S_IFMT(unix)
+        if info.is_dir() or not kind:
+            kind = stat.S_IFDIR if info.is_dir() else stat.S_IFREG
+        self.type = kind
+        self.mode = stat.S_IMODE(unix) or (0o755 if kind == stat.S_IFDIR else 0o644)
+        self.linkname = linkname
+        self.mtime = calendar.timegm(info.date_time)
+
+    def issym(self) -> bool:
+        return self.type == stat.S_IFLNK
+
+    def islnk(self) -> bool:
+        return False
+
+    def isdir(self) -> bool:
+        return self.type == stat.S_IFDIR
+
+    def isdev(self) -> bool:
+        return self.type in (stat.S_IFCHR, stat.S_IFBLK)
+
+    def isfifo(self) -> bool:
+        return self.type == stat.S_IFIFO
+
+
+class _ZipArchive:
+    """A zip opened for bundle.fromTarball, with the two calls its tar path makes.
+
+    Extraction is written here, not left to ZipFile.extract. That call drops `..` and a
+    leading `/` in silence where this verb refuses them, writes a symlink as a file holding
+    its target, and sets no mode. Each write below lands where _extract_members has already
+    checked that the name resolves inside the tree.
+    """
+
+    def __init__(self, path: str, label: str) -> None:
+        import zipfile
+        self.label = label
+        try:
+            self.z = zipfile.ZipFile(path)
+        except zipfile.BadZipFile as e:
+            raise RuntimeError(f"bundle.fromTarball: {label}: not a zip this can read ({e})") \
+                from None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.z.close()
+
+    def getmembers(self) -> list:
+        out = []
+        for info in self.z.infolist():
+            if info.flag_bits & 0x1:
+                raise RuntimeError(f"bundle.fromTarball: {self.label}: {info.filename!r} is "
+                                   f"encrypted, and this verb takes no password")
+            m = _ZipMember(info)
+            if m.issym():
+                m.linkname = os.fsdecode(self._read(info))
+            out.append(m)
+        return out
+
+    def _read(self, info) -> bytes:
+        try:
+            return self.z.read(info)
+        except NotImplementedError as e:
+            raise RuntimeError(f"bundle.fromTarball: {self.label}: {info.filename!r}: {e}") \
+                from None
+
+    def extract(self, m: _ZipMember, path: str, **_kw) -> None:
+        target = os.path.join(path, m.name)
+        if m.isdir():
+            os.makedirs(target, exist_ok=True)
+            os.chmod(target, m.mode)
+            return
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        _unlink_file(target)
+        if m.issym():
+            os.symlink(m.linkname, target)
+            return
+        try:
+            with self.z.open(m.info) as src, open(target, "wb") as out:
+                shutil.copyfileobj(src, out)
+        except NotImplementedError as e:
+            raise RuntimeError(f"bundle.fromTarball: {self.label}: {m.info.filename!r}: {e}") \
+                from None
+        os.chmod(target, m.mode)
+        os.utime(target, (m.mtime, m.mtime))
 
 
 def _extract_members(t, dest: str, members: list, kw: dict) -> None:

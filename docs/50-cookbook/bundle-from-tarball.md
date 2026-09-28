@@ -20,11 +20,13 @@ Fetches a published tarball, verifies it, and packs it as a bundle. The example 
 you are usually hunting for a file on someone else's disk, and conveniently a single static binary
 with no dependencies to reason about.
 
-## The checksum is not optional in spirit
+## The checksum
 
-The verb only *warns* when `sha256:` is missing. Supply it anyway: a bundle is code that runs as
-root on every boot of every image you hand out. The hash is checked against the **archive as
-published**, which is the artifact upstream's own release process produces.
+`sha256:` is optional, and this recipe gives one. Without it the verb unpacks whatever the server
+serves that day, and `kitchen sources` marks the download as unpinned; nothing warns at build time.
+This recipe pins because a bundle is code that runs as root on every boot of every image you hand
+out. The hash is checked against the **archive as published**, which is the artifact upstream's own
+release process produces.
 
 A mismatch aborts the step and deletes the download; nothing half-fetched reaches the tree.
 
@@ -53,6 +55,14 @@ containment is now checked against the filesystem before each member is written.
 
 Setuid and setgid members, device nodes and FIFOs are **refused**. This verb is `privilege: none`
 and its output runs as root at boot; `bundle.script` is the route for content that needs them.
+
+## A zip
+
+The same verb takes a zip, which is how software for Windows, games especially, is usually
+published. `strip:`, `prefix:`, the checksum and every refusal above apply to it member by member.
+A zip made on a Mac usually carries a `__MACOSX/` tree of resource forks beside the payload, and
+`strip: 1` re-roots that tree too, beside the payload. Measured on a 1,301-entry game archive
+made that way: 649 of the 1,299 entries unpacked were that tree.
 
 ## Why this one is 64-bit only
 
