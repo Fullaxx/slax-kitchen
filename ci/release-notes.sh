@@ -24,9 +24,6 @@ RUN_URL=""
 [ "${2:-}" = "--run-url" ] && RUN_URL=${3:-}
 [ -n "$TAG" ] || { echo "usage: ci/release-notes.sh <tag> [--run-url URL]" >&2; exit 2; }
 
-# Before the cd: a relative RELEASE_ASSETS is relative to where the CALLER stands.
-case "${RELEASE_ASSETS:-}" in "" | /*) ;; *) RELEASE_ASSETS="$PWD/$RELEASE_ASSETS" ;; esac
-
 cd "$REPO_ROOT" || exit 2
 
 VERSION=$(sed -n 's/^KITCHEN_VERSION="\(.*\)"$/\1/p' kitchen | head -1)
@@ -43,44 +40,24 @@ fi
 BLOB="https://github.com/${SLUG:-Fullaxx/slax-kitchen}/blob/$TAG"
 
 # THE REDISTRIBUTION SECTION. A release of this repository attaches no image, and says
-# so. A project that publishes an image assembles its assets with ci/release-assets.sh and
-# sets RELEASE_ASSETS to that directory; the section is then generated from the directory
-# by ci/redistribution-claim.py, so it names what is attached rather than promising it.
-if [ -n "${RELEASE_ASSETS:-}" ]; then
-    REDISTRIBUTION=$(python3 "$REPO_ROOT/ci/redistribution-claim.py" "$RELEASE_ASSETS") || exit 1
-    ATTACHED=$(python3 -c 'import json,sys
-print("yes" if any(im.get("attached") for im in json.load(open(sys.argv[1]))["images"]) else "no")' \
-        "$RELEASE_ASSETS/release-index.json") || exit 1
-else
-    REDISTRIBUTION="## Redistribution
+# so. What travels with an image when a project publishes one is NOTICE.md's to say, and
+# this section points there rather than restating it.
+REDISTRIBUTION="## Redistribution
 
-No image is attached to this release: a release of slax-kitchen is the toolkit.
-
-A Slax ISO is an aggregate — Debian or Slackware packages, non-free firmware, and Slax's
-own kernel and initramfs, each under its own terms. What travels with an image built with
-this toolkit when one is published — the source of what the build compiled or modified,
-where each upstream publishes its own, the firmware terms, and an identity that is not an
-official Slax release — is set out in [NOTICE.md]($BLOB/NOTICE.md).
+No image is attached to this release: a release of slax-kitchen is the toolkit. What
+travels with an image built with it, when a project publishes one, is set out in
+[NOTICE.md]($BLOB/NOTICE.md).
 
 Slax and Linux Live Kit are the work of **Tomáš Matějíček** — <https://www.slax.org>.
 This project customizes his work; it is not the project's home. If you find it useful,
 support Slax upstream."
-fi
 
-if [ "${ATTACHED:-no}" = yes ]; then
-    IMAGE_CHECKSUM_NOTE="Each attached image's checksum is in \`SHA256SUMS\`, which checks the download. It does
-not promise that a rebuild matches, because **images are not byte-reproducible**:
-\`genisoimage\` varies both the volume timestamps and the extent order, and an identical
-tree rebuilt elsewhere has been measured differing in 99.9% of its sectors. See
-[reproducibility]($BLOB/docs/40-workflow/reproducibility.md)."
-else
-    IMAGE_CHECKSUM_NOTE="No image is attached to this release, so there is no image checksum here. Where an image
+IMAGE_CHECKSUM_NOTE="No image is attached to this release, so there is no image checksum here. Where an image
 *is* published, its \`SHA256SUMS\` checks the download. It does not promise that a rebuild
 matches, because **images are not byte-reproducible**: \`genisoimage\` varies both the
 volume timestamps and the extent order, and an identical tree rebuilt elsewhere has been
 measured differing in 99.9% of its sectors. See
 [reproducibility]($BLOB/docs/40-workflow/reproducibility.md)."
-fi
 
 # The tag being released is usually not yet an object (the workflow runs on the ref,
 # but a dry run has no tag at all), so walk back from the previous tag if there is

@@ -35,14 +35,9 @@ vars:
   # refused outright; see docs/10-anatomy/bundles-squashfs.md for why those two are not
   # merely ordering. `bundle` is a var so a profile can move it.
   bundle: "13-browsers"
-# NOT FOR AN IMAGE ANYONE PUBLISHES. Chrome, Edge and Vivaldi are proprietary, and their
-# licence terms do not permit redistributing them inside an image; `kitchen sources` names
-# this recipe on any image built with it. Building one for yourself is fine.
-redistribution:
-  allowed: false
-  why: >-
-    installs Google Chrome, Microsoft Edge and Vivaldi, whose licences do not permit
-    redistributing them in an image
+# BEFORE YOU PUBLISH AN IMAGE BUILT WITH THIS: Chrome, Edge and Vivaldi are proprietary, and
+# their licence terms do not permit redistributing them inside an image. Nothing in the
+# engine checks that; debian-browsers carries only free browsers.
 steps:
   # IT ONLY ADDS. This bundle sits above 05-chromium and shadows it, so Slax's 2023
   # Chromium stays on the ISO -- 79.1 MiB for a browser nobody reaches -- unless a removal

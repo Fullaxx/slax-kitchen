@@ -96,9 +96,8 @@ IMAGE = [
                          "/root/.xinitrc"}}),
     ("boot-matrix's marker, #20's value",
      {"vars": {"marker": "/var/lib/kitchen-perch-marker"}}),
-    ("prose that mentions /root/",
-     {"redistribution": {"allowed": False,
-                         "why": "installs a licensed runtime under /root/.wine"}}),
+    ("prose in a var that mentions /root/",
+     {"vars": {"motd": "installs a licensed runtime under /root/.wine"}}),
 ]
 
 
@@ -376,7 +375,7 @@ def test_a_var_is_refused_before_anything_is_built():
 
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY -- for the reasons
-    # test_release_assets.py gives (#25). tempfile.tempdir steers this process and TMPDIR the
+    # test_apply.py's main() gives (#25). tempfile.tempdir steers this process and TMPDIR the
     # apply.py it runs, and both are put back so an importer is not left pointing at nothing.
     box = tempfile.mkdtemp(prefix="test_provenance-")
     tempfile.tempdir = box

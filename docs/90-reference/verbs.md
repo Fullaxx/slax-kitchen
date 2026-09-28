@@ -34,7 +34,7 @@ design, which is why they are marked ◐ `chroot`.
 
 Verbs record what they fetched and built in the image's provenance, and
 [`kitchen sources`](cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict) turns that into a list
-of where each part's source lives. Three things the engine cannot work out for itself, a recipe
+of where each part's source lives. Two things the engine cannot work out for itself, a recipe
 states:
 
 ```yaml
@@ -45,18 +45,10 @@ states:
   upstream_source: https://example.org/app/source/   # where its publisher keeps the source
 ```
 
-```yaml
-# beside metadata: and steps:, for a recipe whose output must not be published
-redistribution:
-  allowed: false
-  why: installs a browser whose licence does not permit redistributing it
-```
-
 | Field | On | What it says |
 |---|---|---|
 | `upstream_source` | `boot.payload`, `bundle.fromTarball`, `bundle.script`, each `apt.sources` entry, each `bundle.files` `url:` entry (required there) | where the publisher of something installed **unmodified** keeps its source: a URL, or a list of them |
 | `declares` | `bundle.script` | binaries the script **compiled**, each with `path`, `source_url`, `source_sha256` and optionally `license` |
-| `redistribution` | the recipe | `allowed: false` and a `why:` when an image containing this recipe's output must not be published |
 
 A download with no `upstream_source` is a warning, and unresolved under `kitchen sources --strict`;
 so is a download the recipe pinned no `sha256:` for, because what it fetched is whatever that server
@@ -70,8 +62,8 @@ records no checksums, ownership is all there is, which is why `declares:` exists
 
 **A local `src:` needs nothing extra, only a commit.** Files a verb copies in from beside the recipe
 go through one resolver, which records their path in the kitchen or project checkout and their
-content. `kitchen sources` checks both against the recorded commit, because those files are what
-the project source archive is promising to hold. A unit test fails any verb that resolves a
+content. `kitchen sources` checks both against the recorded commit, because `ours` says the
+project's repository holds those files at that commit. A unit test fails any verb that resolves a
 recipe-relative path without it. `bundle.fromTarball` and `initramfs.busybox` are the exceptions:
 what they take in is a download or a build output, described by `upstream_source`
 or a build claim. `boot.payload` takes either, and is not an exception — a URL is described by
@@ -132,7 +124,7 @@ targets. On Slackware it verifies no TLS certificate until `/etc/ssl/cert.pem` e
 
 The obvious shortcut does not get through: a file staged where git ignores it and copied in by a
 `bundle.files` `src:` entry is an input the recorded commit does not hold, so it is unresolved.
-`kitchen sources --allow-dirty` accepts it, and `ci/release-assets.sh` never passes that flag.
+`kitchen sources --allow-dirty` accepts it.
 Committing the file instead is what `00-no-binaries` exists to refuse, for a Windows payload or a
 large file.
 

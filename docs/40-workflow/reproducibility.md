@@ -192,14 +192,7 @@ What a published image carries instead is a record that accounts for every file 
 [`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict). `SHA256SUMS`
 checks that a download is the file that was published; the records say what that file is made of.
 
-**The source assets are reproducible, even though the image is not.** `ci/release-assets.sh` writes
-the project archives with no timestamps (`git archive` of the recorded commits, gzip with mtime 0),
-and each source package as a tar with fixed metadata. Measured on the `tor` image at commit
-`6419fa4`: two runs, each downloading GRUB's source package from Launchpad again, wrote identical
-`SHA256SUMS`. Anyone with the same image and commit can regenerate the source set and compare hashes,
-which is a check a rebuild of the ISO cannot offer. It is also why several images built from one
-commit can share one set of archives in a release: each image's `--fetch` writes the same bytes. See
-[publishing an image](publishing-images.md).
+See [publishing an image](publishing-images.md) for what travels with one.
 
 ## What is never reproducible, and does not need to be
 

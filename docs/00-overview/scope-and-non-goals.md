@@ -19,6 +19,10 @@ and are not mirrored to it — `kitchen fetch` downloads them from the official 
 the hash. An image *built* with it can be published, and [`NOTICE.md`](../../NOTICE.md) sets out what
 travels with one. If you find this useful, support Slax upstream; there is a donate link on slax.org.
 
+**Not a licence checker.** It records what went into an image and points at upstream source where
+it knows where that is. Whether an image may be published, and what its upstreams' licences
+permit, is for whoever publishes it to decide, and nothing here decides it for them.
+
 **Not a Slax build system.** It does not compile a kernel, run debootstrap, or build bundles from
 scratch. It starts from a released ISO and changes it. The real build system is upstream's and is
 documented in [`15-upstream/`](../15-upstream/).

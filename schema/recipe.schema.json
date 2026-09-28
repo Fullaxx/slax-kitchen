@@ -107,24 +107,6 @@
         ]
       }
     },
-    "redistribution": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "allowed",
-        "why"
-      ],
-      "description": "whether an image built with this recipe may be published at all; `kitchen sources` names every recipe with `allowed: false`",
-      "properties": {
-        "allowed": {
-          "type": "boolean"
-        },
-        "why": {
-          "type": "string",
-          "minLength": 10
-        }
-      }
-    },
     "steps": {
       "type": "array",
       "minItems": 1,

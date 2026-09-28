@@ -360,7 +360,7 @@ def main():
     # left pointing at a directory that no longer exists.
     #
     # BOTH THE GLOBAL AND THE VARIABLE. tempfile.tempdir steers this process; TMPDIR steers
-    # the children, and they are not the same thing. ci/release-assets.sh and three siblings
+    # the children, and they are not the same thing. ci/recipe-matrix.sh and two siblings
     # do `mktemp -d "${TMPDIR:-/tmp}/..."`, which reads the variable and never the global, so
     # the global on its own leaves a subprocess's fixture outside the box. Nothing here drives
     # one of those today -- but the box claims every fixture this file makes, and those are

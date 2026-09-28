@@ -215,10 +215,10 @@ written but unsupported, and what does not exist yet. Short version: the core lo
 unwritten.
 
 Every image carries a record of what went into it: `kitchen pack` writes `<iso>.provenance.json`
-beside the ISO, and `kitchen sources` matches every file in the image to the stock release or to the
-step that produced it, gathering the source of whatever was built. If you publish an image,
-[publishing an image](docs/40-workflow/publishing-images.md) is the procedure and
-[NOTICE.md](NOTICE.md) is what travels with it.
+beside the ISO, and `kitchen sources` lists every file in the image with where it came from and,
+where that is known, where its upstream publishes its source. If you publish an image,
+[publishing an image](docs/40-workflow/publishing-images.md) is the procedure, as commands, and
+[NOTICE.md](NOTICE.md) says what travels with it.
 
 ## Contributing
 

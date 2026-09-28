@@ -214,10 +214,6 @@ def test_notes_say_what_was_not_done():
     # matrix without saying so in the notes.
     check_in("says a release runs the full matrix", "A release runs the FULL matrix", out)
     check_in("credits upstream", "Tomáš Matějíček", out)
-    # A statement about the whole image the notes cannot back. What travels with a
-    # published image is set out in NOTICE.md; the notes never claim completeness.
-    if "complete corresponding source" in out.lower():
-        FAILURES.append("the notes claim complete corresponding source")
 
 
 NO_IMAGE = "No image is attached to this release"

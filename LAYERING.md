@@ -149,13 +149,13 @@ A consumer's `<image>.provenance.json` records the base image (name, sha256, siz
 commit, the consumer's own commit, and the recipes the consumer applied. The base's recipes are
 in the base's own provenance, which travels with the base's release.
 
-**Publishing a consumer's image through [the release procedure](docs/40-workflow/publishing-images.md)
-is not supported yet.** `kitchen sources` accounts for a file by matching it against the stock
-image of a known target, or against a recorded step of this build. A base image built by another
-project is not a known target, so it has no stock image to match against: `sources` reports the
-base as unknown and cannot account for any file that came from it, the stock Slax ones included,
-and `ci/release-assets.sh` refuses. Teaching it to take a base release's own records is a
-follow-up. For slax-rpgs, whether its game files may be redistributed at all comes first.
+**A consumer's image is published like any other**, with
+[the same commands](docs/40-workflow/publishing-images.md). Its `SOURCES.md` says less:
+`kitchen sources` accounts for a file by matching it against the stock image of a known target,
+or against a recorded step of this build. A base image built by another project is not a known
+target, so it has no stock image to match against: `sources` reports the base as unknown and
+cannot account for any file that came from it, the stock Slax ones included. Teaching it to take a
+base release's own records is a follow-up.
 
 ## Moving the pins
 
@@ -189,7 +189,8 @@ sha256), the engine commit, and the manifest of its own payload.
 
 Offered as follow-ups rather than decided:
 
-- publishing a consumer's image: `kitchen sources` taking a base release's own records;
+- `kitchen sources` taking a base release's own records, so a consumer's `SOURCES.md` accounts
+  for the files it inherited;
 - a record inside the image of which recipes built it, so a consumer's `apply` could refuse to
   apply one again;
 - engine gates that run over a project's own tree, so no project copies them;

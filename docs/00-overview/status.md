@@ -65,10 +65,9 @@ attached; [NOTICE.md](../../NOTICE.md) sets out what travels with one when it is
 [CI](../60-testing/ci.md).
 
 Every image `kitchen pack` writes now carries a provenance record beside it, and `kitchen sources`
-turns that into an account of every file in the image. `ci/release-assets.sh` assembles what would
-travel with a published one and `ci/release-verify.py` refuses a set that does not carry what it
-claims; the weekly CI run proves that pipeline on the `tor` profile and uploads the records and
-source, never the image. See [publishing an image](../40-workflow/publishing-images.md).
+turns that into an account of every file in the image, with where each part's upstream publishes
+its source. Publishing one is a handful of commands: see
+[publishing an image](../40-workflow/publishing-images.md).
 
 ---
 

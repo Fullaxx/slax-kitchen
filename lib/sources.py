@@ -4,10 +4,10 @@
     kitchen sources <iso> [--provenance FILE] [--json FILE] [--markdown FILE]
                           [--fetch DIR] [--allow-dirty] [--strict]
 
-A published image carries the source of what its build compiled, built or modified, and
-says where each upstream publishes the source of everything included unmodified. This
-command works out which is which, for every file in the ISO, from evidence rather than
-from a list someone keeps:
+What a build changed is in the project's repository and slax-kitchen's, at the commits
+the provenance records; for the rest, this says where each upstream publishes its source,
+where that is known. It works out where every file in the ISO came from, from evidence
+rather than from a list someone keeps:
 
   slax       sha256 equals the committed stock manifest for the base image
              (docs/30-inventory/manifests/{bootfiles,isofiles,initramfs}-<target>.sha256)
@@ -695,9 +695,6 @@ def classify(files: dict, stock: dict, prov: dict, target: str | None, target_in
         unresolve("(kitchen)", f"the kitchen tree was dirty when this image was built "
                                f"({kitchen.get('describe')}); its source cannot be a commit")
 
-    not_redistributable = [{"recipe": r.get("recipe"), "why": (r.get("redistribution") or {}).get("why")}
-                           for r in recipes if (r.get("redistribution") or {}).get("allowed") is False]
-
     firmware = firmware_facts(files, stock, recipes, target)
     if firmware["stock_bundle"] and not firmware["license_texts"]:
         warnings.append(f"{STOCK_FIRMWARE}: Slax's own build removed the license texts of the "
@@ -723,7 +720,6 @@ def classify(files: dict, stock: dict, prov: dict, target: str | None, target_in
         "components": components,
         "unresolved": unresolved,
         "warnings": warnings,
-        "not_redistributable": not_redistributable,
         "firmware": firmware,
         "host_inputs": host_inputs,
     }
@@ -903,7 +899,8 @@ def markdown(doc: dict) -> str:
     if ours:
         kit = doc.get("kitchen") or {}
         lines += ["", "## Written by slax-kitchen and its recipes", "",
-                  f"In the project source archive at `{kit.get('describe')}`, with its submodules.", ""]
+                  "In the project's repository and slax-kitchen's, at the commits the provenance "
+                  f"records (slax-kitchen `{kit.get('describe')}`), with their submodules.", ""]
         for c in ours:
             lines.append(f"- `{c['path']}` — {c.get('by')}"
                          + ("; the files it downloaded are listed above, with their sources"
@@ -917,10 +914,6 @@ def markdown(doc: dict) -> str:
         lines += ["", "## Unresolved", ""]
         for u in doc["unresolved"]:
             lines.append(f"- `{u['path']}` — {u['reason']}")
-    if doc["not_redistributable"]:
-        lines += ["", "## Not redistributable", ""]
-        for n in doc["not_redistributable"]:
-            lines.append(f"- `{n['recipe']}` — {n['why']}")
     return "\n".join(lines) + "\n"
 
 
@@ -1177,8 +1170,6 @@ def main(argv: list[str]) -> int:
     print("  " + "  ".join(f"{c} {s[c]}" for c in CLASSES))
     for w in doc["warnings"]:
         print(f"  warning: {w}")
-    for n in doc["not_redistributable"]:
-        print(f"  not redistributable: {n['recipe']} -- {n['why']}")
     for u in doc["unresolved"]:
         print(f"  UNRESOLVED {u['path']}: {u['reason']}")
     for asset in doc.get("assets") or []:

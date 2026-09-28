@@ -10,7 +10,6 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 | `ci.yml` → `build` | push to master, or any PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
 | `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | one direct-kernel QEMU boot under TCG, asserting |
 | `ci.yml` (weekly) | Thursdays 05:41 UTC, or dispatch | the same, plus the skipped recipes and the [Tier C](tier-c.md) boot matrix |
-| `ci.yml` → `tor-assets` | weekly or dispatch — **not on tags** | builds `tor`, assembles and verifies what would travel with it, uploads the records and source — [never the image](#tor-assets-the-pipeline-proven-weekly) |
 | `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml` — **the full matrix**, not the per-push subset — then publish |
 | `upstream-watch.yml` | Mondays 06:17 UTC, or dispatch | linux-live HEAD, new Slax release, mirror health, pinned signing keys |
 
@@ -49,7 +48,6 @@ weekly run:
 | the recipes in [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) | ❌ | ✅ |
 | direct-kernel boot, asserting markers | ✅ | ✅ |
 | [Tier C](tier-c.md): build `boot-matrix`, then four paths and five asserting boots | ❌ | ✅ |
-| `tor-assets`: the publishing procedure on a real image, never uploading it | ❌ | ✅ weekly and dispatch, ❌ on tags |
 
 **The bar for `ci/slow-recipes.txt` is not "slow".** It is that the recipe's failure mode is
 *external* — something outside this repository breaks it — so running it per-push converts someone
@@ -71,13 +69,6 @@ worse than a slow one:
 A **release tag runs everything a push does not**, because a release should be verified more than
 a push, not less: the skipped recipes and the Tier C boot matrix both run.
 `ci.yml` distinguishes them with `startsWith(github.ref, 'refs/tags/')`.
-
-**`tor-assets` is the one job a tag does not run**, and for the same reason the recipes in
-`ci/slow-recipes.txt` are held back: its failure mode is external. `release.yml`'s publish job
-needs the whole of `ci.yml`, so on a tag that job would stand between a finished release and
-`contents: write`, waiting on a 138 MB download from `dist.torproject.org` that a Tor Browser
-release can retire. The weekly run is what proves that pipeline; `workflow_dispatch` runs it on
-demand before tagging.
 
 ## The toolchain list
 
@@ -357,33 +348,6 @@ regenerate the fingerprint, `kitchen selftest ci`, then fix what breaks. See
 > It does **not** watch busybox or CVEs. The busybox replacement is pinned and tested by
 > [`tests/busybox/gates.sh`](../../tests/busybox/gates.sh), not by this.
 
-## Tor assets: the pipeline, proven weekly
-
-The `tor-assets` job runs the [publishing procedure](../40-workflow/publishing-images.md) on a real
-profile, so the scripts a project uses to publish are exercised against a real image rather than
-fixtures alone:
-
-```sh
-sudo ./kitchen build tor
-./ci/release-assets.sh out/slax-tor-12.2.0.iso out/tor-assets --no-image
-./ci/release-verify.py out/tor-assets --assert-no-images
-```
-
-`tor` has what makes the procedure worth testing: a 138 MB prebuilt download with its own
-`upstream_source`, Debian packages, and a GRUB EFI image built from the runner's own GRUB, whose
-source package is fetched and attached.
-
-**The image is never uploaded.** The Tor Project's trademark policy does not allow "Tor" in the name
-of another product without written permission, so this image is built, checked and discarded.
-`--no-image` leaves it out of the set; `--assert-no-images` then fails the job if any asset is an
-ISO 9660 image, squashfs, ELF, PE or FAT filesystem, judged by content, so a renamed ISO would not
-pass either. The upload is a workflow artifact of `out/tor-assets/` only, not a release asset.
-
-Weekly rather than per push for the same reason `tor-browser` is on the slow list: the download is
-an external dependency. The verify gate's own logic is unit-tested on every push by
-`tests/unit/test_release_assets.py`, which breaks a fixture directory one way at a time. This job
-assembles one image; a set of several, from one commit, is exercised only by that file's fixtures.
-
 ## Releases
 
 `release.yml` runs on a `v*` tag. Three jobs:
@@ -397,19 +361,14 @@ assembles one image; a set of several, from one commit, is exercised only by tha
 ### What a release attaches
 
 A tag and the notes — **no image**. A release of slax-kitchen is the toolkit. What travels with an
-image built with it, when one is published, is set out in [NOTICE.md](../../NOTICE.md): the source
-of what the build compiled or modified, where each upstream publishes its own, the firmware terms,
-and an identity that is not an official Slax release.
+image built with it, when a project publishes one, is set out in [NOTICE.md](../../NOTICE.md): its
+checksums, the provenance record `kitchen pack` writes, and where each upstream publishes its
+source. [Publishing an image](../40-workflow/publishing-images.md) is the procedure, as commands.
 
 This section used to be titled *No ISO is attached, on purpose*, and gave a reason that read a note
 written for forks as a rule for this repository. `tests/unit/test_release.py` now checks the notes'
 attachment claim against what `release.yml` actually uploads, instead of pinning the sentence: the
 day the workflow attaches a file, the notes have to change with it.
-
-A project that does publish an image sets `RELEASE_ASSETS` to the directory
-`ci/release-assets.sh` wrote, and the section is generated from that directory by
-`ci/redistribution-claim.py` instead, naming what is attached. See
-[publishing an image](../40-workflow/publishing-images.md).
 
 There is no checksum for a built image in the notes because none is attached. Where an image *is*
 published, its `SHA256SUMS` checks the download — not a rebuild, since the ISO container is not

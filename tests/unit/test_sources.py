@@ -155,10 +155,10 @@ def test_the_cpio_reader_reads_what_cpio_would():
 def test_a_broken_archive_is_reported_as_unreadable_not_as_a_traceback():
     """`kitchen sources` runs against images the operator did not build, so the parser is
     fed hostile bytes by definition. Three ways it went wrong: a header whose fields are
-    not hex raised ValueError out of the tool (and out of ci/release-assets.sh with it);
-    int() accepts a sign, so a negative namesize made the offset stand still and the loop
-    never ended; and a truncated tail hashed short data, which reported a real member as
-    changed -- a wrong claim, which is worse than an unreadable one."""
+    not hex raised ValueError out of the tool; int() accepts a sign, so a negative
+    namesize made the offset stand still and the loop never ended; and a truncated tail
+    hashed short data, which reported a real member as changed -- a wrong claim, which is
+    worse than an unreadable one."""
     import signal
 
     def within(seconds, fn, *a):
@@ -478,13 +478,6 @@ def test_a_dirty_or_unknown_build_is_unresolved():
     check("unknown base", [u["path"] for u in doc["unresolved"]], ["(base image)"])
 
 
-def test_non_redistributable_recipes_are_named():
-    p = prov([{"recipe": "all-browsers", "steps": [],
-               "redistribution": {"allowed": False, "why": "proprietary browsers"}}])
-    check("named", run({}, p)["not_redistributable"],
-          [{"recipe": "all-browsers", "why": "proprietary browsers"}])
-
-
 def test_the_mbr_is_a_prebuilt_host_component():
     p = prov(pack={"iso": {}, "mbr": {"file": "isohdpfx.bin", "sha256": H["5"], "package": {
         "package": "isolinux", "source": "syslinux", "source_version": "3:6.04-1"}}})
@@ -755,7 +748,6 @@ def main():
                test_grub_is_built_and_its_source_follows_the_builder,
                test_recipe_edits_and_pack_output_are_ours,
                test_a_dirty_or_unknown_build_is_unresolved,
-               test_non_redistributable_recipes_are_named,
                test_the_mbr_is_a_prebuilt_host_component,
                test_stock_firmware_without_license_texts_is_said_plainly,
                test_firmware_refresh_puts_the_license_texts_back,

@@ -424,8 +424,7 @@ A recipe we can take needs:
 - **where the source is**, for anything it downloads: `upstream_source:` on the step, the apt
   repository or the `bundle.files` `url:` entry, a `KITCHEN-FETCHED` line for each file a
   `bundle.script` downloads into the image (the engine checks each line against the file),
-  `declares:` for anything a `bundle.script` compiles, and `redistribution: {allowed: false, why:
-  …}` if an image containing it must not be published — see
+  and `declares:` for anything a `bundle.script` compiles — see
   [saying where the source is](docs/90-reference/verbs.md#saying-where-the-source-is). The matrix
   runs `kitchen sources` on every image it builds, so a file nothing accounts for fails there. A
   download a script does not report is not caught that way unless it is ELF: the script's bundle is

@@ -31,6 +31,10 @@ Want two browsers instead of six, or a 32-bit image? That is
 [`debian-browsers`](debian-browsers.md), which is also the one that adds nothing to what your image
 trusts.
 
+**Before you publish an image built with it:** Chrome, Edge and Vivaldi are proprietary, and
+their licence terms do not permit redistributing them inside an image. Nothing in the engine
+checks that. `debian-browsers` carries only free browsers.
+
 ## Measured
 
 Read from each vendor's own `dists/stable` index on **2026-09-16**, amd64, taking the *highest*

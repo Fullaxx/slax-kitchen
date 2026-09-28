@@ -1,151 +1,63 @@
 # Publishing an image
 
-The procedure for a project that publishes an ISO it built with slax-kitchen: what to run, what
-travels with the image, and what each step refuses. A release of slax-kitchen itself attaches no
-image — see [NOTICE.md](../../NOTICE.md) — so this is for the projects that use it.
+The procedure for a project that publishes an ISO it built with slax-kitchen: what to run and
+what travels with the image. A release of slax-kitchen itself attaches no image — see
+[NOTICE.md](../../NOTICE.md) — so this is for the projects that use it.
 
-This page describes what the tooling does. It is not legal advice, and whoever publishes an image
-decides whether to.
+Whoever publishes an image decides whether to, and nothing in this procedure refuses one.
 
 ## The procedure
 
 ```sh
-sudo ./kitchen build myproject                       # out/myproject.iso + .provenance.json
-./kitchen sources out/myproject.iso                  # every file accounted for, or it fails
-ci/release-assets.sh out/myproject.iso out/release   # the set that travels with the image
-ci/release-verify.py out/release                     # check the set before anything leaves
-ci/redistribution-claim.py out/release > redistribution.md
+sudo ./kitchen build myproject                         # out/myproject.iso + .provenance.json
+sudo chown -R "$(id -u):$(id -g)" out                  # the build ran as root; out/ is root's
+./kitchen sources out/myproject.iso \
+    --markdown out/myproject.SOURCES.md --json out/myproject.sources.json   # optional
+(cd out && sha256sum myproject.iso > SHA256SUMS)
 ```
 
-Then a person uploads `out/release/*` — with `gh release create`, or however the project publishes.
-Nothing here uploads.
+Then a person uploads the image, `SHA256SUMS`, `myproject.iso.provenance.json` and, if they made
+them, the two sources files — with `gh release create`, or however the project publishes. Nothing
+here uploads.
 
-**Several images of one version go in one set.** A project that builds more than one image from
-the same kitchen and project commits — BIOS and UEFI variants, 32- and 64-bit — names them all:
+**Several images of one version** — BIOS and UEFI variants, 32- and 64-bit — are the same commands
+for each image, and one `SHA256SUMS` that lists them all:
 
 ```sh
-ci/release-assets.sh out/myproject-bios.iso out/myproject-uefi.iso out/release
+(cd out && sha256sum myproject-bios.iso myproject-uefi.iso > SHA256SUMS)
 ```
 
-Each image gets its own provenance record and sources manifest. The sources they share, the kitchen
-and project archives among them, go in once, and `release-index.json` says which images each one
-serves. Images from different commits are refused, because one release is one version (#54).
-
-A project that vendors the kitchen runs the same scripts from `vendor/slax-kitchen/ci/`. The project
-is found as the kitchen's git superproject (or named by `PROJECT_ROOT`), and its tree is archived
-alongside the kitchen's.
-
-| Step | Refuses |
-|---|---|
-| `kitchen build` | nothing new; `kitchen pack` writes `<iso>.provenance.json` beside the image |
-| [`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict) | a file whose sha256 matches neither the stock image nor a recorded step; an image built from a dirty kitchen checkout; a file a recipe copied in that its commit does not hold |
-| `ci/release-assets.sh` | everything `sources` refuses, for each image, run without `--allow-dirty`; images built from different kitchen or project commits; two images with one file name; a source two images fetched under one name with different bytes; a kitchen or project checkout with uncommitted changes; an asset name GitHub would rename; a non-empty output directory |
-| `ci/release-verify.py` | see below |
-
-`release-assets.sh` never passes `kitchen sources --allow-dirty`, so no set it assembles rests on
-that flag. Its own check is `git status`, which does not list gitignored files, so an installer
-staged where git ignores it gets past that check and is refused by `sources`.
-
-`release-verify.py` exits 1, naming every problem, when:
-
-- `SHA256SUMS` does not list exactly the files present, or a hash is wrong
-- `release-index.json` is not the index that lists every image (the one-image index before #54
-  is refused)
-- for any image, its provenance, its sources manifest and its entry in the index do not describe
-  the same image
-- anything is unresolved in an image, or a recipe marked `redistribution: {allowed: false}` is in
-  one (`all-browsers` is)
-- something built in an image has no source among the assets that serve that image
-- the images were built from different kitchen or project commits
-- a project archive is missing a submodule, or holds different pins than the build recorded
-- an asset is 2 GiB or more, or there are more than 1000 (GitHub's limits)
-- any record names a place inside this machine's kitchen or project checkout, or its home
-  directory. The rule is where the machine really is, not what a path looks like: an image's
-  own `/root/...` is ordinary.
-- an attached image carries Slax's firmware bundle without the copyright files of its Debian
-  firmware packages
-
-With `--assert-no-images` it also fails if any asset *is* an ISO 9660 image, a squashfs, an ELF
-or PE executable, or a FAT filesystem, judged by its bytes rather than its name. CI uses that for an
-image it builds and must not publish; see [below](#the-image-ci-builds-and-never-publishes).
+A project that vendors the kitchen runs the same commands through `vendor/slax-kitchen/kitchen`.
 
 ## What travels with the image
 
 | Asset | What it is |
 |---|---|
-| `<name>.iso` | the image; one per image in the set |
+| `<name>.iso` | the image; one per image |
 | `SHA256SUMS` | checks every download. It does not promise that a rebuild matches: images are not byte-reproducible ([reproducibility](reproducibility.md)) |
-| `<name>.iso.provenance.json` | what the build fetched and built: URLs and sha256s, package versions, the build host's GRUB and MBR, the kitchen commit and submodule pins. One per image |
-| `<name>.SOURCES.md`, `<name>.sources.json` | every file in the image, classified, and where the source of each part is published. One pair per image |
-| `slax-kitchen-<commit>-source.tar.gz` | the kitchen tree at the recorded commit, **with its submodules**. GitHub's automatic source archives leave submodules out |
-| `<project>-<commit>-source.tar.gz` | the same for the project that vendors the kitchen |
-| `<source>_<version>.source.tar` | the source package of something built here, such as GRUB's EFI image |
-| `busybox-<version>.tar.bz2`, `….config` | a build claim's source and configuration, when the image replaces busybox |
-| `release-index.json` | every image, with the records that describe it; every asset's role, sha256 and size, what it is the source of, and which images it serves |
+| `<name>.iso.provenance.json` | what the build did: the base image, the kitchen and project commits with their submodule pins, every recipe applied, what each one fetched (URLs and sha256s) and which package versions apt resolved. One per image |
+| `<name>.SOURCES.md`, `<name>.sources.json` | optional: every file in the image, where it came from, and where its upstream publishes its source when that is known. One pair per image |
 
-The archives and source packages are carried once for the whole set: images built from one commit
-share the kitchen and project archives byte for byte, and a source package two images fetched is
-the same file in both, or the set is refused.
-
-Source is attached for what the build compiled, built or modified. Everything included as its
-upstream published it — Slax's own parts, Debian packages, a vendor's tarball, a single file a
-recipe or a script downloaded — is listed in `SOURCES.md` with the place that upstream publishes
-its source: linux-live and the repositories it names, `snapshot.debian.org` for each Debian source
-version, the recipe's `upstream_source` for a download. Where a download goes in a recipe:
-[a file the build downloads](../90-reference/verbs.md#a-file-the-build-downloads).
-
-**What weakens a pointer is said, not smoothed over.** A download with no `upstream_source`, and one
-the recipe pinned no sha256 for — what it fetched is what that server served that day — are
-warnings, and `kitchen sources --strict` makes them unresolved instead. A bundle a script wrote with
-network access carries that fact, because what came over the connection is the script's own
-account: each file it reported is checked against the bundle, and one it did not report is not
-seen. A repacked initramfs is opened and its members counted against the stock manifest, so "the
-parts that are Slax's are Slax's" is a count rather than a claim.
+What the project changed is in its own repository and in this one, at the commits the provenance
+records: its recipes, the files beside them, and the engine that ran them. No source is attached
+for what the build did not change; `SOURCES.md` points at where each upstream publishes it —
+linux-live and the repositories it names, `snapshot.debian.org` for each Debian source version, a
+recipe's `upstream_source` for a download.
 
 ## Before the first publish
 
-**Identity.** An image must not present itself as an official Slax release. Set the volume id and
-branding with [`iso-identity`](../50-cookbook/iso-identity.md) and
+**Identity.** An image should not present itself as an official Slax release. Set the volume id
+and branding with [`iso-identity`](../50-cookbook/iso-identity.md) and
 [`branding`](../50-cookbook/branding.md).
 
-**Trademarks.** Software a recipe adds can carry trademark rules of its own. The Tor Project's
-policy does not allow "Tor" in the name of another product without written permission, which is why
-the image below is never published.
+## What this does not do
 
-**Firmware.** Using an image that contains firmware implies acceptance of each firmware's license
-terms. Slax's own build removed the license texts from its firmware bundle, except
-`ipw2x00.LICENSE`. [`firmware-refresh`](../50-cookbook/firmware-refresh.md) reinstalls Debian's, and
-brings a license file with every file it copies from linux-firmware. To leave firmware out instead,
-see [building without firmware](../50-cookbook/remove-bundle.md#building-without-firmware).
-`release-verify.py` refuses an attached image whose Debian firmware packages lack their copyright
-files. The Broadcom b43 files in Slax's bundle stay either way: no license text came with them, and
-`SOURCES.md` and the release notes say so.
-
-**Where the notes come from.** `ci/redistribution-claim.py` writes the notes' Redistribution section
-from the verified directory, so it names what is attached — every image, with its sha256 — and
-cannot promise anything that is not.
-`RELEASE_ASSETS=out/release ci/release-notes.sh <tag>` uses it in place of the kitchen's own "no
-image is attached" section.
-
-## The image CI builds and never publishes
-
-The weekly CI run builds the `tor` profile and runs the whole procedure on it —
-`release-assets.sh --no-image`, then `release-verify.py --assert-no-images` — and uploads the
-verified records and source as a workflow artifact. The image itself is not in the set, and the
-check that it is not reads content, so renaming it would not get it through. It proves the pipeline
-works on a real profile with a download, packages and a UEFI build, without publishing an image that
-carries another project's trademark. See [ci.md](../60-testing/ci.md#tor-assets-the-pipeline-proven-weekly).
-
-## What this does not check
-
-- **That an upstream still serves its source.** The pointers are permanent archives where one exists
-  (`snapshot.debian.org`, Launchpad), and were checked when the code that writes them was.
-  `kitchen sources` is offline and does not fetch them.
-- **Licenses.** It records what is in the image and where the source is. It does not decide whether
-  a license permits publishing — a recipe says so with `redistribution:`.
-- **A rebuild.** The records explain an image, file by file. They do not make a second build
-  byte-identical to the first.
-- **An image built on another project's image.** `kitchen sources` accounts for files against
-  the stock image of a known target, and a base another project built is not one, so nothing
-  from it is accounted for and `release-assets.sh` refuses. See
+- **Decide whether an image may be published.** What is in an image and what its upstreams permit
+  is the publisher's to weigh; [NOTICE.md](../../NOTICE.md) records what is known about Slax's own
+  parts, its firmware included.
+- **Reproduce a build.** The records explain an image, file by file. They do not make a second
+  build byte-identical to the first.
+- **Follow an image built on another project's image back to its origins.** `kitchen sources`
+  matches files against the stock image of a known target, and a base another project built is
+  not one, so it reports every file from that base as unresolved. See
   [LAYERING.md](../../LAYERING.md#provenance-and-publishing).

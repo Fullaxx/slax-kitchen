@@ -90,7 +90,7 @@ def build_machine_hits(obj, work: str | None = None, where: str = "") -> list[st
 
       #20  boot-matrix's `marker: /var/lib/kitchen-perch-marker`, an absolute path in the
            image. That stopped the weekly Tier C job. The fix exempted vars from `^/` and
-           kept the rest, and never reached ci/release-verify.py, which still refused it.
+           kept the rest, and never reached the release verifier, which still refused it.
       #26  a local input staged as a tree mirroring its destination,
            `recipes/local/x.files/root/.config/demo`. That is checkout-relative by
            construction and could never name the builder. It was refused after the recipe
@@ -420,11 +420,10 @@ def finalize(work: str, iso: str, backend: str, mbr: str | None) -> str:
     if mbr:
         out["pack"]["mbr"] = {"file": os.path.basename(mbr), "sha256": sha256(mbr),
                               "package": host_package(mbr)}
-    # THE RECORD THAT GETS PUBLISHED, checked whole. This sidecar is what somebody publishing
-    # by hand ships, and ci/release-verify.py only sees images that go through
-    # ci/release-assets.sh. Producers cannot write these directories and apply.py checked the
-    # vars before the build, so what this stops is a regression in either. `work` is this
-    # build's work tree, which release-verify cannot know.
+    # THE RECORD THAT GETS PUBLISHED, checked whole: this sidecar is what travels with an
+    # image. Producers cannot write these directories and apply.py checked the vars before
+    # the build, so what this stops is a regression in either. `work` is this build's work
+    # tree, which nothing after the build can know.
     bad = build_machine_hits(out, work=os.path.abspath(work))
     if bad:
         raise RuntimeError("provenance would record a place on this build machine:\n  "

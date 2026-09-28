@@ -79,35 +79,26 @@ click through them.
 
 ## Publishing an image built with slax-kitchen
 
-This section describes what this project does, and what its tooling is for. It is not legal advice:
-whoever publishes an image is responsible for publishing it.
+Whoever publishes an image decides whether to, and what to publish with it. Nothing in this
+toolkit decides that for them.
 
 A published image travels with:
 
-- **`SHA256SUMS`.** It lets anyone check that the file they downloaded is the file that was
-  published. It does not promise that a rebuild will match — images are not byte-reproducible; see
-  [reproducibility](docs/40-workflow/reproducibility.md).
-- **The source of what the build compiled or modified**, and the project tree that produced it
-  **with its submodules**. GitHub's automatic source archives leave submodules out, so they are not
-  enough on their own.
-- **Where each upstream publishes its source**, for everything included as its upstream built it —
-  the table above.
-- **The firmware statement above**, in the release notes. Intel's ipw2x00 license, which conditions
-  transfer on the recipient agreeing to its terms, and Broadcom's b43 blobs are the two whose terms
-  are unusual.
+- **`SHA256SUMS`**, made with `sha256sum`. It lets anyone check that the file they downloaded is
+  the file that was published. It does not promise that a rebuild will match — images are not
+  byte-reproducible; see [reproducibility](docs/40-workflow/reproducibility.md).
+- **`<image>.provenance.json`**, which `kitchen pack` writes beside the image. It records the base
+  image, the kitchen commit, the project commit, every recipe applied and what each one fetched.
+  What the build changed is in the project's repository and in this one, at those commits. No
+  source is attached for what the build did not change.
+- optionally, **where each part's upstream publishes its source**, where that is known — the
+  table above, worked out per image.
+  [`kitchen sources <iso> --markdown F`](docs/90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict)
+  writes it as `SOURCES.md`, from the record `kitchen pack` wrote.
 - **An identity that does not claim to be an official Slax release** —
   [`iso-identity`](docs/50-cookbook/iso-identity.md) and [`branding`](docs/50-cookbook/branding.md).
-  Software a recipe adds can carry trademark rules of its own: the Tor Project's policy, for
-  example, does not allow "Tor" in the name of another product without written permission.
 
-[`kitchen sources <iso>`](docs/90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict)
-works out that list for a built image from the record `kitchen pack` writes beside it. Every file is
-matched by sha256 to the stock image or to the step that produced it, and anything it cannot match
-is named, with exit status 1. It also says whether the image's firmware has its license texts with
-it. `--fetch` gathers the source of what the build compiled, together with the project tree.
-[Publishing an image](docs/40-workflow/publishing-images.md) is the procedure:
-`ci/release-assets.sh` assembles the set — for one image, or several built from the same commits
-— and `ci/release-verify.py` checks it before anything is uploaded.
+[Publishing an image](docs/40-workflow/publishing-images.md) is the procedure, as commands.
 
 ## This repository's releases
 

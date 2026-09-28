@@ -4059,7 +4059,6 @@ def apply_recipe(path: str, work: str, dry: bool = False,
             # What the recipe changed, from the journal: the evidence `kitchen sources`
             # uses for files a recipe wrote or edited without fetching anything.
             "artifacts": list(ctx.changes),
-            "redistribution": doc.get("redistribution"),
             "steps": ctx.prov_steps,
         })
         j["applied"].append(entry)

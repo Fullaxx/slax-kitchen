@@ -9,9 +9,9 @@ base:
   arch: 64bit
   version: "12.2.0"
 recipes:
-  # NOT PUBLISHABLE AS IT STANDS. all-browsers declares redistribution: allowed: false --
-  # Chrome, Edge and Vivaldi do not permit redistribution -- so ci/release-verify.py refuses
-  # any image built from this profile. A publishable variant swaps it for debian-browsers.
+  # BEFORE YOU PUBLISH ONE: all-browsers installs Chrome, Edge and Vivaldi, whose licences do
+  # not permit redistributing them inside an image. A variant built to publish swaps it for
+  # debian-browsers. Nothing in the engine checks this.
   #
   # REMOVAL IS ITS OWN RECIPE, AND GOES FIRST. A bundle is built against everything below
   # it, so removing one afterwards can strand it; check_plan_order refuses that order

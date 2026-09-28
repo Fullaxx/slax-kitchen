@@ -165,7 +165,7 @@ PY
     # Every file in the image attributed: Slax as published, a recorded package or
     # download, something built here, or something a recipe wrote. An unexplained file
     # fails the recipe that produced it, by name. --allow-dirty because the question here
-    # is attribution, not whether the tree was committed -- the release path checks that.
+    # is attribution, not whether the tree was committed.
     if ! python3 "$REPO_ROOT/lib/sources.py" "$out" --allow-dirty >>"$log" 2>&1; then
         printf '  %sFAIL%s %-18s kitchen sources left something unresolved\n' "$R" "$O" "$name"
         grep -E "UNRESOLVED|Traceback|Error" "$log" | sed 's/^/        /'
