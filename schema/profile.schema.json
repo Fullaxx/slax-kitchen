@@ -123,13 +123,35 @@
     "test": {
       "type": "array",
       "items": {
-        "enum": [
-          "structure",
-          "kernel-boot",
-          "bios-boot",
-          "uefi-boot",
-          "usb",
-          "persistence"
+        "oneOf": [
+          {
+            "enum": [
+              "structure",
+              "kernel-boot",
+              "bios-boot",
+              "uefi-boot",
+              "usb",
+              "persistence"
+            ]
+          },
+          {
+            "type": "object",
+            "description": "the structure check with a project's own assertions (#67)",
+            "properties": {
+              "structure": {
+                "type": "object",
+                "properties": {
+                  "max_size_mib": {"type": "integer", "minimum": 1},
+                  "require": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                  "forbid": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                  "expect_gpt": {"type": "boolean"}
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": ["structure"],
+            "additionalProperties": false
+          }
         ]
       }
     }

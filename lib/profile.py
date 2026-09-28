@@ -128,6 +128,21 @@ def main(argv: list[str]) -> int:
                  ("{{arch}}", base["arch"]), ("{{name}}", doc["metadata"]["name"])):
         name = name.replace(k, v)
 
+    # A `test:` entry is a name, or `{structure: {...}}` carrying a project's own structure
+    # checks: a size ceiling, paths to require or forbid (#67). Given twice, which options
+    # would apply is a guess, so that is refused.
+    tests, structure = [], None
+    for entry in doc.get("test", []) or []:
+        if isinstance(entry, dict):
+            if structure is not None:
+                print(f"{path}: test: the structure check's options are given twice; "
+                      f"give them once", file=sys.stderr)
+                return 1
+            structure = entry.get("structure") or {}
+            entry = "structure"
+        tests.append(entry)
+    structure = structure or {}
+
     emit = {
         "PROFILE_PATH": path,
         "PROFILE_NAME": doc["metadata"]["name"],
@@ -153,7 +168,13 @@ def main(argv: list[str]) -> int:
         "OUTPUT_NAME": name,
         "OUTPUT_HYBRID": "1" if out.get("hybrid") else "",
         "OUTPUT_BACKEND": out.get("backend", ""),
-        "TESTS": " ".join(doc.get("test", []) or []),
+        "TESTS": " ".join(tests),
+        # The lists one path per line, which is how build.sh splits them: a path in an
+        # image may hold a space.
+        "STRUCTURE_MAX_SIZE_MIB": structure.get("max_size_mib", ""),
+        "STRUCTURE_REQUIRE": "\n".join(structure.get("require", [])),
+        "STRUCTURE_FORBID": "\n".join(structure.get("forbid", [])),
+        "STRUCTURE_EXPECT_GPT": "1" if structure.get("expect_gpt") else "",
     }
     for k, v in emit.items():
         print(f"{k}={shlex.quote(str(v))}")

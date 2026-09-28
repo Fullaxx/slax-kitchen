@@ -580,6 +580,11 @@ kitchen test <iso> [options]      assert things about a built ISO
   --expect-hybrid      --structure: require an isohybrid MBR
   --volid ID           --structure: the volume id to require (default: slax;
                        `kitchen build` passes whatever the recipes asked for)
+  --expect-gpt         --structure: with --expect-hybrid, require a GPT too
+  --max-size-mib N     --structure: fail an image larger than N MiB
+  --require PATH       --structure: fail unless PATH is in the image (repeatable)
+  --forbid PATH        --structure: fail if PATH is in the image (repeatable),
+                       e.g. a bundle a removal recipe took out
 
 --kernel needs no help to assert: it builds its own cmdline with ttyS0 as the only
 console. The bootloader modes are pointed at a boot entry that names ttyS0 LAST --

@@ -1745,6 +1745,53 @@ def test_a_relative_base_iso_is_found_from_the_profiles_repository():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_a_profiles_structure_checks_reach_the_build():
+    """A `test:` entry may be `{structure: {...}}`, carrying a project's own checks to
+    `kitchen build`: a size ceiling, paths to require or forbid (#67). Without it a project
+    with a size budget ran iso_assert.py itself.
+
+    profile.py hands them to lib/build.sh as shell assignments that build.sh evals, one
+    path per line. So they are read back here through `sh`, which is how both readers,
+    build.sh and ci/tier-c.sh, read them. build.sh records the failure this guards against:
+    unquoted word-splitting broke on a recipe path with a space.
+    """
+    import contextlib
+    import io
+    import tempfile
+    prof = _profile_py()
+    d = tempfile.mkdtemp(prefix="kitchen-structure.")
+    head = ("apiVersion: slax-kitchen/v1\nkind: Profile\nmetadata:\n  name: p\n"
+            "base: {flavour: debian, arch: 64bit, version: \"12.2.0\"}\nrecipes: [iso-identity]\n")
+    try:
+        path = os.path.join(d, "p.yaml")
+        with open(path, "w") as f:
+            f.write(head + "test:\n  - structure:\n      max_size_mib: 900\n"
+                    "      require: [\"/slax/modules/40-my app.sb\", /slax/modules/41-x.sb]\n"
+                    "      forbid: [/slax/modules/05-chromium.sb]\n"
+                    "      expect_gpt: true\n  - kernel-boot\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = prof.main(["profile.py", path])
+        check("a profile with a structure map is read", rc, 0)
+        got = subprocess.run(
+            ["sh", "-c", 'eval "$1"; printf "%s|%s|%s|%s|%s" "$TESTS" "$STRUCTURE_MAX_SIZE_MIB" '
+                         '"$STRUCTURE_REQUIRE" "$STRUCTURE_FORBID" "$STRUCTURE_EXPECT_GPT"',
+             "sh", out.getvalue()], capture_output=True, text=True).stdout.split("|")
+        check("as build.sh reads it", got,
+              ["structure kernel-boot", "900",
+               "/slax/modules/40-my app.sb\n/slax/modules/41-x.sb",
+               "/slax/modules/05-chromium.sb", "1"])
+
+        with open(path, "w") as f:
+            f.write(head + "test:\n  - structure: {max_size_mib: 900}\n"
+                    "  - structure: {max_size_mib: 800}\n")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = prof.main(["profile.py", path])
+        check("options given twice are refused rather than one picked", rc, 1)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_a_recipe_named_by_path_keeps_its_build_checks():
     """`kitchen build` tells its structure test what uefi-bootable and isohybrid add.
 
@@ -3879,6 +3926,7 @@ def main():
                    test_a_dependency_cycle_is_the_same_file_again,
                    test_a_relative_base_iso_is_found_from_the_profiles_repository,
                    test_a_recipe_named_by_path_keeps_its_build_checks,
+                   test_a_profiles_structure_checks_reach_the_build,
                    test_symlink_chain_cannot_escape,
                    test_fromtarball_wires_both_guards_in,
                    test_extract_members_matches_extractall_on_a_clean_archive,

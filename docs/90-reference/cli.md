@@ -55,6 +55,7 @@ behind to catch; `pack` warns about it instead.
 ```sh
 kitchen test out/slax-example-12.2.0.iso                 # structure (default)
 kitchen test out/x.iso --structure --expect-uefi --expect-hybrid
+kitchen test out/x.iso --structure --max-size-mib 900 --forbid /slax/modules/05-chromium.sb
 kitchen test out/x.iso --bios --uefi --seconds 40
 kitchen test out/x.iso --kernel --expect 'dpkg-status: 600 packages'
 ```
@@ -64,6 +65,16 @@ boot-info-table consistency, squashfs parameters on every bundle, required files
 `boot/efi.img` without an EFI entry. About a second.
 It expects the volume id `slax` unless `--volid` says otherwise; `kitchen build` passes whatever the
 profile's recipes asked `pack` for, read through the same hint reader `pack` uses.
+
+A project's own claims about its image go through the same command
+([#67](https://github.com/Fullaxx/slax-kitchen/issues/67)):
+- `--max-size-mib N` for a size ceiling;
+- `--require PATH` for a path that must be there, and `--forbid PATH` for one that must not, such
+  as a bundle a removal recipe took out. Both are repeatable, and both match exact paths;
+- `--expect-gpt`, which with `--expect-hybrid` requires a GPT too.
+
+A profile's `test:` list can carry them to `kitchen build`, as in the [profile format](#profile-format)
+below. Like `--structure` itself, none of them ever goes to a boot host.
 
 The required files are found in the same listing `diff` and `sources` use, by exact path. An image
 whose files cannot be listed gets one failure saying so, not five claiming the kernel and bootloader
@@ -719,10 +730,18 @@ output:
   name: "slax-example-{{version}}.iso"    # {{version}} {{flavour}} {{arch}} {{name}}
   hybrid: true
   backend: xorriso         # optional
-test: [structure]          # structure | kernel-boot | bios-boot | uefi-boot | usb | persistence
+test:                      # structure | kernel-boot | bios-boot | uefi-boot | usb | persistence
+  - structure:             # or a bare `structure`; the map carries the project's own checks
+      max_size_mib: 900
+      require: [/slax/modules/20-mine.sb]
+      forbid: [/slax/modules/05-chromium.sb]
+  - kernel-boot
 ```
 
-`usb` and `persistence` are accepted and reported as skipped — they need a KVM host.
+`usb` and `persistence` boot too, and like every boot mode they need KVM to be quick: on a
+[boot host](../60-testing/boot-host.md), or slowly under TCG here. The structure map is
+`max_size_mib`, `require`, `forbid` and `expect_gpt`, the `kitchen test` options of the same names.
+Given twice, it is refused rather than one set of options picked.
 
 **`vars:` overrides merge** over the recipe's own defaults, so setting one leaves the rest alone.
 Naming a var the recipe does not declare is an error listing what it does declare, and the value

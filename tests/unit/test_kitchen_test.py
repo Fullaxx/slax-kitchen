@@ -475,6 +475,35 @@ def test_a_boot_host_takes_the_boot_and_not_the_structure_check(fx):
 
 
 @case
+def test_a_projects_structure_checks_reach_iso_assert_and_stay_here(fx):
+    """`kitchen test --structure` passed iso_assert.py three of its options, and a project
+    with a size ceiling or bundles to require or forbid ran iso_assert.py itself (#67).
+    They are structure options, so like --structure they never go to a boot host: its
+    `test` would refuse a flag it does not take. The lists are repeatable, and a path
+    holding a space must arrive as one path."""
+    fx.with_boot_host()
+    fx.with_xorriso()
+    fx.iso_file("/slax/boot/vmlinuz", "k")
+    fx.iso_file("/slax/boot/initrfs.img", "i")
+    rc, out, calls, left = fx.run("--structure", "--kernel", "--max-size-mib", "400",
+                                  "--require", "/slax/modules/40-my app.sb",
+                                  "--require", "/slax/modules/41-x.sb",
+                                  "--forbid", "/slax/modules/05-chromium.sb", "--expect-gpt")
+    check("it succeeds", rc, 0)
+    got = next((c for c in calls if c[:1] == ["iso_assert"]), [])
+    check("the ceiling reaches iso_assert", opt(got, "--max-size-mib"), ["400"])
+    check("each --require arrives intact",
+          opt(got, "--require"), ["/slax/modules/40-my app.sb", "/slax/modules/41-x.sb"])
+    check("--forbid arrives", opt(got, "--forbid"), ["/slax/modules/05-chromium.sb"])
+    check("--expect-gpt arrives", "--expect-gpt" in got, True)
+    sent = fx.sent[0] if fx.sent else []
+    check("none of them travels to the boot host",
+          [a for a in ("--max-size-mib", "--require", "--forbid", "--expect-gpt") if a in sent],
+          [])
+    check("...leaving no scratch", left, [])
+
+
+@case
 def test_the_flags_the_boot_host_gets_are_the_ones_that_were_asked_for(fx):
     fx.with_boot_host()
     fx.with_xorriso()
@@ -644,6 +673,7 @@ def main():
                    test_a_remote_boot_checks_what_IT_needs_here,
                    test_local_beats_the_configured_host,
                    test_the_boot_hosts_own_failures_are_not_test_results,
+                   test_a_projects_structure_checks_reach_iso_assert_and_stay_here,
                    test_the_two_persistence_boots_are_told_apart]:
             # One test crashing must not stop the rest: the count of failures is only honest
             # if every test ran. The traceback still goes to stderr, because a crash's location

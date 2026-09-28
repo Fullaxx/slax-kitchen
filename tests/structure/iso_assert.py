@@ -55,6 +55,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--max-size-mib", type=int)
     ap.add_argument("--require", action="append", default=[],
                     help="extra path that must exist in the ISO")
+    ap.add_argument("--forbid", action="append", default=[],
+                    help="path that must NOT exist in the ISO, e.g. a bundle a recipe removed")
     a = ap.parse_args(argv[1:])
     # xorriso lists the image's files. Checked first: without it the listing below died in
     # a traceback, after half the assertions had already printed.
@@ -142,7 +144,7 @@ def main(argv: list[str]) -> int:
         except ListingError as e:
             t.check(False, "the image's files can be listed", str(e))
         else:
-            check_files(t, paths, a.require)
+            check_files(t, paths, a.require, a.forbid)
             check_esp(t, paths, efi, a.expect_uefi)
 
     if a.max_size_mib:
@@ -153,8 +155,13 @@ def main(argv: list[str]) -> int:
     return 1 if t.fail else 0
 
 
-def check_files(t: Asserter, paths: set, extras: list) -> None:
-    """The required files, and any --require, by exact path in the image's listing.
+def check_files(t: Asserter, paths: set, extras: list, forbidden: list = ()) -> None:
+    """The required files, any --require, and the absence of any --forbid, by exact path in
+    the image's listing.
+
+    --forbid is the other half of a project's claim about its image: a bundle a removal
+    recipe took out stays out. slax-wine compared /slax/modules against an exact list with
+    xorriso of its own, because there was no way to ask this (#67).
 
     EXACT PATHS. --require compared only the basename, and against /slax/boot's listing,
     so `--require /EFI/BOOT/isolinux.cfg` passed on an image with no /EFI at all, because
@@ -171,6 +178,8 @@ def check_files(t: Asserter, paths: set, extras: list) -> None:
         t.check("/" + req in paths, f"{req} present")
     for extra in extras:
         t.check("/" + extra.lstrip("/") in paths, f"{extra} present")
+    for gone in forbidden:
+        t.check("/" + gone.lstrip("/") not in paths, f"{gone} absent")
 
 
 def check_esp(t: Asserter, paths: set, efi: list, expect_uefi: bool) -> None:

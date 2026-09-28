@@ -148,7 +148,10 @@ much of it as it wants.
 build measured above asserted the consumer's own volume id. A project needs a driver of its own
 only for checks the engine cannot know about — slax-wine's exact module list, or its release file
 read back out of the bundle — and that driver should call `kitchen` commands (`fetch`, `unpack`,
-`apply`, `pack`, `test`) rather than anything inside the engine.
+`apply`, `pack`, `test`) rather than anything inside the engine. A size ceiling, and paths that must
+or must not be in the image, are not among those: they are `kitchen test --structure` options, and a
+profile's `test:` entry carries them to `kitchen build`
+([#67](https://github.com/Fullaxx/slax-kitchen/issues/67)).
 
 ## Provenance and publishing
 
@@ -203,9 +206,6 @@ Offered as follow-ups rather than decided:
 - engine gates that run over a project's own tree, so no project copies them;
 - vars for `iso-identity`'s application id and preparer, and for what `boot-cmdline` appends.
   slax-wine writes its own identity recipe because those are fixed;
-- `kitchen test --structure` options for a project's own checks — a size limit, and lists of
-  modules to require or forbid — so a project need not call `iso_assert.py` itself, as slax-wine
-  does.
 
 ## How #42 was settled
 

@@ -5,12 +5,27 @@
 # Run the structural assertions. Flags are derived from what the profile asked for, so a
 # profile that requests `hybrid: true` also gets asserted on -- a recipe that silently did
 # not take effect is exactly what this is meant to catch.
+#
+# A project's own checks come through too: a size ceiling, paths to require, paths to
+# forbid. Only three of iso_assert.py's options were passed, so slax-wine ran it itself for
+# the rest (#67). The two lists are one path per line, as --expect is kept, because a path
+# in an image may hold a space; globbing is off while they are split, because a path may
+# hold a `*` that would otherwise match files here.
 _test_structure() {
-    _iso=$1; _uefi=$2; _hybrid=$3; _volid=$4
+    _iso=$1; _uefi=$2; _hybrid=$3; _volid=$4; _gpt=$5; _max=$6; _reqs=$7; _forbids=$8
     set -- "$REPO_ROOT/tests/structure/iso_assert.py" "$_iso"
     [ -n "$_uefi" ] && set -- "$@" --expect-uefi
     [ -n "$_hybrid" ] && set -- "$@" --expect-hybrid
+    [ -n "$_gpt" ] && set -- "$@" --expect-gpt
     [ -n "$_volid" ] && set -- "$@" --volid "$_volid"
+    [ -n "$_max" ] && set -- "$@" --max-size-mib "$_max"
+    _oifs=$IFS; IFS='
+'
+    set -f
+    for _p in $_reqs; do set -- "$@" --require "$_p"; done
+    for _p in $_forbids; do set -- "$@" --forbid "$_p"; done
+    set +f
+    IFS=$_oifs
     python3 "$@"
 }
 
@@ -165,6 +180,7 @@ kitchen_test() {
     iso="" want_structure=0 want_bios=0 want_uefi=0 want_kernel=0
     want_usb=0 want_perch=0
     expect_uefi="" expect_hybrid="" expect_volid="" secs=32 expects=""
+    expect_gpt="" max_size="" requires="" forbids=""
     keys="" auto_keys=1 mem="" golden="" record="" perchdev="/dev/sda"
     outdir_opt=""
     while [ $# -gt 0 ]; do
@@ -178,6 +194,13 @@ kitchen_test() {
             --expect-uefi)  expect_uefi=1; shift ;;
             --expect-hybrid) expect_hybrid=1; shift ;;
             --volid)        expect_volid=$2; shift 2 ;;
+            --expect-gpt)   expect_gpt=1; shift ;;
+            --max-size-mib) max_size=$2; shift 2 ;;
+            # Repeatable, one per line: see _test_structure.
+            --require)      requires="$requires$2
+"; shift 2 ;;
+            --forbid)       forbids="$forbids$2
+"; shift 2 ;;
             --seconds)      secs=$2; shift 2 ;;
             --keys)         keys=$2; auto_keys=0; shift 2 ;;
             --no-keys)      keys=""; auto_keys=0; shift ;;
@@ -302,7 +325,8 @@ kitchen_test() {
     rc=0
     if [ "$want_structure" = 1 ]; then
         printf '%s* structure%s\n' "$B" "$O"
-        _test_structure "$iso" "$expect_uefi" "$expect_hybrid" "$expect_volid" || rc=1
+        _test_structure "$iso" "$expect_uefi" "$expect_hybrid" "$expect_volid" \
+            "$expect_gpt" "$max_size" "$requires" "$forbids" || rc=1
     fi
 
     # THE ONE HOOK. Every boot in this toolkit funnels through the block below, so
@@ -579,9 +603,24 @@ kitchen_build() {
         for t in $TESTS; do
             _t_rc=0
             case "$t" in
-                structure) kitchen_test "out/$OUTPUT_NAME" --structure \
-                             ${_eu:+--expect-uefi} ${_eh:+--expect-hybrid} \
-                             ${_ev:+--volid "$_ev"} || _t_rc=$? ;;
+                structure)
+                    # A `test:` entry may carry a project's own checks (#67): profile.py
+                    # emits them, the lists one path per line.
+                    set -- "out/$OUTPUT_NAME" --structure
+                    [ -n "$_eu" ] && set -- "$@" --expect-uefi
+                    [ -n "$_eh" ] && set -- "$@" --expect-hybrid
+                    [ -n "$_ev" ] && set -- "$@" --volid "$_ev"
+                    [ -n "$STRUCTURE_EXPECT_GPT" ] && set -- "$@" --expect-gpt
+                    [ -n "$STRUCTURE_MAX_SIZE_MIB" ] && \
+                        set -- "$@" --max-size-mib "$STRUCTURE_MAX_SIZE_MIB"
+                    _oifs=$IFS; IFS='
+'
+                    set -f
+                    for _p in $STRUCTURE_REQUIRE; do set -- "$@" --require "$_p"; done
+                    for _p in $STRUCTURE_FORBID; do set -- "$@" --forbid "$_p"; done
+                    set +f
+                    IFS=$_oifs
+                    kitchen_test "$@" || _t_rc=$? ;;
                 kernel-boot) kitchen_test "out/$OUTPUT_NAME" --kernel || _t_rc=$? ;;
                 bios-boot) kitchen_test "out/$OUTPUT_NAME" --bios || _t_rc=$? ;;
                 uefi-boot) kitchen_test "out/$OUTPUT_NAME" --uefi || _t_rc=$? ;;

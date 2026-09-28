@@ -195,11 +195,25 @@ def test_entries_refuses_a_listing_it_cannot_trust(tmp):
                                          if e["type"] == "file"), True)
 
 
-def run_checks(paths, extras=()):
+def run_checks(paths, extras=(), forbidden=()):
     t = iso_assert.Asserter()
     with contextlib.redirect_stdout(io.StringIO()):
-        iso_assert.check_files(t, set(paths), list(extras))
+        iso_assert.check_files(t, set(paths), list(extras), list(forbidden))
     return t
+
+
+def test_a_forbidden_path_fails_where_it_is_there():
+    """--forbid is new: a project's claim that a bundle stays out of its image, which
+    slax-wine checked with xorriso of its own because nothing here could ask it (#67). A
+    new check has to be seen to fail, so this one is failed first: the path is there."""
+    full = {"/", "/slax", "/slax/boot", "/slax/modules", "/slax/modules/05-chromium.sb"} | \
+        {f"/slax/boot/{n}" for n in FIVE}
+    t = run_checks(full, forbidden=["/slax/modules/05-chromium.sb"])
+    check("a forbidden path that is there fails, by name", t.fail,
+          ["/slax/modules/05-chromium.sb absent"])
+    t = run_checks(full - {"/slax/modules/05-chromium.sb"},
+                   forbidden=["slax/modules/05-chromium.sb"])
+    check("...and passes once it is gone, with or without the leading /", t.fail, [])
 
 
 def test_check_files_with_plain_data():
@@ -321,6 +335,7 @@ def main():
     try:
         for fn in [test_entries_refuses_a_listing_it_cannot_trust,
                    test_check_files_with_plain_data,
+                   test_a_forbidden_path_fails_where_it_is_there,
                    test_the_structure_check_end_to_end,
                    test_an_esp_nothing_points_at_fails,
                    test_sources_refuses_what_it_could_not_list,
