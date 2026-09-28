@@ -50,7 +50,7 @@ a project ever needs to change *how* the project below it builds rather than *wh
 That is the cost: a consumer gets the base as built. It can remove the base's bundles and add its
 own, but it cannot change the vars of the base's recipes. That is a change to the base project.
 
-## What a base project owes the projects built on it
+## What helps the projects built on it
 
 slax-wine is the first. It answers this table row by row in
 [Building on slax-wine](https://github.com/Fullaxx/slax-wine/blob/11698ad/docs/building-on-slax-wine.md),
@@ -127,11 +127,12 @@ every project.
 
 A gate checks the repository it lives in and nothing else. A project gets gates by copying them
 from its engine pin, and chooses which: slax-rpgs, which will commit a game payload that
-`00-no-binaries` refuses, can leave that folder out of its copy or leave the gate out. A copy
-should carry a header naming the file and commit it came from, and be checked byte-for-byte
-against the pinned engine at every update, as slax-wine's
-[`96-release-consistency.sh`](https://github.com/Fullaxx/slax-wine/blob/7535d6c/ci/checks/96-release-consistency.sh)
-does. A gate fix then reaches a project at its next engine update.
+`00-no-binaries` refuses, can leave that folder out of its copy or leave the gate out. slax-wine
+marks each copy with the file and commit it came from and checks it byte-for-byte against the
+pinned engine at every update
+([`96-release-consistency.sh`](https://github.com/Fullaxx/slax-wine/blob/7535d6c/ci/checks/96-release-consistency.sh)),
+so a gate fix reaches it at its next engine update. That is slax-wine's choice; a project takes as
+much of it as it wants.
 
 ## The build driver
 
@@ -150,12 +151,12 @@ commit, the consumer's own commit, and the recipes the consumer applied. The bas
 in the base's own provenance, which travels with the base's release.
 
 **A consumer's image is published like any other**, with
-[the same commands](docs/40-workflow/publishing-images.md). Its `SOURCES.md` says less:
-`kitchen sources` accounts for a file by matching it against the stock image of a known target,
-or against a recorded step of this build. A base image built by another project is not a known
-target, so it has no stock image to match against: `sources` reports the base as unknown and
-cannot account for any file that came from it, the stock Slax ones included. Teaching it to take a
-base release's own records is a follow-up.
+[the same commands](docs/40-workflow/publishing-images.md), and `kitchen sources` reports on it like
+any other. It matches a file against the stock image of a known target, or against a recorded step
+of this build. A base image built by another project is not a known target, so every file no step
+of this build made is listed as `base`, pointing at the base image by name and sha256
+([#62](https://github.com/Fullaxx/slax-kitchen/issues/62)). The base's own `SOURCES.md`, if its
+publisher made one, says where those files' source is.
 
 ## Moving the pins
 
@@ -195,7 +196,14 @@ Offered as follow-ups rather than decided:
   apply one again;
 - engine gates that run over a project's own tree, so no project copies them;
 - vars for `iso-identity`'s application id and preparer, and for what `boot-cmdline` appends.
-  slax-wine writes its own identity recipe because those are fixed.
+  slax-wine writes its own identity recipe because those are fixed;
+- bare recipe names that resolve in the project's own `recipes/`, not only in the engine's and the
+  working directory: slax-wine changes to its root and names its recipes by path;
+- operator configuration and hooks that work from a project vendoring the engine as a submodule:
+  `boot-host.ini` is read only from the engine's checkout, and `doctor --install-hooks` fails there;
+- `kitchen test --structure` options for a project's own checks — a size limit, and lists of
+  modules to require or forbid — so a project need not call `iso_assert.py` itself, as slax-wine
+  does.
 
 ## How #42 was settled
 

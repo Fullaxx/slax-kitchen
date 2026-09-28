@@ -32,12 +32,11 @@ is_forbidden_ext() {
         */vmlinuz|vmlinuz|*/mbr.bin|*/isolinux.bin)                                return 0 ;;
         # Windows payloads, which had NO extension rule at all -- so one under 2 MiB walked
         # straight through, and KITCHEN_MAX_FILE_BYTES could raise that bar from outside the
-        # repo. The documented pattern is to FETCH a payload at build time and never commit
-        # it: bundle.fromTarball for an archive -- tor-browser.yaml pulls 138 MB rather than
-        # vendoring a byte -- and a bundle.files `url:` entry for a single file (verbs.md, "A
-        # file the build downloads"). A `src:` entry fetches nothing, and `kitchen sources`
-        # refuses a copied-in file the commit does not hold. This list is what stops the
-        # shortcut. Issue #19.
+        # repo. A payload is fetched at build time or staged beside the recipe, and never
+        # committed: bundle.fromTarball for an archive -- tor-browser.yaml pulls 138 MB rather
+        # than vendoring a byte -- a bundle.files `url:` entry for a single file (verbs.md, "A
+        # file the build downloads"), or a `src:` entry copying what a project's build staged
+        # where git ignores it. This list is what keeps the payload out of history. Issue #19.
         *.exe|*.dll|*.msi|*.sys|*.cab)                                            return 0 ;;
     esac
     return 1

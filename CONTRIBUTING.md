@@ -421,14 +421,12 @@ A recipe we can take needs:
   and that constraint then applies to every recipe beside it. `remove-bundle` is the one recipe that
   removes; list it first and the rest compose in any order
 - **matrix-verified on all four targets**, or a `compat:` block that explains the skip
-- **where the source is**, for anything it downloads: `upstream_source:` on the step, the apt
-  repository or the `bundle.files` `url:` entry, a `KITCHEN-FETCHED` line for each file a
-  `bundle.script` downloads into the image (the engine checks each line against the file),
-  and `declares:` for anything a `bundle.script` compiles — see
-  [saying where the source is](docs/90-reference/verbs.md#saying-where-the-source-is). The matrix
-  runs `kitchen sources` on every image it builds, so a file nothing accounts for fails there. A
-  download a script does not report is not caught that way unless it is ELF: the script's bundle is
-  `ours` either way.
+- **where the source is**, for anything it downloads, when you know it: `upstream_source:` on the
+  step, the apt repository or the `bundle.files` entry, a `KITCHEN-FETCHED` line for each file a
+  `bundle.script` downloads into the image, and `declares:` for anything a `bundle.script` compiles
+  — see [saying where the source is](docs/90-reference/verbs.md#saying-where-the-source-is). None of
+  them is required, and nothing refuses a recipe without them; `kitchen sources` says what it could
+  not point at.
 - comments that say **why**, and record what you measured
 
 That last one is the strongest convention in the repository. Read any recipe in
@@ -529,8 +527,8 @@ projects have their own tests, and a copy of their behaviour kept here would onl
 
 **2. But what do we do with what it hands back?** The subject becomes ours the moment a tool's
 *output* reaches our code. "Does xorriso work" is not our test. "Does our listing code notice that
-xorriso exited 0 and listed nothing" is — and that one shipped: `kitchen sources --strict` exited 0
-having accounted for nothing at all.
+xorriso exited 0 and listed nothing" is — and that one shipped: `kitchen sources` exited 0 having
+accounted for nothing at all.
 
 This matters here more than in most projects, because neither side holds still:
 

@@ -108,8 +108,10 @@ A recipe may have a directory of payload beside it — `enable-ssh.debian.files/
 `bundle-from-dir.files/`. `src:` resolves relative to the recipe's own directory, so these travel
 with the recipe wherever it lives. Copy both, or neither.
 
-`kitchen sources` checks each file copied in from there against the recorded commit, so a sidecar
-directory holds what you commit. A file you download at build time does not go there: see
+What a recipe copies in from there is copied as it is, and `kitchen sources` names it beside its
+bundle. A sidecar directory can hold what you commit, or what your project's build stages there
+where git ignores it — an installer, a Flatpak tree — and a `bundle.files` `src:` entry can say where
+its upstream publishes the source with `upstream_source:`. See
 [a file the build downloads](../90-reference/verbs.md#a-file-the-build-downloads).
 
 ---

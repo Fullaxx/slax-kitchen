@@ -93,7 +93,7 @@ A published image travels with:
   source is attached for what the build did not change.
 - optionally, **where each part's upstream publishes its source**, where that is known — the
   table above, worked out per image.
-  [`kitchen sources <iso> --markdown F`](docs/90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict)
+  [`kitchen sources <iso> --markdown F`](docs/90-reference/cli.md#sources-iso---json-f---markdown-f)
   writes it as `SOURCES.md`, from the record `kitchen pack` wrote.
 - **An identity that does not claim to be an official Slax release** —
   [`iso-identity`](docs/50-cookbook/iso-identity.md) and [`branding`](docs/50-cookbook/branding.md).

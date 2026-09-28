@@ -2,8 +2,7 @@
 
 **Status: matrix-verified** — built and structurally asserted on all four targets with
 `ci/recipe-matrix.sh` (2026-09-27); the built bundle was unpacked and the binary confirmed at
-`/usr/local/bin/jq`, root-owned and `0755`, and `kitchen sources --strict` accounted for it as a
-download.
+`/usr/local/bin/jq`, root-owned and `0755`, and `kitchen sources` listed it as a download.
 
 ```sh
 kitchen apply bundle-from-url
@@ -35,14 +34,14 @@ chroot, no build root, no downloader in the image.
 ```
 
 The engine downloads the file and **refuses it unless its sha256 is the one pinned** — the step fails
-naming the URL and both hashes, and no bundle is built. `sha256:` and `upstream_source:` are both
-required on a `url:` entry; the schema refuses one without them. The file's mode is `0644` unless
+naming the URL and both hashes, and no bundle is built. The pin and `upstream_source:` are both
+optional on a `url:` entry ([#62](https://github.com/Fullaxx/slax-kitchen/issues/62)); this recipe
+gives both, because a pinned download is one a rebuild can repeat. The file's mode is `0644` unless
 the entry says otherwise, and setuid and setgid are refused, as for every `bundle.files` entry.
 
 `kitchen sources` then lists the file as a **prebuilt part** of the bundle: a download installed
 unmodified, with the URL it came from, its sha256 and where its upstream publishes the source. The
-bundle itself is `ours`. That the file is ELF does not matter: the engine fetched it, so there is
-nothing a `declares:` entry would have to vouch for.
+bundle itself is the recipe's.
 
 A `url:` entry can sit beside `content:` and `src:` entries in the same step. Downloads are placed
 after the others, and one that lands on a path another entry wrote is refused.
@@ -54,7 +53,7 @@ after the others, and one that lands on a path another entry wrote is refused.
 | [`bundle.fromTarball`](bundle-from-tarball.md) | takes only an archive |
 | `boot.payload` | writes only under `slax/`, never into a bundle |
 | a `bundle.script` that downloads and prints `KITCHEN-FETCHED` | `privilege: chroot`, the whole stack unpacked as the build root, network inside it, a downloader in the image — and on Slackware a certificate bundle first |
-| staging the file where git ignores it, and `bundle.files` `src:` | unresolved by `kitchen sources`: the recorded commit does not hold it |
+| staging the file where git ignores it, and `bundle.files` `src:` | a build step of the project's own to fetch the file first, and a pin only if that step checks one; `kitchen sources` lists it, pointing at its source if the entry gives `upstream_source:` |
 
 [A file the build downloads](../90-reference/verbs.md#a-file-the-build-downloads) has the whole
 comparison. Measured for #59 with a Notepad++ installer: the image built with the `bundle.script`

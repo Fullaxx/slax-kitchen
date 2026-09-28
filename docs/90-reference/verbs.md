@@ -32,43 +32,34 @@ design, which is why they are marked ◐ `chroot`.
 
 ## Saying where the source is
 
-Verbs record what they fetched and built in the image's provenance, and
-[`kitchen sources`](cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict) turns that into a list
-of where each part's source lives. Two things the engine cannot work out for itself, a recipe
-states:
+Verbs record what they fetched, built and copied in, in the image's provenance, and
+[`kitchen sources`](cli.md#sources-iso---json-f---markdown-f) turns that into a report of where each
+part came from and where its source lives. What the engine cannot work out for itself, a recipe may
+state. Nothing requires it, and nothing refuses a recipe that leaves it out
+([#62](https://github.com/Fullaxx/slax-kitchen/issues/62)):
 
 ```yaml
 - verb: bundle.fromTarball
   bundle: 15-app
   src: https://example.org/app-1.0-linux-x86_64.tar.xz
-  sha256: "…"
-  upstream_source: https://example.org/app/source/   # where its publisher keeps the source
+  sha256: "…"                                         # optional; checked when given
+  upstream_source: https://example.org/app/source/    # where its publisher keeps the source
 ```
 
 | Field | On | What it says |
 |---|---|---|
-| `upstream_source` | `boot.payload`, `bundle.fromTarball`, `bundle.script`, each `apt.sources` entry, each `bundle.files` `url:` entry (required there) | where the publisher of something installed **unmodified** keeps its source: a URL, or a list of them |
+| `upstream_source` | `boot.payload`, `bundle.fromTarball`, `bundle.script`, each `apt.sources` entry, each `bundle.files` `url:` or `src:` entry | where the publisher of something installed **unmodified** keeps its source: a URL, or a list of them |
+| `sha256` | `boot.payload`, `bundle.fromTarball`, each `bundle.files` `url:` entry | the download's sha256, pinned when the recipe is written. The engine refuses a download that does not match; without one, what it fetched is whatever that server served that day, and the report marks it |
 | `declares` | `bundle.script` | binaries the script **compiled**, each with `path`, `source_url`, `source_sha256` and optionally `license` |
 
-A download with no `upstream_source` is a warning, and unresolved under `kitchen sources --strict`;
-so is a download the recipe pinned no `sha256:` for, because what it fetched is whatever that server
-served that day. A `bundle.files` `url:` entry cannot be written without either.
+A pointer nobody gave reads "not named" in `SOURCES.md`. Neither that nor an unpinned download is an
+error.
 
-An ELF file that a `bundle.script` leaves behind that no package **vouches for** — no package owns
-it, or its bytes are not the ones the owning package recorded an md5 for — is unresolved unless a
-`declares:` entry names it or a `KITCHEN-FETCHED` line reports downloading it: otherwise something
-was compiled or overwritten, and nothing says from what. On Slackware, whose package database
-records no checksums, ownership is all there is, which is why `declares:` exists.
-
-**A local `src:` needs nothing extra, only a commit.** Files a verb copies in from beside the recipe
-go through one resolver, which records their path in the kitchen or project checkout and their
-content. `kitchen sources` checks both against the recorded commit, because `ours` says the
-project's repository holds those files at that commit. A unit test fails any verb that resolves a
-recipe-relative path without it. `bundle.fromTarball` and `initramfs.busybox` are the exceptions:
-what they take in is a download or a build output, described by `upstream_source`
-or a build claim. `boot.payload` takes either, and is not an exception — a URL is described by
-`upstream_source`, and a local file is recorded like any other file copied in from a checkout.
-`bundle.files` is the same: a `url:` entry is a download, and a `src:` entry a file copied in.
+**A local `src:` is copied in as it is.** Files a verb copies in from beside the recipe go through
+one resolver, which records where they sit in the kitchen or project checkout, so the report can
+name them. Nothing is hashed and nothing is held to a commit: a file the project's build staged
+where git ignores it is as good an input as a committed one. A local tarball `bundle.fromTarball`
+unpacks is recorded by its name.
 
 ### A file the build downloads
 
@@ -83,19 +74,35 @@ a static binary:
   files:
     - dest: /opt/tool/setup.exe
       url: https://example.org/tool/releases/tool-1.0-setup.exe
-      sha256: "…"                                    # pinned when the recipe is written
+      sha256: "…"                                    # optional: pinned when the recipe is written
       upstream_source: https://example.org/tool/source/
 ```
 
-The engine downloads the file and refuses it unless its sha256 is the one pinned, and `kitchen
-sources` lists it as a prebuilt part of the bundle: a download installed unmodified, pointing at its
-`upstream_source`. That needs no chroot and nothing in the image — the step is `privilege: none` —
-and [`bundle-from-url`](../50-cookbook/bundle-from-url.md) is a recipe that does exactly this (#59).
+The engine downloads the file, refuses it if the recipe pins a sha256 and the file does not match,
+and `kitchen sources` lists it as a prebuilt part of the bundle: a download installed unmodified,
+pointing at its `upstream_source`. That needs no chroot and nothing in the image — the step is
+`privilege: none` — and [`bundle-from-url`](../50-cookbook/bundle-from-url.md) is a recipe that does
+exactly this (#59).
+
+A file the project's own build fetches or installs — an installer its build script downloads, a
+Flatpak tree installed on the build host because the chroot cannot run Flatpak — is staged beside
+the recipe, where git ignores it, and a `bundle.files` `src:` entry copies it in. Give the entry an
+`upstream_source:` and the report lists what it copied in as a prebuilt part pointing there
+([#60](https://github.com/Fullaxx/slax-kitchen/issues/60)):
+
+```yaml
+- verb: bundle.files
+  bundle: 30-bottles
+  files:
+    - dest: /var/lib/flatpak
+      src: ./bottles.files/var/lib/flatpak          # staged by the project's build script
+      upstream_source: https://github.com/flathub/com.usebottles.bottles
+```
 
 A download that is part of work a script has to do anyway goes through
-[`bundle.script`](#bundlescript--chroot). The script downloads the file, checks it against a sha256
-the recipe pins, and prints a `KITCHEN-FETCHED` line giving that sha256. `kitchen sources` then lists
-the file as a prebuilt part of the script's bundle, pointing at the step's `upstream_source`:
+[`bundle.script`](#bundlescript--chroot). The script downloads the file and prints a
+`KITCHEN-FETCHED` line for it, and `kitchen sources` lists the file as a prebuilt part of the
+script's bundle, pointing at the step's `upstream_source`:
 
 ```yaml
 - verb: bundle.script
@@ -113,27 +120,15 @@ the file as a prebuilt part of the script's bundle, pointing at the step's `upst
     echo "KITCHEN-FETCHED $want opt/tool/setup.exe $url"
 ```
 
-The engine checks each line against the file the script left: a line naming a path the bundle does
-not hold, or a sha256 that file does not have, fails the step, and nothing is built. So a line
-printing the **pinned** sha256, as this one does, makes the engine hold the file to the pin too. What
-it cannot check is the URL: where the bytes came from is the script's word, and `upstream_source` is
-the pointer that matters. The route costs what `bundle.script` costs: `privilege: chroot`,
-network inside the chroot, and a downloader in the image. Stock Slax has `wget` on all four
-targets. On Slackware it verifies no TLS certificate until `/etc/ssl/cert.pem` exists, which
-`fix-slackware-bugs` writes ([issue 13](../30-inventory/known-upstream-bugs.md)).
+The line is recorded as the script printed it — the file's sha256, its path in the image and its
+URL — and nothing checks it: the script's own check, above, is what holds the file to its pin, and
+where the bytes came from is the script's word. The route costs what `bundle.script` costs:
+`privilege: chroot`, network inside the chroot, and a downloader in the image. Stock Slax has `wget`
+on all four targets. On Slackware it verifies no TLS certificate until `/etc/ssl/cert.pem` exists,
+which `fix-slackware-bugs` writes ([issue 13](../30-inventory/known-upstream-bugs.md)).
 
-The obvious shortcut does not get through: a file staged where git ignores it and copied in by a
-`bundle.files` `src:` entry is an input the recorded commit does not hold, so it is unresolved.
-`kitchen sources --allow-dirty` accepts it.
-Committing the file instead is what `00-no-binaries` exists to refuse, for a Windows payload or a
-large file.
-
-A prebuilt ELF binary that no package ships is accounted for when it arrives as a download: a
-`bundle.files` `url:` entry, a `bundle.fromTarball` archive, or a `KITCHEN-FETCHED` line the engine
-checked ([#52](https://github.com/Fullaxx/slax-kitchen/issues/52)).
-`declares:` is for what a script compiled. A tree staged outside the build, such as a Flatpak
-installed from Flathub, has no route yet
-([#60](https://github.com/Fullaxx/slax-kitchen/issues/60)).
+Committing a payload instead is what `00-no-binaries` refuses, for a Windows payload or a large
+file: it keeps them out of this repository's history, not out of images.
 
 ---
 
@@ -171,7 +166,7 @@ Build a bundle from files given inline, by path, or by URL.
     - {dest: /etc/hostname, content: "myhost\n"}
     - {dest: /usr/bin/tool, src: ./tool, mode: "0755"}
     - {dest: /opt/data, src: ./datadir}        # a directory is copied recursively
-    - dest: /usr/local/bin/jq                   # downloaded, and refused unless it matches
+    - dest: /usr/local/bin/jq                   # downloaded, and held to a pinned sha256
       url: https://example.org/jq/jq-linux-amd64
       sha256: "…"
       upstream_source: https://example.org/jq/source/
@@ -184,11 +179,11 @@ at a defined point in the stack — rootcopy always lands in the writable layer 
 off at the boot prompt.
 
 Each entry takes exactly one of `content`, `src` or `url`, and the entries are schema-closed, so a
-misspelt key is refused. A `url:` entry needs `sha256:` and `upstream_source:`: the engine downloads
-the file, refuses it unless its sha256 is the one pinned, and records it, so `kitchen sources` lists
-it as a prebuilt part of the bundle with its source
-([a file the build downloads](#a-file-the-build-downloads)). A download's mode is `0644` unless the
-entry gives one. Downloads are placed after the other entries, and one that lands on a path another
+misspelt key is refused. A `url:` entry may give `sha256:`, and the engine refuses a download that
+does not match it; either way it records the file, so `kitchen sources` lists it as a prebuilt part
+of the bundle ([a file the build downloads](#a-file-the-build-downloads)). A `url:` or a `src:` entry
+may give `upstream_source:`, which is where the report points for it. A download's mode is `0644`
+unless the entry gives one. Downloads are placed after the other entries, and one that lands on a path another
 entry wrote is refused. There is no mirror list and no cache: every build fetches, and a dry run
 fetches nothing.
 
@@ -210,7 +205,7 @@ The offline equivalent of upstream's `dir2sb`.
 - verb: bundle.fromTarball
   bundle: 07-myapp
   src: https://example.com/myapp-1.0.tar.gz
-  sha256: "…"               # warns loudly if omitted
+  sha256: "…"               # optional; checked when given
   strip: 1                  # drop the leading myapp-1.0/ directory
   prefix: /opt/myapp        # place under a subdirectory instead of the root
 ```
@@ -324,11 +319,12 @@ Foreign architectures and third-party repositories, for the packages Debian does
 
 Each package's archive is recorded by matching its `.deb`'s sha256 against apt's own indexes, so
 `kitchen sources` points a package from this repository at its `upstream_source`, and a package from
-Debian at `snapshot.debian.org`. A package from an archive the step does not declare is unresolved.
+Debian at `snapshot.debian.org`. A package from an archive the step does not declare has nothing to
+point at, and the report says so.
 
-A key is **pinned by sha256**, like every other download here — an unpinned key lets a remote
-party decide what your image trusts, and a bundle is where that becomes permanent. The
-armour format is detected from the content, because apt reads it from the *extension* under
+A key is **pinned by sha256**, and unlike other downloads here the pin is required: an unpinned
+key lets a remote party decide what your image trusts, and a bundle is where that becomes
+permanent. The armour format is detected from the content, because apt reads it from the *extension* under
 `signed-by=` and reports `NO_PUBKEY` for a key it is holding if the two disagree.
 
 `keep:` governs **only the two files kitchen writes** — `etc/apt/sources.list.d/<name>.list` and
@@ -389,14 +385,11 @@ line on stdout of the form
 KITCHEN-FETCHED <sha256> <path in the image> <url>
 ```
 
-is checked against the file the script left, recorded in the image's provenance, and left out of the
-output shown. The path must be a regular file the script added or changed and the bundle keeps,
-with that sha256, or the step fails; a path through a merged-/usr link, such as `lib/firmware/x`,
-is recorded as the bundle holds it, under `usr/`. `kitchen sources` lists each such file as a
-prebuilt part of the bundle.
-`firmware-refresh` prints one per linux-firmware file, and
-[a file the build downloads](#a-file-the-build-downloads) shows the shape for one. ELF files the step
-leaves behind that no package database owns are recorded too, with their sha256.
+is recorded in the image's provenance as the script printed it, and left out of the output shown.
+Nothing checks it against the bundle ([#62](https://github.com/Fullaxx/slax-kitchen/issues/62)).
+`kitchen sources` lists each such file as a prebuilt part of the bundle. `firmware-refresh` prints
+one per linux-firmware file, and [a file the build downloads](#a-file-the-build-downloads) shows the
+shape for one.
 
 `upstream_source:` says where what the script fetched is published, and `declares:` names what it
 compiled; see [saying where the source is](#saying-where-the-source-is). A package the script

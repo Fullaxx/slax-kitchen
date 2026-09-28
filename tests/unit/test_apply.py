@@ -968,51 +968,6 @@ def test_fetches_and_bundles_record_provenance():
     check("boot.uefi records the host's GRUB", calls_prov(by_verb["boot.uefi"]), True)
 
 
-def test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package():
-    """_unowned_elf asked only whether SOME package names the path. A script that overwrote
-    a packaged binary -- `curl -o /usr/bin/ssh …` -- produced an ELF that no `declares:`
-    covered, was not reported, and left `kitchen sources` naming openssh-client as its
-    source. dpkg records an md5 for every file it ships, right beside the .list."""
-    import shutil
-    import tempfile
-    root = tempfile.mkdtemp()
-    try:
-        os.makedirs(os.path.join(root, "usr", "bin"))
-        info = os.path.join(root, "var", "lib", "dpkg", "info")
-        os.makedirs(info)
-        elf = os.path.join(root, "usr", "bin", "ssh")
-        with open(elf, "wb") as f:
-            f.write(b"\x7fELF" + b"original\n")
-        with open(os.path.join(info, "openssh-client.list"), "w") as f:
-            f.write("/usr/bin/ssh\n")
-        import hashlib
-        digest = hashlib.md5(open(elf, "rb").read()).hexdigest()
-        with open(os.path.join(info, "openssh-client.md5sums"), "w") as f:
-            f.write(f"{digest}  usr/bin/ssh\n")
-
-        check("an untouched packaged binary is not reported",
-              apply._unowned_elf(root, ["usr/bin/ssh"]), [])
-
-        with open(elf, "wb") as f:                     # the script swaps the bytes
-            f.write(b"\x7fELF" + b"replaced\n")
-        got = apply._unowned_elf(root, ["usr/bin/ssh"])
-        check("the replaced one is", [e["path"] for e in got], ["usr/bin/ssh"])
-
-        # TWO PACKAGES, ONE PATH. A diversion or a Replaces: takeover records the same
-        # path twice with different digests; keeping whichever .md5sums os.listdir read
-        # last made this answer depend on a directory listing's order. The file matches
-        # one of them, so it is vouched for.
-        other = hashlib.md5(open(elf, "rb").read()).hexdigest()
-        with open(os.path.join(info, "ssh-replacement.md5sums"), "w") as f:
-            f.write(f"{other}  usr/bin/ssh\n")
-        with open(os.path.join(info, "ssh-replacement.list"), "w") as f:
-            f.write("/usr/bin/ssh\n")
-        check("a path two packages record",
-              apply._unowned_elf(root, ["usr/bin/ssh"]), [])
-    finally:
-        shutil.rmtree(root, ignore_errors=True)
-
-
 def test_boot_payload_copies_a_local_file_and_records_it():
     """RUN the verb, do not read it. The static check above asks only whether the function
     MENTIONS ctx.local; the call added to satisfy it passed two arguments to a method that
@@ -1770,38 +1725,6 @@ def test_a_recipe_named_by_path_keeps_its_build_checks():
         shutil.rmtree(d, ignore_errors=True)
 
 
-def test_recipe_relative_paths_go_through_ctx_local():
-    """A file a recipe copies in is `ours` to `kitchen sources` only because Ctx.local
-    records where it sat and what it held. A verb that joins recipe_dir itself copies the
-    file in unrecorded, and the image then claims an archive covers something nobody
-    checked. Downloads and build outputs are the exceptions: they carry upstream_source or
-    a build claim, and are not expected to be in a checkout at all.
-    """
-    import ast
-    tree, _funcs, _by_verb, _fetchers = _fetching_verbs()
-    # Only the two verbs whose input is never expected in a checkout: a tarball named by
-    # URL and sha256, and a build output with its own claim. `boot.payload` is NOT here --
-    # it takes either, and when its `src:` is a local file that file is recorded like any
-    # other, which is what records() below asks of it.
-    allowed = {"__init__", "local", "v_bundle_fromtarball", "v_initramfs_busybox"}
-
-    def records(fn):
-        return any(isinstance(n, ast.Call) and ast.unparse(n.func) == "ctx.local"
-                   for n in ast.walk(fn))
-
-    offenders = sorted({fn.name for fn in ast.walk(tree) if isinstance(fn, ast.FunctionDef)
-                        for n in ast.walk(fn)
-                        if isinstance(n, ast.Attribute) and n.attr == "recipe_dir"
-                        and fn.name not in allowed and not records(fn)
-                        # a nested function is walked twice; report the innermost owner
-                        and not any(isinstance(c, ast.FunctionDef) and c is not fn and n in ast.walk(c)
-                                    for c in ast.walk(fn))})
-    check("every recipe-relative path is recorded by Ctx.local", offenders, [])
-    users = sum(1 for n in ast.walk(tree) if isinstance(n, ast.Call)
-                and ast.unparse(n.func) == "ctx.local")
-    check("and the verbs do call it", users >= 8, True)
-
-
 def test_symlink_chain_cannot_escape():
     """A two-member chain escapes a lexical check, so the guard has to be a real one.
 
@@ -2235,7 +2158,8 @@ def test_bundle_files_refuses_a_setuid_mode():
 
 
 def test_bundle_files_fetches_a_pinned_url_itself():
-    """A bundle.files `url:` entry is fetched by the engine and held to its sha256 (#59).
+    """A bundle.files `url:` entry is fetched by the engine, and checked against the sha256
+    the recipe pins, when it pins one (#59, #62).
 
     A single pinned download into a bundle took bundle.script: privilege: chroot, the whole
     stack unpacked as the build root, network inside it and a downloader in the image --
@@ -2243,8 +2167,11 @@ def test_bundle_files_fetches_a_pinned_url_itself():
     the file did not have (#59, measured at 7d5f7a0). Before #59 a `url:` entry validated,
     since the schema left entries open, and then died in _place_files with a bare
     KeyError: 'src'. The engine now fetches it, as boot.payload does, and refuses a
-    mismatch. urlopen is replaced here, since a commit gate cannot reach the network; the
-    subject is what the engine does with what it hands back.
+    mismatch. Since #62 the pin and upstream_source are the recipe's choice: an entry with
+    no sha256 is fetched and recorded as not pinned, and a `src:` entry may give an
+    upstream_source too, which is recorded for the report. urlopen is replaced here, since a
+    commit gate cannot reach the network; the subject is what the engine does with what it
+    hands back.
     """
     import ast
     import hashlib
@@ -2289,10 +2216,12 @@ def test_bundle_files_fetches_a_pinned_url_itself():
         data = os.path.join(root, "usr", "share", "jq", "data")
         check("...and 0644 when it asks for none, whatever the umask",
               oct(os.stat(data).st_mode & 0o7777), "0o644")
-        check("it records what it fetched, checked", got and got[0], {
+        check("it records what it fetched, pinned", got and got[0], {
             "path": "usr/local/bin/jq", "sha256": good, "url": "https://example.org/jq",
-            "upstream_source": "https://example.org/jq/source/", "pinned": True,
-            "checked": True})
+            "upstream_source": "https://example.org/jq/source/", "pinned": True})
+        got, root, err = fetch({k: e for k, e in entry.items() if k != "sha256"})
+        check("an entry that pins no sha256 is fetched, and recorded as not pinned",
+              (err, got and got[0].get("pinned"), got and got[0].get("sha256")), ("", False, good))
 
         _got, root, err = fetch(dict(entry, sha256="0" * 64))
         check("a sha256 mismatch is refused, naming the URL and both hashes",
@@ -2314,6 +2243,18 @@ def test_bundle_files_fetches_a_pinned_url_itself():
             check("a path another entry wrote is refused", "written", "refused")
         except RuntimeError as e:
             check("a path another entry wrote is refused", "another entry" in str(e), True)
+
+        staged = os.path.join(work, "setup.exe")
+        open(staged, "wb").write(b"MZ an installer")
+        ctx._step = None
+        apply._place_files(ctx, tempfile.mkdtemp(dir=work),
+                           [{"dest": "/opt/tool/setup.exe", "src": staged,
+                             "upstream_source": "https://example.org/tool/source/"}],
+                           "bundle.files")
+        check("a src: entry's upstream_source is recorded for the report (#60)",
+              (ctx._step or {}).get("copied"),
+              [{"path": "opt/tool/setup.exe", "input": staged,
+                "upstream_source": "https://example.org/tool/source/"}])
 
         for spec, want in (({"dest": "/x"}, "needs one of src, content or url"),
                            ({"dest": "/x", "src": "https://example.org/x"},
@@ -2357,9 +2298,14 @@ def test_bundle_files_fetches_a_pinned_url_itself():
             ("a url: entry with its sha256: and upstream_source:", [url], True),
             ("content: and src: entries, as before",
              [{"dest": "/a", "content": "x", "mode": "0755"}, {"dest": "/b", "src": "./b"}], True),
-            ("url: without sha256:", [{k: e for k, e in url.items() if k != "sha256"}], False),
-            ("url: without upstream_source:",
-             [{k: e for k, e in url.items() if k != "upstream_source"}], False),
+            ("url: without sha256:, which is optional",
+             [{k: e for k, e in url.items() if k != "sha256"}], True),
+            ("url: without upstream_source:, which is optional",
+             [{k: e for k, e in url.items() if k != "upstream_source"}], True),
+            ("src: with upstream_source:",
+             [{"dest": "/b", "src": "./b", "upstream_source": "https://example.org/b/"}], True),
+            ("content: with upstream_source:",
+             [{"dest": "/a", "content": "x", "upstream_source": "https://example.org/a/"}], False),
             ("sha256: without url:", [{"dest": "/a", "content": "x", "sha256": good}], False),
             ("src: and url: in one entry", [dict(url, src="./b")], False),
             ("an entry with none of the three", [{"dest": "/a"}], False),
@@ -2381,84 +2327,6 @@ def test_bundle_files_fetches_a_pinned_url_itself():
     check("...and records what it fetched", any(
         isinstance(n, ast.Call) and ast.unparse(n.func) == "ctx.prov"
         and any(k.arg == "fetched" for k in n.keywords) for n in ast.walk(fn)), True)
-
-
-def test_a_fetched_line_is_held_to_the_file_it_names():
-    """A KITCHEN-FETCHED line must name a file the bundle holds, with that file's sha256 (#52).
-
-    The engine recorded each line as the script printed it and checked it against nothing:
-    measured for #59 at 7d5f7a0, a script wrote `not what the line says` and printed a line
-    giving its sha256 as 0000..., and the image passed `kitchen sources --strict` with the
-    false hash recorded. A line is now held to the file the script left, while the build
-    root still holds the delta, and a bundle is built only if every line matches -- which is
-    what lets `kitchen sources` count a reported download, ELF or not, as a download.
-    """
-    import ast
-    import tempfile
-    root = tempfile.mkdtemp()
-    try:
-        os.makedirs(os.path.join(root, "usr", "lib", "firmware"))
-        os.makedirs(os.path.join(root, "opt", "tool"))
-        os.makedirs(os.path.join(root, "opt", "dir"))
-        os.symlink("usr/lib", os.path.join(root, "lib"))          # merged /usr, as Debian's
-        with open(os.path.join(root, "opt", "tool", "setup.exe"), "w") as f:
-            f.write("not what the line says\n")
-        with open(os.path.join(root, "usr", "lib", "firmware", "x.bin"), "wb") as f:
-            f.write(b"firmware")
-        os.symlink("setup.exe", os.path.join(root, "opt", "tool", "link"))
-        keep = ["opt", "opt/dir", "opt/tool", "opt/tool/link", "opt/tool/setup.exe",
-                "usr/lib/firmware", "usr/lib/firmware/x.bin"]
-        real = "9981eacd22f0cb19635413ce8db277b9301f03015892420123929934275a994c"
-        fw = apply.sha256(os.path.join(root, "usr", "lib", "firmware", "x.bin"))
-
-        def line(path, sha):
-            return {"sha256": sha, "path": path, "url": "https://example.org/" + path}
-
-        def verdict(*lines):
-            try:
-                return apply._check_fetched(root, keep, list(lines)), ""
-            except RuntimeError as e:
-                return None, str(e)
-
-        got, _ = verdict(line("opt/tool/setup.exe", real), line("opt/tool/setup.exe", real),
-                         line("lib/firmware/x.bin", fw))
-        check("a true line is kept, checked, once; a merged-/usr path is recorded under usr/",
-              [(g["path"], g["checked"]) for g in got or []],
-              [("opt/tool/setup.exe", True), ("usr/lib/firmware/x.bin", True)])
-        _, err = verdict(line("opt/tool/setup.exe", "0" * 64))
-        check("#59's lie is refused, naming the path and both hashes",
-              all(x in err for x in ("opt/tool/setup.exe", "0000000000000000",
-                                     real[:16], "Nothing was built")), True)
-        for what, path, sha, want in (
-                ("a path the script did not add or change", "etc/passwd", real,
-                 "not in this bundle"),
-                ("a symlink", "opt/tool/link", real, "not a regular file"),
-                ("a directory", "opt/dir", real, "not a regular file")):
-            _, err = verdict(line(path, sha))
-            check(f"{what}: refused", want in err, True)
-        _, err = verdict(line("etc/passwd", real), line("opt/tool/setup.exe", "0" * 64))
-        check("every bad line is named in one refusal", err.startswith(
-            "bundle.script: 2 KITCHEN-FETCHED line(s)"), True)
-    finally:
-        shutil.rmtree(root, ignore_errors=True)
-
-    # Held where the delta still exists, and before anything is staged or built; and what
-    # is recorded is the checked list, not the lines as printed.
-    here = os.path.dirname(os.path.abspath(__file__))
-    tree = ast.parse(open(os.path.join(here, "..", "..", "lib", "apply.py")).read())
-    fn = next(n for n in ast.walk(tree)
-              if isinstance(n, ast.FunctionDef) and n.name == "v_bundle_script")
-    order = [ast.unparse(n.func) for n in sorted(
-        (n for n in ast.walk(fn) if isinstance(n, ast.Call)),
-        key=lambda n: (n.lineno, n.col_offset))
-        if ast.unparse(n.func) in ("_check_fetched", "_stage_delta", "_make_bundle")]
-    check("v_bundle_script checks the lines before it stages or builds", order,
-          ["_check_fetched", "_stage_delta", "_make_bundle"])
-    prov = [n for n in ast.walk(fn) if isinstance(n, ast.Call)
-            and ast.unparse(n.func) == "ctx.prov"]
-    check("...and records the checked list", [ast.unparse(k.value) for n in prov
-                                             for k in n.keywords if k.arg == "fetched"],
-          ["fetched or None"])
 
 
 def test_iso_files_actually_writes_into_the_iso_tree():
@@ -3704,7 +3572,6 @@ def main():
                    test_removes_come_first,
                    test_network_is_declared_where_it_is_used,
                    test_fetches_and_bundles_record_provenance,
-                   test_recipe_relative_paths_go_through_ctx_local,
                    test_boot_payload_copies_a_local_file_and_records_it,
                    test_boot_uefi_replaces_an_esp_it_built_and_refuses_any_other,
                    test_boot_uefi_refuses_before_it_writes_anything,
@@ -3717,7 +3584,6 @@ def main():
                    test_a_dependency_cycle_is_the_same_file_again,
                    test_a_relative_base_iso_is_found_from_the_profiles_repository,
                    test_a_recipe_named_by_path_keeps_its_build_checks,
-                   test_an_elf_a_script_replaced_is_not_vouched_for_by_its_package,
                    test_symlink_chain_cannot_escape,
                    test_fromtarball_wires_both_guards_in,
                    test_extract_members_matches_extractall_on_a_clean_archive,
@@ -3727,7 +3593,6 @@ def main():
                    test_all_root_is_per_verb,
                    test_bundle_files_refuses_a_setuid_mode,
                    test_bundle_files_fetches_a_pinned_url_itself,
-                   test_a_fetched_line_is_held_to_the_file_it_names,
                    test_iso_files_actually_writes_into_the_iso_tree,
                    test_relax_modes_widens_without_granting,
                    test_apt_reinstall_is_opt_in,

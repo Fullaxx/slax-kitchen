@@ -185,7 +185,8 @@
               },
               "sha256": {
                 "type": "string",
-                "pattern": "^[a-f0-9]{64}$"
+                "pattern": "^[a-f0-9]{64}$",
+                "description": "optional; when given, what src must match"
               },
               "dest": {
                 "type": "string",
@@ -202,11 +203,6 @@
               "upstream_source": {
                 "$ref": "#/$defs/upstreamSource"
               }
-            },
-            "dependentRequired": {
-              "src": [
-                "sha256"
-              ]
             }
           }
         },
@@ -616,7 +612,7 @@
                     },
                     "src": {
                       "type": "string",
-                      "description": "a file or directory beside the recipe, copied in; kitchen sources checks it against the recorded commit"
+                      "description": "a file or directory beside the recipe, or one the project's build staged, copied in; with upstream_source, kitchen sources lists it as a prebuilt part pointing there"
                     },
                     "content": {
                       "type": "string",
@@ -625,7 +621,7 @@
                     "url": {
                       "type": "string",
                       "pattern": "^https?://",
-                      "description": "downloaded at build time and refused unless its sha256 is `sha256:`; kitchen sources lists it as a prebuilt part of the bundle"
+                      "description": "downloaded at build time, and refused if a sha256 is given and does not match; kitchen sources lists it as a prebuilt part of the bundle"
                     },
                     "sha256": {
                       "type": "string",
@@ -657,15 +653,14 @@
                     }
                   ],
                   "dependentRequired": {
-                    "url": [
-                      "sha256",
-                      "upstream_source"
-                    ],
                     "sha256": [
                       "url"
-                    ],
-                    "upstream_source": [
-                      "url"
+                    ]
+                  },
+                  "not": {
+                    "required": [
+                      "content",
+                      "upstream_source"
                     ]
                   }
                 }

@@ -34,15 +34,16 @@ FAILURES = []
 # to exist: the check comes before the image is opened.
 #
 # The last three were found by the self-review of the change that introduced this file:
-# `sources` runs git on every run (provenance.git_digest), not only for --fetch; `pack`
-# runs dpkgdb.py, which runs unsquashfs and mksquashfs; `upstream-diff` runs git.
+# `sources` ran git on every run (provenance.git_digest), not only for --fetch -- both gone
+# since #62, so it needs xorriso alone; `pack` runs dpkgdb.py, which runs unsquashfs and
+# mksquashfs; `upstream-diff` runs git.
 FINGERPRINT = ["xorriso", "unsquashfs", "xz", "cpio", "file"]
 COMMANDS = [
     ("kitchen diff", ["lib/diff.py", "a.iso", "b.iso"], ["xorriso"]),
     ("kitchen probe", ["lib/probe.py", "a.iso"], FINGERPRINT),
     ("kitchen fingerprint", ["lib/fingerprint.py", "a.iso"], FINGERPRINT),
     ("iso_assert.py", ["tests/structure/iso_assert.py", "a.iso"], ["xorriso"]),
-    ("kitchen sources", ["lib/sources.py", "a.iso"], ["xorriso", "git"]),
+    ("kitchen sources", ["lib/sources.py", "a.iso"], ["xorriso"]),
     ("kitchen pack", ["lib/dpkgdb.py", "tree"], ["unsquashfs", "mksquashfs"]),
     ("kitchen upstream-diff", ["lib/upstream_diff.py"], ["git"]),
 ]

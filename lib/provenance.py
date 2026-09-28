@@ -15,11 +15,10 @@ So verbs call ctx.prov(...) while they run, apply_recipe appends each recipe's r
 <iso>.provenance.json NEXT TO THE ISO, where it survives the work tree.
 
 NOTHING ABOUT THE HOST, by construction first. Every producer names a file by its basename,
-by its path inside the kitchen or project checkout, or by its path inside the image, and
-`kitchen sources` looks every local input up in git at the recorded commit. The one input
-no producer shapes -- a profile's vars -- is checked against the places this build actually
-uses before anything is built, and the finished record is checked the same way at pack and
-at release. See build_machine_hits, including for the regex this replaced.
+by its path inside the kitchen or project checkout, or by its path inside the image. The one
+input no producer shapes -- a profile's vars -- is checked against the places this build
+actually uses before anything is built, and the finished record is checked the same way at
+pack. See build_machine_hits, including for the regex this replaced.
 """
 from __future__ import annotations
 
@@ -104,10 +103,8 @@ def build_machine_hits(obj, work: str | None = None, where: str = "") -> list[st
     refused as written. Each exemption left the same false positive in the next field. And
     it missed what it was for: an apt source `file:///home/...` passed as a URL.
 
-    The work it claimed to do is done elsewhere, by construction. Producers record
-    basenames, checkout-relative paths and in-image paths (root_relative, in_image), and
-    `kitchen sources` looks every local input up in git at the recorded commit, so a forged
-    path is unresolved and a release refuses it.
+    The work it claimed to do is done elsewhere, by construction: producers record
+    basenames, checkout-relative paths and in-image paths (root_relative, in_image).
 
     WHERE A DIRECTORY COUNTS: only where a path can begin -- at the start of the string, or
     after a character no path component contains (a space, a quote, `=`, `:`, the last `/`
@@ -121,8 +118,8 @@ def build_machine_hits(obj, work: str | None = None, where: str = "") -> list[st
     THE GAPS, stated rather than discovered:
       - $HOME is /root (this container, most Docker builds): a var naming a builder file
         under /root but outside the checkout is recorded as written. It cannot be told apart
-        from the image's own /root. Used as a `src:`, the file is recorded as `outside` and
-        `kitchen sources` marks it unresolved, so a release still refuses it.
+        from the image's own /root. Used as a `src:`, the file is recorded as `outside`, by
+        its basename alone.
       - A builder directory that is none of these, such as /opt/somebuilder, passes.
       - The one false positive this rule can make: a directory of this build that is also a
         path in the image, named from its start. Build as `guest`, and the image's
@@ -191,6 +188,9 @@ def host_package(path: str | None) -> dict | None:
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+_SUPERPROJECT: dict = {}
+
+
 def project_root() -> str | None:
     """The checkout of the project this kitchen builds for: PROJECT_ROOT when set, else the
     superproject when the kitchen is vendored as a git submodule -- vendor/slax-kitchen, the
@@ -198,8 +198,13 @@ def project_root() -> str | None:
     env = os.environ.get("PROJECT_ROOT")
     if env:
         return os.path.abspath(env)
-    out = _run(["git", "-C", REPO, "rev-parse", "--show-superproject-working-tree"])
-    return out.strip() or None if out else None
+    # Asked of git once per run, not once per local input: the answer is where this
+    # checkout sits, which does not change while a build runs. PROJECT_ROOT is still read
+    # every time, because a caller may set it between calls.
+    if REPO not in _SUPERPROJECT:
+        out = _run(["git", "-C", REPO, "rev-parse", "--show-superproject-working-tree"])
+        _SUPERPROJECT[REPO] = out.strip() or None if out else None
+    return _SUPERPROJECT[REPO]
 
 
 def root_relative(path: str) -> dict | None:
@@ -213,83 +218,19 @@ def root_relative(path: str) -> dict | None:
     return None
 
 
-def content_digest(path: str) -> tuple[str, str, list[str]]:
-    """(kind, digest, ELF files) for something a recipe copies into an image.
-
-    A file's digest is its sha256. A directory's is the sha256 of one line per file or
-    symlink under it, sorted: `<relative path>\t<f|x|l>\t<sha256 of the content, or of
-    the link target>` -- exactly what git_digest() computes from a commit, so the two can
-    be compared. Empty directories are left out, because git cannot hold one.
-    """
-    def is_elf(p: str) -> bool:
-        try:
-            with open(p, "rb") as f:
-                return f.read(4) == b"\x7fELF"
-        except OSError:
-            return False
-    if not os.path.isdir(path):
-        return "file", sha256(path), [os.path.basename(path)] if is_elf(path) else []
-    lines, elf = [], []
-    for dirpath, dirnames, filenames in os.walk(path):
-        dirnames.sort()
-        for n in dirnames + filenames:
-            full = os.path.join(dirpath, n)
-            rel = os.path.relpath(full, path)
-            if os.path.islink(full):
-                target = os.readlink(full).encode()
-                lines.append(f"{rel}\tl\t{hashlib.sha256(target).hexdigest()}")
-            elif n in filenames:
-                mode = "x" if os.stat(full).st_mode & 0o111 else "f"
-                lines.append(f"{rel}\t{mode}\t{sha256(full)}")
-                if is_elf(full):
-                    elf.append(rel)
-    return "dir", hashlib.sha256("\n".join(sorted(lines)).encode()).hexdigest(), sorted(elf)
-
-
-def git_digest(root: str, commit: str, path: str, kind: str) -> str | None:
-    """content_digest() of `path` as commit `commit` of the checkout at `root` holds it, or
-    None when the commit does not have it."""
-    if kind == "file":
-        r = subprocess.run(["git", "-C", root, "cat-file", "blob", f"{commit}:{path}"],
-                           capture_output=True)
-        return hashlib.sha256(r.stdout).hexdigest() if r.returncode == 0 else None
-    r = subprocess.run(["git", "-C", root, "ls-tree", "-r", "-z", commit, "--", path + "/"],
-                       capture_output=True)
-    if r.returncode != 0 or not r.stdout:
-        return None
-    entries = []
-    for rec in r.stdout.split(b"\0"):
-        if not rec:
-            continue
-        meta, name = rec.split(b"\t", 1)
-        mode, _type, obj = meta.decode().split()
-        entries.append((mode, obj, os.path.relpath(name.decode(), path)))
-    batch = subprocess.run(["git", "-C", root, "cat-file", "--batch"],
-                           input="".join(f"{obj}\n" for _m, obj, _p in entries).encode(),
-                           capture_output=True)
-    out, pos, lines = batch.stdout, 0, []
-    for mode, _obj, rel in entries:
-        header_end = out.index(b"\n", pos)
-        size = int(out[pos:header_end].split()[2])
-        body = out[header_end + 1:header_end + 1 + size]
-        pos = header_end + 1 + size + 1
-        kind_char = {"120000": "l", "100755": "x"}.get(mode, "f")
-        lines.append(f"{rel}\t{kind_char}\t{hashlib.sha256(body).hexdigest()}")
-    return hashlib.sha256("\n".join(sorted(lines)).encode()).hexdigest()
-
-
 def local_input(path: str) -> dict:
-    """A file or directory a recipe copied into the image: where it sits in the kitchen or
-    project checkout (or only its name, when it is in neither), its content digest, and any
-    ELF binaries in it -- compiled code, whose source nothing here records."""
-    kind, digest, elf = content_digest(path)
+    """A file or directory a recipe copied into the image, for the report: where it sits in
+    the kitchen or project checkout (or only its name, when it is in neither), and whether it
+    is a file or a directory. Nothing is hashed: what a recipe copies in is what it asked
+    for, and nothing holds it to a commit (#62)."""
+    kind = "dir" if os.path.isdir(path) else "file"
     where = root_relative(path)
     if where is None:
         # Outside both checkouts: a file the build host's package manager owns still has a
         # source to point at, the way the isohybrid MBR does.
         where = {"outside": os.path.basename(os.path.realpath(path)),
                  "host_package": host_package(path) if kind == "file" else None}
-    return dict(where, kind=kind, digest=digest, elf=elf[:10] or None)
+    return dict(where, kind=kind)
 
 
 def git_state(root: str | None) -> dict | None:

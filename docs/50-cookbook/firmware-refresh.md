@@ -201,9 +201,9 @@ firmware-refresh: amdgpu/navi10_ta.bin already exists below this bundle; refusin
 firmware-refresh: LICENSES/LICENCE.Abilis has sha256 8116433f…, pinned 0000000000…
 ```
 
-Each file's `KITCHEN-FETCHED` line is then checked by the engine against the file in the bundle, so
-`kitchen sources` lists the 65 as prebuilt parts of `09-firmware-linux.sb`, each with its sha256 and
-the tag's `upstream_source` (#52).
+Each file's `KITCHEN-FETCHED` line is recorded as the script printed it, and `kitchen sources` lists
+the 65 as prebuilt parts of `09-firmware-linux.sb`, each with its sha256 and the tag's
+`upstream_source`. The script's own check against the recipe's sha256 is what pins them.
 
 To regenerate both lists after the base or the tag moves, unpack a **stock** image and run:
 
@@ -231,7 +231,7 @@ and each copyright byte-identical to the md5 dpkg had recorded for it in the sto
 
 Stock `01-firmware.sb` is left in place, so the Broadcom b43 firmware Slax's build extracted stays
 too, as Slax shipped it: 155 files and the installer's catalog, with no license text. This recipe
-does not add one, and `kitchen sources` and the release notes say so. If this project ever produces
+does not add one, and [NOTICE.md](../../NOTICE.md) says so. If this project ever produces
 the b43 files itself instead of keeping Slax's, the rule for everything it adds applies to them: the
 license text travels with the firmware.
 

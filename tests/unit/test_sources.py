@@ -3,7 +3,9 @@
 
 Each case is a shape of image the classifier has to get right, most of them seen for real
 while the command was written: a repacked isolinux.bin, a menu edit nobody recorded, a
-bundle altered after pack, a script that left a binary behind.
+bundle altered after pack, a script that left a binary behind. Since #62 no class is an
+error: the cases that used to be refusals pin the neutral listing instead, and #60's case --
+a staged input holding compiled code -- is a part of its recipe's bundle.
 """
 import os
 import sys
@@ -49,7 +51,7 @@ def classes(doc):
 def test_stock_files_are_slax_by_hash():
     doc = run({"slax/modules/01-core.sb": H["a"], "readme.txt": H["c"]}, prov())
     check("stock bundle", classes(doc)["slax/modules/01-core.sb"], "slax")
-    check("nothing unresolved", doc["unresolved"], [])
+    check("nothing unrecorded", doc["summary"]["unrecorded"], 0)
 
 
 def test_a_renumbered_stock_bundle_is_still_slax():
@@ -63,13 +65,14 @@ def test_a_renumbered_stock_bundle_is_still_slax():
     comp = doc["components"][0]
     check("still Slax as published", comp["class"], "slax")
     check("and says where it came from", "01-core.sb" in (comp.get("note") or ""), True)
-    check("nothing unresolved", doc["unresolved"], [])
+    check("nothing unrecorded", doc["summary"]["unrecorded"], 0)
 
 
-def test_a_changed_stock_file_with_no_record_is_unresolved():
+def test_a_changed_stock_file_with_no_record_is_unrecorded():
     doc = run({"slax/boot/isolinux.cfg": H["9"]}, prov())
-    check("unresolved", len(doc["unresolved"]), 1)
-    check("says why", "differs from the stock image" in doc["unresolved"][0]["reason"], True)
+    comp = doc["components"][0]
+    check("unrecorded", comp["class"], "unrecorded")
+    check("says why", "differs from the stock image" in comp.get("note", ""), True)
 
 
 def test_isolinux_bin_is_recognised_after_the_boot_info_table_is_rewritten():
@@ -77,7 +80,7 @@ def test_isolinux_bin_is_recognised_after_the_boot_info_table_is_rewritten():
     doc = run({"slax/boot/isolinux.bin": H["9"], "slax/boot/isolinux.bin@64": H["e"]}, prov())
     check("still slax", classes(doc).get("slax/boot/isolinux.bin"), "slax")
     doc = run({"slax/boot/isolinux.bin": H["9"], "slax/boot/isolinux.bin@64": H["8"]}, prov())
-    check("a changed tail is not", len(doc["unresolved"]), 1)
+    check("a changed tail is not", classes(doc).get("slax/boot/isolinux.bin"), "unrecorded")
 
 
 def _tarball_recipe(sha, upstream="https://example.org/src/"):
@@ -95,24 +98,14 @@ def test_a_recorded_download_is_prebuilt_only_when_the_bytes_match():
     # Altered after the step ran: the recorded sha256 no longer matches, and the journal's
     # artifact list (which names the same path) must not vouch for it instead.
     doc = run({"slax/modules/15-app.sb": H["4"]}, prov([_tarball_recipe(H["3"])]))
-    check("altered bundle is not classified", classes(doc).get("slax/modules/15-app.sb"), None)
-    check("altered bundle is unresolved", [u["path"] for u in doc["unresolved"]],
-          ["slax/modules/15-app.sb"])
-    check("says it changed", "changed after" in (doc["unresolved"] or [{}])[0].get("reason", ""),
-          True)
-    # A LATER recipe that edits the file is a legitimate writer: ours, by that recipe.
+    comp = doc["components"][0]
+    check("altered bundle is not attributed to its step", comp["class"], "unrecorded")
+    check("says it changed", "changed after" in comp.get("note", ""), True)
+    # A LATER recipe that edits the file is a legitimate writer: that recipe's.
     later = {"recipe": "edit-later", "steps": [], "artifacts": ["slax/modules/15-app.sb"]}
     doc = run({"slax/modules/15-app.sb": H["4"]}, prov([_tarball_recipe(H["3"]), later]))
-    check("later edit is ours", [(c["class"], c["by"]) for c in doc["components"]],
-          [("ours", "edit-later")])
-
-
-def test_a_download_without_upstream_source_warns_or_fails_under_strict():
-    p = prov([_tarball_recipe(H["3"], upstream=None)])
-    doc = run({"slax/modules/15-app.sb": H["3"]}, p)
-    check("warning, not unresolved", (len(doc["warnings"]), len(doc["unresolved"])), (1, 0))
-    doc = run({"slax/modules/15-app.sb": H["3"]}, p, strict=True)
-    check("unresolved under --strict", len(doc["unresolved"]), 1)
+    check("later edit is the recipe's", [(c["class"], c["by"]) for c in doc["components"]],
+          [("recipe", "edit-later")])
 
 
 def newc(entries):
@@ -229,10 +222,10 @@ def test_an_image_with_no_manifest_is_not_called_unreadable():
 
 
 def test_a_script_that_had_network_says_so():
-    """`network: true` was recorded on the step and read by nothing. It does not make the
-    bundle unresolved -- fetched files and packages account for themselves -- but nothing
-    here can see a download a script made without the KITCHEN-FETCHED protocol, so the
-    record has to say whose account this is."""
+    """`network: true` was recorded on the step and read by nothing. It changes no class --
+    fetched files and packages account for themselves -- but nothing here can see a
+    download a script made without the KITCHEN-FETCHED protocol, so the record has to say
+    whose account this is."""
     step = {"verb": "bundle.script", "output": "slax/modules/09-fw.sb", "output_sha256": H["2"],
             "network": True, "upstream_source": "https://git.kernel.org/linux-firmware",
             "fetched": [{"path": "usr/lib/firmware/x.bin", "sha256": H["3"]}]}
@@ -264,18 +257,19 @@ def test_the_initramfs_note_counts_members_instead_of_asserting_them():
 
 def test_an_unpinned_download_is_said_out_loud():
     """bundle.fromTarball records `pinned`, and nothing read it: an archive taken on trust
-    (whatever the server served that day) was rendered exactly like a sha256-pinned one."""
+    (whatever the server served that day) was rendered exactly like a sha256-pinned one.
+    Since #62 pinning is the recipe's choice and nothing refuses an unpinned download, so
+    the report is the one place it is said."""
     step = {"verb": "bundle.fromTarball", "output": "slax/modules/15-app.sb", "output_sha256": H["3"],
             "source": "https://example.org/app.tar.xz", "upstream_source": "https://example.org/src/",
             "pinned": False}
-    p = prov([{"recipe": "app", "steps": [step]}])
-    doc = run({"slax/modules/15-app.sb": H["3"]}, p)
-    check("warned", any("no sha256" in w for w in doc["warnings"]), True)
-    check("unresolved under --strict", len(run({"slax/modules/15-app.sb": H["3"]}, p,
-                                               strict=True)["unresolved"]), 1)
+    doc = run({"slax/modules/15-app.sb": H["3"]}, prov([{"recipe": "app", "steps": [step]}]))
+    check("listed, not refused", (doc["components"][0]["class"], doc["summary"]["unrecorded"]),
+          ("prebuilt", 0))
+    check("and said in SOURCES.md", "no sha256 was pinned" in sources.markdown(doc), True)
     step["pinned"] = True
     doc = run({"slax/modules/15-app.sb": H["3"]}, prov([{"recipe": "app", "steps": [step]}]))
-    check("a pinned one is quiet", doc["warnings"], [])
+    check("a pinned one is not", "no sha256 was pinned" in sources.markdown(doc), False)
 
 
 def test_a_mirror_path_cannot_impersonate_debian():
@@ -289,7 +283,10 @@ def test_a_mirror_path_cannot_impersonate_debian():
             "debs": [{"package": "evil", "version": "1", "architecture": "amd64",
                       "sha256": H["6"], "origin": origin}]}
     doc = run({"slax/modules/12-x.sb": H["5"]}, prov([{"recipe": "x", "steps": [step]}]))
-    check("not accepted as Debian", "does not declare" in (doc["unresolved"] or [{}])[0].get("reason", ""),
+    comp = doc["components"][0]
+    check("not given a Debian pointer", (comp["packages"][0]["archive"],
+                                         comp["packages"][0]["source_published_at"]), (origin, None))
+    check("and the report says why", any("does not declare" in n for n in comp.get("notes") or []),
           True)
 
 
@@ -315,7 +312,10 @@ def test_packages_point_at_snapshot_including_reinstalls():
           "https://snapshot.debian.org/package/acpid/1%3A2.0.33-2/")
     step["installed"] = [{"package": "acpid"}]
     doc = run({"slax/modules/09-fw.sb": H["5"]}, prov([{"recipe": "fw", "steps": [step]}]))
-    check("no version at all is unresolved, not a crash", len(doc["unresolved"]), 1)
+    comp = doc["components"][0]
+    check("no version at all: listed with no pointer, not a crash",
+          (comp["class"], comp["packages"][0].get("source_published_at")), ("debian", None))
+    check("and said", any("no source version" in n for n in comp.get("notes") or []), True)
 
 
 WINE_LIST = "dl.winehq.org_wine-builds_debian_dists_bookworm_main_binary-amd64_Packages"
@@ -353,26 +353,20 @@ def test_a_package_from_a_recipe_repository_points_at_that_repository():
           in md and "snapshot.debian.org/package/winehq-stable" not in md, True)
 
 
-def test_a_repository_without_upstream_source_warns_or_fails_under_strict():
-    p = prov([_repo_step(WINE_LIST, upstream=None)])
-    doc = run({"slax/modules/12-wine.sb": H["5"]}, p)
-    check("warning", (len(doc["warnings"]), len(doc["unresolved"])), (1, 0))
-    check("unresolved under --strict", len(run({"slax/modules/12-wine.sb": H["5"]}, p,
-                                                strict=True)["unresolved"]), 1)
-
-
-def test_a_package_from_an_undeclared_archive_is_unresolved():
+def test_a_package_from_an_undeclared_archive_has_no_pointer():
     doc = run({"slax/modules/12-wine.sb": H["5"]},
               prov([_repo_step("ppa.example.org_x_dists_bookworm_main_binary-amd64_Packages")]))
-    check("undeclared archive", "does not declare" in (doc["unresolved"] or [{}])[0].get("reason", ""),
-          True)
+    notes = doc["components"][0].get("notes") or []
+    check("undeclared archive", any("does not declare" in n for n in notes), True)
     r = _repo_step(None)
     for d in r["steps"][0]["debs"]:
         d.pop("origin", None)
     doc = run({"slax/modules/12-wine.sb": H["5"]}, prov([r]))
-    check("unknown origin with repositories in play", len(doc["unresolved"]), 1)
+    check("unknown origin with repositories in play, for each package",
+          sum("no record of which archive" in n for n in doc["components"][0].get("notes") or []), 2)
     doc = run({"slax/modules/12-wine.sb": H["5"]}, prov([_repo_step(None, with_repo=False)]))
-    check("no repositories: Debian's archive is the only one", doc["unresolved"], [])
+    check("no repositories: Debian's archive is the only one", doc["components"][0].get("notes"),
+          None)
 
 
 def test_slackware_packages_point_at_the_release_source_tree():
@@ -386,7 +380,8 @@ def test_slackware_packages_point_at_the_release_source_tree():
     check("listed in the manifest", "`nano-6.0-x86_64-1`" in sources.markdown(doc), True)
     del step["upstream_source"]
     doc = run({"slax/modules/07-slackpkgs.sb": H["5"]}, prov([{"recipe": "txz", "steps": [step]}]))
-    check("no tree named is a warning", len(doc["warnings"]), 1)
+    check("no tree named: said, with no pointer",
+          any("gives no upstream_source" in n for n in doc["components"][0].get("notes") or []), True)
 
 
 def test_apt_names_index_files_the_way_apt_does():
@@ -406,26 +401,33 @@ def _script_recipe(elf=True, declared=False):
     return {"recipe": "tool", "steps": [step]}
 
 
-def test_an_undeclared_binary_left_by_a_script_is_unresolved():
+def test_a_binary_a_script_left_is_part_of_its_bundle():
+    """An ELF file a script left that no package vouched for made the whole bundle
+    unresolved; `declares:` was the way out. Since #62 the bundle is the recipe's whatever
+    the script left in it, and an older image's record of such files changes nothing. A
+    `declares:` entry still says what the script compiled: a built part, with its source."""
     doc = run({"slax/modules/07-tool.sb": H["7"]}, prov([_script_recipe()]))
-    check("unresolved", len(doc["unresolved"]), 1)
-    check("names the file", "usr/local/bin/tool" in doc["unresolved"][0]["reason"], True)
+    check("the recipe's bundle", (doc["components"][0]["class"], doc["summary"]["unrecorded"]),
+          ("recipe", 0))
     doc = run({"slax/modules/07-tool.sb": H["7"]}, prov([_script_recipe(declared=True)]))
-    check("declared resolves", doc["unresolved"], [])
-    check("as a built part", doc["components"][0]["parts"][0]["class"], "built")
+    check("a declared binary is a built part", doc["components"][0]["parts"][0]["class"], "built")
 
 
-def test_busybox_needs_a_verified_claim():
+def test_busybox_is_built_and_an_unverified_claim_is_said():
     def rec(verified):
         return {"recipe": "initramfs-busybox", "steps": [{
             "verb": "initramfs.busybox", "output": "slax/boot/initrfs.img", "output_sha256": H["1"],
             "claim": {"verified": verified, "claim": {"sources": [{"url": "https://busybox.net/x",
                                                                   "sha256": H["2"]}]}}}]}
     doc = run({"slax/boot/initrfs.img": H["1"]}, prov([rec(False)]))
-    check("unverified claim is unresolved", len(doc["unresolved"]), 1)
+    part = doc["components"][0]["parts"][0]
+    check("an unverified claim is still a built part", (part["class"], doc["summary"]["unrecorded"]),
+          ("built", 0))
+    check("said, with nothing to point at", (part.get("note"), part.get("sources")),
+          ("its build claim does not match the binary", None))
     doc = run({"slax/boot/initrfs.img": H["1"]}, prov([rec(True)]))
-    check("verified claim resolves", doc["unresolved"], [])
-    check("busybox is built", doc["components"][0]["parts"][0]["class"], "built")
+    check("a verified claim points at its source", doc["components"][0]["parts"][0].get("sources"),
+          [{"url": "https://busybox.net/x", "sha256": H["2"]}])
     r = rec(True)
     r["steps"][0]["claim"]["claim"].update(
         container={"alpine_release": "3.19.9"},
@@ -452,30 +454,72 @@ def test_grub_is_built_and_its_source_follows_the_builder():
     check("snapshot on debian", doc["components"][0]["source_package"]["published_at"],
           "https://snapshot.debian.org/package/grub2-unsigned/2.12-1ubuntu7.3/")
     doc = run({"boot/efi.img": H["3"]}, prov([rec({})]))
-    check("no host record is unresolved", len(doc["unresolved"]), 1)
+    comp = doc["components"][0]
+    check("no host record: built, with no pointer, and said",
+          (comp["class"], comp.get("source_package"), comp.get("note")),
+          ("built", None, "the build host recorded no GRUB package"))
     # dpkg-query -S found the owner but -W failed: a package name and nothing to point at.
     # That used to pass as `built` with a null source and a null URL.
     doc = run({"boot/efi.img": H["3"]},
               prov([rec({"grub-efi-amd64-bin": {"package": "grub-efi-amd64-bin"}})]))
-    check("a package with no source version is unresolved", len(doc["unresolved"]), 1)
-    check("and says so", "source version" in (doc["unresolved"] or [{}])[0].get("reason", ""), True)
+    comp = doc["components"][0]
+    check("a package with no source version has no pointer", comp.get("source_package"), None)
+    check("and says so", "source version" in comp.get("note", ""), True)
 
 
-def test_recipe_edits_and_pack_output_are_ours():
+def test_recipe_edits_and_pack_output_are_this_builds():
     p = prov([{"recipe": "serial-console", "steps": [], "artifacts": ["slax/boot/isolinux.cfg"]}],
              pack={"iso": {}, "generated": [{"path": "slax/modules/98-dpkg-db.sb", "sha256": H["4"]}]})
     doc = run({"slax/boot/isolinux.cfg": H["9"], "slax/modules/98-dpkg-db.sb": H["4"]}, p)
-    check("edit is ours", classes(doc)["slax/boot/isolinux.cfg"], "ours")
-    check("generated db is ours", classes(doc)["slax/modules/98-dpkg-db.sb"], "ours")
-    check("nothing unresolved", doc["unresolved"], [])
+    check("edit is the recipe's", classes(doc)["slax/boot/isolinux.cfg"], "recipe")
+    check("generated db is this build's", classes(doc)["slax/modules/98-dpkg-db.sb"], "recipe")
+    check("nothing unrecorded", doc["summary"]["unrecorded"], 0)
 
 
-def test_a_dirty_or_unknown_build_is_unresolved():
-    doc = run({}, prov(dirty=True))
-    check("dirty", len(doc["unresolved"]), 1)
-    check("--allow-dirty accepts it", run({}, prov(dirty=True), allow_dirty=True)["unresolved"], [])
-    doc = sources.classify({}, STOCK, prov(), None, {})
-    check("unknown base", [u["path"] for u in doc["unresolved"]], ["(base image)"])
+def test_a_dirty_build_is_a_note_not_a_refusal():
+    """A kitchen checkout with uncommitted changes made the image unresolved unless
+    --allow-dirty (#53), and slax-wine's images are all built `-dirty` at a pin bump. What
+    it means for the report -- the recorded commit does not hold every change -- is a note,
+    for the project's checkout as well as the kitchen's (#62)."""
+    doc = run({}, prov(dirty=True, project={"commit": H["1"][:40], "describe": "13dc2db-dirty",
+                                            "dirty": True}))
+    check("a note for each checkout", [n.split(" checkout")[0] for n in doc["notes"]],
+          ["the kitchen", "the project"])
+    check("naming its describe", "13dc2db-dirty" in doc["notes"][1], True)
+    check("and nothing unrecorded", doc["summary"]["unrecorded"], 0)
+    check("a clean build has none", run({}, prov())["notes"], [])
+
+
+def test_an_image_built_on_another_image_lists_its_files_as_base():
+    """LAYERING.md: a project builds on another project's image, as slax-rpgs is to on
+    slax-wine's, and that image is not a stock target. Every file from it was unresolved,
+    the stock Slax ones included, so no such image could be published (#61, #62). A file
+    no step of this build made came with the base image, and the report says so."""
+    games = {"recipe": "games", "steps": [{"verb": "bundle.files",
+                                           "output": "slax/modules/30-games.sb",
+                                           "output_sha256": H["7"]}]}
+    p = prov([games], base={"name": "slax64-wine-uefi-1.0.0.iso", "sha256": H["9"]})
+    doc = sources.classify({"slax/modules/01-core.sb": H["a"], "slax/modules/21-wine.sb": H["b"],
+                            "slax/modules/30-games.sb": H["7"]},
+                           {"files": {}, "initramfs": {}}, p, None, {})
+    check("the base's files are base, this build's the recipe's", classes(doc),
+          {"slax/modules/01-core.sb": "base", "slax/modules/21-wine.sb": "base",
+           "slax/modules/30-games.sb": "recipe"})
+    check("nothing unrecorded", doc["summary"]["unrecorded"], 0)
+    check("a note says why", "not a stock Slax release" in doc["notes"][0], True)
+    check("and SOURCES.md points at the base image",
+          "**The base image**, `slax64-wine-uefi-1.0.0.iso`" in sources.markdown(doc), True)
+
+
+def test_a_sidecar_for_another_iso_is_a_note():
+    """An ISO whose sha256 is not the one its provenance records was unresolved (#62): the
+    image changed after pack, or the sidecar is another build's. The report may not describe
+    it, and it says so first -- without refusing to be written."""
+    p = {"pack": {"iso": {"sha256": H["1"]}}}
+    check("a different ISO", "not the one its provenance records" in
+          (sources.sidecar_note(p, H["2"]) or ""), True)
+    check("the same ISO", sources.sidecar_note(p, H["1"]), None)
+    check("an older sidecar that records none", sources.sidecar_note({}, H["2"]), None)
 
 
 def test_the_mbr_is_a_prebuilt_host_component():
@@ -487,139 +531,52 @@ def test_the_mbr_is_a_prebuilt_host_component():
           "https://launchpad.net/ubuntu/+source/syslinux/3%3A6.04-1")
 
 
-FW = "slax/modules/01-firmware.sb"
-STOCK["files"][FW] = H["6"]
-
-
-def test_stock_firmware_without_license_texts_is_said_plainly():
-    doc = run({FW: H["6"]}, prov())
-    check("stock bundle seen", doc["firmware"]["stock_bundle"], True)
-    check("warned", any("removed the license texts" in w for w in doc["warnings"]), True)
-    check("not unresolved: it is Slax as published", doc["unresolved"], [])
-    check("said in the manifest", "Slax's own build removed" in sources.markdown(doc), True)
-    check("and b43, which never had one", "no license text came with them" in sources.markdown(doc), True)
-
-
-def test_firmware_refresh_puts_the_license_texts_back():
-    refresh = {"recipe": "firmware-refresh", "steps": [
-        {"verb": "bundle.packages", "output": "slax/modules/09-firmware-debian.sb",
-         "output_sha256": H["7"], "reinstall": True,
-         "debs": [{"package": "firmware-iwlwifi", "version": "20230210-5",
-                   "source": "firmware-nonfree", "source_version": "20230210-5"},
-                  {"package": "firmware-realtek", "version": "20230210-5",
-                   "source": "firmware-nonfree", "source_version": "20230210-5"}]},
-        {"verb": "bundle.script", "output": "slax/modules/09-firmware-linux.sb",
-         "output_sha256": H["8"], "upstream_source": "https://example.org/linux-firmware",
-         "fetched": [{"path": "usr/lib/firmware/amdgpu/x.bin"},
-                     {"path": "usr/lib/firmware/LICENSE.amdgpu"},
-                     {"path": "usr/lib/firmware/LICENSES/LICENCE.mediatek"},
-                     {"path": "usr/lib/firmware/WHENCE"}]}]}
-    doc = run({FW: H["6"], "slax/modules/09-firmware-debian.sb": H["7"],
-               "slax/modules/09-firmware-linux.sb": H["8"]}, prov([refresh]))
-    check("no warning", doc["warnings"], [])
-    check("where Debian's texts are", doc["firmware"]["license_texts"],
-          [{"recipe": "firmware-refresh", "bundle": "slax/modules/09-firmware-debian.sb",
-            "packages": ["firmware-iwlwifi", "firmware-realtek"]}])
-    # WHENCE maps firmware to its license; it is not firmware. Counting it as firmware put
-    # "54 firmware files" in a real manifest whose recipe fetches 53.
-    check("linux-firmware counted", (doc["firmware"]["fetched_firmware"],
-                                     doc["firmware"]["fetched_license_files"],
-                                     doc["firmware"]["fetched_whence"]), (1, 2, True))
-
-
 def _recipe_with_inputs(recipe_file, *inputs):
     return {"recipe": "overlay", "recipe_file": recipe_file,
             "steps": [{"verb": "rootcopy.files", "local_inputs": list(inputs)}]}
 
 
-def test_what_a_recipe_copies_in_must_be_in_the_source_archive():
-    inside = {"root": "kitchen", "path": "recipes/available/x.yaml", "kind": "file",
-              "digest": H["1"], "in_archive": True}
-    doc = run({}, prov([_recipe_with_inputs(inside)]))
-    check("committed recipe resolves", doc["unresolved"], [])
-    outside = {"outside": "my.yaml", "kind": "file", "digest": H["1"]}
-    doc = run({}, prov([_recipe_with_inputs(outside)]), allow_dirty=True)
-    check("a recipe outside both checkouts is unresolved, dirty or not",
-          [u["path"] for u in doc["unresolved"]], ["(recipe overlay)"])
-    changed = dict(inside, path="recipes/available/files", kind="dir", in_archive=False)
-    doc = run({}, prov([_recipe_with_inputs(inside, changed)]))
-    check("an input the commit does not hold is unresolved", len(doc["unresolved"]), 1)
-    doc = run({}, prov([_recipe_with_inputs(inside, changed)]), allow_dirty=True)
-    check("...unless the build is allowed to be dirty", doc["unresolved"], [])
-    binary = dict(inside, path="recipes/available/tool", elf=["tool"])
-    doc = run({}, prov([_recipe_with_inputs(inside, binary)]), allow_dirty=True)
-    check("compiled code copied in is unresolved even when committed",
-          "compiled code" in (doc["unresolved"] or [{}])[0].get("reason", ""), True)
+def test_what_a_recipe_copies_in_is_listed_whatever_it_holds():
+    """#60 and #62: slax-wine's staged Notepad++ installers and its Flatpak tree -- inputs the
+    recorded commit did not hold, the Flatpak with 4,473 ELF files -- left every one of its
+    images unresolved, and --allow-dirty waived only half of that. What a recipe copies in is
+    what it asked for: the bundle is the recipe's, the report names the input, and nothing
+    is held to a commit or refused as compiled code. The fields an older kitchen recorded
+    for that check are read by nothing."""
+    staged = {"root": "project", "path": "recipes/available/bottles.files/var/lib/flatpak",
+              "kind": "dir", "digest": H["1"], "in_archive": False, "elf": ["files/bin/7zz"]}
+    step = {"verb": "bundle.files", "output": "slax/modules/30-bottles.sb", "output_sha256": H["7"],
+            "local_inputs": [staged]}
+    recipe = {"recipe": "bottles", "recipe_file": {"outside": "bottles.yaml", "kind": "file"},
+              "steps": [step]}
+    doc = run({"slax/modules/30-bottles.sb": H["7"]}, prov([recipe]))
+    comp = doc["components"][0]
+    check("the recipe's bundle, and nothing else to say",
+          (comp["class"], doc["summary"]["unrecorded"], doc["notes"]), ("recipe", 0, []))
+    check("naming what it copied in", comp.get("inputs"),
+          ["recipes/available/bottles.files/var/lib/flatpak"])
+    check("and so does SOURCES.md", "copied in: `recipes/available/bottles.files/var/lib/flatpak`"
+          in sources.markdown(doc), True)
 
 
 def test_a_file_from_a_build_host_package_points_at_that_package():
     """locale-timezone-keyboard copies the build host's tzfile into /etc/localtime: a
     recipe cannot reference a path inside the tree it is building. The host's tzdata owns
     it, which is a source pointer like the MBR's."""
-    inside = {"root": "kitchen", "path": "recipes/available/l.yaml", "kind": "file",
-              "digest": H["1"], "in_archive": True}
-    tz = {"outside": "Prague", "kind": "file", "digest": H["2"],
+    inside = {"root": "kitchen", "path": "recipes/available/l.yaml", "kind": "file"}
+    tz = {"outside": "Prague", "kind": "file",
           "host_package": {"package": "tzdata", "source": "tzdata",
                            "source_version": "2024a-3ubuntu1.1"}}
     doc = run({}, prov([_recipe_with_inputs(inside, tz)]))
-    check("resolved", doc["unresolved"], [])
     check("pointed at the host package", doc["host_inputs"][0]["published_at"],
           "https://launchpad.net/ubuntu/+source/tzdata/2024a-3ubuntu1.1")
     check("and listed", "the build host's `tzdata`" in sources.markdown(doc), True)
     unowned = dict(tz, host_package=None)
-    check("an unowned host file is not", len(run({}, prov([_recipe_with_inputs(inside, unowned)]))
-                                             ["unresolved"]), 1)
+    check("an unowned host file has nothing to point at, and is not an error",
+          run({}, prov([_recipe_with_inputs(inside, unowned)]))["host_inputs"], [])
     tree = dict(tz, kind="dir")
-    check("nor a host directory", len(run({}, prov([_recipe_with_inputs(inside, tree)]))
-                                      ["unresolved"]), 1)
-
-
-def test_the_recorded_digest_is_the_one_git_computes():
-    """content_digest() at build time and git_digest() at `sources` time must agree, or
-    every committed input would look changed. Checked against a real repository."""
-    import shutil
-    import subprocess
-    import tempfile
-    import provenance
-    if not shutil.which("git"):
-        FAILURES.append("git is not installed; the digest cross-check cannot run")
-        return
-    d = tempfile.mkdtemp()
-    try:
-        git = ["git", "-C", d, "-c", "user.email=t@t", "-c", "user.name=t"]
-        subprocess.run(git + ["init", "-q"], check=True)
-        os.makedirs(f"{d}/files/sub")
-        open(f"{d}/files/a.txt", "w").write("hello\n")
-        open(f"{d}/files/sub/run.sh", "w").write("#!/bin/sh\n")
-        os.chmod(f"{d}/files/sub/run.sh", 0o755)
-        os.symlink("../a.txt", f"{d}/files/sub/link")
-        subprocess.run(git + ["add", "-A"], check=True)
-        subprocess.run(git + ["commit", "-qm", "c"], check=True)
-        commit = subprocess.run(git + ["rev-parse", "HEAD"], capture_output=True,
-                                text=True).stdout.strip()
-        old = os.environ.get("PROJECT_ROOT")
-        os.environ["PROJECT_ROOT"] = d
-        try:
-            def verdict():
-                kind, digest, elf = provenance.content_digest(f"{d}/files")
-                li = {"root": "project", "path": "files", "kind": kind, "digest": digest}
-                p = {"project": {"commit": commit}, "recipes": [{"recipe": "r", "steps": [
-                    {"verb": "bundle.fromDir", "local_inputs": [li]}]}]}
-                sources.check_local_inputs(p)
-                return li["in_archive"]
-            check("committed directory matches", verdict(), True)
-            open(f"{d}/files/sub/untracked", "w").write("x")
-            check("an untracked file does not", verdict(), False)
-            os.remove(f"{d}/files/sub/untracked")
-            os.chmod(f"{d}/files/sub/run.sh", 0o644)
-            check("nor a lost exec bit", verdict(), False)
-        finally:
-            if old is None:
-                os.environ.pop("PROJECT_ROOT", None)
-            else:
-                os.environ["PROJECT_ROOT"] = old
-    finally:
-        shutil.rmtree(d, ignore_errors=True)
+    check("nor a host directory", run({}, prov([_recipe_with_inputs(inside, tree)]))["host_inputs"],
+          [])
 
 
 def test_markdown_renders():
@@ -638,20 +595,21 @@ def _files_recipe(fetched, inputs=()):
 
 
 def test_a_file_bundle_files_downloaded_is_a_prebuilt_part_of_its_bundle():
-    """A bundle.files `url:` entry is a download the engine checked: a prebuilt part (#59).
+    """A bundle.files `url:` entry is a download the engine fetched itself: a prebuilt part
+    (#59).
 
-    Before #59 a single pinned download reached a bundle through bundle.script, whose record
-    is what the script says it fetched, or as a staged file bundle.files copied in, which is
-    unresolved unless the commit holds it -- and a prebuilt ELF binary was unresolved either
-    way (#52 (a)). Now the engine fetches the file and refuses a sha256 mismatch, so the
-    record is its own: the bundle is ours, and the file a prebuilt part pointing upstream.
+    Before #59 a single download reached a bundle through bundle.script, whose record is
+    what the script says it fetched. Now the engine fetches the file, and refuses it when
+    the recipe pins a sha256 the file does not have, so the record is its own: the bundle
+    is the recipe's, and the file a prebuilt part pointing upstream. Since #62 the pin and
+    the pointer are both optional, and a staged `src:` beside it is named, not refused.
     """
     jq = {"path": "usr/local/bin/jq", "sha256": H["8"], "url": "https://example.org/jq",
-          "upstream_source": "https://example.org/jq/source/", "pinned": True, "checked": True}
-    doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe([jq])]), strict=True)
+          "upstream_source": "https://example.org/jq/source/", "pinned": True}
+    doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe([jq])]))
     comp = doc["components"][0]
-    check("the bundle is ours, resolved under --strict", (comp["class"], doc["unresolved"]),
-          ("ours", []))
+    check("the bundle is the recipe's", (comp["class"], doc["summary"]["unrecorded"]),
+          ("recipe", 0))
     check("the download is a prebuilt part pointing upstream", comp.get("parts"), [
         {"member": "usr/local/bin/jq", "class": "prebuilt", "by": "bundle-from-url",
          "source": "https://example.org/jq", "source_sha256": H["8"],
@@ -659,76 +617,82 @@ def test_a_file_bundle_files_downloaded_is_a_prebuilt_part_of_its_bundle():
     check("SOURCES.md lists it with its source",
           "- `slax/modules/17-jq.sb:usr/local/bin/jq` — <https://example.org/jq> — source: "
           "https://example.org/jq/source/" in sources.markdown(doc), True)
-    # No validated recipe can leave upstream_source out; the record is still read the way
-    # a download's is, a weak pointer said out loud.
+    # upstream_source is optional (#62): the part is listed with no pointer.
     bare = {k: v for k, v in jq.items() if k != "upstream_source"}
     doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe([bare])]))
-    check("no upstream_source: a warning",
-          any("names no upstream_source" in w for w in doc["warnings"]), True)
-    doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe([bare])]), strict=True)
-    check("...and unresolved under --strict", len(doc["unresolved"]), 1)
-    # A staged src: entry in the same step still has to be what the commit holds.
-    staged = {"root": "project", "path": "recipes/available/x.files", "kind": "dir",
-              "digest": H["1"], "in_archive": False}
+    check("no upstream_source: listed, the source not named",
+          "`slax/modules/17-jq.sb:usr/local/bin/jq` — <https://example.org/jq> — source: not named"
+          in sources.markdown(doc), True)
+    # A url: entry that pins no sha256 (#62) is marked, as a whole unpinned download is.
+    doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe([dict(jq, pinned=False)])]))
+    check("an unpinned download is marked in its part's line",
+          "source: https://example.org/jq/source/; no sha256 was pinned" in sources.markdown(doc), True)
+    # A staged src: entry in the same step is named, and refused by nothing.
+    staged = {"root": "project", "path": "recipes/available/x.files", "kind": "dir"}
     doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe([jq], [staged])]))
-    check("a staged src: beside it is still unresolved",
-          [u["path"] for u in doc["unresolved"]], ["(recipe bundle-from-url)"])
+    check("a staged src: beside it is named",
+          (doc["components"][0].get("inputs"), doc["summary"]["unrecorded"]),
+          (["recipes/available/x.files"], 0))
     doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe(None)]))
     check("no downloads: no parts, as before", doc["components"][0].get("parts"), None)
-    # SOURCES.md says firmware a script fetched was "copied from linux-firmware", which is
-    # firmware-refresh's claim; a `url:` entry can fetch a firmware file from anywhere.
-    fw = dict(jq, path="usr/lib/firmware/vendor/x.bin")
-    doc = run({"slax/modules/17-jq.sb": H["7"]}, prov([_files_recipe([fw])]))
-    check("a firmware file a url: entry fetched is not counted as linux-firmware's",
-          doc["firmware"]["fetched_firmware"], 0)
+
+
+def test_a_src_entry_naming_an_upstream_source_is_a_prebuilt_part():
+    """#60: a tree the project's build staged -- slax-bottles' Flatpak -- had no way to say
+    what it was. A bundle.files `src:` entry that gives upstream_source is listed as a
+    prebuilt part of the bundle, pointing there, and named as copied in."""
+    step = {"verb": "bundle.files", "output": "slax/modules/30-bottles.sb", "output_sha256": H["7"],
+            "copied": [{"path": "var/lib/flatpak", "input": "./bottles.files/var/lib/flatpak",
+                        "upstream_source": ["https://github.com/flathub/com.usebottles.bottles"]}]}
+    doc = run({"slax/modules/30-bottles.sb": H["7"]}, prov([{"recipe": "bottles", "steps": [step]}]))
+    check("a prebuilt part pointing upstream", doc["components"][0].get("parts"), [
+        {"member": "var/lib/flatpak", "class": "prebuilt", "by": "bottles",
+         "copied_from": "./bottles.files/var/lib/flatpak",
+         "upstream_source": ["https://github.com/flathub/com.usebottles.bottles"]}])
+    check("and SOURCES.md says so",
+          "- `slax/modules/30-bottles.sb:var/lib/flatpak` — copied in from "
+          "`./bottles.files/var/lib/flatpak` — source: "
+          "https://github.com/flathub/com.usebottles.bottles" in sources.markdown(doc), True)
 
 
 def test_a_binary_a_script_reported_downloading_is_prebuilt():
-    """A prebuilt ELF a script downloaded is a download when the engine checked its line (#52).
+    """A file a script reports downloading is a prebuilt part of its bundle (#52, #62).
 
     Measured at 0dd1b53 for #52 (a): jq's static binary, fetched by bundle.script with a
     KITCHEN-FETCHED line and an upstream_source, was unresolved -- no package owns it and
-    no `declares:` names it -- while a local tarball of the same bytes passed --strict. The
-    engine now checks each line against the file the script left, so a line recorded as
-    checked, naming the path and sha256 the ELF check recorded, is a prebuilt part. A line
-    recorded before the check vouches for nothing, and neither does one naming other bytes.
+    no `declares:` names it. #52 then held each line to the file and counted only checked
+    lines; #62 removed that check with the refusal it served, so every line is a part, as
+    the script reported it, and the note says whose account the list is.
     """
     def recipe(fetched, declared=False):
         r = _script_recipe(declared=declared)
         r["steps"][0].update(fetched=fetched, network=True,
                              upstream_source="https://example.org/tool/source/")
         return r
-    line = {"sha256": H["8"], "path": "usr/local/bin/tool", "url": "https://example.org/tool",
-            "checked": True}
-    doc = run({"slax/modules/07-tool.sb": H["7"]}, prov([recipe([line])]), strict=True)
-    check("a checked download resolves, under --strict", doc["unresolved"], [])
+    line = {"sha256": H["8"], "path": "usr/local/bin/tool", "url": "https://example.org/tool"}
+    doc = run({"slax/modules/07-tool.sb": H["7"]}, prov([recipe([line])]))
     comp = (doc["components"] or [{}])[0]
-    check("...as a prebuilt part pointing upstream", comp.get("parts"), [
+    check("a reported download is a prebuilt part pointing upstream", comp.get("parts"), [
         {"member": "usr/local/bin/tool", "class": "prebuilt", "by": "tool",
          "source": "https://example.org/tool", "source_sha256": H["8"],
          "upstream_source": "https://example.org/tool/source/"}])
-    check("...and not repeated in the unchecked list", comp.get("fetched"), None)
-    check("the note keeps the script's account and says what was checked",
-          "the script's own account; each file it reported was checked against the bundle"
-          in (comp.get("note") or ""), True)
-    for what, bad in (("naming other bytes", dict(line, sha256=H["9"])),
-                      ("recorded before the check", {k: v for k, v in line.items()
-                                                     if k != "checked"})):
-        doc = run({"slax/modules/07-tool.sb": H["7"]}, prov([recipe([bad])]))
-        check(f"a line {what} leaves the ELF unresolved", len(doc["unresolved"]), 1)
+    check("the note says whose account it is", "the script's own account" in (comp.get("note") or ""),
+          True)
+    doc = run({"slax/modules/07-tool.sb": H["7"]}, prov([recipe([dict(line, checked=True)])]))
+    check("a line an older kitchen checked reads the same", doc["components"][0].get("parts"),
+          comp.get("parts"))
     doc = run({"slax/modules/07-tool.sb": H["7"]}, prov([recipe([line], declared=True)]))
-    check("declared as compiled and reported as downloaded: unresolved",
-          "both declares and reports downloading" in
-          ((doc["unresolved"] or [{}])[0].get("reason") or ""), True)
+    check("declared and reported: both listed, nothing refused",
+          (sorted(p["class"] for p in doc["components"][0]["parts"]), doc["summary"]["unrecorded"]),
+          (["built", "prebuilt"], 0))
 
 
 def main():
     for fn in [test_stock_files_are_slax_by_hash,
                test_a_renumbered_stock_bundle_is_still_slax,
-               test_a_changed_stock_file_with_no_record_is_unresolved,
+               test_a_changed_stock_file_with_no_record_is_unrecorded,
                test_isolinux_bin_is_recognised_after_the_boot_info_table_is_rewritten,
                test_a_recorded_download_is_prebuilt_only_when_the_bytes_match,
-               test_a_download_without_upstream_source_warns_or_fails_under_strict,
                test_the_cpio_reader_reads_what_cpio_would,
                test_a_broken_archive_is_reported_as_unreadable_not_as_a_traceback,
                test_an_initramfs_that_decompresses_to_more_than_the_cap_is_refused,
@@ -739,23 +703,22 @@ def main():
                test_a_mirror_path_cannot_impersonate_debian,
                test_packages_point_at_snapshot_including_reinstalls,
                test_a_package_from_a_recipe_repository_points_at_that_repository,
-               test_a_repository_without_upstream_source_warns_or_fails_under_strict,
-               test_a_package_from_an_undeclared_archive_is_unresolved,
+               test_a_package_from_an_undeclared_archive_has_no_pointer,
                test_slackware_packages_point_at_the_release_source_tree,
                test_apt_names_index_files_the_way_apt_does,
-               test_an_undeclared_binary_left_by_a_script_is_unresolved,
-               test_busybox_needs_a_verified_claim,
+               test_a_binary_a_script_left_is_part_of_its_bundle,
+               test_busybox_is_built_and_an_unverified_claim_is_said,
                test_grub_is_built_and_its_source_follows_the_builder,
-               test_recipe_edits_and_pack_output_are_ours,
-               test_a_dirty_or_unknown_build_is_unresolved,
+               test_recipe_edits_and_pack_output_are_this_builds,
+               test_a_dirty_build_is_a_note_not_a_refusal,
+               test_an_image_built_on_another_image_lists_its_files_as_base,
+               test_a_sidecar_for_another_iso_is_a_note,
                test_the_mbr_is_a_prebuilt_host_component,
-               test_stock_firmware_without_license_texts_is_said_plainly,
-               test_firmware_refresh_puts_the_license_texts_back,
-               test_what_a_recipe_copies_in_must_be_in_the_source_archive,
+               test_what_a_recipe_copies_in_is_listed_whatever_it_holds,
                test_a_file_from_a_build_host_package_points_at_that_package,
-               test_the_recorded_digest_is_the_one_git_computes,
                test_markdown_renders,
                test_a_file_bundle_files_downloaded_is_a_prebuilt_part_of_its_bundle,
+               test_a_src_entry_naming_an_upstream_source_is_a_prebuilt_part,
                test_a_binary_a_script_reported_downloading_is_prebuilt]:
         # One test crashing must not stop the rest: the count of failures is only honest
         # if every test ran. The traceback still goes to stderr, because a crash's location

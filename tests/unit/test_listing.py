@@ -7,7 +7,7 @@ parsed, and xorriso does not always say when it failed -- measured on 1.5.6, lis
 that is not an ISO at all exits 0, prints no FAILURE line, and lists only `/`. So a listing
 that failed read as an image with no files, and each reader took that at its word:
 
-  kitchen sources --strict   accounts for the files it is given: "unresolved 0", exit 0 --
+  kitchen sources            accounts for the files it is given: "unresolved 0", exit 0 --
                              a pass for an image nobody had examined
   kitchen diff               every file of the other image reported removed, or added
   --structure                the kernel, initramfs and bootloader reported missing from
@@ -286,13 +286,14 @@ def base_sha256() -> str:
 @in_a_box
 def test_sources_refuses_what_it_could_not_list(tmp):
     """The false pass: with a provenance naming a real base and a listing of nothing,
-    `kitchen sources --strict` said "unresolved 0" and exited 0."""
+    `kitchen sources` said "unresolved 0" and exited 0: a report on an image nobody had
+    examined."""
     iso = tiny_iso(os.path.join(tmp, "slax.iso"))
     with open(iso + ".provenance.json", "w") as f:
         json.dump({"kitchen": {"commit": "0123abc", "describe": "0123abc", "dirty": False},
                    "base": {"sha256": base_sha256()}}, f)
     stub = Stub(tmp).says(lsdl(["/"], []))
-    p = subprocess.run([sys.executable, os.path.join(ROOT, "lib", "sources.py"), iso, "--strict"],
+    p = subprocess.run([sys.executable, os.path.join(ROOT, "lib", "sources.py"), iso],
                        env=stub.env(), capture_output=True, text=True, timeout=60)
     check("sources: refused, not passed", p.returncode, 2)
     check("...saying nothing could be accounted for", "nothing in it can be accounted for"

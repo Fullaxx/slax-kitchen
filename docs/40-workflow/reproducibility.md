@@ -187,10 +187,10 @@ actually matters for an ISO that has to boot.
 ## A published image is explained, not reproduced
 
 A rebuilt ISO does not match the published one byte for byte, and nothing here pretends otherwise.
-What a published image carries instead is a record that accounts for every file in it:
-`<iso>.provenance.json` and the sources manifest, checked by
-[`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict). `SHA256SUMS`
-checks that a download is the file that was published; the records say what that file is made of.
+What a published image carries instead is `<iso>.provenance.json`, the record of what went into
+it, from which [`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f) accounts
+for every file. `SHA256SUMS` checks that a download is the file that was published; the records say
+what that file is made of.
 
 See [publishing an image](publishing-images.md) for what travels with one.
 

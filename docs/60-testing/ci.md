@@ -126,12 +126,13 @@ Debian**, which is the easy mistake to make when that is the ISO in front of you
 Assertions are derived from what the recipe claims: `uefi-bootable` is checked for an EFI El Torito
 entry, `isohybrid` for a hybrid MBR. A recipe that runs cleanly and changes nothing fails.
 
-Every image the matrix builds must also pass
-[`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f---fetch-dir---strict): each
-file in it is either byte-identical to the stock image or matches what a recorded step produced.
-A verb that writes a file without recording it fails its recipe here, on every target. That is how
-`boot.menu` and `boot.branding` were caught writing menus nothing recorded. The matrix builds from a
-working tree, so it passes `--allow-dirty`.
+The matrix does not run [`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f)
+any more. It did, and failed a recipe whose image held a file no recorded step explained — which is
+how `boot.menu` and `boot.branding` were caught writing menus nothing recorded. Since
+[#62](https://github.com/Fullaxx/slax-kitchen/issues/62) the command is a report that refuses
+nothing, so an unrecorded file is a line in it, not a failure here. A verb that writes without
+recording is still caught on every push, by the unit gate's
+`test_every_file_writing_verb_records_what_it_wrote`.
 
 ## Round-trip guards the core claim
 

@@ -59,5 +59,6 @@ and branding with [`iso-identity`](../50-cookbook/iso-identity.md) and
   build byte-identical to the first.
 - **Follow an image built on another project's image back to its origins.** `kitchen sources`
   matches files against the stock image of a known target, and a base another project built is
-  not one, so it reports every file from that base as unresolved. See
+  not one, so it lists every file from that base as `base`, pointing at the base image by name
+  and sha256. The base's own `SOURCES.md`, if its publisher made one, goes further. See
   [LAYERING.md](../../LAYERING.md#provenance-and-publishing).

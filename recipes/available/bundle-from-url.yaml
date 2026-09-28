@@ -26,9 +26,9 @@ steps:
   #
   # A `url:` entry is fetched by the engine, refused unless its sha256 is the one pinned
   # here, and recorded, so `kitchen sources` lists the file as a download installed
-  # unmodified -- a prebuilt part of this bundle, pointing at `upstream_source`. The
-  # binary is ELF, and that is fine: the engine fetched it, so nothing is left for a
-  # `declares:` to vouch for (#52).
+  # unmodified -- a prebuilt part of this bundle, pointing at `upstream_source`. The pin
+  # and the pointer are optional (#62); this recipe gives both, because a pinned download
+  # is one a rebuild can repeat, and jq's release tag is where its source is.
   #
   # One step per arch, because the URL and the pin differ. `when:` means only one runs,
   # so the bundle is still produced once.

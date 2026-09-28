@@ -412,11 +412,9 @@ class Ctx:
     def local(self, src: str) -> str:
         """Resolve a recipe's local `src:` -- relative to the recipe file -- and record it.
 
-        What a recipe copies in, `kitchen sources` classes as `ours`: covered by the project
-        source archive. That is only true if the archive holds it, so the input is recorded
-        by where it sits in the kitchen or project checkout and by its content, and
-        `kitchen sources` checks both against the recorded commit. Downloads and build
-        outputs do not come through here; they carry upstream_source or a build claim.
+        The record is for the report: `kitchen sources` names what a recipe copied in, by
+        where it sits in the kitchen or project checkout. Nothing is hashed and nothing is
+        held to a commit (#62); a recipe copies in what it asks for.
         """
         path = src if os.path.isabs(src) else os.path.join(self.recipe_dir, src)
         if not self.dry and os.path.exists(path):
@@ -863,9 +861,10 @@ def _apt_sources(ctx: "Ctx", root: str, apt: dict) -> list:
 
     Returns exclusion patterns for anything that must not leave the chroot.
 
-    Keys are pinned by sha256 like every other download here. An unpinned key is a
-    remote party deciding what your image trusts, forever, and a bundle is exactly the
-    artifact where that decision becomes permanent.
+    Keys are pinned by sha256, and unlike other downloads here the pin is required (#62
+    made the rest optional): an unpinned key is a remote party deciding what your image
+    trusts, forever, and a bundle is exactly the artifact where that decision becomes
+    permanent.
     """
     extra = []
 
@@ -1072,139 +1071,18 @@ def _fetched_lines(stdout: str) -> list[dict]:
     """What a bundle.script says it fetched: `KITCHEN-FETCHED <sha256> <path> <url>` lines.
 
     A script knows what it downloaded and the engine cannot see, so the script says so;
-    firmware-refresh prints one per linux-firmware file. What each line says about the
-    file is then checked against the bundle (_check_fetched); where it came from is not.
+    firmware-refresh prints one per linux-firmware file. Each line is recorded as the
+    script printed it -- a pointer, which `kitchen sources` lists -- and a line printed
+    twice is recorded once.
     """
-    out = []
+    out, seen = [], set()
     for ln in stdout.splitlines():
         m = FETCHED_LINE.match(ln.strip())
-        if m:
+        if m and m.groups() not in seen:
+            seen.add(m.groups())
             out.append({"sha256": m.group(1), "path": provenance.in_image(m.group(2)),
                         "url": m.group(3)})
     return out
-
-
-def _check_fetched(root: str, keep: list[str], lines: list[dict]) -> list[dict]:
-    """Each KITCHEN-FETCHED line, held to the file the script left in the bundle (#52).
-
-    WHY THIS EXISTS. The engine recorded a line as the script printed it and checked it
-    against nothing, so a line naming a sha256 the file did not have passed `kitchen
-    sources --strict` (measured for #59 at 7d5f7a0). A line now has to name a regular file
-    this bundle holds -- one the script added or changed, and not excluded -- whose sha256
-    is the one the line gives, or the step fails and nothing is built. A line that passes
-    describes bytes the engine has seen, so `kitchen sources` can count its file, ELF
-    included, as a download rather than as unowned compiled code. The URL it cannot check:
-    where the bytes came from remains the script's word.
-
-    A path through a merged-/usr link -- `lib/firmware/x`, where lib is a symlink to
-    usr/lib -- is recorded under usr/, where the delta has the file. The link is read as
-    text, never followed on the host.
-    """
-    kept = set(keep)
-    out, bad, seen = [], [], set()
-    for f in lines:
-        p = os.path.normpath(f["path"])
-        top, _, rest = p.partition("/")
-        link = os.path.join(root, top)
-        if (p not in kept and rest and os.path.islink(link)
-                and os.readlink(link).strip("/") == f"usr/{top}" and f"usr/{p}" in kept):
-            p = f"usr/{p}"
-        full = os.path.join(root, p)
-        if p not in kept:
-            bad.append(f"{f['path']}: not in this bundle -- the script did not add or change "
-                       f"it, or it is on the exclusion list")
-        elif os.path.islink(full) or not os.path.isfile(full):
-            bad.append(f"{f['path']}: not a regular file; a KITCHEN-FETCHED line names the "
-                       f"downloaded file itself")
-        else:
-            got = sha256(full)
-            if got != f["sha256"]:
-                bad.append(f"{f['path']}: the line says sha256 {f['sha256'][:16]}..., the file "
-                           f"in the bundle is {got[:16]}...")
-            elif (p, got) not in seen:
-                seen.add((p, got))
-                out.append(dict(f, path=p, checked=True))
-    if bad:
-        raise RuntimeError(
-            f"bundle.script: {len(bad)} KITCHEN-FETCHED line(s) do not match what the script "
-            f"left in the bundle:\n  " + "\n  ".join(bad[:10])
-            + ("\n  ..." if len(bad) > 10 else "")
-            + "\n  A line is the record of one downloaded file: its sha256 as installed and "
-              "its path in the image. Nothing was built.")
-    return out
-
-
-def _unowned_elf(root: str, keep: list[str]) -> list[dict]:
-    """ELF files in a delta that no package vouches for, either because no package owns
-    the path, or because the bytes are no longer the ones the package installed.
-
-    OWNERSHIP IS NOT INTEGRITY. A script that writes over a packaged binary --
-    `curl -o /usr/bin/ssh …`, or a `make install` that lands in /usr/bin -- leaves a path
-    dpkg still lists, so the first version of this passed it and `kitchen sources` went on
-    naming openssh-client as its source. dpkg records an md5 for nearly every file it
-    ships, in the .md5sums beside the .list, so the question can be asked properly.
-
-    Slackware's package database lists files and no checksums, so under `flavour:
-    slackware` ownership remains all there is; that is why `declares:` exists. Two more
-    paths fall back to ownership alone, and neither is announced: dpkg leaves CONFFILES
-    out of .md5sums, and a few packages ship no .md5sums at all.
-    """
-    owned: set[str] = set()
-    recorded: dict[str, set] = {}
-    info = os.path.join(root, "var", "lib", "dpkg", "info")
-    if os.path.isdir(info):
-        for n in os.listdir(info):
-            if n.endswith(".list"):
-                with open(os.path.join(info, n), errors="replace") as f:
-                    owned.update(ln.strip().lstrip("/") for ln in f)
-            elif n.endswith(".md5sums"):
-                with open(os.path.join(info, n), errors="replace") as f:
-                    for ln in f:
-                        digest, _, rel = ln.strip().partition("  ")
-                        if rel and len(digest) == 32:
-                            # EVERY package that records this path, not the last one read.
-                            # A diversion or a Replaces: takeover has two packages naming
-                            # one path with different digests, and keeping whichever
-                            # os.listdir returned last made the answer depend on the order
-                            # of a directory listing.
-                            recorded.setdefault(rel.lstrip("/"), set()).add(digest)
-    pkgtools = os.path.join(root, "var", "lib", "pkgtools", "packages")
-    if os.path.isdir(pkgtools):
-        for n in os.listdir(pkgtools):
-            with open(os.path.join(pkgtools, n), errors="replace") as f:
-                owned.update(ln.strip() for ln in f)
-    out = []
-    for rel in keep:
-        full = os.path.join(root, rel)
-        if os.path.islink(full) or not os.path.isfile(full):
-            continue
-        try:
-            with open(full, "rb") as f:
-                if f.read(4) != b"\x7fELF":
-                    continue
-        except OSError:
-            continue
-        alt = rel[4:] if rel.startswith("usr/") else "usr/" + rel     # merged /usr
-        if rel not in owned and alt not in owned:
-            out.append({"path": rel, "sha256": sha256(full), "why": "no package owns it"})
-            continue
-        want = recorded.get(rel) or recorded.get(alt)
-        try:
-            if want and _md5(full) not in want:
-                out.append({"path": rel, "sha256": sha256(full),
-                            "why": "its package recorded different bytes for this path"})
-        except OSError:
-            out.append({"path": rel, "sha256": "",
-                        "why": "it could not be read to check against its package"})
-    return out
-
-
-def _md5(path: str) -> str:
-    h = hashlib.md5()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _stage_delta(root: str, keep: list[str], stage: str) -> None:
@@ -1880,7 +1758,7 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
             if re.match(r"^https?://", str(src)):
                 raise RuntimeError(
                     f"{verb}: {spec['dest']}: src: is a path beside the recipe, and {src} is "
-                    f"a URL -- a download goes in url:, with its sha256: and upstream_source:")
+                    f"a URL -- a download goes in url:")
             local = ctx.local(src)
             if os.path.isdir(local):
                 shutil.copytree(local, dest, dirs_exist_ok=True, symlinks=True)
@@ -1888,6 +1766,12 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
                 shutil.copy2(local, dest)
             else:
                 raise RuntimeError(f"{verb}: source not found: {local}")
+            if spec.get("upstream_source"):
+                # A pointer for what the entry copies in -- an installer, a Flatpak tree --
+                # which `kitchen sources` lists as a prebuilt part of the bundle (#60).
+                ctx.prov(copied=[{"path": os.path.relpath(dest, os.path.realpath(root)),
+                                  "input": src,
+                                  "upstream_source": spec["upstream_source"]}])
         else:
             raise RuntimeError(f"{verb}: {spec['dest']} needs one of src, content or url")
         if mode is not None:
@@ -1896,15 +1780,15 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
 
 
 def _fetch_files(ctx: "Ctx", root: str, files: list, verb: str) -> list[dict]:
-    """Download each {dest, url, sha256, upstream_source, mode} spec to its dest under root.
+    """Download each {dest, url, sha256?, upstream_source?, mode} spec to its dest under root.
 
-    WHY THIS EXISTS. A single pinned download -- an installer, a static binary -- had no
-    verb of its own. bundle.fromTarball takes only an archive, boot.payload writes only
-    under slax/, and bundle.script costs a chroot: the whole stack unpacked as the build
-    root, network inside it, a downloader in the image, and a record that is what the
-    script said it fetched (#59). Here the engine fetches the file and refuses it unless
-    its sha256 is the one the recipe pins, as boot.payload does, so `kitchen sources` can
-    list it as a download installed unmodified: a prebuilt part of the bundle.
+    WHY THIS EXISTS. A single download -- an installer, a static binary -- had no verb of
+    its own. bundle.fromTarball takes only an archive, boot.payload writes only under slax/,
+    and bundle.script costs a chroot: the whole stack unpacked as the build root, network
+    inside it, a downloader in the image, and a record that is what the script said it
+    fetched (#59). Here the engine fetches the file itself, refuses it if the recipe pins a
+    sha256 and the file does not match -- pinning is the recipe's choice (#62) -- and
+    records it, so `kitchen sources` lists it as a download: a prebuilt part of the bundle.
 
     Called by v_bundle_files itself, not from _place_files, because the test that holds
     network declarations to the code attributes an urlopen to its function's direct
@@ -1916,9 +1800,6 @@ def _fetch_files(ctx: "Ctx", root: str, files: list, verb: str) -> list[dict]:
         dest = _under(root, spec["dest"], verb)
         mode = _mode_of(spec, verb, default=0o644)
         url, want = spec["url"], spec.get("sha256")
-        if not want:
-            raise RuntimeError(f"{verb}: {spec['dest']}: a url: entry needs a sha256:, which "
-                               f"the download must match")
         # Downloads go in after every other entry, so nothing can overwrite one -- and one
         # may not land on a path another entry wrote, or inside a directory it copied.
         if os.path.lexists(dest):
@@ -1935,17 +1816,18 @@ def _fetch_files(ctx: "Ctx", root: str, files: list, verb: str) -> list[dict]:
                 os.unlink(part)
             raise RuntimeError(f"{verb}: {spec['dest']}: could not fetch {url}: {e}") from None
         got = sha256(part)
-        if got != want:
+        if want and got != want:
             os.unlink(part)
             raise RuntimeError(f"{verb}: {spec['dest']}: sha256 mismatch for {url}\n"
                                f"  want {want}\n  got  {got}")
         os.replace(part, dest)
         os.chmod(dest, mode)
-        ctx.say(f"  {spec['dest']}  <- {url} (sha256 {got[:16]}..., as pinned)")
+        ctx.say(f"  {spec['dest']}  <- {url} (sha256 {got[:16]}..."
+                + (", as pinned)" if want else ", not pinned)"))
         fetched.append({"path": os.path.relpath(dest, os.path.realpath(root)),
                         "sha256": got, "url": url,
                         "upstream_source": spec.get("upstream_source"),
-                        "pinned": True, "checked": True})
+                        "pinned": bool(want)})
     return fetched
 
 
@@ -1975,7 +1857,8 @@ def v_bundle_files(ctx: Ctx, step: dict) -> None:
     rootcopy drop. Worth the difference when you want the files to be one movable file,
     to be skippable with noload=, or to sit at a defined point in the stack -- rootcopy
     always lands in the writable layer and cannot be turned off at the boot prompt. A
-    `url:` entry is downloaded and checked against its `sha256:` (_fetch_files, #59).
+    `url:` entry is downloaded, and checked against its `sha256:` when it gives one
+    (_fetch_files, #59).
     """
     files = step.get("files") or []
     if not files:
@@ -2037,8 +1920,6 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
         got = sha256(archive)
         if want and got != want:
             raise RuntimeError(f"bundle.fromTarball: sha256 mismatch\n  want {want}\n  got  {got}")
-        if not want:
-            ctx.say(f"warning: no sha256 pinned for {os.path.basename(src)} (got {got[:16]}...)")
         ctx.prov(source=src if re.match(r"^https?://", src) else os.path.basename(src),
                  source_sha256=got, pinned=bool(want), strip=strip, prefix=prefix or None,
                  world_readable=world_readable, upstream_source=step.get("upstream_source"))
@@ -2367,9 +2248,7 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
         if not keep:
             raise RuntimeError("bundle.script: the script changed nothing that survives "
                                "the exclusion list; nothing to package")
-        # EVERY KITCHEN-FETCHED LINE IS HELD TO THE FILE IT NAMES (#52): here, while the
-        # build root still holds the delta, and before anything is staged or built.
-        fetched = _check_fetched(root, keep, _fetched_lines(r.stdout))
+        fetched = _fetched_lines(r.stdout)
 
         stage = os.path.join(build, "stage")
         _stage_delta(root, keep, stage)
@@ -2387,8 +2266,7 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
                  uninstalled=_status_removals(before_status, after_status) or None,
                  slackware_installed=_pkgtools_added(before, after) or None,
                  debs=_deb_origins(root, _deb_hashes(root)) or None,
-                 declares=step.get("declares"),
-                 unowned_elf=_unowned_elf(root, keep) or None)
+                 declares=step.get("declares"))
     finally:
         shutil.rmtree(build, ignore_errors=True)
 

@@ -195,9 +195,9 @@ with open(out + ".provenance.json", "w") as f:
 PY
 claim_rc=$?
 rm -rf "$UNPACK"
-# Without the claim, `kitchen sources` reports this binary as built here with nothing to
-# show for it, and the initramfs it goes into is unresolved. That is a failed build, not a
-# warning -- and a half-written file must not be left behind to be believed.
+# Without the claim, nothing records where this binary's source is: `kitchen sources` lists
+# it as built here with no claim to point at. A claim that could not be written is a failed
+# build, not a warning -- and a half-written file must not be left behind to be believed.
 #
 # READ THE STATUS INTO A VARIABLE rather than testing `if ! python3 …`: written that way,
 # the error branch is the one that runs when python3 SUCCEEDS. It was, and it deleted the

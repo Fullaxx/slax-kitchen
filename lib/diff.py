@@ -111,7 +111,7 @@ def _entries(iso: str) -> dict:
 
     RAISES ListingError rather than returning a listing nobody can trust. This returned
     whatever parsed -- so a listing that failed read as an image with no files, and
-    `kitchen sources --strict`, which accounts for the files it is given, passed an image
+    `kitchen sources`, which accounts for the files it is given, passed an image
     it had examined none of: "unresolved 0", exit 0. An image with no regular file at all
     is refused the same way; no image this toolkit reads is one.
     """
