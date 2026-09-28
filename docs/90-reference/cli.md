@@ -254,8 +254,11 @@ GRUB and the MBR `pack` copied from it, a build claim for a compiled binary — 
 kitchen commit and its submodule pins, and the ISO's own sha256. Verbs record into
 `<work>/.kitchen/provenance.json` as they run; `pack` finalizes it next to the ISO, where
 `kitchen build` deleting the work tree cannot take it. Paths are basenames or paths inside the
-image, and anything that looks like a place on the build machine is refused — the same rule as the
-Tier C ledger, sharing one pattern.
+image. A value that names a place this build is using — a profile var pointing at a file in the
+checkout, say — is recorded with that place replaced by its placeholder, `<work>`, `<kitchen>`,
+`<project>` or `<home>`. The preflight notes a profile var that does, and `pack` prints a note for
+each value it redacts. The build uses the value as written, and nothing about it stops the build
+([#63](https://github.com/Fullaxx/slax-kitchen/issues/63)).
 
 ## `fetch [target|--all] [--verify-only] [-o DIR]`
 

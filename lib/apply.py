@@ -3925,9 +3925,9 @@ def apply_recipe(path: str, work: str, dry: bool = False,
         # handed list(ctx.changes) and never reads the journal file, whatever its comment
         # about "from the journal" suggests. Issue #20.
         #
-        # It no longer refuses what it is given. By now the recipe has run, and a refusal
-        # here stranded the bundle it built (#26). main() checks the vars before anything is
-        # built instead.
+        # It refuses nothing it is given. By now the recipe has run, and a refusal here
+        # stranded the bundle it built (#26). A var naming a place on this build machine is
+        # noted by main() before anything is built, and pack redacts it (#63).
         provenance.append_recipe(ctx.meta, {
             "recipe": name,
             "recipe_sha256": sha256(path),
@@ -4147,16 +4147,17 @@ def main(argv: list[str]) -> int:
         if not names:
             print(f"error: {a.profile} lists no recipes", file=sys.stderr)
             return 2
-        # A profile's vars go into the image's provenance exactly as written, and they are
-        # the one input no producer shapes. So they are checked here, against the places
-        # this build is actually using, before anything is unpacked or built -- which in
-        # `kitchen build` is the --preflight-only pass. Checked after a recipe had run, a
-        # refusal left its bundle in slax/modules/ unrecorded, and pack shipped it (#26).
-        bad = provenance.build_machine_hits(var_overrides, work=os.path.abspath(a.work))
-        if bad:
-            print(f"error: {a.profile}: a var would put a place on this build machine into "
-                  "the image's provenance:\n  " + "\n  ".join(bad), file=sys.stderr)
-            return 2
+        # A profile's vars are the one input no producer shapes, and one may name a place on
+        # this build machine -- a staged file in the checkout, say. The build uses it as
+        # written; the image's provenance records it with the place replaced by its
+        # placeholder, which pack does (provenance.redact). Said here, before anything is
+        # unpacked or built -- in `kitchen build`, the --preflight-only pass. It used to be
+        # refused here (#63), and before that after a recipe had run, which left its bundle
+        # in slax/modules/ unrecorded (#26).
+        _recorded, changed = provenance.redact(var_overrides, work=os.path.abspath(a.work))
+        for at, value in changed:
+            print(f"note: {a.profile}: {at} names a place on this build machine; the build "
+                  f"uses it as written, and the image's provenance records {value!r}")
     else:
         dup = duplicate_recipes(names)
         if dup:

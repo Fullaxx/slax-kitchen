@@ -16,9 +16,10 @@ So verbs call ctx.prov(...) while they run, apply_recipe appends each recipe's r
 
 NOTHING ABOUT THE HOST, by construction first. Every producer names a file by its basename,
 by its path inside the kitchen or project checkout, or by its path inside the image. The one
-input no producer shapes -- a profile's vars -- is checked against the places this build
-actually uses before anything is built, and the finished record is checked the same way at
-pack. See build_machine_hits, including for the regex this replaced.
+input no producer shapes -- a profile's vars -- is noted before anything is built when it
+names a place this build is actually using, and the finished record has every such place
+replaced by a placeholder at pack (#63). See build_machine_hits, including for the regex this
+replaced, and redact.
 """
 from __future__ import annotations
 
@@ -67,14 +68,30 @@ def build_machine_paths(work: str | None = None) -> list[str]:
     machine that the image does not share: Slax runs as root, so /root is the image's home
     directory too.
     """
-    out: list[str] = []
+    return [p for _label, p in build_machine_places(work)]
+
+
+def build_machine_places(work: str | None = None) -> list[tuple[str, str]]:
+    """build_machine_paths() with the placeholder each is recorded as -- `<work>`,
+    `<kitchen>`, `<project>`, `<home>` -- most specific first, so a work tree inside the
+    checkout is `<work>` and a kitchen vendored inside a project is `<kitchen>`."""
+    out: list[tuple[str, str]] = []
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    for p in (work, repo, project_root(), os.environ.get("HOME")):
+    for label, p in (("<work>", work), ("<kitchen>", repo), ("<project>", project_root()),
+                     ("<home>", os.environ.get("HOME"))):
         if p and p.startswith("/") and p.rstrip("/") not in ("", "/home", "/root", "/Users"):
             p = p.rstrip("/") + "/"
-            if p not in out:
-                out.append(p)
-    return out
+            if p not in [q for _l, q in out]:
+                out.append((label, p))
+    return sorted(out, key=lambda lp: len(lp[1]), reverse=True)
+
+
+def _place_patterns(work: str | None) -> list[tuple[str, str, "re.Pattern"]]:
+    """(placeholder, directory, pattern) for each place, most specific first. A directory
+    counts only where a path can begin -- see build_machine_hits."""
+    return [(label, r.rstrip("/"), re.compile(r"(?<![\w.~+-])" + re.escape(r.rstrip("/"))
+                                             + r"(?![\w.~+-])"))
+            for label, r in build_machine_places(work)]
 
 
 def build_machine_hits(obj, work: str | None = None, where: str = "") -> list[str]:
@@ -106,6 +123,11 @@ def build_machine_hits(obj, work: str | None = None, where: str = "") -> list[st
     The work it claimed to do is done elsewhere, by construction: producers record
     basenames, checkout-relative paths and in-image paths (root_relative, in_image).
 
+    WHAT HAPPENS TO ONE IT FINDS: redact() replaces the directory with its placeholder, and
+    a note says so. It used to refuse -- at preflight for a profile var, and at pack, after
+    the image was written, for anything else -- and the build failed over a value the record
+    only had to leave out (#63).
+
     WHERE A DIRECTORY COUNTS: only where a path can begin -- at the start of the string, or
     after a character no path component contains (a space, a quote, `=`, `:`, the last `/`
     of file://). Anywhere else it is the tail of some longer path. The first version matched
@@ -123,29 +145,41 @@ def build_machine_hits(obj, work: str | None = None, where: str = "") -> list[st
       - A builder directory that is none of these, such as /opt/somebuilder, passes.
       - The one false positive this rule can make: a directory of this build that is also a
         path in the image, named from its start. Build as `guest`, and the image's
-        /home/guest/... values are refused; keep the checkout at /work, as the reference
-        container does, and an image path under /work is. The message names the directory.
+        /home/guest/... values are recorded as <home>/...; keep the checkout at /work, as
+        the reference container does, and an image path under /work is recorded as that
+        checkout's placeholder. The note names each one.
+
+    It is redact()'s own walk, asked only which values it would change: the rule above is
+    what a build applies, and this is the question the tests put to it.
     """
-    roots = [(r.rstrip("/"), re.compile(r"(?<![\w.~+-])" + re.escape(r.rstrip("/"))
-                                        + r"(?![\w.~+-])"))
-             for r in build_machine_paths(work)]
-    out: list[str] = []
+    return [f"{at}: recorded as {value!r}" for at, value in redact(obj, work, where)[1]]
 
-    def walk(o, at: str) -> None:
+
+def redact(obj, work: str | None = None, where: str = "") -> tuple[object, list[tuple[str, str]]]:
+    """A copy of obj with every place build_machine_hits() would find replaced by its
+    placeholder, and (where, recorded value) for each string that changed (#63).
+
+    Most specific first: a work tree inside the kitchen checkout is `<work>`, not
+    `<kitchen>/work`. Dict keys are field names, never paths, and are left as they are.
+    """
+    places = _place_patterns(work)
+    changed: list[tuple[str, str]] = []
+
+    def walk(o, at: str):
         if isinstance(o, dict):
-            for k, v in o.items():
-                walk(v, f"{at}.{k}" if at else str(k))
-        elif isinstance(o, list):
-            for i, v in enumerate(o):
-                walk(v, f"{at}[{i}]")
-        elif isinstance(o, str):
-            for root, pattern in roots:
-                if pattern.search(o):
-                    out.append(f"{at}: {o!r} (inside {root})")
-                    break
+            return {k: walk(v, f"{at}.{k}" if at else str(k)) for k, v in o.items()}
+        if isinstance(o, list):
+            return [walk(v, f"{at}[{i}]") for i, v in enumerate(o)]
+        if isinstance(o, str):
+            new = o
+            for label, _root, pattern in places:
+                new = pattern.sub(label, new)
+            if new != o:
+                changed.append((at, new))
+            return new
+        return o
 
-    walk(obj, where)
-    return out
+    return walk(obj, where), changed
 
 
 def _run(argv: list[str]) -> str | None:
@@ -320,9 +354,9 @@ def finalize(work: str, iso: str, backend: str, mbr: str | None) -> str:
         # Measured: git refuses a checkout another user owns when run as root without
         # sudo (sudo sets SUDO_UID, which git 2.36+ accepts) -- a root container on a
         # bind-mounted checkout. Overriding safe.directory here would switch off the check
-        # for everyone; saying so is enough, because `kitchen sources` refuses the result.
+        # for everyone; saying so is enough, and `kitchen sources` notes the missing commit.
         print("provenance: warning: git could not read this kitchen checkout, so the image "
-              "records no commit and `kitchen sources` will not accept it. Running as root "
+              "records no commit, and its `kitchen sources` report says so. Running as root "
               "in a checkout another user owns? See `git config safe.directory`.",
               file=sys.stderr)
     out = {
@@ -361,14 +395,15 @@ def finalize(work: str, iso: str, backend: str, mbr: str | None) -> str:
     if mbr:
         out["pack"]["mbr"] = {"file": os.path.basename(mbr), "sha256": sha256(mbr),
                               "package": host_package(mbr)}
-    # THE RECORD THAT GETS PUBLISHED, checked whole: this sidecar is what travels with an
-    # image. Producers cannot write these directories and apply.py checked the vars before
-    # the build, so what this stops is a regression in either. `work` is this build's work
-    # tree, which nothing after the build can know.
-    bad = build_machine_hits(out, work=os.path.abspath(work))
-    if bad:
-        raise RuntimeError("provenance would record a place on this build machine:\n  "
-                           + "\n  ".join(bad))
+    # THE RECORD THAT GETS PUBLISHED, redacted whole: this sidecar is what travels with an
+    # image, so a place on this build machine in it -- a profile var naming a file in the
+    # checkout, or a producer's regression -- is written as its placeholder, and a note
+    # names it. It used to refuse, after the image had been written (#63). `work` is this
+    # build's work tree, which nothing after the build can know.
+    out, changed = redact(out, work=os.path.abspath(work))
+    for at, value in changed:
+        print(f"  note: {at} named a place on this build machine; recorded as {value!r}",
+              file=sys.stderr)
     dest = iso + ".provenance.json"
     _write_atomic(dest, out)
     return dest

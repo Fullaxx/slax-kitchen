@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """The provenance guard: what counts as a place on the build machine, and where it is checked.
 
-WHY THIS EXISTS. `lib/provenance.py` refuses to record anything that names a place on the
-builder, which is right and is the same rule the Tier C ledger enforces. But the rule was
-one regex applied everywhere, HOSTISH, and `^/` was one of its alternatives -- so ANY
-absolute path was evidence, including one describing the image.
+WHY THIS EXISTS. `lib/provenance.py` keeps anything that names a place on the builder out
+of the record it writes, which is right. It used to refuse such a value, and since #63 it
+writes the place as its placeholder instead. But the rule was one regex applied everywhere,
+HOSTISH, and `^/` was one of its alternatives -- so ANY absolute path was evidence,
+including one describing the image.
 
 That stopped `profiles/boot-matrix.yaml`, which sets `marker: /var/lib/kitchen-perch-marker`
 because `testkit` builds the path by concatenation and a relative value would resolve to
@@ -20,7 +21,8 @@ field that had failed, and not the class: nothing drove a local input, an artifa
 output through the guard. So this file tests the image's ordinary paths wherever they land.
 
 HOSTISH is gone. The rule compares against the places this build is actually using, which
-cannot mistake the image for the host, and it runs on vars before anything is built.
+cannot mistake the image for the host. It notes a var naming one before anything is built,
+and the record is redacted whole at pack (#63).
 """
 import contextlib
 import io
@@ -109,7 +111,7 @@ def test_the_image_is_not_the_builder():
                 check(f"HOME={home}: recorded as the image: {name}", hits(record), [])
 
 
-def test_the_builders_own_places_are_refused():
+def test_the_builders_own_places_are_found():
     """The rule's whole job: a value inside a directory this build is really using, in any
     field -- there are no exempt fields left to forget at a call site."""
     proj = tempfile.mkdtemp(prefix="proj-")
@@ -125,8 +127,8 @@ def test_the_builders_own_places_are_refused():
                     ("a file:// URL into the checkout", "file://" + os.path.join(ROOT, "debs")),
                     ("the checkout inside prose", f"copied from {ROOT}/assets/x"),
             ):
-                check(f"refused in vars: {name}", bool(hits({"vars": {"v": value}})), True)
-            check("refused outside vars too",
+                check(f"found in vars: {name}", bool(hits({"vars": {"v": value}})), True)
+            check("found outside vars too",
                   bool(hits({"steps": [{"output": os.path.join(ROOT, "x")}]})), True)
             check("a sibling that only shares a prefix is not the work tree",
                   hits({"vars": {"v": "/srv/somebuilder/work/imgs/x"}}), [])
@@ -157,8 +159,42 @@ def test_a_directory_counts_only_where_a_path_can_begin():
             check(f"inside /work: {value}", bool(hits({"vars": {"v": value}})), True)
 
 
+def test_a_place_on_the_build_machine_is_recorded_as_its_placeholder():
+    """#63: a value naming a place this build is using stopped the build -- at preflight for
+    a profile var, and at pack, after the image was written, for the rest. The record only
+    had to leave the place out, so it does: each directory becomes its placeholder, the most
+    specific one first, and the rest of the value is kept."""
+    proj = tempfile.mkdtemp(prefix="proj-")
+    try:
+        with env(HOME="/home/somebuilder", PROJECT_ROOT=proj):
+            for name, value, want in (
+                    ("the work tree", WORK + "/iso/slax/modules/40-x.sb",
+                     "<work>/iso/slax/modules/40-x.sb"),
+                    ("the kitchen checkout", os.path.join(ROOT, "recipes", "x.yaml"),
+                     "<kitchen>/recipes/x.yaml"),
+                    ("the project checkout", os.path.join(proj, "assets", "x.tar.gz"),
+                     "<project>/assets/x.tar.gz"),
+                    ("the builder's home", "/home/somebuilder/Downloads/x", "<home>/Downloads/x"),
+                    ("a file:// URL", "file://" + os.path.join(ROOT, "debs"), "file://<kitchen>/debs"),
+                    ("inside prose", f"copied from {ROOT}/assets/x", "copied from <kitchen>/assets/x"),
+                    ("the image's own path, untouched", "/root/.config/app", "/root/.config/app")):
+                got, changed = P.redact({"vars": {"v": value}}, work=WORK)
+                check(f"{name}: recorded as its placeholder", got["vars"]["v"], want)
+                check(f"{name}: and noted when it changed", [a for a, _v in changed],
+                      [] if want == value else ["vars.v"])
+            inner = os.path.join(ROOT, "work", "w1")
+            check("a work tree inside the checkout is <work>, the most specific",
+                  P.redact({"v": inner + "/iso/x"}, work=inner)[0]["v"], "<work>/iso/x")
+            record = {"recipe": "r", "vars": {"v": os.path.join(ROOT, "x")}}
+            got, _changed = P.redact(record)
+            check("keys are field names and stay; the input is not changed",
+                  (sorted(got), record["vars"]["v"]), (["recipe", "vars"], os.path.join(ROOT, "x")))
+    finally:
+        shutil.rmtree(proj, ignore_errors=True)
+
+
 def test_the_gaps_are_decisions():
-    """What this rule does not catch, and the one thing it refuses wrongly -- asserted, so
+    """What this rule does not catch, and the one thing it redacts wrongly -- asserted, so
     each is a decision rather than a surprise. build_machine_hits' docstring says why."""
     with env(HOME="/root", PROJECT_ROOT=None):
         check("HOME=/root: a builder file under /root, outside the checkout, is recorded",
@@ -166,10 +202,10 @@ def test_the_gaps_are_decisions():
         check("a builder directory that is none of this build's is not caught",
               hits({"vars": {"v": "/opt/someoneelse/artifacts/x"}}), [])
     with env(HOME="/home/guest", PROJECT_ROOT=None):
-        check("building as guest refuses the image's own /home/guest/...",
+        check("building as guest redacts the image's own /home/guest/...",
               bool(hits({"vars": {"v": "/home/guest/.config/app"}})), True)
     with env(HOME="/root", PROJECT_ROOT="/work"):
-        check("with the checkout at /work, the image's own /work/... is refused",
+        check("with the checkout at /work, the image's own /work/... is redacted",
               bool(hits({"vars": {"v": "/work/data"}})), True)
 
 
@@ -268,11 +304,12 @@ def fake_work(tmp, entries):
     return os.path.join(tmp, "work"), iso
 
 
-def test_append_records_and_finalize_decides():
+def test_append_records_and_finalize_redacts():
     """Nothing is refused mid-apply any more. append_recipe runs after the recipe has built
     its bundle, and a refusal there stranded it -- in slax/modules/, with no journal entry and
     no provenance, and `kitchen pack` shipped it. Issue #26. So append_recipe writes down what
-    it is given, and the record is judged whole when it is finalized for publishing.
+    it is given, and the record is redacted whole when it is finalized for publishing: a
+    refusal there came after the image was written, and left it without a sidecar (#63).
 
     Driven through finalize() rather than asserted from its source. The test that stood here
     checked by AST that both call sites passed the same exemption tuple; there is no tuple
@@ -296,9 +333,9 @@ def test_append_records_and_finalize_decides():
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-        # The work tree, because it is the one directory only finalize's caller knows: a
-        # refusal here proves finalize passes it on, which is what the AST test was for.
-        # The other directories are the same rule, tested through build_machine_hits above.
+        # The work tree, because it is the one directory only finalize's caller knows: its
+        # placeholder in the sidecar proves finalize passes it on, which is what the AST test
+        # was for. The other directories are the same rule, tested through redact above.
         tmp = tempfile.mkdtemp(prefix="fin-")
         try:
             leak = os.path.join(tmp, "work", "iso", "slax", "x")
@@ -307,13 +344,20 @@ def test_append_records_and_finalize_decides():
             except RuntimeError as e:
                 FAILURES.append(f"append_recipe refused mid-apply: {e}")
                 return
-            raised = False
+            err = io.StringIO()
             try:
-                P.finalize(work, iso, "genisoimage", None)
-            except RuntimeError:
-                raised = True
-            check("finalize refuses a var inside the work tree it was given", raised, True)
-            check("...and writes no sidecar", os.path.exists(iso + ".provenance.json"), False)
+                with contextlib.redirect_stderr(err):
+                    dest = P.finalize(work, iso, "genisoimage", None)
+            except RuntimeError as e:
+                FAILURES.append(f"finalize refused a var inside the work tree: {e}")
+                return
+            doc = json.load(io.open(dest, encoding="utf-8"))
+            check("finalize writes the sidecar, the var inside the work tree redacted",
+                  doc["recipes"][0]["vars"]["v"], "<work>/iso/slax/x")
+            check("...and names it in a note", "recipes[0].vars.v named a place on this build "
+                  "machine" in err.getvalue(), True)
+            check("...and the place is nowhere in the sidecar",
+                  tmp in io.open(dest, encoding="utf-8").read(), False)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -356,20 +400,24 @@ def preflight(marker):
         shutil.rmtree(d, ignore_errors=True)
 
 
-def test_a_var_is_refused_before_anything_is_built():
-    """The one input no producer shapes is checked first. kitchen build runs this pass before
-    it unpacks the base image, so a refusal leaves nothing behind -- where #26's came after
-    the recipe had built its bundle, and left the bundle there.
+def test_a_var_naming_the_build_machine_is_noted_before_anything_is_built():
+    """The one input no producer shapes is looked at first. kitchen build runs this pass
+    before it unpacks the base image. A var naming a place on this build machine was refused
+    here, exit 2 (#63): the build uses it as written, and only the record has to leave the
+    place out, so the pass notes it -- naming the recipe, the var and what the record will
+    say -- and goes on to the preflight.
 
-    Only the refusal is asserted, not the exit status of the in-image case: past this check
-    the preflight looks for testkit's tools, which a lint container may not have."""
+    The exit status is not asserted: past this point the preflight looks for testkit's
+    tools, which a lint container may not have."""
     rc, out, err = preflight(os.path.join(ROOT, "leak"))
-    check("a var inside this checkout exits 2", rc, 2)
-    check("...naming the recipe and the var", "testkit.marker" in err, True)
-    check("...before the preflight starts", "preflight" in out, False)
+    check("a var inside this checkout is not refused", (rc == 2, "error" in err), (False, False))
+    check("...it is noted, naming the recipe, the var and the placeholder",
+          "testkit.marker names a place on this build machine" in out and "<kitchen>/leak" in out,
+          True)
+    check("...and the preflight goes on", "\npreflight " in out, True)
     rc, out, err = preflight("/root/.config/kitchen-marker")
-    check("an in-image var under /root is not refused",
-          "a place on this build machine" in err, False)
+    check("an in-image var under /root is not noted", "a place on this build machine" in out,
+          False)
     check("...and gets as far as the preflight", out.startswith("preflight "), True)
 
 
@@ -383,13 +431,14 @@ def main():
     os.environ["TMPDIR"] = box
     try:
         for fn in [test_the_image_is_not_the_builder,
-                   test_the_builders_own_places_are_refused,
+                   test_the_builders_own_places_are_found,
                    test_a_directory_counts_only_where_a_path_can_begin,
+                   test_a_place_on_the_build_machine_is_recorded_as_its_placeholder,
                    test_the_gaps_are_decisions,
                    test_a_local_input_is_recorded_relative_to_its_checkout,
                    test_a_vendored_kitchen_reports_its_commit,
-                   test_append_records_and_finalize_decides,
-                   test_a_var_is_refused_before_anything_is_built]:
+                   test_append_records_and_finalize_redacts,
+                   test_a_var_naming_the_build_machine_is_noted_before_anything_is_built]:
             # One test crashing must not stop the rest: the count of failures is only honest
             # if every test ran. The traceback still goes to stderr, because a crash's location
             # is the useful half and a one-line summary loses it.

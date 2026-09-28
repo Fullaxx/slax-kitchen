@@ -35,7 +35,7 @@ A project that vendors the kitchen runs the same commands through `vendor/slax-k
 |---|---|
 | `<name>.iso` | the image; one per image |
 | `SHA256SUMS` | checks every download. It does not promise that a rebuild matches: images are not byte-reproducible ([reproducibility](reproducibility.md)) |
-| `<name>.iso.provenance.json` | what the build did: the base image, the kitchen and project commits with their submodule pins, every recipe applied, what each one fetched (URLs and sha256s) and which package versions apt resolved. One per image |
+| `<name>.iso.provenance.json` | what the build did: the base image, the kitchen and project commits with their submodule pins, every recipe applied, what each one fetched (URLs and sha256s) and which package versions apt resolved. A place on the build machine is written as `<work>`, `<kitchen>`, `<project>` or `<home>`. One per image |
 | `<name>.SOURCES.md`, `<name>.sources.json` | optional: every file in the image, where it came from, and where its upstream publishes its source when that is known. One pair per image |
 
 What the project changed is in its own repository and in this one, at the commits the provenance
