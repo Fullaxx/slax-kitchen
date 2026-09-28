@@ -2775,6 +2775,68 @@ def test_boot_cmdline_reads_a_var_as_a_list_of_parameters():
         check("a step with neither field is still refused", "nothing to do" in str(e), True)
 
 
+def test_what_root_wrote_under_sudo_is_given_back():
+    """Under sudo, what a kitchen command wrote in the user's tree stayed root's, so the next
+    unprivileged step could not write the journal, the provenance record or the bundle, or
+    remove a directory root had made (#70). CI chowned out/ and work/ after its build, and
+    slax-wine's build.sh chowns its tree after every apply: "one failed build wedged every
+    subsequent one".
+
+    The rest are the hazards of a chown -R run as root on a path someone named. Following
+    a symlink out of the tree would hand a file on the host to the user. chown clears
+    setuid, which the next pack would record. A file root did not write is nobody's to give
+    away, and neither is a place that is root's -- `sudo kitchen apply -w /etc` must not
+    give /etc away -- nor a file with a second name, which could be a hardlink to the
+    host's. Only root can make a root-owned file, so where this runs as anyone else -- CI's
+    gates job -- it checks that nothing is given, and stops there.
+    """
+    import tempfile
+    import handback
+    work = tempfile.mkdtemp()
+    tree = os.path.join(work, "tree")
+    os.makedirs(os.path.join(tree, "sub"))
+    outside = os.path.join(work, "outside")
+    open(outside, "w").write("the host's\n")
+    for n in ("journal.yaml", os.path.join("sub", "40-x.sb"), "theirs"):
+        open(os.path.join(tree, n), "w").write("x")
+    tool = os.path.join(tree, "sub", "tool")
+    open(tool, "w").write("#!/bin/sh\n")
+    os.chmod(tool, 0o4755)
+    os.symlink(outside, os.path.join(tree, "link"))
+    linked = os.path.join(work, "the-hosts")
+    open(linked, "w").write("x")
+    os.link(linked, os.path.join(tree, "hardlink"))
+    # Root that can give files away: euid 0 alone is not enough where capabilities are dropped.
+    root = os.geteuid() == 0
+    if root:
+        try:
+            os.chown(os.path.join(tree, "theirs"), 1234, 1234)
+        except PermissionError:
+            root = False
+
+    def owner(p):
+        st = os.lstat(os.path.join(tree, p))
+        return st.st_uid, st.st_gid
+
+    sudo = {"SUDO_UID": "1000", "SUDO_GID": "1000"}
+    check("with no SUDO_UID, nothing is given", handback.give_back(created=[tree], env={}), 0)
+    # `tree` is root's and in a directory root owns, like /etc: named, it is not the user's.
+    check("a place that is root's gives nothing away", handback.give_back([tree], env=sudo), 0)
+    n = handback.give_back(created=[tree], env=sudo)
+    if not root:
+        check("not root: nothing is given", n, 0)
+        return
+    check("what root wrote goes to the user who ran sudo",
+          [owner(p) for p in ("", "journal.yaml", "sub", "sub/40-x.sb")], [(1000, 1000)] * 4)
+    check("a symlink is given itself", owner("link"), (1000, 1000))
+    check("...and what it points at is not", (os.lstat(outside).st_uid, os.lstat(outside).st_gid),
+          (0, 0))
+    check("setuid survives the chown", (owner("sub/tool"), oct(os.lstat(tool).st_mode & 0o7777)),
+          ((1000, 1000), "0o4755"))
+    check("a file root did not write is left alone", owner("theirs"), (1234, 1234))
+    check("a file with a second name is left alone", owner("hardlink"), (0, 0))
+
+
 def test_iso_files_actually_writes_into_the_iso_tree():
     """`iso.files` was implemented, documented, listed as shipped -- and run by nothing.
 
@@ -4049,6 +4111,7 @@ def main():
                    test_a_later_entry_cannot_write_through_an_earlier_entrys_symlink,
                    test_iso_identity_takes_a_projects_name_and_keeps_an_earlier_one,
                    test_boot_cmdline_reads_a_var_as_a_list_of_parameters,
+                   test_what_root_wrote_under_sudo_is_given_back,
                    test_iso_files_actually_writes_into_the_iso_tree,
                    test_relax_modes_widens_without_granting,
                    test_apt_reinstall_is_opt_in,

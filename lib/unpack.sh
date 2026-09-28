@@ -36,6 +36,7 @@ kitchen_unpack() {
         [ "$force" = 1 ] || die "unpack: $dest/.kitchen records a tree that is no longer" \
                                 "there (use --force to start over)"
     fi
+    handback_add "$dest"
     if [ "$force" = 1 ]; then
         rm -rf "$tree" "$dest/.kitchen"
     fi

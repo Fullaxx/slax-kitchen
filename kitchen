@@ -17,6 +17,42 @@ else B=; G=; Y=; R=; D=; O=; fi
 die() { printf '%serror:%s %s\n' "$R" "$O" "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# UNDER SUDO, WHAT A COMMAND WRITES GOES BACK TO WHOEVER RAN IT (#70). unpack, pack, build
+# and test name each path they write in with handback_add; lib/handback.py gives every
+# root-owned path under them to SUDO_UID:SUDO_GID as the command ends, however it ends --
+# `die` exits, and INT and TERM become exits so the trap still runs. apply is exec'd, and
+# does the same in lib/apply.py. Nothing is set up unless this is root run through sudo.
+# A path that does not exist yet is one this run creates, which makes it the user's; call
+# handback_add BEFORE creating anything. Any other is given back only where it is the
+# user's place (lib/handback.py).
+HANDBACK=""
+handback_add() {
+    case $1 in /*) _hb=$1 ;; *) _hb=$PWD/$1 ;; esac
+    if [ -e "$_hb" ] || [ -L "$_hb" ]; then
+        HANDBACK="$HANDBACK$_hb
+"
+    else
+        HANDBACK="$HANDBACK--new
+$_hb
+"
+    fi
+}
+handback_exit() {
+    [ -n "$HANDBACK" ] && [ -f "$REPO_ROOT/lib/handback.py" ] || return 0
+    _oifs=$IFS; IFS='
+'
+    set -f
+    # shellcheck disable=SC2086
+    python3 "$REPO_ROOT/lib/handback.py" $HANDBACK || true
+    set +f
+    IFS=$_oifs
+}
+if [ "$(id -u)" = 0 ] && [ -n "${SUDO_UID:-}" ]; then
+    trap handback_exit EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+fi
+
 # Run xorriso and judge it the way lib/diff.py judges a listing: a non-zero exit, or any
 # line at SORRY or above -- MISHAP included, because xorriso can report one and exit 0.
 # unpack and pack both run it through here; each had judged it its own way, and pack's rule

@@ -286,14 +286,11 @@ jobs:
       # real chroot. lib/build.sh has no escalation of its own; ci/recipe-matrix.sh
       # already does exactly this for the same reason.
       #
-      # The chown is not tidiness. Building as root leaves out/ owned by root:root 755,
-      # and the NEXT step runs as the runner user (uid 1001) and writes screenshots and
-      # logs into out/boot-tests/ -- which it cannot create inside a root-owned
-      # directory. Without this the boot step dies on a permission error and the
-      # evidence upload finds nothing.
-      - run: |
-          sudo ./kitchen build example --keep
-          sudo chown -R "$(id -u):$(id -g)" out work
+      # The NEXT step runs as the runner user (uid 1001) and writes screenshots and logs
+      # into out/boot-tests/. That needs out/ to be the runner's, and a build under sudo
+      # gives out/ and work/ back to the user who ran it (#70). This job chowned them
+      # itself until then, and without that the boot step died on a permission error.
+      - run: sudo ./kitchen build example --keep
       # --kernel is the assertion; --bios/--uefi are evidence.
       #
       # A direct kernel boot puts the kernel on ttyS0 by construction and checks the

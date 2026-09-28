@@ -91,6 +91,9 @@ print(status.start_over(sys.argv[2]))' "$REPO_ROOT/lib" "$_work")
         die "pack: $out already exists (use --force to overwrite)"
     fi
     [ -f "$src/slax/boot/isolinux.bin" ] || die "pack: $src does not look like a Slax tree (no slax/boot/isolinux.bin)"
+    # The image and what goes beside it, and the tree's 98-dpkg-db.sb, which pack rewrites.
+    handback_add "$(dirname "$out")"
+    handback_add "$src"
 
     # The work tree is the directory holding the ISO tree: work/iso -> work. Everything
     # pack reads about the build -- the hints, the base image it came from, what each
@@ -163,7 +166,13 @@ print(status.start_over(sys.argv[2]))' "$REPO_ROOT/lib" "$_work")
 
     case "$backend" in
       genisoimage)
-        genisoimage -o "$out" -quiet -J -R -D \
+        # EVERY FILE IS RECORDED AS ROOT'S, as in the stock image: -R keeps each file's
+        # real mode, and -uid 0 -gid 0 set its owner. The image recorded whoever owned
+        # the tree, and a tree unpacked without sudo is the user's. Livekit copies rootcopy
+        # onto the union with `cp -a`, and measured on the boot host, an image packed from
+        # a tree owned by uid 1000 booted with /etc owned by uid 1000, which is `guest`.
+        # And under sudo, giving the tree back (#70) would have changed the next image.
+        genisoimage -o "$out" -quiet -J -R -uid 0 -gid 0 -D \
             -A "$appid" -V "$volid" -sysid "$sysid" -input-charset utf-8 \
             ${publisher:+-publisher "$publisher"} ${preparer:+-p "$preparer"} \
             -b slax/boot/isolinux.bin -c slax/boot/isolinux.boot \
@@ -171,7 +180,8 @@ print(status.start_over(sys.argv[2]))' "$REPO_ROOT/lib" "$_work")
             "$src" || die "pack: genisoimage failed"
         ;;
       xorriso)
-        set -- -as mkisofs -o "$out" -J -R -D \
+        # Root's, as above.
+        set -- -as mkisofs -o "$out" -J -R -uid 0 -gid 0 -D \
                -A "$appid" -V "$volid" -sysid "$sysid" -input-charset utf-8 \
                -b slax/boot/isolinux.bin -c slax/boot/isolinux.boot \
                -no-emul-boot -boot-load-size 4 -boot-info-table

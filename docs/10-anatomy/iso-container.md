@@ -52,7 +52,8 @@ Level 1 names exist only because `genisoimage` defaults to them and the build ne
 
 ## Rock Ridge
 
-`-R` (not `-r`), so real ownership and real modes survive:
+`-R` (not `-r`), so real modes survive, with `-uid 0 -gid 0`, so every file is recorded as root's,
+as in the stock image:
 
 ```
 drwxr-xr-x  /slax/boot
@@ -71,6 +72,15 @@ re-`chmod`s `extlinux.x$ARCH` itself before using it.
 image still boots — nothing in the boot path checks modes — so the damage only shows up later, when
 someone tries to run `bootinst.sh` from a mounted ISO. `kitchen pack` uses `-R`, and
 `tests/structure/iso_assert.py` asserts the three executable bits.
+
+**The owner is root's, whoever built the image.** With `-R` alone the image recorded whoever owned
+the tree, and a tree unpacked without `sudo` belongs to the user who unpacked it. Livekit copies
+rootcopy onto the union with `cp -a`, and measured on the boot host with an image packed from a tree
+owned by uid 1000, the booted system's `/etc` belonged to uid 1000, which on stock Slax is `guest`.
+Rootcopy content under `/etc` had carried its directory's owner onto the union's own. Packed with
+`-uid 0 -gid 0`, the same tree boots with `/etc` root's
+([#70](https://github.com/Fullaxx/slax-kitchen/issues/70)). It is also what lets a build under
+`sudo` give the tree back to the user without changing the next image.
 
 ## Extent layout
 

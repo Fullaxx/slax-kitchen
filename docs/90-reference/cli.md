@@ -7,6 +7,15 @@ kitchen <command> [options]
 Paths are relative to your **current directory**, not the repo, so `work/` and `out/` behave like any
 build directory. Both are gitignored.
 
+**Under `sudo`, what a command writes goes back to whoever ran it.** `unpack`, `apply`, `pack`,
+`build` and `test` give every path root wrote in the work tree and the output directory to
+`SUDO_UID:SUDO_GID` as they end, whether they succeed or not, so the next step works without it
+([#70](https://github.com/Fullaxx/slax-kitchen/issues/70)). Only in a place that is that user's: a
+directory the command created, or one the user owns or that sits in one the user owns. So
+`-w /etc` gives nothing away. Only root's paths change, a file with a second name is left alone,
+symlinks are never followed, and setuid bits are kept. Run as root without `sudo`, as in a
+container, nothing changes. The image is not affected: `pack` records every file as root's.
+
 **Every command checks the tools it needs before it starts**, and names the package for any that
 is missing. `kitchen test` checks what all the modes you asked for need, at once, before running
 any of them. The commands that only read an image (`test --structure`, `diff`, `sources`, `probe`,

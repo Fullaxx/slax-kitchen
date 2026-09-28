@@ -30,6 +30,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dpkgdb  # noqa: E402
 import fingerprint  # noqa: E402
+import handback  # noqa: E402
 import isoparse  # noqa: E402
 import provenance  # noqa: E402
 from validate import recipe_name, validate_file  # noqa: E402
@@ -4351,6 +4352,8 @@ def main(argv: list[str]) -> int:
                          "kitchen build uses this to preflight from the profile BEFORE "
                          "unpacking 400+ MiB")
     a = ap.parse_args(argv[1:])
+    # Given back as the command ends, under sudo, whether it succeeded or not (#70).
+    GIVE_BACK.append(a.work)
     override = {}
     if a.facts:
         for pair in a.facts.split(","):
@@ -4514,5 +4517,13 @@ def main(argv: list[str]) -> int:
     return 0
 
 
+# What this run wrote as root, for handback to give to the user who ran sudo. A list the
+# entry point below reads, because main() returns from forty places.
+GIVE_BACK: list = []
+
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    try:
+        rc = main(sys.argv)
+    finally:
+        handback.give_back(GIVE_BACK)
+    raise SystemExit(rc)

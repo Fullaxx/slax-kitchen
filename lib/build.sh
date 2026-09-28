@@ -231,6 +231,7 @@ kitchen_test() {
         && [ "$want_kernel" = 0 ] && [ "$want_usb" = 0 ] && [ "$want_perch" = 0 ] \
         && want_structure=1
     outdir=${outdir_opt:-"$(dirname "$iso")/boot-tests"}
+    handback_add "$outdir"
     mkdir -p "$outdir" || die "test: cannot write to $outdir"
 
     # WHERE THE BOOT MODES RUN. `boot_host.py active` answers with a status rather than
@@ -568,6 +569,9 @@ kitchen_build() {
     if [ -e "$work" ] && [ "$bld_force" != 1 ]; then
         die "build: $work exists (use --force to rebuild from scratch)"
     fi
+    # work/ and out/ themselves, which this may be the run that made.
+    handback_add work
+    handback_add out
     rm -rf "$work"
 
     kitchen_unpack "$BASE_ISO" -o "$work" || exit 1

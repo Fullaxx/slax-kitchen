@@ -10,12 +10,13 @@ Whoever publishes an image decides whether to, and nothing in this procedure ref
 
 ```sh
 sudo ./kitchen build myproject                         # out/myproject.iso + .provenance.json
-sudo chown -R "$(id -u):$(id -g)" out                  # the build ran as root; out/ is root's
 ./kitchen sources out/myproject.iso \
     --markdown out/myproject.SOURCES.md --json out/myproject.sources.json   # optional
 (cd out && sha256sum myproject.iso > SHA256SUMS)
 ```
 
+Under `sudo`, what the build writes is given back to the user who ran it
+([#70](https://github.com/Fullaxx/slax-kitchen/issues/70)), so the commands after it run as that user.
 Then a person uploads the image, `SHA256SUMS`, `myproject.iso.provenance.json` and, if they made
 them, the two sources files — with `gh release create`, or however the project publishes. Nothing
 here uploads.
