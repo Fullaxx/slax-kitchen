@@ -3,6 +3,8 @@
 
 Called by the 40-schema commit gate and by `kitchen apply` before a recipe runs --
 a malformed recipe should fail at the gate, not halfway through mutating a work tree.
+`kitchen validate` on a profile also resolves its recipes and holds each entry's vars to
+the vars that recipe declares, as apply does (check_profile_recipes).
 """
 from __future__ import annotations
 
@@ -159,6 +161,33 @@ def validate_file(path: str, overrides: dict | None = None) -> list[str]:
     return problems
 
 
+def check_profile_recipes(path: str) -> list[str]:
+    """A profile's recipes, resolved as apply resolves them, each with its entry's vars
+    checked against the vars that recipe declares.
+
+    `kitchen validate` passed a profile setting a var iso-identity did not declare, and
+    apply refused it -- "overrides a var this recipe does not declare" -- once a work tree
+    existed (#68). The check here is apply's own: read_profile_recipes, resolve on the same
+    search path, validate_file with the overrides. So a name that does not resolve is
+    reported here too, as apply would report it.
+
+    Called from main() only. validate_file() is what apply and profile.py call on a
+    profile, and apply's call would come back here.
+    """
+    import apply  # here, not at the top: apply imports this module
+    try:
+        names, overrides = apply.read_profile_recipes(path)
+        paths = apply.resolve(names, apply.recipe_search_path() + [os.getcwd()])
+    except RuntimeError as e:
+        return [str(e)]
+    problems = []
+    for p in paths:
+        ov = overrides.get(recipe_name(p))
+        if ov:
+            problems += [f"{recipe_name(p)}: {q}" for q in validate_file(p, ov)]
+    return problems
+
+
 def main(argv: list[str]) -> int:
     # argparse, not a length check: `kitchen validate --help` used to reach the loop
     # below and die with a FileNotFoundError traceback for a file called "--help".
@@ -166,12 +195,16 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(
         prog="kitchen validate",
         description="check a recipe, profile, sources or fingerprint file "
-                    "against its JSON Schema")
+                    "against its JSON Schema; a profile's recipes are also resolved, "
+                    "and each entry's vars checked against the vars its recipe declares")
     ap.add_argument("files", nargs="+", metavar="FILE.yaml")
     args = ap.parse_args(argv[1:])
     rc = 0
+    import yaml
     for path in args.files:
         problems = validate_file(path)
+        if not problems and (yaml.safe_load(open(path)) or {}).get("kind") == "Profile":
+            problems = check_profile_recipes(path)
         if problems:
             rc = 1
             for p in problems:

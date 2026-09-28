@@ -23,7 +23,7 @@ the resulting ISO in QEMU and reading the console.
 | `kitchen fingerprint` | ✅ ~3.5 s per ISO, mount-free |
 | `kitchen probe` | ✅ all four stock ISOs report `MATCH`; classifies differences as benign / explained / unexplained / critical |
 | `kitchen doctor` | ✅ reports tool + capability matrix and which recipes this machine can run |
-| `kitchen validate` | ✅ JSON Schema, validated post-variable-substitution |
+| `kitchen validate` | ✅ JSON Schema, validated post-variable-substitution; a profile's recipes resolved, and their vars held to what each declares |
 | `kitchen apply` | ✅ dep ordering, `when:` guards, dry run, journalling, pack hints |
 | preflight | ✅ every tool/file/capability the plan needs checked up front; `build` checks before unpacking |
 | `kitchen build` | ✅ whole pipeline from one profile, ~4 s for four recipes; derives test expectations from the recipe list |

@@ -36,7 +36,29 @@ from `default`; an entry written out in full carries none of them.
 ```
 
 Removal is **by key**, so `automount` matches a bare flag and a `key=value` form alike. Appending a
-key that is already present replaces it rather than duplicating it.
+key that is already present replaces it rather than duplicating it. An entry holding spaces is
+several parameters, and an empty entry is none.
+
+## Variables
+
+```yaml
+vars:
+  append: toram
+  remove: automount
+```
+
+Each is space-separated, because a var is a string. Override per build in a profile:
+
+```yaml
+recipes:
+  - name: boot-cmdline
+    vars: {append: "", remove: automount}        # an image too big to copy to RAM
+```
+
+An empty value asks for nothing, and that step changes nothing. Both became vars in
+[#68](https://github.com/Fullaxx/slax-kitchen/issues/68); `toram` was fixed before, so slax-wine,
+whose 1.2 GiB image is too big to copy to RAM, wrote its own. With the defaults, the menus it writes
+are byte for byte what they were.
 
 Both `isolinux.cfg` and `syslinux.cfg` are edited by default. Upstream keeps the two deliberately
 different — the CD's `isolinux.cfg` has no persistence entries, `syslinux.cfg` (USB/HDD) does — so

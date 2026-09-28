@@ -82,7 +82,8 @@ ${B}COMMANDS${O}
   fetch [target|--all]       download + verify a base ISO into isos/ (no args: list)
   unpack <iso> [-o DIR]      explode a Slax ISO into a work tree  (default: ./work)
   apply <recipe>... [-w DIR] apply recipes to a work tree (-n for a dry run)
-  validate <file.yaml>...    check a recipe or profile against its schema
+  validate <file.yaml>...    check a recipe or profile against its schema, and a
+                             profile's vars against the vars its recipes declare
   pack [-o FILE|DIR]         rebuild an ISO from a work tree      (default: ./out/<name>-custom.iso)
   build <profile>            unpack -> apply -> pack -> test, from one profile
   test <iso> [--structure] [--kernel] [--bios] [--uefi] [--usb] [--persistence]

@@ -500,6 +500,38 @@ def test_profile_recipe_forms():
           overrides, {"serial-console": {"port": "ttyS1"}})
 
 
+def test_kitchen_validate_holds_a_profile_to_the_vars_its_recipes_declare():
+    """`kitchen validate` passed a profile setting a var iso-identity did not declare, and
+    apply refused it -- "overrides a var this recipe does not declare" -- once a work tree
+    existed (#68). validate's main() now runs apply's own check. The profile names a
+    shipped recipe, found as apply finds it.
+
+    Here rather than in test_validate.py because the check imports apply, which this file
+    has already paid for: under ci/unit-run.py, importing it there cost 0.33 s.
+    """
+    import contextlib
+    import io
+    import tempfile
+    import validate
+    d = tempfile.mkdtemp(prefix="validate-profile-")
+    try:
+        path = os.path.join(d, "p.yaml")
+        for vars_, want in (("{volid: MINE, flavor: x}", 1), ("{volid: MINE}", 0)):
+            with open(path, "w") as f:
+                f.write("apiVersion: slax-kitchen/v1\nkind: Profile\nmetadata:\n  name: p\n"
+                        "base: {flavour: debian, arch: 64bit, version: \"12.2.0\"}\n"
+                        f"recipes:\n  - name: iso-identity\n    vars: {vars_}\n")
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc = validate.main(["validate", path])
+            check(f"vars {vars_}: exit", rc, want)
+            if want:
+                check("...naming the var and what the recipe declares",
+                      ("flavor" in err.getvalue(), "declared: " in err.getvalue()), (True, True))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_unknown_override_is_rejected():
     """A var the recipe does not declare is an error, not a silent no-op."""
     import tempfile
@@ -2670,6 +2702,79 @@ def test_a_later_entry_cannot_write_through_an_earlier_entrys_symlink():
           "mine")
 
 
+def test_iso_identity_takes_a_projects_name_and_keeps_an_earlier_one():
+    """iso-identity declared volid and publisher and wrote `preparer: slax-kitchen` fixed,
+    so a profile naming its image's appid or preparer was refused, and slax-wine wrote an
+    identity recipe of its own (#68).
+
+    The second half is the hazard the new vars create. They default to empty, and
+    iso.metadata wrote an empty field as a hint, which would erase an appid an earlier
+    recipe had set.
+    """
+    import tempfile
+    import yaml
+    work = tempfile.mkdtemp()
+    os.makedirs(os.path.join(work, "iso"))
+    ctx = apply.Ctx(work, work, "t")
+    ctx.say = lambda *a: None
+    recipe = os.path.join(REPO, "recipes", "available", "iso-identity.yaml")
+
+    def run(overrides):
+        _doc, steps = apply.plan_recipe(recipe, {"flavour": "debian", "arch": "64bit"},
+                                        overrides)
+        for _i, step, will in steps:
+            if will and step["verb"] == "iso.metadata":
+                apply.VERBS["iso.metadata"](ctx, step)
+        return yaml.safe_load(open(os.path.join(ctx.meta, "pack.yaml")))
+
+    hints = run({"volid": "MYPRODUCT", "appid": "MYPRODUCT 1.0", "preparer": "myproject"})
+    check("a profile's volid, appid and preparer reach pack",
+          (hints.get("volid"), hints.get("appid"), hints.get("preparer")),
+          ("MYPRODUCT", "MYPRODUCT 1.0", "myproject"))
+    check("an empty sysid is left unset", "sysid" in hints, False)
+
+    apply.VERBS["iso.metadata"](ctx, {"verb": "iso.metadata", "appid": "EARLIER"})
+    hints = run({})
+    check("its empty appid leaves an earlier recipe's alone", hints.get("appid"), "EARLIER")
+    check("and its defaults write what it always wrote",
+          (hints.get("volid"), hints.get("preparer")), ("SLAX-CUSTOM", "slax-kitchen"))
+
+
+def test_boot_cmdline_reads_a_var_as_a_list_of_parameters():
+    """boot-cmdline's `toram` and `automount` were fixed, so an image too big to copy to RAM
+    could not use it, and slax-wine wrote its own (#68). A var is a string, so the recipe's
+    `append:` now arrives as one entry holding several parameters, or none.
+
+    The verb has history with exactly this input: `for a in "toram"` once appended five
+    letters, and a step once reported edits it had not made.
+    """
+    import tempfile
+    work = tempfile.mkdtemp()
+    boot = os.path.join(work, "iso", "slax", "boot")
+    os.makedirs(boot)
+    for f in ("isolinux.cfg", "syslinux.cfg"):
+        open(os.path.join(boot, f), "w").write("LABEL default\nAPPEND vga=normal toram automount\n")
+    ctx = apply.Ctx(work, work, "t")
+    ctx.say = lambda *a: None
+    cfg = os.path.join(boot, "isolinux.cfg")
+
+    # Two parameters, each replacing one of its key already there. As one token,
+    # "toram nomodeset" has the key "toram nomodeset", and the old toram stayed beside it.
+    apply.VERBS["boot.cmdline"](ctx, {"verb": "boot.cmdline", "append": ["toram nomodeset"]})
+    words = [ln for ln in open(cfg) if "APPEND" in ln][0].split()
+    check("two words are two parameters, each replacing its key",
+          words, ["APPEND", "vga=normal", "automount", "toram", "nomodeset"])
+    # Nothing, not an empty parameter: that was a trailing space, counted as an edit.
+    before = open(cfg).read()
+    apply.VERBS["boot.cmdline"](ctx, {"verb": "boot.cmdline", "append": [""]})
+    check("an empty entry asks for nothing, and nothing changes", open(cfg).read(), before)
+    try:
+        apply.VERBS["boot.cmdline"](ctx, {"verb": "boot.cmdline"})
+        check("a step with neither field is still refused", "ran", "refused")
+    except RuntimeError as e:
+        check("a step with neither field is still refused", "nothing to do" in str(e), True)
+
+
 def test_iso_files_actually_writes_into_the_iso_tree():
     """`iso.files` was implemented, documented, listed as shipped -- and run by nothing.
 
@@ -3905,6 +4010,7 @@ def main():
                    test_apt_source_line,
                    test_network_declaration, test_profile_recipe_forms,
                    test_unknown_override_is_rejected,
+                   test_kitchen_validate_holds_a_profile_to_the_vars_its_recipes_declare,
                    test_recipe_search_path,
                    test_a_vendoring_project_names_its_own_recipes_and_profiles_bare,
                    test_reserved_bundle_numbers,
@@ -3941,6 +4047,8 @@ def main():
                    test_bundle_files_fetches_a_pinned_url_itself,
                    test_a_staged_tree_keeps_its_hardlinks,
                    test_a_later_entry_cannot_write_through_an_earlier_entrys_symlink,
+                   test_iso_identity_takes_a_projects_name_and_keeps_an_earlier_one,
+                   test_boot_cmdline_reads_a_var_as_a_list_of_parameters,
                    test_iso_files_actually_writes_into_the_iso_tree,
                    test_relax_modes_widens_without_granting,
                    test_apt_reinstall_is_opt_in,

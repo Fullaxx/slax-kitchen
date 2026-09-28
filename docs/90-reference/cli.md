@@ -682,6 +682,10 @@ removes or renumbers a bundle may contain nothing else** — that one decides wh
 in a plan, so mixing it with a build makes its position a constraint on every other recipe. See
 [composing bundles](../40-workflow/composing-bundles.md).
 
+A profile's recipes are resolved as `apply` resolves them, and each entry's `vars:` is held to the
+vars its recipe declares, so what `apply` would refuse about them is refused here, before a work
+tree exists ([#68](https://github.com/Fullaxx/slax-kitchen/issues/68)).
+
 ## `selftest [stage] [scope]`
 
 Runs the commit gates: `pre-commit`, `pre-push` or `ci`. Hooks call the same script, so a hook can
@@ -744,7 +748,8 @@ test:                      # structure | kernel-boot | bios-boot | uefi-boot | u
 Given twice, it is refused rather than one set of options picked.
 
 **`vars:` overrides merge** over the recipe's own defaults, so setting one leaves the rest alone.
-Naming a var the recipe does not declare is an error listing what it does declare, and the value
+Naming a var the recipe does not declare is an error listing what it does declare — from `kitchen
+validate` as well as `apply` — and the value
 is schema-checked as though the recipe had been written that way — `bundle: NONSENSE` fails the
 `NN-name` pattern at validation rather than deep inside `bundle.packages`. What was used is
 recorded in the journal and shown by `kitchen status`.

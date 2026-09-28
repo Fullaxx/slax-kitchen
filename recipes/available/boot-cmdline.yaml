@@ -9,6 +9,12 @@ compat:
   arch: [32bit, 64bit]
   slax: ">=12.0.0"
   privilege: none
+vars:
+  # Space-separated, because a var is a string: "toram nomodeset" is two parameters, and ""
+  # is none, which leaves that step with nothing to do. The defaults are what this recipe
+  # always did; slax-wine could not use it because `toram` was fixed (#68).
+  append: toram
+  remove: automount
 steps:
   # Boot parameters are normally typed at the menu -- press Esc in the four-second
   # window, then Tab to edit. That is fine once and useless at scale: an image handed to
@@ -28,7 +34,7 @@ steps:
   # costs RAM equal to the image size, which is why upstream does not default it.
   - verb: boot.cmdline
     append:
-      - toram
+      - "{{append}}"
 
   # Removal is BY KEY, so `automount` drops both a bare `automount` and `automount=x`.
   #
@@ -38,4 +44,4 @@ steps:
   # cannot work; the flag has to not be there. Stock entries include it, hence this step.
   - verb: boot.cmdline
     remove:
-      - automount
+      - "{{remove}}"

@@ -457,8 +457,10 @@ filesystem the system is about to boot into. An `exit` here ends the boot.
 ```
 
 `append` and `remove` are **arrays**, and the step reports how many APPEND lines it actually
-changed — re-applying it says `0 entries`, not the entry count. A step with neither field is
-refused rather than silently doing nothing.
+changed — re-applying it says `0 entries`, not the entry count. Each entry is split on whitespace,
+as the APPEND line itself is, so a recipe var can carry several parameters in one string, and an
+empty one carries none: that step then changes nothing. A step with neither field is refused
+rather than silently doing nothing.
 
 **`from:` copies an entry the menu already has, as it has it by then.** An entry written out in full
 carries none of the edits made before it: `serial-console` used to spell out stock Slax's command
@@ -646,7 +648,8 @@ copyright, abstract and bibliography **all blank**.
 
 Recorded as **pack hints** — these are set by the mastering tool, so there is nowhere in the tree
 they could live. An over-long value is refused rather than silently truncated, and a flag on the
-`kitchen pack` command line wins over the recipe.
+`kitchen pack` command line wins over the recipe. An empty value leaves that field as it is, so a
+recipe's empty default never erases what an earlier recipe set.
 
 ### `iso.checksums` ○
 

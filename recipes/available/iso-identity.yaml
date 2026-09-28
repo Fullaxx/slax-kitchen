@@ -12,6 +12,12 @@ compat:
 vars:
   volid: SLAX-CUSTOM
   publisher: "built with slax-kitchen"
+  # Empty leaves a field as it is: another recipe's value if one set it, else what pack
+  # writes by default ("slax" and "LINUX"). A project names itself here; slax-wine wrote
+  # its own identity recipe because these three were fixed (#68).
+  appid: ""
+  sysid: ""
+  preparer: "slax-kitchen"
 steps:
   # A customized image that still identifies itself as stock is a trap for whoever finds
   # it later -- including you, six months on. Upstream leaves most of these fields empty:
@@ -24,8 +30,10 @@ steps:
   # rather than letting the mastering tool truncate it silently.
   - verb: iso.metadata
     volid: "{{volid}}"
+    appid: "{{appid}}"
+    sysid: "{{sysid}}"
     publisher: "{{publisher}}"
-    preparer: "slax-kitchen"
+    preparer: "{{preparer}}"
 
   # Necessarily written AFTER mastering -- the checksum of an image cannot live inside
   # that image. `kitchen pack` writes <output>.sha256 next to the ISO, with a relative

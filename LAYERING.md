@@ -99,8 +99,9 @@ test: [structure]
 5. **Give the image its own identity.** Nothing of the base's identity carries over: the volume id
    and the other fields written when an image is mastered come from this build's recipes, and
    with none an image calls itself `slax`, as stock Slax does. Use
-   [`iso-identity`](docs/50-cookbook/iso-identity.md) or a recipe of your own. The base's release
-   file does stay in the image, and stays true of the base; write your own beside it.
+   [`iso-identity`](docs/50-cookbook/iso-identity.md), whose vars set every one of those fields, or
+   a recipe of your own. The base's release file does stay in the image, and stays true of the
+   base; write your own beside it.
 6. **Do not apply what the base already applied**, except what is written when an image is
    mastered, which does not carry over. Identity is step 5. A hybrid MBR is a request `isohybrid`
    makes of `kitchen pack`, so list `isohybrid` whenever you want one. The UEFI boot entry is
@@ -203,9 +204,7 @@ Offered as follow-ups rather than decided:
   for the files it inherited;
 - a record inside the image of which recipes built it, so a consumer's `apply` could refuse to
   apply one again;
-- engine gates that run over a project's own tree, so no project copies them;
-- vars for `iso-identity`'s application id and preparer, and for what `boot-cmdline` appends.
-  slax-wine writes its own identity recipe because those are fixed;
+- engine gates that run over a project's own tree, so no project copies them.
 
 ## How #42 was settled
 
@@ -222,4 +221,4 @@ directly:
 | 5. `kitchen version` drops the commit inside a submodule | fixed in the commit that added this page |
 | 6. `kitchen build` cannot pass the volume id | stale: it has since `6419fa4` |
 | 7. gates are copied into every layer | a project copies what it needs from its own engine pin — [Gates](#gates) |
-| 8. identity recipes are not parameterisable | a product writes its own identity recipe; vars are a follow-up |
+| 8. identity recipes are not parameterisable | a product wrote its own identity recipe; `iso-identity` and `boot-cmdline` take vars for what was fixed since #68 |

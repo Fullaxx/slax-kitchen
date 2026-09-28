@@ -36,6 +36,32 @@ So there is nothing to overwrite, only fields to start filling in.
 | `publisher` | 128 | who built it |
 | `preparer` | 128 | what built it |
 
+## Variables
+
+```yaml
+vars:
+  volid: SLAX-CUSTOM
+  publisher: "built with slax-kitchen"
+  appid: ""
+  sysid: ""
+  preparer: "slax-kitchen"
+```
+
+Override per build in a profile — a project names its own image without a recipe of its own:
+
+```yaml
+recipes:
+  - name: iso-identity
+    vars: {volid: MYPRODUCT, appid: "MYPRODUCT 1.0", preparer: "myproject"}
+```
+
+An empty value leaves that field as it is: whatever an earlier recipe set, or else what `kitchen
+pack` writes by default, `slax` for the application id and `LINUX` for the system id. `appid`,
+`sysid` and `preparer` became vars in [#68](https://github.com/Fullaxx/slax-kitchen/issues/68);
+before, a profile setting them was refused and slax-wine wrote its own identity recipe. Verified:
+that profile, applied and packed, reads back from the image's volume descriptor as volume id
+`MYPRODUCT`, application id `MYPRODUCT 1.0` and preparer `myproject`.
+
 The verb **refuses an over-long value** rather than letting the mastering tool truncate it without a
 word:
 

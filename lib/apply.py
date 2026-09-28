@@ -2698,7 +2698,10 @@ def v_boot_cmdline(ctx: Ctx, step: dict) -> None:
     def _listify(v):
         if v is None:
             return []
-        return [v] if isinstance(v, str) else list(v)
+        # Each entry split on whitespace, as every APPEND line below is split: a recipe var
+        # can only carry a string, so "toram nomodeset" arrives as one entry, and "" as an
+        # entry that asks for nothing (#68).
+        return [p for item in ([v] if isinstance(v, str) else list(v)) for p in str(item).split()]
 
     add = _listify(step.get("append"))
     drop = _listify(step.get("remove"))
@@ -2712,10 +2715,16 @@ def v_boot_cmdline(ctx: Ctx, step: dict) -> None:
     # validates the examples in docs/ too, which is what found the three pages still
     # showing `add:` long after the verb reference had been corrected. This check stays
     # as the backstop for a caller that bypasses validation.
-    if not add and not drop:
+    #
+    # By the fields given, not by what they hold: a recipe var set to "" asks for nothing,
+    # which is a choice, and that step does nothing (#68).
+    if "append" not in step and "remove" not in step:
         raise RuntimeError(
             "boot.cmdline: nothing to do -- give `append:` and/or `remove:` "
             f"(got fields: {', '.join(sorted(k for k in step if k != 'verb'))})")
+    if not add and not drop:
+        ctx.say("boot.cmdline: nothing to append or remove")
+        return
     only = set(step.get("labels", []))
     for path in _cfg_paths(ctx, step.get("targets")):
         if not os.path.isfile(path):
@@ -2862,6 +2871,11 @@ def v_iso_metadata(ctx: Ctx, step: dict) -> None:
         raise RuntimeError("iso.metadata: nothing to set -- give volid, appid, sysid, "
                            "publisher or preparer")
     for k, v in given.items():
+        # An empty field is left as it is. iso-identity passes every field through a var, and
+        # an empty default would otherwise erase what an earlier recipe set (#68). Pack
+        # skipped an empty hint anyway, so "" never reached the image.
+        if str(v) == "":
+            continue
         limit, what = fields[k]
         v = str(v)
         # ISO9660 pads these to a fixed width; anything longer is truncated by the
