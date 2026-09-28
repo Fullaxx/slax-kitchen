@@ -99,9 +99,9 @@ test: [structure]
 5. **Give the image its own identity.** Nothing of the base's identity carries over: the volume id
    and the other fields written when an image is mastered come from this build's recipes, and
    with none an image calls itself `slax`, as stock Slax does. Use
-   [`iso-identity`](docs/50-cookbook/iso-identity.md), whose vars set every one of those fields, or
-   a recipe of your own. The base's release file does stay in the image, and stays true of the
-   base; write your own beside it.
+   [`iso-identity`](docs/50-cookbook/iso-identity.md), whose vars set the volume id, application
+   id, system id, publisher and preparer, or a recipe of your own. The base's release file does
+   stay in the image, and stays true of the base; write your own beside it.
 6. **Do not apply what the base already applied**, except what is written when an image is
    mastered, which does not carry over. Identity is step 5. A hybrid MBR is a request `isohybrid`
    makes of `kitchen pack`, so list `isohybrid` whenever you want one. The UEFI boot entry is
@@ -116,7 +116,9 @@ test: [structure]
    each one this build will not write. A dropped MBR leaves nothing behind for a test to find.
 7. **Build from the project's root,** where `work/` and `out/` are written:
    `vendor/slax-kitchen/kitchen build myproduct`. `--keep` leaves the work tree for checks of the
-   project's own.
+   project's own. Under `sudo`, which a recipe needing a chroot requires, what the build writes
+   there is given back to whoever ran it as the build ends, however it ends
+   ([#70](https://github.com/Fullaxx/slax-kitchen/issues/70)).
 8. **Configure the engine from the project's root.** A `boot-host.ini` there is what the vendored
    engine reads, before any in its own checkout; list it in the project's `.gitignore`.
    `vendor/slax-kitchen/kitchen doctor --install-hooks` links the project's own `ci/hooks/` into

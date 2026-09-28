@@ -97,7 +97,7 @@ what to re-check when a base is bumped, is
 ./ci/recipe-matrix.sh debian-64bit-12.2.0 isos/slax-64bit-debian-12.2.0.iso
 ./ci/roundtrip.sh isos/slax-64bit-debian-12.2.0.iso
 ./ci/upstream-watch.sh
-./kitchen build example                                        # what the boot job builds
+sudo ./kitchen build example --keep                            # what the boot job builds
 ```
 
 ## The recipe matrix is the important one

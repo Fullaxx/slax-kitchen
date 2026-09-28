@@ -482,11 +482,14 @@ doctor_report() {
 # Where `doctor --install-hooks` puts hooks: the repository of the project that vendors
 # this checkout -- found by lib/provenance.py, as the provenance record finds it -- or this
 # checkout's own, and the hooks directory git names there. `--git-path`, not .git/hooks:
-# in a worktree, or with core.hooksPath, that is somewhere else.
+# in a worktree that is the common directory's. It names core.hooksPath too, when that is
+# set -- husky's tracked .husky/, or a directory every repository shares -- and nothing
+# should be linked over what is there, so _hookspath says whether it is.
 hooks_where() {
     _top=$(python3 "$REPO_ROOT/lib/provenance.py" project-root 2>/dev/null) || _top=$REPO_ROOT
     _hooks=$(git -C "$_top" rev-parse --git-path hooks 2>/dev/null) || return 1
     case $_hooks in /*) ;; *) _hooks=$_top/$_hooks ;; esac
+    _hookspath=$(git -C "$_top" config --get core.hooksPath 2>/dev/null) || _hookspath=""
 }
 
 cmd_doctor() {
@@ -502,6 +505,8 @@ cmd_doctor() {
         # submodule's .git is a file, so a vendored kitchen said "not a git repo" -- and the
         # hooks it would have installed check the kitchen's tree, not the project (#66).
         hooks_where || die "not a git repository: $_top"
+        [ -z "$_hookspath" ] || die "core.hooksPath is set to $_hookspath in $_top: git runs" \
+            "its hooks from there, and nothing was linked into it"
         _n=0
         for _h in "$_top"/ci/hooks/*; do
             [ -f "$_h" ] || continue
@@ -526,7 +531,9 @@ cmd_doctor() {
     printf '%s\n' "$_tc" | sed 's/^/  /'
     doctor_tier "$(doctor_caps)"
     printf '\n%shooks%s  ' "$B" "$O"
-    if hooks_where && [ -L "$_hooks/pre-commit" ]; then printf '%sinstalled%s\n' "$G" "$O"
+    if hooks_where && [ -n "$_hookspath" ]; then
+        printf '%sfrom core.hooksPath%s  %s\n' "$Y" "$O" "$_hookspath"
+    elif [ -L "${_hooks:-/nonexistent}/pre-commit" ]; then printf '%sinstalled%s\n' "$G" "$O"
     else printf '%snot installed%s  (kitchen doctor --install-hooks)\n' "$Y" "$O"; fi
 
     # Capabilities are deliberately NOT part of --strict. Missing KVM is a speed
@@ -654,7 +661,8 @@ kitchen doctor [options]          what this machine can and cannot build
   --strict             exit 1 if any tool is missing or a toolchain assertion
                        fails -- for CI, which needs doctor to be able to fail
   --install-hooks      symlink each hook in ci/hooks/ into the repository's hooks
-                       directory -- the project's, when this checkout is vendored
+                       directory -- the project's, when this checkout is vendored;
+                       nothing is linked where core.hooksPath is set
 
 With no options: tools, kernel capabilities, and a summary of which recipe
 privilege tiers are runnable here.

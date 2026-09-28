@@ -300,6 +300,10 @@ def test_a_vendored_kitchen_installs_the_projects_hooks():
     with `ln -sf` by hand. Had the test passed, the hooks it linked would have run the
     engine's gates over the engine's tree. Here the project is found through provenance.py,
     as a real submodule makes it, and a project with no ci/hooks/ is told so.
+
+    The last case is a hazard the fix made, found reviewing it: the hooks directory git
+    names follows core.hooksPath, so a project using husky would have had .husky/ written
+    over.
     """
     import subprocess
     tmp = tempfile.mkdtemp(prefix="vendored-hooks-")
@@ -346,6 +350,18 @@ def test_a_vendored_kitchen_installs_the_projects_hooks():
               [os.path.realpath(os.path.join(hooks, h)) for h in ("pre-commit", "pre-push")],
               [os.path.realpath(os.path.join(project, "ci", "hooks", h))
                for h in ("pre-commit", "pre-push")])
+
+        # --git-path names core.hooksPath too, and that is husky's tracked .husky/ or a
+        # directory other repositories share: linking there replaced what the project had.
+        os.makedirs(os.path.join(project, ".husky"))
+        open(os.path.join(project, ".husky", "pre-commit"), "w").write("npx lint-staged\n")
+        git(project, "config", "core.hooksPath", ".husky")
+        p = install()
+        check("with core.hooksPath set, nothing is linked, and it says why",
+              (p.returncode != 0, "core.hooksPath" in p.stderr,
+               os.path.islink(os.path.join(project, ".husky", "pre-commit")),
+               open(os.path.join(project, ".husky", "pre-commit")).read()),
+              (True, True, False, "npx lint-staged\n"))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

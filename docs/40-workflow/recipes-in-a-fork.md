@@ -79,9 +79,10 @@ kitchen apply my-tools                    # resolves by bare name, no configurat
 ```
 
 Every directory under `recipes/` is on the search path. So is every directory under the `recipes/`
-of a project that vendors the kitchen instead, as [LAYERING.md](../../LAYERING.md#what-a-consumer-does)
-describes; see [`apply`](../90-reference/cli.md#apply-recipe--w-dir--apply---profile-profile). In
-a fork, what that gets you:
+of a project that vendors the kitchen instead, as
+[LAYERING.md](../../LAYERING.md#what-a-consumer-does) describes; see
+[`apply`](../90-reference/cli.md#apply-recipe--w-dir--apply---profile-profile). In a fork, what that
+gets you:
 
 - **`40-schema` validates your recipes** like any other — you get the schema, the verb argument
   checks and the `NN-` bundle rule for free.

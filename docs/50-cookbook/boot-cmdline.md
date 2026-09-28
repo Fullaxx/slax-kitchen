@@ -39,6 +39,20 @@ Removal is **by key**, so `automount` matches a bare flag and a `key=value` form
 key that is already present replaces it rather than duplicating it. An entry holding spaces is
 several parameters, and an empty entry is none.
 
+Both `isolinux.cfg` and `syslinux.cfg` are edited by default. Upstream keeps the two deliberately
+different — the CD's `isolinux.cfg` has no persistence entries, `syslinux.cfg` (USB/HDD) does — so
+**the entry counts differ per file, and that is expected**:
+
+```
+isolinux.cfg: cmdline updated on 2 entries
+syslinux.cfg: cmdline updated on 3 entries      <- toram
+isolinux.cfg: cmdline updated on 2 entries
+syslinux.cfg: cmdline updated on 2 entries      <- automount; one entry never had it
+```
+
+The count is what actually **changed**. Re-applying reports `0 entries`, which is how you can tell
+a step did nothing.
+
 ## Variables
 
 ```yaml
@@ -56,23 +70,9 @@ recipes:
 ```
 
 An empty value asks for nothing, and that step changes nothing. Both became vars in
-[#68](https://github.com/Fullaxx/slax-kitchen/issues/68); `toram` was fixed before, so slax-wine,
-whose 1.2 GiB image is too big to copy to RAM, wrote its own. With the defaults, the menus it writes
-are byte for byte what they were.
-
-Both `isolinux.cfg` and `syslinux.cfg` are edited by default. Upstream keeps the two deliberately
-different — the CD's `isolinux.cfg` has no persistence entries, `syslinux.cfg` (USB/HDD) does — so
-**the entry counts differ per file, and that is expected**:
-
-```
-isolinux.cfg: cmdline updated on 2 entries
-syslinux.cfg: cmdline updated on 3 entries      <- toram
-isolinux.cfg: cmdline updated on 2 entries
-syslinux.cfg: cmdline updated on 2 entries      <- automount; one entry never had it
-```
-
-The count is what actually **changed**. Re-applying reports `0 entries`, which is how you can tell
-a step did nothing.
+[#68](https://github.com/Fullaxx/slax-kitchen/issues/68). `toram` was fixed before, and slax-wine
+wrote a recipe of its own because `toram` "is wrong for a 1.2 GiB image". With the defaults, the
+menus it writes are byte for byte what they were.
 
 ## Why `toram`
 

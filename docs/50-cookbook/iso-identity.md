@@ -36,6 +36,14 @@ So there is nothing to overwrite, only fields to start filling in.
 | `publisher` | 128 | who built it |
 | `preparer` | 128 | what built it |
 
+The verb **refuses an over-long value** rather than letting the mastering tool truncate it without a
+word:
+
+```
+iso.metadata: volid is 40 characters; the ISO9660 Volume Identifier field holds 32.
+Shorten it -- the mastering tool would truncate it silently.
+```
+
 ## Variables
 
 ```yaml
@@ -61,14 +69,6 @@ pack` writes by default, `slax` for the application id and `LINUX` for the syste
 before, a profile setting them was refused and slax-wine wrote its own identity recipe. Verified:
 that profile, applied and packed, reads back from the image's volume descriptor as volume id
 `MYPRODUCT`, application id `MYPRODUCT 1.0` and preparer `myproject`.
-
-The verb **refuses an over-long value** rather than letting the mastering tool truncate it without a
-word:
-
-```
-iso.metadata: volid is 40 characters; the ISO9660 Volume Identifier field holds 32.
-Shorten it -- the mastering tool would truncate it silently.
-```
 
 ## Changing `volid` does not break booting
 

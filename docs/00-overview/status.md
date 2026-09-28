@@ -24,10 +24,10 @@ the resulting ISO in QEMU and reading the console.
 | `kitchen probe` | ✅ all four stock ISOs report `MATCH`; classifies differences as benign / explained / unexplained / critical |
 | `kitchen doctor` | ✅ reports tool + capability matrix and which recipes this machine can run |
 | `kitchen validate` | ✅ JSON Schema, validated post-variable-substitution; a profile's recipes resolved, and their vars held to what each declares |
-| `kitchen apply` | ✅ dep ordering, `when:` guards, dry run, journalling, pack hints |
+| `kitchen apply` | ✅ dep ordering, `when:` guards, dry run, journalling, pack hints; a project vendoring the kitchen names its own recipes and profiles bare |
 | preflight | ✅ every tool/file/capability the plan needs checked up front; `build` checks before unpacking |
 | `kitchen build` | ✅ whole pipeline from one profile, ~4 s for four recipes; derives test expectations from the recipe list |
-| `kitchen test` | ✅ `--structure` (18 assertions, ~1 s), `--bios`, `--uefi` |
+| `kitchen test` | ✅ `--structure` (18 assertions, ~1 s, plus a project's own: a size ceiling, paths required or forbidden), `--bios`, `--uefi` |
 | `kitchen sources` | ✅ a report: every file in a built image matched by sha256 to the stock image or to the step that produced it, from the provenance `pack` writes beside the ISO, with where each upstream publishes its source when that is known; exit 0 once the report is written, 2 on an image it cannot list at all |
 
 ### Recipes
