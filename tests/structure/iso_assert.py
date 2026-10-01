@@ -148,8 +148,7 @@ def main(argv: list[str]) -> int:
             check_esp(t, paths, efi, a.expect_uefi)
 
     if a.max_size_mib:
-        mib = os.path.getsize(a.iso) / 1048576
-        t.check(mib <= a.max_size_mib, f"size <= {a.max_size_mib} MiB", f"is {mib:.0f} MiB")
+        check_size(t, os.path.getsize(a.iso), a.max_size_mib)
 
     print(f"\n{t.ok} passed, {len(t.fail)} failed")
     return 1 if t.fail else 0
@@ -205,6 +204,20 @@ def check_esp(t: Asserter, paths: set, efi: list, expect_uefi: bool) -> None:
     t.check(bool(efi), "EFI El Torito entry present, as boot/efi.img is in the image",
             "an ESP no entry points at: UEFI firmware cannot boot this image. A build on a "
             "UEFI image loses the entry -- see LAYERING.md, step 6")
+
+
+def check_size(t: Asserter, size: int, limit_mib: int) -> None:
+    """The image is no bigger than --max-size-mib, and a failure says by how much.
+
+    Bytes against bytes: the limit is an int, so limit_mib * 1048576 is exact. This printed
+    the size rounded to whole MiB beside an unrounded comparison, so an image less than half
+    a MiB over its ceiling failed saying it was the ceiling: "size <= 448 MiB (is 448 MiB)"
+    for the stock 32-bit Slackware ISO (#71). One decimal is not enough either, since 589.04
+    MiB prints as 589.0, so the failure gives the bytes over. A failure has at least one.
+    """
+    over = size - limit_mib * 1048576
+    t.check(over <= 0, f"size <= {limit_mib} MiB",
+            f"is {size / 1048576:.1f} MiB, {over:,} byte{'' if over == 1 else 's'} over")
 
 
 if __name__ == "__main__":

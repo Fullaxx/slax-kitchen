@@ -77,7 +77,9 @@ profile's recipes asked `pack` for, read through the same hint reader `pack` use
 
 A project's own claims about its image go through the same command
 ([#67](https://github.com/Fullaxx/slax-kitchen/issues/67)):
-- `--max-size-mib N` for a size ceiling;
+- `--max-size-mib N` for a size ceiling, in MiB of 1,048,576 bytes. A failure says how many bytes
+  over it the image is
+  ([#71](https://github.com/Fullaxx/slax-kitchen/issues/71));
 - `--require PATH` for a path that must be there, and `--forbid PATH` for one that must not, such
   as a bundle a removal recipe took out. Both are repeatable, and both match exact paths;
 - `--expect-gpt`, which with `--expect-hybrid` requires a GPT too.

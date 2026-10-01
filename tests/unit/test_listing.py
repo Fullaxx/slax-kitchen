@@ -216,6 +216,31 @@ def test_a_forbidden_path_fails_where_it_is_there():
     check("...and passes once it is gone, with or without the leading /", t.fail, [])
 
 
+def test_a_size_over_the_ceiling_says_by_how_much():
+    """A size ceiling's failure has to read as a failure. The check compared unrounded MiB
+    and printed whole MiB, so the stock 32-bit Slackware ISO -- 470,161,408 bytes, 448.38
+    MiB -- failed --max-size-mib 448 with "(is 448 MiB)": the right verdict, in words that
+    say it passed (#71, reproduced on that ISO before the fix). One decimal would not have
+    been enough, since 589.04 MiB prints as 589.0, so the failure gives the bytes over, and
+    a failure always has at least one."""
+    mib = 1048576
+
+    def size(n, limit):
+        t = iso_assert.Asserter()
+        with contextlib.redirect_stdout(io.StringIO()):
+            iso_assert.check_size(t, n, limit)
+        return t
+
+    t = size(448 * mib, 448)
+    check("exactly at the ceiling passes", (t.ok, t.fail), (1, []))
+    t = size(448 * mib + 1, 448)
+    check("one byte over fails, and says so", t.fail,
+          ["size <= 448 MiB  (is 448.0 MiB, 1 byte over)"])
+    t = size(470161408, 448)
+    check("the stock Slackware ISO says how far over 448 it is", t.fail,
+          ["size <= 448 MiB  (is 448.4 MiB, 399,360 bytes over)"])
+
+
 def test_check_files_with_plain_data():
     full = {"/", "/slax", "/slax/boot"} | {f"/slax/boot/{n}" for n in FIVE}
 
@@ -336,6 +361,7 @@ def main():
         for fn in [test_entries_refuses_a_listing_it_cannot_trust,
                    test_check_files_with_plain_data,
                    test_a_forbidden_path_fails_where_it_is_there,
+                   test_a_size_over_the_ceiling_says_by_how_much,
                    test_the_structure_check_end_to_end,
                    test_an_esp_nothing_points_at_fails,
                    test_sources_refuses_what_it_could_not_list,
