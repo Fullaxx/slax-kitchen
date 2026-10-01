@@ -4,9 +4,10 @@ Tier A parses the built ISO. Tier B boots the kernel directly and asserts that l
 init ran. **Tier C boots the image the way a machine would** — through a bootloader, off a
 USB device, and twice onto the same disk to prove persistence.
 
-It needs a writable `/dev/kvm`. CI's boot job opens a runner's and exercises the harness weekly on
-one target, but CI is never the evidence: that is a recorded run of all four targets on a clean
-tree, committed with it. That split is the whole design of this page.
+It needs a writable `/dev/kvm`. CI's boot job opens a runner's and exercises the harness on one
+target, weekly and on a pull request labelled `boot-test`, but CI is never the evidence: that is a
+recorded run of all four targets on a clean tree, committed with it. That split is the whole
+design of this page.
 
 ```sh
 ./kitchen build boot-matrix                       # or --base <target>
@@ -297,10 +298,10 @@ That is the whole of what `/proc` is still used for here.
 ## What CI does with all this
 
 The weekly job builds `boot-matrix` and runs the same four paths, under KVM on a runner that has
-`/dev/kvm`. It boots one target and is not a recorded run, so it writes its ledger to a scratch
-path and uploads it as an artifact. What
-it *does* own is the golden diff: if a recipe change alters the assembled filesystem, the
-weekly run goes red against the committed block.
+`/dev/kvm`, and so does a pull request labelled `boot-test`. It boots one target and is not a
+recorded run, so it writes its ledger to a scratch path and uploads it as an artifact. What it
+*does* own is the golden diff: if a recipe change alters the assembled filesystem, the weekly run
+goes red against the committed block.
 
 What the weekly job costs is in [ci.md](ci.md), which holds the only copy. It was eight
 minutes before this work, so it now does four more boots in less than half the time — the

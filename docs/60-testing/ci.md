@@ -263,8 +263,8 @@ on a runner without one the step says so, and the boots run under TCG. The boot 
 target, and runs on every pull request; a PR's `boot-test` label adds the Tier C sweep.
 `kitchen test` says which mode it is using rather than appearing to hang.
 
-Measured 2026-09-16 at `1463570` on a GitHub runner, the whole boot job. **This table is the only
-copy of these figures:**
+Measured 2026-09-16 at `1463570` on a GitHub runner, booting under TCG, the whole boot job.
+**This table is the only copy of these figures:**
 
 | step | | |
 |---|---|---|

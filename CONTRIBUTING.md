@@ -401,7 +401,8 @@ gh label create upstream-watch --description "Filed by the weekly upstream drift
 The boot job runs on every pull request: one direct-kernel boot of the `example` profile on
 `debian-64bit-12.2.0`, asserting the livekit markers. The **`boot-test` label** adds the Tier C
 sweep, the bootloader, USB and persistence paths that otherwise run weekly. Ask for it when a
-change could affect booting.
+change could affect booting. A run reads the labels as they were when it started, so a label added
+later takes effect from the next push to the pull request.
 
 ### Recipes: what we will take
 
@@ -444,28 +445,29 @@ Pure logic — anything that does not need an ISO — belongs in `tests/unit/tes
 as one of the thirteen gates. Each case there should say in its docstring why it exists, and
 "What a test here is for", below, says what counts.
 
-**Seconds, not milliseconds, and it is worth knowing where they go.** Measured 2026-09-21 at
-`af9358f` on Ubuntu 24.04 with python 3.12, median of three, each file timed the way the gate runs
-it: the whole unit gate is **about 19 s**, and 5.1 s of that is `tests/unit/test_qemu_boot.py`
+**Seconds, not milliseconds, and it is worth knowing where they go.** Measured 2026-10-01 at
+`9388098` on Ubuntu 24.04 with python 3.12, median of three, each file timed the way the gate runs
+it: the whole unit gate is **about 20 s**, and 5.1 s of that is `tests/unit/test_qemu_boot.py`
 alone — it drives a poller, so real sleeps *are* the thing under test, and its own docstring says
-so. Then `test_apply.py` at 3.2 s, `test_tier_c_run.py` at 2.3 s and `test_boot_host.py` at 1.8 s;
-the other twenty files together come to about 7 s. That cost is paid at **both** `pre-commit` and
-`pre-push`.
+so. Then `test_apply.py` at 3.8 s, `test_tier_c_run.py` at 2.5 s and `test_boot_host.py` at 1.8 s;
+the other twenty-one files together come to about 7.4 s. That cost is paid at **both**
+`pre-commit` and `pre-push`.
 
 The shape moved between `e08c053` and here, which is why the figures are re-derived rather than
 adjusted: `test_apply.py` was "about a second" and is now the second most expensive file in the
-tree. `test_diff.py` was expected to be costly, since it packs real squashfs images — it is 0.13 s,
+tree. `test_diff.py` was expected to be costly, since it packs real squashfs images — it is 0.15 s,
 because those trees hold a handful of files apiece and the ISO layer around them is a stub. An
 expectation is not a measurement either.
 
-**About 2.9 s of that is the measurement that every test defined actually ran**
-([`ci/unit-run.py`](ci/unit-run.py)): the tests are 16.4 s on their own, 19.3 s through the runner,
-on the same tree. `sys.setprofile` is called for every function call in the process, which is what
-being certain costs; the hook stops itself once the last test has been seen. Two cheaper versions
-of this check read the source instead, and both could be satisfied by a test that never ran.
+**About 3.2 s of that is the measurement that every test defined actually ran**
+([`ci/unit-run.py`](ci/unit-run.py)): the tests are 17.3 s on their own, 20.5 s through the runner,
+on the same tree, and 2.2 s of the difference is `test_apply.py`'s. `sys.setprofile` is called for
+every function call in the process, which is what being certain costs; the hook stops itself once
+the last test has been seen. Two cheaper versions of this check read the source instead, and both
+could be satisfied by a test that never ran.
 
 **This paragraph is the only copy of that number.** `ci/checks/80-unit.sh` used to restate it; the
-two were measured months apart and drifted to 18 s and 16 s, neither of them wrong when it was
+two were measured at different times and drifted to 18 s and 16 s, neither of them wrong when it was
 written. Re-measure rather than trust the figure above — `time sh ci/checks/80-unit.sh` — and when
 it moves, change it here and nowhere else.
 

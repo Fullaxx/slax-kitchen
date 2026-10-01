@@ -59,8 +59,7 @@ The removal is [`remove-bundle`](remove-bundle.md)'s job, not this recipe's, but
 raises belongs here. `05-chromium.sb` is not just Chromium. Its package database carries **25 more
 packages** than `04-apps`: Chromium's own three, and 22 that are the shared browser runtime —
 `libnss3`, `libnspr4`, `libevent-2.1-7`, `libopus0`, `libflac12`, `libvorbis`, `libpulse0` and the
-rest. The obvious worry is that taking
-the bundle away breaks Tor Browser.
+rest. The obvious worry is that taking the bundle away breaks Tor Browser.
 
 It does not, and the reason is that Tor Browser ships its own copies. Reading `DT_NEEDED` out of
 `firefox.real`, `libxul.so` and `TorBrowser/Tor/tor` in the 15.0.23 tarball:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assert structural properties of a built Slax ISO. No booting, no mounting.
 
-This is the Tier A check: it runs in about a second and catches the failures that are
+This is the Tier A check, cheap enough for every build. It catches the failures that are
 expensive to find any other way -- a bootloader that will not load, a bundle built with
 the wrong compressor, a UEFI recipe that silently did not take effect, a UEFI entry a
 rebuild silently dropped.
