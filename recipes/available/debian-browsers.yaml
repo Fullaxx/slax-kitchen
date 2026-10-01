@@ -56,8 +56,9 @@ steps:
   #   chromium + -common + -sandbox  152.0.7977.82-1~deb12u1   i386 323.3 MiB installed
   #   firefox-esr                    140.16.0esr-1~deb12u1     i386 290.9 MiB installed
   #
-  # ~614 MiB installed, ~184 MiB of .debs, for an ISO near 517 MiB -- comparable to
-  # adding LibreOffice, and toram stays practical, which it does not with all-browsers.
+  # ~614 MiB installed, ~184 MiB of .debs. The ISO was estimated near 517 MiB and measured
+  # at 560 MiB (docs/50-cookbook/debian-browsers.md), comparable to adding LibreOffice, and
+  # toram stays practical, which it does not with all-browsers.
   #
   # A GOTCHA WORTH KNOWING if you go looking for these versions yourself. They are in
   # bookworm-SECURITY, not bookworm -- main still carries chromium 150.0.7871.100 and

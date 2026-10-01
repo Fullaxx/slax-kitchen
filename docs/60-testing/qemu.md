@@ -43,7 +43,7 @@ $ tools/qemu/boot.py out/slax-boot-matrix-debian-64bit-12.2.0.iso --bios
   machine   pc, qemu-system-x86_64, 2 cpus
   memory    2048 MiB
   firmware  SeaBIOS (legacy)
-  accel     TCG (no writable /dev/kvm -- 10-20x slower)
+  accel     TCG (no writable /dev/kvm -- about 4-5x slower per boot)
   network   e1000, user-mode
   display   vnc on 127.0.0.1:5900  (default)
 
@@ -97,7 +97,8 @@ tunnel carried it, and `vncviewer localhost:5900` reached the guest.
 
 With a [`boot-host.ini`](boot-host.md), the launcher runs qemu **there** and brings the window
 here. The image is sent (once per content), the guest starts on that machine, and the VNC server it
-binds is reached over an ssh tunnel that lasts exactly as long as the session:
+binds is reached over an ssh tunnel that lasts exactly as long as the session. As it ran on
+2026-09-19:
 
 ```console
 $ tools/qemu/boot.py out/slax-boot-matrix-debian-64bit-12.2.0.iso --bios

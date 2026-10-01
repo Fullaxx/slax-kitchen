@@ -10,7 +10,7 @@ Everything that ships inside a Slax ISO, from the kernel down to the individual 
 | [`bundle-map.md`](bundle-map.md) | which bundle holds what, and the cumulative package database |
 | [`debian-12.2.0.md`](debian-12.2.0.md) | 600 packages, systemd, ConnMan |
 | [`slackware-15.0.4.md`](slackware-15.0.4.md) | 423 packages, sysvinit, and `06-devel` |
-| [`slax-tooling.md`](slax-tooling.md) | the 14 helper commands Slax adds, and which flavour has which |
+| [`slax-tooling.md`](slax-tooling.md) | the helper commands Slax adds, and which flavour has which |
 | [`known-upstream-bugs.md`](known-upstream-bugs.md) | fifteen issues found during analysis |
 | [`manifests/`](manifests/) | the generated inventories these pages are written from |
 

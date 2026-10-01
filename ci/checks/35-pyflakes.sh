@@ -3,8 +3,8 @@
 # desc: pyflakes every python file.
 #
 # Beside 30-shellcheck, and for the same reason: every shell script in this tree is
-# linted and no python file was. The engine is python -- lib/apply.py alone is 4000 lines
-# -- so the half that was unchecked was the larger half.
+# linted and no python file was. The engine is python -- lib/apply.py alone was 4,529
+# lines on 2026-10-01 -- so the half that was unchecked was the larger half.
 #
 # WHAT PUT IT HERE. 18294f5 added `import traceback` to 23 test files so one crashing test
 # could not take the rest of the file with it, and in three of them the line landed inside

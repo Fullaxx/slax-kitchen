@@ -9,9 +9,9 @@ build of it, or two of your builds a recipe apart.
 NOTHING IS EXTRACTED, except one case that says so. xorriso reports each file's start
 LBA and size, so the content hash comes from reading that extent straight out of the
 image. Extracting two 416 MiB ISOs to compare 38 files would move ~830 MiB through the
-filesystem to answer a question that needs ~830 MiB of *reads* and no writes at all. On
-this machine the difference is about 40 s versus about 6 s, and it needs no scratch
-space.
+filesystem to answer a question that needs ~830 MiB of *reads* and no writes at all.
+When this was written (2026-09-14) that was about 40 s against about 6 s, and it needs no
+scratch space; docs/90-reference/cli.md has a later figure.
 
 The exception is bundle_manifest(), under --bundles only: a content hash of a file INSIDE
 a squashfs cannot be read from the ISO's extents, and comparing the file list instead is

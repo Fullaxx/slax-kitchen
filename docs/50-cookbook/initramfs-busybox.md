@@ -1,7 +1,7 @@
 # `initramfs-busybox` — replace the 2017 busybox
 
 ```sh
-tools/build-busybox.sh --check-parity     # ~30 s, needs docker
+tools/build-busybox.sh --check-parity     # needs docker
 kitchen apply initramfs-busybox
 ```
 
@@ -108,10 +108,11 @@ than committed and forgotten. It lives in `build/`, which `.gitignore` keeps out
 extension, directory and size, and this is an extensionless 1.2 MB file. Measured by staging it with
 `git add -f`: the gate passed.
 
-`tools/build-busybox.sh` builds it in about 30 seconds inside `i386/alpine`, verifying upstream's
-published sha256 **before compiling a line**. The container is needed because this host has neither
-a 32-bit libc nor musl; nothing is bind-mounted, because the docker daemon may not share the
-filesystem — the script goes in on stdin and the results come out on stdout, as a tar.
+`tools/build-busybox.sh` builds it inside `i386/alpine`, in about 30 seconds on 2026-09-14,
+verifying upstream's published sha256 **before compiling a line**. The container is needed because
+this host has neither a 32-bit libc nor musl; nothing is bind-mounted, because the docker daemon
+may not share the filesystem — the script goes in on stdin and the results come out on stdout, as
+a tar.
 
 It writes three files, not one:
 
@@ -153,8 +154,9 @@ honour `KBUILD_BUILD_TIMESTAMP` — verified by building twice and comparing. Wh
 | 1.37.0 | **406** |
 | lost | **`catv`** — and nothing else |
 
-`catv` was removed upstream and is unused by Slax. All **52** distinct commands that `/init`,
-`livekitlib` and `/shutdown` actually invoke are present.
+`catv` was removed upstream and is unused by Slax. Every command that `/init`, `livekitlib` and
+`/shutdown` actually invoke is present: the list is
+[`tests/busybox/required-applets.txt`](../../tests/busybox/required-applets.txt).
 
 ## Three things the symlink regeneration must get right
 

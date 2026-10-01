@@ -5,13 +5,13 @@ markers, and then **all six browsers launched and used** in a desktop under QEMU
 That last part is the rung: every other claim on this page is about files being in the right
 place, and this one is a person opening each browser and finding it works.
 
-> **CI builds this weekly, not on every push** — one of the three recipes treated that way, with
-> [`tor-browser`](tor-browser.md) and [`firmware-refresh`](firmware-refresh.md). Its four vendor
+> **CI builds this weekly, not on every push**, like every recipe in
+> [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt). Its four vendor
 > signing keys are pinned by sha256, so a rotation fails the build *by design*, and that is someone
 > else's change: running it per-push would turn Google republishing a key into a red master. The
 > weekly run builds it, and `ci/upstream-watch.sh` checks the four keys every Monday in seconds
-> rather than waiting for a ten-minute build to discover it. A release tag runs it too. See
-> [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) and [CI](../60-testing/ci.md).
+> rather than waiting for a build of several minutes to discover it. A release tag runs it too. See
+> [CI](../60-testing/ci.md).
 
 ```sh
 kitchen apply all-browsers
@@ -258,7 +258,7 @@ The removal is also what makes `from:` come out right. With `05-chromium` gone t
 `01-core … 04-apps`, so apt pulls the shared browser runtime into this bundle and the result stands
 on its own; with `05` still below, apt finds that runtime installed and the bundle is smaller but
 assumes `05` stays. `05-chromium` was never only Chromium: it carries `libnss3`, `libnspr4`,
-`libopus0`, `libflac12`, `libwebpmux3` and eighteen more — see
+`libopus0`, `libflac12`, `libwebpmux3` and seventeen more — see
 [the bundle map](../30-inventory/bundle-map.md).
 
 > **Do not list this recipe with `chromium-current`, `firefox-esr` or `debian-browsers`.** It
@@ -305,7 +305,8 @@ assumes `05` stays. `05-chromium` was never only Chromium: it carries `libnss3`,
 - **It does not give you Tor Browser** — see above.
 - **It does not work on 32-bit or on Slackware**, and the `compat:` block says why.
 - **It does not shrink.** By a wide margin the largest thing in this cookbook: an 890.7 MiB bundle,
-  roughly **seven and a half times** LibreOffice's 116 MiB, turning a 416 MiB ISO into 1227.5 MiB.
+  roughly **seven and a half times** [LibreOffice's](libreoffice.md), turning a 416 MiB ISO into
+  1227.5 MiB.
   It also costs CI real time — the `debian-64bit` build job went from 7 minutes to 20 when this
   recipe landed, and all of that increase is this one recipe.
 

@@ -35,7 +35,7 @@ permissions:
 
 jobs:
   # ----------------------------------------------------------------- guard --
-  # Seconds of shell, ahead of seventeen minutes of CI. A tag that disagrees with
+  # Seconds of shell, ahead of the whole of CI. A tag that disagrees with
   # kitchen:8 produces a Release whose bug reports point at the wrong tree, and
   # deleting a published Release is a manual job.
   guard:
@@ -78,7 +78,8 @@ jobs:
 
   # ---------------------------------------------------------------- verify --
   # The whole of ci.yml: every commit gate, the reference container, four targets with
-  # the recipe matrix and round-trip, and the TCG boot test. Roughly 17 minutes.
+  # the recipe matrix and round-trip, and the TCG boot test. How long its one run took is
+  # in docs/60-testing/ci.md.
   verify:
     needs: guard
     uses: ./.github/workflows/ci.yml

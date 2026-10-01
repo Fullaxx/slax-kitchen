@@ -101,7 +101,7 @@ bootloader onto a disk.
 | `EFI/Boot/vesamenu.c32` | 32,776 | |
 | `EFI/Boot/syslinux.cfg` | 32 | one line: `INCLUDE /slax/boot/syslinux.cfg` |
 
-All nine EFI files — 832,272 bytes — are inert while the image is an ISO, for the three reasons in
+All eight EFI files — 832,272 bytes — are inert while the image is an ISO, for the three reasons in
 [`el-torito.md`](el-torito.md). They become live only after `bootinst.sh` moves them to `/EFI/Boot/`
 on a FAT partition.
 

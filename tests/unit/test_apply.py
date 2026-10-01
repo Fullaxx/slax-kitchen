@@ -1012,7 +1012,7 @@ def test_network_is_declared_where_it_is_used():
 
     bundle.fromTarball did the identical urllib fetch boot.payload does, and the
     inference in step_requires named only boot.payload -- so preflight passed and
-    `kitchen build` unpacked 436 MiB before dying at the download. Reported as #9.
+    `kitchen build` unpacked 416 MiB before dying at the download. Reported as #9.
 
     Asserting on a hand-written list of verbs would rot the moment someone adds a
     fetch. This reads lib/apply.py's own AST instead: find every urlopen, resolve it to

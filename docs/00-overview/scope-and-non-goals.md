@@ -60,7 +60,7 @@ bundle layout. `kitchen probe` will tell you what you have and report `unknown` 
 
 ## Privilege
 
-Roughly 85% of the toolkit runs unprivileged, including both flagship recipes — `mkfs.vfat -C` plus
+Most of the toolkit runs unprivileged, including both flagship recipes — `mkfs.vfat -C` plus
 `mtools` build an EFI System Partition without ever mounting anything.
 
 Two things need more:
@@ -68,7 +68,7 @@ Two things need more:
 | | needs |
 |---|---|
 | `bundle.packages` | a real `chroot` with `/proc` mounted — root, or a container with `CAP_SYS_ADMIN` |
-| the full boot-test matrix | `/dev/kvm`; TCG works but is 10–20× slower |
+| the full boot-test matrix | `/dev/kvm`; TCG works, [several times slower](../60-testing/tier-c.md#kvm-vs-tcg) |
 
 `kitchen doctor` reports what the current machine can do, and `kitchen apply` refuses to start a
 recipe whose tools are missing rather than failing partway through.
@@ -84,6 +84,6 @@ published image.
 
 ## Honest status
 
-See [`status.md`](status.md). Short version: the core loop and thirteen recipes are boot-verified,
-the Phase 1 documentation is complete, and five planned recipes are not written yet — the ones
-needing real engineering rather than YAML.
+See [`status.md`](status.md). Short version: the core loop and [many recipes](status.md#rungs) are
+boot-verified, the Phase 1 documentation is complete, and the recipes needing real engineering
+rather than YAML are not written yet.

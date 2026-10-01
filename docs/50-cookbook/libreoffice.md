@@ -22,7 +22,7 @@ LibreOffice **7.4.7-1+deb12u14**, built on both Debian targets:
 
 Installed size of the 64-bit delta is 408 MB.
 
-It compresses about 3.5:1 under xz, which is why the largest software addition in this cookbook
+It compresses about 3.4:1 under xz (408 MB is 389 MiB, against 116 MiB of bundle), which is why it
 costs less on the ISO than the firmware refresh plus a browser.
 
 ## The two choices, and why

@@ -20,14 +20,14 @@ the resulting ISO in QEMU and reading the console.
 | `kitchen pack` | ✅ two backends; defaults to `./out/<source>-custom.iso`, never clobbers without `--force` |
 | Round-trip fidelity | ✅ identical size; **19 of 212,819 sectors differ, and all 19 are PVD timestamp fields**. Payload byte-identical, boot-info-table checksum unchanged |
 | `kitchen fetch` | ✅ downloads + verifies size and sha256; ordered mirror list with per-mirror verify and fall-through, both paths exercised |
-| `kitchen fingerprint` | ✅ ~3.5 s per ISO, mount-free |
+| `kitchen fingerprint` | ✅ mount-free |
 | `kitchen probe` | ✅ all four stock ISOs report `MATCH`; classifies differences as benign / explained / unexplained / critical |
 | `kitchen doctor` | ✅ reports tool + capability matrix and which recipes this machine can run |
 | `kitchen validate` | ✅ JSON Schema, validated post-variable-substitution; a profile's recipes resolved, and their vars held to what each declares |
 | `kitchen apply` | ✅ dep ordering, `when:` guards, dry run, journalling, pack hints; a project vendoring the kitchen names its own recipes and profiles bare |
 | preflight | ✅ every tool/file/capability the plan needs checked up front; `build` checks before unpacking |
-| `kitchen build` | ✅ whole pipeline from one profile, ~4 s for four recipes; derives test expectations from the recipe list |
-| `kitchen test` | ✅ `--structure` (18 assertions, ~1 s, plus a project's own: a size ceiling, paths required or forbidden), `--bios`, `--uefi` |
+| `kitchen build` | ✅ whole pipeline from one profile; derives test expectations from the recipe list |
+| `kitchen test` | ✅ `--structure` (plus a project's own: a size ceiling, paths required or forbidden), `--bios`, `--uefi` |
 | `kitchen sources` | ✅ a report: every file in a built image matched by sha256 to the stock image or to the step that produced it, from the provenance `pack` writes beside the ISO, with where each upstream publishes its source when that is known; exit 0 once the report is written, 2 on an image it cannot list at all |
 
 ### Recipes
@@ -81,7 +81,7 @@ because Slackware has **no dependency resolution** (by design) and the stock mir
 Full reasoning: [add-packages cookbook page](../50-cookbook/add-packages.md).
 
 `add-packages` declares `flavours: [debian]`. Everything else works on Slackware normally —
-30 of 32 `/slax/boot/` files are byte-identical across flavours.
+30 of the 31 `/slax/boot/` files are byte-identical across flavours.
 
 ---
 
@@ -106,8 +106,9 @@ Nothing. Every command in `--help` is implemented, and `kitchen status` now read
 
 ### Verbs
 
-23 of 26 schema-declared verbs are implemented. A recipe using an unimplemented verb fails with a
-clear message naming what *is* available, rather than silently skipping.
+Not every schema-declared verb is implemented; [the verb reference](../90-reference/verbs.md) says
+which. A recipe using an unimplemented verb fails with a clear message naming what *is* available,
+rather than silently skipping.
 
 **Implemented:** `boot.cmdline` `boot.isohybrid` `boot.menu` `boot.payload` `boot.uefi`
 `bundle.files` `bundle.fromDir` `bundle.fromTarball` `bundle.packages` `bundle.remove`
@@ -121,7 +122,7 @@ clear message naming what *is* available, rather than silently skipping.
 
 ### Recipes
 
-**36.** The remaining gaps are the ones that need real engineering rather than YAML:
+The remaining gaps are the ones that need real engineering rather than YAML:
 
 | | |
 |---|---|
@@ -135,6 +136,8 @@ clear message naming what *is* available, rather than silently skipping.
 defined in [CONTRIBUTING.md](../../CONTRIBUTING.md); `ci/checks/95-status-vocab.sh` enforces the
 vocabulary, which previously did not exist — 23 pages said a bare "verified" that meant six
 different things.
+
+<a id="rungs"></a>
 
 | rung | pages |
 |---|---|
@@ -155,8 +158,8 @@ it boots on every medium, what software is in it, and the upstream source of tru
 `60-testing/` is complete as of 2026-09-16 — [CI](../60-testing/ci.md) for what runs on every push,
 and [QEMU by hand](../60-testing/qemu.md) for booting an image yourself and looking at it.
 
-Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus 35
-pages, one per shipped recipe), `70-compat/`, `90-reference/` (CLI + all 23 verbs + the profile
+Still partial, and tracking how far the toolkit itself is built: `50-cookbook/` (an index plus
+a page per shipped recipe), `70-compat/`, `90-reference/` (CLI + every verb + the profile
 format). See [the index](../README.md).
 
 ---

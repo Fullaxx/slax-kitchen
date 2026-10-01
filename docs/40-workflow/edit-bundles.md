@@ -16,12 +16,12 @@ the shipped kernel's ABI.
 ## unsquashfs reads the bundle in place
 
 `unsquashfs -o <offset>` takes a byte offset, so a bundle can be read **directly out of the ISO**
-without extracting a 122 MB `.sb` first. `lib/isoparse.py` supplies the offset:
+without extracting a 122 MiB `.sb` first. `lib/isoparse.py` supplies the offset:
 
 ```sh
 unsquashfs -o 137216 -d work/core isos/slax-64bit-debian-12.2.0.iso
 ```
-01-core extracts to ~609 MB / 18,671 files in about two seconds.
+01-core extracts to 18,671 paths and 594 MB of file data, in about a second (2026-10-01).
 
 ## A bundle is not a complete root filesystem
 

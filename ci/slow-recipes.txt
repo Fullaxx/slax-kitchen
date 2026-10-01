@@ -10,12 +10,11 @@
 # someone else's change into a red master, at a cadence where we cannot act on it anyway.
 # A recipe that is merely expensive stays in: cost is not a reason to stop checking.
 #
-# Measured on debian-64bit, run 9907ed3, 2026-09-17, with nothing skipped: 33 recipes in
-# 1315 s. all-browsers was 456 s of that, tor-browser 92 s and firmware-refresh 92 s; the
-# other 30 recipes came to 662 s between them, at a median of 6 s each. The matrix prints
-# each recipe's seconds, so these numbers can be re-measured rather than remembered.
+# What each recipe costs is measured in docs/60-testing/ci.md, the one copy of those
+# figures. The matrix prints each recipe's seconds, so they can be re-measured rather than
+# remembered.
 
-all-browsers  weekly, not per-push: four sha256-pinned vendor keys are an external dependency (456 s, and a key rotation would redden master)
+all-browsers  weekly, not per-push: four sha256-pinned vendor keys are an external dependency (a key rotation would redden master)
 tor-browser   weekly, not per-push: a version-pinned 138 MB tarball from dist.torproject.org is an external dependency, and a Tor Browser release would redden master
 firmware-refresh  weekly, not per-push: 65 sha256-pinned files fetched from linux-firmware mirrors (git.kernel.org answered 503 to a burst while they were measured) are an external dependency
 bundle-from-url  weekly, not per-push: a version-pinned binary from github.com is an external dependency; the fetch itself is tested in-process on every push (test_bundle_files_fetches_a_pinned_url_itself), and the recipe measured 4 s a target

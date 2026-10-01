@@ -5,9 +5,10 @@
 # build.txt for --kernel-boot. The one thing it can use that no list here installs is
 # ovmf-ia32, for --arch x86 --uefi.
 #
-# No /dev/kvm on a GitHub runner or in an unprivileged container, so QEMU falls
-# back to TCG. That is a speed problem, not a capability one: the direct-kernel
-# boot still reaches the livekit markers, it just takes minutes instead of seconds.
+# A GitHub runner's /dev/kvm is not writable by the job's account, and an
+# unprivileged container has none, so QEMU falls back to TCG. That is a speed
+# problem, not a capability one: the direct-kernel boot still reaches the livekit
+# markers, several times slower (docs/60-testing/tier-c.md).
 
 qemu-system-x86
 qemu-utils

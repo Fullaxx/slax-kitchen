@@ -34,9 +34,10 @@ Usually the right answer. One flag:
 docker run --device /dev/kvm …
 ```
 
-That alone unblocks Tier C and busybox gate 4 in place, and turns a 5–15 minute run into about 30
-seconds. `--cap-add SYS_ADMIN` and `--security-opt seccomp=unconfined` are **not** needed — they were
-in the original plan only because `bundle.packages` was assumed to need mounts.
+That alone unblocks Tier C and busybox gate 4 in place, and makes each boot [about 4–5 times
+faster](../60-testing/tier-c.md#kvm-vs-tcg). `--cap-add SYS_ADMIN` and
+`--security-opt seccomp=unconfined` are **not** needed — they were in the original plan only
+because `bundle.packages` was assumed to need mounts.
 
 Only USB writing and Secure Boot genuinely require leaving.
 

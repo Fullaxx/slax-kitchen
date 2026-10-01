@@ -3,13 +3,14 @@
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
 **Thirty-six recipes ship today.** Every one is built and structurally asserted on all four
-targets by CI (or on the subset its `compat:` block declares) — with four exceptions:
+targets by CI (or on the subset its `compat:` block declares) — with the exceptions
+[`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) lists:
 [`all-browsers`](all-browsers.md), [`tor-browser`](tor-browser.md),
 [`firmware-refresh`](firmware-refresh.md) and [`bundle-from-url`](bundle-from-url.md) are built
 weekly rather than on every push, because four sha256-pinned vendor keys, a version-pinned Tor
 Browser tarball, 65 files fetched from linux-firmware mirrors and a version-pinned binary from
 github.com are external dependencies — someone else's release should not redden master. See
-[`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) and [CI](../60-testing/ci.md). Each page opens with the rung of
+[CI](../60-testing/ci.md). Each page opens with the rung of
 the [verification ladder](../../CONTRIBUTING.md) it actually reached — `matrix-verified`,
 `artifact boot-verified`, `boot-verified` or `runtime-verified` — and the `95-status-vocab` gate
 rejects any other word.
@@ -66,7 +67,7 @@ to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
 | [`all-browsers`](all-browsers.md) | six browsers in one bundle — 64-bit; pair it with `remove-bundle` | ◐ |
 | [`tor-browser`](tor-browser.md) | Tor Browser from a pinned tarball — 64-bit, runs as `guest`; pair it with `remove-bundle` | ◐ |
 | [`firefox-esr`](firefox-esr.md) | add the second browser no Slax image ships; amd64 **and** i386 | ◐ |
-| [`libreoffice`](libreoffice.md) | Writer, Calc, Impress and Draw — 116 MiB, the largest single addition here | ◐ |
+| [`libreoffice`](libreoffice.md) | Writer, Calc, Impress and Draw | ◐ |
 | [`branding`](branding.md) | hostname, version string and login banner, from a 4 KiB override bundle | ○ |
 | [`bundle-from-dir`](bundle-from-dir.md) | pack a directory of your own files as a filesystem root | ○ |
 | [`bundle-from-tarball`](bundle-from-tarball.md) | fetch a published release tarball, verify it, pack it | ○ |
@@ -153,8 +154,9 @@ steps:
 - `vars:` are substituted as `{{name}}`, and a profile can override them per build —
   see [recipes in a fork](../40-workflow/recipes-in-a-fork.md).
 - `when:` guards a step on a fact about the tree, e.g. `flavour==debian`.
-- **23 of 26 declared verbs are implemented.** A recipe using an unimplemented one fails with a
-  message naming what *is* available. Full list and fields: [verb reference](../90-reference/verbs.md).
+- **Not every declared verb is implemented.** A recipe using an unimplemented one fails with a
+  message naming what *is* available. Which ones, and their fields:
+  [verb reference](../90-reference/verbs.md).
 
 Every recipe needs a page here — `ci/checks/90-doc-coverage.sh` fails the commit otherwise, in both
 directions.

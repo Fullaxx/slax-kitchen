@@ -52,3 +52,9 @@ run starts.
 Read the header comment of the gate or test you are touching, and `ci/lib.sh`'s opening. The
 standing bar — *a check which cannot fail is worse than no check* — is stated there, and every
 gate's comment records the specific failure that put it in the tree.
+
+## Before writing or changing a measured number
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) § *"A number that names this tree is gated or dated,
+never bare"*, whose table says which page holds each kind of number. Not from memory: #73 found
+over thirty numbers that disagreed with the tree, most of them copies.

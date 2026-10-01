@@ -2,7 +2,7 @@
 # stages: pre-commit pre-push ci
 # desc: Reject ISOs, squashfs bundles, disk images and oversized files.
 #
-# THE most important gate in this repo. isos/ holds ~1.7 GB of base ISOs; a single
+# THE most important gate in this repo. isos/ holds ~1.8 GB of base ISOs; a single
 # `git add -A` would commit them permanently into history. .gitignore alone is not
 # enough -- `git add -f` and explicit paths bypass it, and history cannot be un-fattened.
 . "$(dirname "$0")/../lib.sh"

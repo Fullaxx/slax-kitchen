@@ -2,12 +2,13 @@
 
 Every boot test in this project runs qemu where the checkout is. That is the wrong place
 often enough to be worth fixing: the container this is usually developed in has no
-`/dev/kvm` and no qemu at all, so `kitchen test --kernel` either runs ten to twenty times
-slower under TCG or cannot run. The machine with the KVM is frequently not the machine
-with the working tree.
+`/dev/kvm` and no qemu at all, so `kitchen test --kernel` either runs [several times
+slower](tier-c.md#kvm-vs-tcg) under TCG or cannot run. The machine with the KVM is frequently not
+the machine with the working tree.
 
 A **boot host** closes that gap. One small file says "use that machine", and the boot runs
-there with the evidence landing here, in the same place, under the same names.
+there with the evidence landing here, in the same place, under the same names. As it ran on
+2026-09-19:
 
 ```console
 $ ./kitchen test out/slax-boot-matrix-debian-64bit-12.2.0.iso --kernel

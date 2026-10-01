@@ -56,9 +56,10 @@ support 32-bit Linux; 16.0 drops i686 and is already at `16.0a9` (read 2026-09-1
 ## Removing Chromium costs the browser nothing — measured
 
 The removal is [`remove-bundle`](remove-bundle.md)'s job, not this recipe's, but the question it
-raises belongs here. `05-chromium.sb` is not just Chromium. Its package database carries **24 more packages** than
-`04-apps`, and they are the shared browser runtime: `libnss3`, `libnspr4`, `libevent-2.1-7`,
-`libopus0`, `libflac12`, `libvorbis`, `libpulse0` and the rest. The obvious worry is that taking
+raises belongs here. `05-chromium.sb` is not just Chromium. Its package database carries **25 more
+packages** than `04-apps`: Chromium's own three, and 22 that are the shared browser runtime —
+`libnss3`, `libnspr4`, `libevent-2.1-7`, `libopus0`, `libflac12`, `libvorbis`, `libpulse0` and the
+rest. The obvious worry is that taking
 the bundle away breaks Tor Browser.
 
 It does not, and the reason is that Tor Browser ships its own copies. Reading `DT_NEEDED` out of

@@ -77,7 +77,7 @@ something it cannot run. You do not need root, KVM, or a privileged container fo
 Run these four, in this order. They are fast and they answer most questions outright.
 
 ```sh
-./kitchen selftest ci                  # is the tree itself clean?   (~1 min, no ISO)
+./kitchen selftest ci                  # is the tree itself clean?   (no ISO)
 ./kitchen doctor                       # what can this machine even do?
 ./kitchen status -v work               # what did I actually apply, and to what?
 ./kitchen probe out/my.iso             # is the output what I think it is?
@@ -184,7 +184,7 @@ The most common real bug, and the most frustrating, because every step reported 
 
 `status` will show you a step that was skipped by a `when:` guard, or a recipe you thought you
 applied and did not. `diff` extracts nothing — it reads file extents straight out of both images
-and compares content, modes and structure in about two seconds.
+and compares content, modes and structure.
 
 Then ask **"did my file land at a number that wins?"** Load order is the numeric prefix and
 **higher wins**. A bundle numbered below something that ships the same path loses, silently, and
@@ -398,9 +398,9 @@ gh label create upstream-watch --description "Filed by the weekly upstream drift
 
 ### Boot tests on a PR
 
-The boot job does **not** run on pull requests by default — GitHub runners have no KVM, so it is
-slow. Add the **`boot-test` label** to your PR to opt in. This is documented nowhere else, which is
-our fault.
+The boot job does **not** run on pull requests by default — on a GitHub runner it boots under TCG,
+so it is slow. Add the **`boot-test` label** to your PR to opt in. This is documented nowhere
+else, which is our fault.
 
 ### Recipes: what we will take
 
@@ -481,7 +481,7 @@ commit, and the build-matrix count was stated on 45 lines across 33 files before
 of them.
 
 **Not derivable → date it.** A timing cannot be gated; it varies by machine, so a gate asserting
-the 18 s above would fail on a slow runner. Neither can a count describing a past incident —
+the figure above would fail on a slow runner. Neither can a count describing a past incident —
 "five of the fifteen tests here" was exactly right at `6e4470e` on 2026-09-18 and is not
 now. Dating turns a claim about *now* into a fact about a day, which stays true, and costs
 nothing at commit time.
@@ -491,6 +491,42 @@ Say when, on what, and how to re-measure.
 sixteen. Both were right when written — the script gained `isofiles` hashing in between — and
 nobody updated the older copy because there was another copy. Where a second page wants the
 figure, it cites the page that holds it.
+
+**Which page holds it.** A copy cannot cite a page nobody can find. An audit on 2026-10-01
+([#73](https://github.com/Fullaxx/slax-kitchen/issues/73)) found over thirty numbers that disagreed
+with the tree or with each other, most of them copies of a figure whose home was not written down
+anywhere. So each kind has one:
+
+| kind of number | its home |
+|---|---|
+| facts about the four stock ISOs | the [10-anatomy](docs/10-anatomy/) or [30-inventory](docs/30-inventory/) page that measured them. The machine record is `compat/<target>.yaml` and `docs/30-inventory/manifests/` |
+| what a recipe produces | its page in [the cookbook](docs/50-cookbook/) |
+| a boot's time, under KVM and under TCG | [Tier C](docs/60-testing/tier-c.md#kvm-vs-tcg) |
+| the boot host's transfer and per-step times | [the boot host](docs/60-testing/boot-host.md) |
+| CI's jobs and the recipe matrix | [CI](docs/60-testing/ci.md#job-times) |
+| a count of this tree's own things | the page that owns the thing, e.g. [the verb reference](docs/90-reference/verbs.md) for verbs. Stated anywhere else, the count needs a rule in `90-doc-coverage.sh` |
+
+Facts about the stock ISOs may be repeated where they explain something: they move only when the
+base pin does, and a base bump re-derives every page about that base anyway.
+
+**Not a second home**, because each is a record of a day rather than a claim about now:
+- sample output and transcripts, labelled with what produced them and when;
+- an incident record in a comment, docstring or commit message, which is what a test's docstring is
+  asked for under *What a test here is for*;
+- a gate's own speed, dated in its header;
+- a recipe's comment recording the measurement behind a choice in its YAML. It must agree with the
+  recipe's page, and `tor-browser`'s did not.
+
+Four more, each from a kind of error #73 found:
+- **MiB is 2^20 bytes and MB is 10^6.** The stock 64-bit ISO is 416 MiB and 436 MB, and twelve
+  places in the tree had confused the two.
+- **An estimate is labelled,** and once there is a measurement it goes, or stays beside it, still
+  labelled. Two recipe comments still gave their pre-build estimate as the size.
+- **A timing says where it ran**: KVM, TCG, or a GitHub runner. One range never spans two of them.
+  "TCG is 10–20× slower" was written on thirteen lines, five of them program output, while
+  [the one measurement](docs/60-testing/tier-c.md#kvm-vs-tcg) says four to five times per boot.
+- **Text a program prints keeps its number,** because it cannot link. Its home names where it is
+  printed, so that a change to one is a change to both.
 
 The tell for a number that has gone stale is the word *here*, or *this tree*, in the present
 tense. If you are writing one, either a gate can check it or it needs a date.
@@ -659,7 +695,7 @@ Every one of these is measured, and every one cost somebody a session.
 | **initramfs work needs `CAP_MKNOD`** | The archive holds seven device nodes; a `cpio` without it turns them into empty files and the image cannot open its own console. |
 | **`xz` must support `--check=crc32`** | The kernel's decoder cannot do CRC64, which is xz's default. |
 | **Do not unpack with `7z`** | It drops Rock Ridge modes. Fine for reading. |
-| **No `/dev/kvm` is a speed problem** | Not a capability one. TCG is 10–20× slower; everything still works. |
+| **No `/dev/kvm` is a speed problem** | Not a capability one. Under TCG a boot takes [about 4–5 times as long](docs/60-testing/tier-c.md#kvm-vs-tcg); everything still works. |
 | **busybox dispatches on `argv[0]`** | Invoked by any other name it answers `--list` with one line — which reads exactly like "this binary will not run here". |
 | **readdir order varies by filesystem** | Comparing ISO *sector positions* tests your build host, not your build. |
 | **Bundle numbers collide** | Five shipped recipes use `07` and five use `08`; ties load alphabetically, so `07-branding` quietly ends up under `07-extras`. Every recipe takes its number from a var — override it in your profile. |

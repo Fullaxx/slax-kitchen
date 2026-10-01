@@ -11,7 +11,7 @@ Everything is read without mounting anything:
   * ISO structure            lib/isoparse.py (pure python)
   * files out of /slax/boot  xorriso -osirrox  (Rock Ridge safe, no privileges)
   * files out of a bundle    unsquashfs -o <offset> reading the .sb IN PLACE inside the
-                             ISO -- no need to extract a 122 MB bundle to read one file
+                             ISO -- no need to extract a 122 MiB bundle to read one file
   * the initramfs            xz -d | cpio -i into a temp dir
 """
 from __future__ import annotations

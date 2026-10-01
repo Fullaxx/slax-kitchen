@@ -42,9 +42,9 @@ steps:
   # what keeps the order right: a removal listed after any bundle has been built is refused.
   #
   # WHAT LEAVES WITH THE STOCK BUNDLE, and why nothing has to be put back. 05-chromium.sb is not just
-  # Chromium: its status file carries 24 more packages than 04-apps, and they are the
-  # shared browser runtime -- libnss3, libnspr4, libevent-2.1-7, libopus0, libflac12,
-  # libvorbis, libpulse0 and the rest. The obvious worry is that Tor Browser loses them.
+  # Chromium: its status file carries 25 more packages than 04-apps -- Chromium's own three,
+  # and 22 that are the shared browser runtime: libnss3, libnspr4, libevent-2.1-7, libopus0,
+  # libflac12, libvorbis, libpulse0 and the rest. The obvious worry is that Tor Browser loses them.
   # Measured instead of assumed, by reading DT_NEEDED out of firefox.real, libxul.so and
   # Tor/tor against the 15.0.23 tarball (2026-09-17):
   #
@@ -85,7 +85,7 @@ steps:
   # 27 of its directories and 0600 on 185 of its 220 files -- not one group or world bit
   # anywhere -- and -all-root rewrites ownership to root while leaving mode bits exactly
   # as the archive set them. Without this the bundle is root-only and `guest` cannot even
-  # traverse /opt/tor-browser, let alone run the browser. Measured: 247 paths widened,
+  # traverse /opt/tor-browser, let alone run the browser. Measured: 246 paths widened,
   # dirs 0700 -> 0755, executables 0700 -> 0755, data 0600 -> 0644, and the executable
   # count stays at 35, so no data file becomes runnable.
   #

@@ -4,8 +4,8 @@
 #   ci/release-guard.sh <tag> [--tag-push]
 #
 # Exit 0 = safe to publish. Exit 1 = do not. Runs in under a second and holds the
-# release workflow's first job, so a mismatch costs nothing rather than seventeen
-# minutes of CI followed by a bad Release object that has to be deleted by hand.
+# release workflow's first job, so a mismatch costs nothing rather than a whole run of
+# CI followed by a bad Release object that has to be deleted by hand.
 #
 # KITCHEN_VERSION lives at kitchen:8 and nothing has ever checked it. There are no
 # tags in this repo yet, so the first one is also the first chance to get this wrong.

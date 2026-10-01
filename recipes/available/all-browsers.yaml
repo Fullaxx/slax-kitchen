@@ -70,9 +70,9 @@ steps:
   #   brave-browser         1.95.101         462.5 MiB   chromium (3 pkgs)              338.9 MiB
   #   google-chrome-stable  153.0.8010.47-1  433.9 MiB   firefox-esr     140.16.0esr    272.2 MiB
   #
-  # ~2,600 MiB installed, ~770 MiB of .debs, for an ISO somewhere near 1.1 GiB. Note that
-  # toram then wants 1.1 GiB of RAM before the running system gets any, and boot-cmdline
-  # bakes toram into every entry by default.
+  # ~2,600 MiB installed, ~770 MiB of .debs. The ISO was estimated near 1.1 GiB and measured
+  # at 1227.5 MiB (docs/50-cookbook/all-browsers.md). toram wants that much RAM before the
+  # running system gets any, and boot-cmdline bakes toram into every entry by default.
   #
   # READ THE INDEX, NOT THE FIRST STANZA IN IT. Brave ships 183 versions of brave-browser
   # in one Packages file and Edge 189; the first is from 2021 and is not what apt picks.

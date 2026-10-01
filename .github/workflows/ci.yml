@@ -19,8 +19,8 @@ on:
     branches: [master]
   pull_request:
   # THE WEEKLY RUN IS THE FULL ONE. Two things are deliberately not on the per-push path
-  # -- the all-browsers recipe and the two bootloader screenshot boots -- and this is
-  # where they happen. Thursday so it does not collide with upstream-watch on Monday;
+  # -- the recipes in ci/slow-recipes.txt and the Tier C boot sweep -- and this is where
+  # they happen. Thursday so it does not collide with upstream-watch on Monday;
   # an off-the-hour minute for the same reason GitHub recommends it, cron congestion.
   schedule:
     - cron: "41 5 * * 4"      # Thursdays, 05:41 UTC
@@ -146,7 +146,7 @@ jobs:
             | grep -v -e '^#' -e '^$' \
             | xargs sudo apt-get install -y --no-install-recommends
 
-      # The base ISOs are 416-476 MiB each and never change -- upstream has not shipped
+      # The base ISOs are 416-455 MiB each and never change -- upstream has not shipped
       # a release since 2023 -- so cache on the content hash and download at most once.
       - name: cache base ISO
         id: cache-iso
@@ -258,9 +258,10 @@ jobs:
           if-no-files-found: ignore
 
   # ------------------------------------------------------------------ boot --
-  # Tier B. GitHub runners have no /dev/kvm, so QEMU falls back to TCG and a boot to
-  # livekit takes minutes rather than seconds. Kept to one target and off the
-  # per-push path for that reason.
+  # Tier B. A GitHub runner's /dev/kvm is not writable by the job's account, so QEMU
+  # falls back to TCG, several times slower per boot (docs/60-testing/tier-c.md). Kept
+  # to one target for that reason, and off pull requests unless they are labelled
+  # boot-test.
   boot:
     name: boot test (TCG)
     runs-on: ubuntu-24.04

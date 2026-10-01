@@ -175,11 +175,12 @@ git config --global --add safe.directory /work
 ## Two things this image is not, and why
 
 **It is not published anywhere.** No registry, no `ghcr.io`, no tag you can pull. CI builds it,
-proves it, and throws it away. That is a decision, not an oversight: the build is ~44 s on a runner
-and ~20 s locally, so publishing would save nothing measurable, while costing a third write
-permission on a repository that currently has two (`contents: write` in the release job,
-`issues: write` in upstream-watch), plus a published artifact with its own tagging and lifecycle to
-keep honest. Revisit if the build gets slow, or if CI starts running jobs inside the image.
+proves it, and throws it away. That is a decision, not an oversight: the build took 44 s on a
+runner and about 20 s locally when this was decided (2026-09-15), so publishing would save nothing
+measurable, while costing a third write permission on a repository that currently has two
+(`contents: write` in the release job, `issues: write` in upstream-watch), plus a published artifact
+with its own tagging and lifecycle to keep honest. Revisit if the build gets slow, or if CI starts
+running jobs inside the image.
 
 **CI does not run inside it.** `ci.yml` installs `packages/*.txt` on the `ubuntu-24.04` runner and
 runs the `container` job beside the others. That is the only reason the default base is Ubuntu —

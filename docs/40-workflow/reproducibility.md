@@ -81,7 +81,7 @@ sectors differing: 19/212,819 (0.0089%)
 ```
 
 All 19 are in the metadata region, and the difference is **entirely three PVD timestamp fields** —
-creation (offset 813), modification (830), effective (864). Every byte of the 415 MB payload matches,
+creation (offset 813), modification (830), effective (864). Every byte of the 415 MiB payload matches,
 and the boot-info-table checksum comes through unchanged at `0xe5d3e1ef`.
 
 That is as close as genisoimage gets. It has no option to set the volume date.

@@ -6,9 +6,9 @@
 
 WHY. Every boot in this toolkit goes through one funnel -- `kitchen test` ->
 lib/build.sh:_boot_run -> tests/boot/qemu_boot.py -- and qemu runs wherever the checkout
-is. A container without /dev/kvm boots under TCG, ten to twenty times slower, and one
-without qemu at all cannot boot anything. The machine with the KVM is often not the
-machine with the checkout.
+is. A container without /dev/kvm boots under TCG, several times slower
+(docs/60-testing/tier-c.md), and one without qemu at all cannot boot anything. The machine
+with the KVM is often not the machine with the checkout.
 
 So this file is the one place where "run it over there" lives. Nothing else in the tree
 learns about ssh: `kitchen test` asks whether a boot host is configured and, if so, hands

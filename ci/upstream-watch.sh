@@ -108,8 +108,9 @@ PY
 # --- pinned signing keys ---------------------------------------------------
 # A recipe using apt.sources pins its vendor's signing key by sha256, so a rotation makes
 # the build fail by design -- correctly, because an unpinned key lets a remote party
-# decide what the image trusts. The failure is right; discovering it from a ten-minute
-# build that happens to run is not. A few HTTP fetches and a sha256 find it in seconds.
+# decide what the image trusts. The failure is right; discovering it from a build of
+# several minutes that happens to run is not. A few HTTP fetches and a sha256 find it in
+# seconds.
 #
 # Parsed out of the recipes rather than hardcoded, so a recipe added later is covered
 # without anyone remembering to update this.

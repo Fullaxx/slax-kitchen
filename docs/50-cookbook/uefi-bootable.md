@@ -137,7 +137,7 @@ container](../../containers/README.md)'s base changes what ships:
 
 | built on | GRUB | `BOOTX64.EFI` | ESP |
 |---|---|---|---|
-| `ubuntu:24.04` (default) | 2.12 | 6,193,152 B | ~6.3 MiB |
+| `ubuntu:24.04` (default) | 2.12 | 6,193,152 B | 6,336 KiB |
 | `debian:12` | **2.06** | 10,334,208 B | 10,368 KiB |
 
 Both boot. The 2.12 log above is the default build; the Debian 12 build was checked the same way on

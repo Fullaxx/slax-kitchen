@@ -5,13 +5,29 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` → `gates` | push to master, or any PR | the thirteen commit gates, ~1 min, no ISOs |
+| `ci.yml` → `gates` | push to master, or any PR | the thirteen commit gates, no ISOs |
 | `ci.yml` → `container` | push to master, or any PR | builds the reference container on **both** `ubuntu:24.04` and `debian:12`, then `doctor --strict` and the gates *inside* each |
 | `ci.yml` → `build` | push to master, or any PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
 | `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | one direct-kernel QEMU boot under TCG, asserting |
 | `ci.yml` (weekly) | Thursdays 05:41 UTC, or dispatch | the same, plus the skipped recipes and the [Tier C](tier-c.md) boot matrix |
 | `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml` — **the full matrix**, not the per-push subset — then publish |
 | `upstream-watch.yml` | Mondays 06:17 UTC, or dispatch | linux-live HEAD, new Slax release, mirror health, pinned signing keys |
+
+<a id="job-times"></a>
+**How long each job takes**, over the last five green pushes, 2026-09-26 to 2026-09-28 (runs
+`36244507463` to `36418336723`), on GitHub's `ubuntu-24.04` runners. This is the only copy of these
+figures; re-measure with `gh run view <id> --json jobs`:
+
+| job | took |
+|---|---|
+| `gates` | 53–66 s |
+| `container`, each base | 60–99 s |
+| `build`, each Debian target | 638–820 s |
+| `build`, each Slackware target | 192–247 s |
+| `boot`, booting under TCG | 68–76 s |
+
+`release.yml` has run once, by dispatch on 2026-09-15 (run `34964351639`): 17 m 25 s for all of it,
+when its build jobs took 159–464 s.
 
 **What a test in the `gates` job may assume is installed**: `containers/packages/lint.txt` —
 `shellcheck`, `yamllint`, `python3-yaml`, `python3-jsonschema`, `python3-pyflakes` — plus whatever
@@ -39,7 +55,7 @@ want the matrix. It also has to stay unscoped for a PR to be mergeable at all: m
 branch protection requires five checks from this workflow — `commit gates` and the four
 `build <target>` jobs — and `pull_request` is the only trigger that produces them for a PR.
 
-Most of CI runs on every push to master. Three things deliberately do not, and all are on the
+Most of CI runs on every push to master. Two things deliberately do not, and both are on the
 weekly run:
 
 | | per push | weekly / tag / dispatch |
@@ -52,9 +68,9 @@ weekly run:
 **The bar for `ci/slow-recipes.txt` is not "slow".** It is that the recipe's failure mode is
 *external* — something outside this repository breaks it — so running it per-push converts someone
 else's change into a red master at a cadence nobody can act on. Being merely expensive is not
-enough; cost is not a reason to stop checking. Today the file holds four entries, each an
-external dependency: `all-browsers`, whose four vendor signing keys are pinned by sha256 and will
-rotate; `tor-browser`, a version-pinned 138 MB download; `firmware-refresh`, 65 sha256-pinned
+enough; cost is not a reason to stop checking. Each entry in it is an external dependency:
+`all-browsers`, whose four vendor signing keys are pinned by sha256 and will rotate;
+`tor-browser`, a version-pinned 138 MB download; `firmware-refresh`, 65 sha256-pinned
 files fetched from linux-firmware mirrors; and `bundle-from-url`, a version-pinned binary from
 github.com, whose fetch the unit gate tests in-process on every push.
 
@@ -63,7 +79,7 @@ worse than a slow one:
 
 ```
   SKIP all-browsers      weekly, not per-push: four sha256-pinned vendor keys are an
-                         external dependency (456 s, and a key rotation would redden master)
+                         external dependency (a key rotation would redden master)
 ```
 
 A **release tag runs everything a push does not**, because a release should be verified more than
@@ -82,8 +98,8 @@ rather than surfacing later as a recipe that cannot find `mcopy`.
 
 It runs on both supported bases. `containers/README.md` claims any current Debian-family release
 works; building `ubuntu:24.04` and `debian:12` on every push is what turns that from an assumption
-into a tested statement. Both legs are under a minute and run beside the eight-minute build jobs,
-so the second one costs nothing.
+into a tested statement. Both legs run beside the build jobs, which take far longer
+([times](#job-times)), so the second one costs nothing.
 
 Because those bases move, so do the tools in them — which is half the reason a test here asserts
 what *we* do with a tool's output rather than whether the tool works. The rule for writing one, and
@@ -160,7 +176,7 @@ file, and all three fail.
 
 ## Base ISOs
 
-They are 416–476 MiB each and are never committed. `kitchen fetch` downloads from the mirror in
+They are 416–455 MiB each and are never committed. `kitchen fetch` downloads from the mirror in
 `compat/sources.yaml` and verifies **size and sha256** before accepting anything, so a stale or
 hostile mirror cannot poison a build. CI caches on the content hash of that file, so each ISO is
 downloaded at most once and re-verified on every run.
@@ -187,7 +203,8 @@ its whole budget whatever the guest did — 240 + 120 + 120 = **480 s of sleepin
 the duration it reported back was the flag it had been given rather than anything it measured.
 
 `tests/boot/qemu_boot.py` now polls the serial log and returns as soon as **every** `--expect`
-string is present. Measured on the example ISO, under TCG, in a container with no KVM:
+string is present. Measured on 2026-09-16, on the example ISO, under TCG, in a container with no
+KVM:
 
 ```
 waited     : 20s of a 240s ceiling (all expectations seen)
@@ -236,12 +253,12 @@ log was 0 bytes and nothing noticed. Later, a machine without `xorriso` took the
 image without the entry: "no serial entry in this ISO", a screenshot, and a pass. That was the
 normal outcome there, and it blamed the image.
 
-## Boot tests are slow, and that is a runner limitation
+## Boot tests run under TCG here
 
-GitHub runners have no `/dev/kvm`, so QEMU falls back to TCG and a boot to livekit takes tens of
-seconds instead of four. The boot job is therefore kept to one target and off the per-PR path — add
-the `boot-test` label to a PR to opt in. `kitchen test` says which mode it is using rather than
-appearing to hang.
+A GitHub runner's `/dev/kvm` is not writable by the job's account, so QEMU falls back to TCG and a
+boot to livekit takes [several times as long](tier-c.md#kvm-vs-tcg) as under KVM. The boot job is
+therefore kept to one target and off the per-PR path — add the `boot-test` label to a PR to opt in.
+`kitchen test` says which mode it is using rather than appearing to hang.
 
 Measured 2026-09-16 at `1463570` on a GitHub runner, the whole boot job. **This table is the only
 copy of these figures:**
@@ -263,8 +280,9 @@ the video console.
 
 ## What CI does not run, and how to run it yourself
 
-CI covers nearly everything. What it cannot do is boot an image the way a person would, because
-GitHub-hosted runners have no `/dev/kvm` — TCG works but is 10–20× slower, which is why the boot job
+CI covers nearly everything. What it cannot do is boot an image the way a person would. A
+GitHub-hosted runner's `/dev/kvm` is not writable by the job's account, as the boot job's own log
+says, so QEMU runs under TCG, [several times slower](tier-c.md#kvm-vs-tcg). That is why the boot job
 asserts on a serial log rather than looking at a desktop.
 
 Everything below runs on **any KVM-capable Linux host** with `qemu-system-x86_64`, `qemu-img`,
@@ -336,10 +354,10 @@ failure a status-only check waves through.
 
 **Check 4 is why `all-browsers` can safely be weekly.** Its build fails by design when a vendor
 rotates a signing key — an unpinned key would let a remote party decide what the image trusts — but
-discovering that from a ten-minute build is the expensive way. Fetching four keys and hashing them
-takes seconds and names the recipe, the source and both hashes. The pins are parsed out of
-`recipes/**/*.yaml`, so a recipe added later is covered without anyone remembering to update the
-watch.
+discovering that from a build of several minutes is the expensive way. Fetching four keys and
+hashing them takes seconds and names the recipe, the source and both hashes. The pins are parsed
+out of `recipes/**/*.yaml`, so a recipe added later is covered without anyone remembering to update
+the watch.
 
 **On a change** it opens an issue labelled `upstream-watch` — or comments on the open one rather
 than filing a duplicate every week — carrying the adoption procedure: `kitchen probe` each ISO,
@@ -377,9 +395,9 @@ byte-reproducible; see [reproducibility](../40-workflow/reproducibility.md). The
 the notes do publish are verifiable, and `kitchen fetch` enforces them on every download.
 
 What it does say is what was *not* done. Tier C — BIOS menu, UEFI, USB image, persistence, boot to a
-desktop — needs `/dev/kvm`, which GitHub-hosted runners do not have, so no release claims a desktop
-came up. Three of the four targets are matrix-verified and not boot-verified, and the notes say so
-in those words.
+desktop — needs a writable `/dev/kvm`, which a GitHub-hosted runner does not give the job's account,
+so no release claims a desktop came up. Three of the four targets are matrix-verified and not
+boot-verified, and the notes say so.
 
 ### Cutting one
 
@@ -450,9 +468,9 @@ fetched by a movable tag and run as root on the machine that builds the ISO.
 the filesystem it should. Whether Fluxbox came up is `runtime-verified`, and it needs a
 person and a window — [QEMU by hand](qemu.md).
 
-**The committed Tier C evidence.** GitHub-hosted runners have no `/dev/kvm`, so CI runs
-the four paths under TCG to prove the harness still works, and writes its ledger to a
-scratch path. `tests/boot/tier-c.json` comes from a KVM host. What CI *does* own is the
+**The committed Tier C evidence.** A GitHub-hosted runner's `/dev/kvm` is not writable by the
+job's account, so CI runs the four paths under TCG to prove the harness still works, and writes
+its ledger to a scratch path. `tests/boot/tier-c.json` comes from a KVM host. What CI *does* own is the
 golden diff — a recipe change that alters the assembled filesystem turns the weekly run
 red against the committed block.
 

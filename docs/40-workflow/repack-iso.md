@@ -95,7 +95,7 @@ byte-for-byte shows the difference is **entirely three timestamp fields** — vo
 [823:827]  orig=b'4843'     new=b'3332'
 ```
 
-Everything else — all 415 MB of payload, every bundle, the initramfs, the kernel — is byte-identical.
+Everything else — all 415 MiB of payload, every bundle, the initramfs, the kernel — is byte-identical.
 
 **The boot-info-table checksum also survives unchanged** (`0xe5d3e1ef`), which confirms
 `isolinux.bin` came through intact. That checksum covers the file body, not its location, which is

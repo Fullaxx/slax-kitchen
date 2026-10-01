@@ -133,11 +133,11 @@ Two consequences worth knowing:
 | the initramfs | `xz -dc \| cpio -idm` |
 
 That third one is worth knowing: `unsquashfs -o` takes a byte offset, so you can pull
-`/etc/slax-version` out of a 122 MB bundle **without ever extracting the bundle** — `lib/isoparse.py`
+`/etc/slax-version` out of a 122 MiB bundle **without ever extracting the bundle** — `lib/isoparse.py`
 supplies the offset. What the read costs is in
 [iso-container](../10-anatomy/iso-container.md).
 
-Whole run: ~3.5 s per ISO.
+Whole run: 2.0–2.8 s per stock ISO (2026-10-01).
 
 ## Difference classification
 
@@ -185,5 +185,5 @@ kitchen fingerprint slax-new.iso -o compat/<flavour>-<arch>-<version>.yaml
 ci/gen-manifests.sh isos/slax-new.iso            # refuses an ISO no target is built from
 kitchen selftest ci
 ```
-Then work through whatever breaks and write it up in `version-notes/`. Because 30 of 32
+Then work through whatever breaks and write it up in `version-notes/`. Because 30 of the 31
 `/slax/boot/` files are byte-identical across flavours, most of a new fingerprint is shared.

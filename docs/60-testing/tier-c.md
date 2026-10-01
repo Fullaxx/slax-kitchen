@@ -4,8 +4,8 @@ Tier A parses the built ISO. Tier B boots the kernel directly and asserts that l
 init ran. **Tier C boots the image the way a machine would** — through a bootloader, off a
 USB device, and twice onto the same disk to prove persistence.
 
-It needs `/dev/kvm`, which GitHub-hosted runners do not have, so CI can exercise the
-harness but can never be the evidence. That split is the whole design of this page.
+It needs a writable `/dev/kvm`, which a GitHub-hosted runner does not give the job's account, so
+CI can exercise the harness but can never be the evidence. That split is the whole design of this page.
 
 ```sh
 ./kitchen build boot-matrix                       # or --base <target>
@@ -55,9 +55,12 @@ ISO was built from, and the ledger identifies the image by name and size with no
 For evidence produced and consumed on one machine that is sufficient. It stops being
 sufficient at the first release tag, when the notes describe an artifact to somebody else.
 
+<a id="kvm-vs-tcg"></a>
 Measured 2026-09-16 at `b601bc7`, both ways, on the same image. **This table is the only copy
 of these figures** — four other pages restated them and would have been left behind by the next
-re-measure, the way `docs/30-inventory/README.md` was. Re-measure with `time ./ci/tier-c.sh`:
+re-measure, the way `docs/30-inventory/README.md` was. Re-measure with `time ./ci/tier-c.sh`.
+Program output cannot link here, so `kitchen doctor`, `ci/tier-c.sh` and `tools/qemu/boot.py` print
+the per-boot ratio, "about 4-5x slower", and a change to this table is a change to them:
 
 | | KVM host | unaccelerated container, TCG |
 |---|---|---|

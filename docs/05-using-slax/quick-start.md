@@ -2,8 +2,7 @@
 
 ## Boot it
 
-Burn the ISO to a CD, or see [install-to-usb](install-to-usb.md). It boots in about 15 seconds on
-real hardware.
+Burn the ISO to a CD, or see [install-to-usb](install-to-usb.md).
 
 The boot menu is **hidden by default** — press **Esc** during the four-second window to see it, or
 just wait and it boots the first entry. From a CD that is *Run Slax from CD*; from a USB stick it is

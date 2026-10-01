@@ -279,7 +279,7 @@ doctor_tier() {
     elif have qemu-system-x86_64 && [ -e /dev/kvm ]; then
         printf '  %sk%s  boot tests ....................... %sTCG only%s (/dev/kvm is here but not writable by this account)\n' "$B" "$O" "$Y" "$O"
     elif have qemu-system-x86_64; then
-        printf '  %sk%s  boot tests ....................... %sTCG only%s (10-20x slower; Tier B ok, Tier C -> host)\n' "$B" "$O" "$Y" "$O"
+        printf '  %sk%s  boot tests ....................... %sTCG only%s (about 4-5x slower per boot; Tier B ok, Tier C -> host)\n' "$B" "$O" "$Y" "$O"
     else
         printf '  %sk%s  boot tests ....................... %sno qemu%s\n' "$B" "$O" "$R" "$O"
     fi
@@ -322,8 +322,8 @@ doctor_tier() {
         fi
     elif [ -n "$_bh" ]; then
         # NOT the note below. "only the full boot matrix is blocked here" and "adding
-        # --device /dev/kvm turns 5-15 min into ~30 s" are both false on a machine whose
-        # boots already run on a KVM host: nothing is blocked and nothing would get
+        # --device /dev/kvm makes each boot about 4-5x faster" are both false on a machine
+        # whose boots already run on a KVM host: nothing is blocked and nothing would get
         # faster. Saying it anyway would send someone to reconfigure a container to fix a
         # problem they do not have.
         printf '\n  %sNote:%s this machine has no KVM and does not need one -- boot tests%s\n' \
@@ -333,7 +333,7 @@ doctor_tier() {
     elif ! cap kvm; then
         printf '\n  %sNote:%s only the full boot matrix is blocked here. Adding%s\n' "$D" "$O" "$O"
         printf '  %s  --device /dev/kvm%s\n' "$D" "$O"
-        printf '  %sturns a 5-15 min boot-to-desktop run into ~30 s. Everything else,%s\n' "$D" "$O"
+        printf '  %smakes each boot about 4-5x faster. Everything else,%s\n' "$D" "$O"
         printf '  %sbundle.packages included, already runs here.%s\n' "$D" "$O"
         printf '  %sOr point boot tests at a machine that has KVM: boot-host.example.ini.%s\n' \
             "$D" "$O"
@@ -473,8 +473,8 @@ doctor_report() {
     else echo "  privilege: chroot   no (needs chroot and mknod)"; fi
     if [ "$_kv" = yes ]; then echo "  privilege: kvm      yes"
     elif have qemu-system-x86_64 && [ -e /dev/kvm ]; then
-        echo "  privilege: kvm      TCG only (/dev/kvm not writable by this uid; 10-20x slower)"
-    elif have qemu-system-x86_64; then echo "  privilege: kvm      TCG only (no /dev/kvm; 10-20x slower)"
+        echo "  privilege: kvm      TCG only (/dev/kvm not writable by this uid; about 4-5x slower per boot)"
+    elif have qemu-system-x86_64; then echo "  privilege: kvm      TCG only (no /dev/kvm; about 4-5x slower per boot)"
     else echo "  privilege: kvm      no (qemu not installed)"; fi
     echo "--- end ---"
 }

@@ -844,7 +844,7 @@ def summary(a: argparse.Namespace, cfg: Config, printing: bool, created: list[st
                  "kvm": "KVM (forced)", "tcg": "TCG (forced)"}[a.accel]
     elif a.accel == "auto":
         accel = ("KVM" if os.access("/dev/kvm", os.W_OK)
-                 else "TCG (no writable /dev/kvm -- 10-20x slower)")
+                 else "TCG (no writable /dev/kvm -- about 4-5x slower per boot)")
     else:
         accel = {"kvm": "KVM (forced)", "tcg": "TCG (forced)"}[a.accel]
     out.append(f"  accel     {accel}")

@@ -9,8 +9,8 @@
 # `Containerfile` on its own. The name is the OCI spelling and both engines
 # accept the contents, so it stays.
 #
-# Add --device /dev/kvm if the host has it. That one flag turns a 5-15 minute
-# boot-to-desktop run into about 30 seconds, and it is the ONLY flag worth adding:
+# Add --device /dev/kvm if the host has it. That one flag makes each boot several
+# times faster (docs/60-testing/tier-c.md), and it is the ONLY flag worth adding:
 # bundle.packages turned out to need CAP_SYS_CHROOT and CAP_MKNOD, both of which
 # Docker grants by default, so --cap-add SYS_ADMIN and --security-opt
 # seccomp=unconfined are not needed for anything.

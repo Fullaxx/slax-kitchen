@@ -19,7 +19,7 @@ CapEff = chown, dac_override, fowner, fsetid, kill, setgid, setuid, setpcap,
 |---|---|---|
 | `mount` (any type) | **no** — no `CAP_SYS_ADMIN` | cannot bind `/proc`, `/sys`, `/dev` into a chroot |
 | user namespaces | **no** — blocked by Docker's **seccomp** profile | no `unshare -Urm` workaround |
-| `/dev/kvm` | **no** | QEMU runs TCG only, ~10–20× slower |
+| `/dev/kvm` | **no** | QEMU runs TCG only, [several times slower](../60-testing/tier-c.md#kvm-vs-tcg) |
 | loop devices | no | irrelevant — nothing here needs them |
 | `/dev/fuse` | no | irrelevant |
 | `chroot` | **yes** | can enter a bundle tree |
@@ -40,9 +40,9 @@ Everything below is pure userspace file manipulation and runs here with no privi
   it.** This is the detail that makes the `uefi-bootable` recipe possible unprivileged.
 - `grub-mkstandalone` — produces `BOOTX64.EFI`
 
-That covers the 20 recipes declaring `privilege: none`, counted from their `compat:` blocks.
-Another 4 need `mknod` and 11 need `chroot`, both of which this container has, so all 35 run
-here — including both flagship ones. Mounting is the one thing that does not.
+That covers every recipe whose `compat:` block declares `privilege: none`. The ones that need
+`mknod` or `chroot` run here too, since this container has both, so every recipe runs here —
+including both flagship ones. Mounting is the one thing that does not.
 
 ## `bundle.packages` needs less than expected
 
@@ -106,9 +106,8 @@ Only one flag is still worth adding:
 --device /dev/kvm
 ```
 
-That turns a 5–15 minute boot-to-desktop run into about 30 seconds — the difference between a
-nightly job and something you can iterate on. `--cap-add SYS_ADMIN` and
-`--security-opt seccomp=unconfined` are no longer needed for anything, since `bundle.packages`
-turned out not to require them.
+That makes each boot [about 4–5 times faster](../60-testing/tier-c.md#kvm-vs-tcg).
+`--cap-add SYS_ADMIN` and `--security-opt seccomp=unconfined` are no longer needed for anything,
+since `bundle.packages` turned out not to require them.
 
 If you would rather move machines, [host-handoff](host-handoff.md) is the runbook.

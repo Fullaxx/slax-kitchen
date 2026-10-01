@@ -31,7 +31,8 @@ completion — and `/init` calls `debug_shell` six times) and **CVE-2022-48174**
 overflow). It also predates `CONFIG_TIME64`, so `date -r` on a post-2038 mtime already misbehaves
 today.
 
-The 55 applets the boot scripts actually use, extracted from `/init`, `livekitlib` and `/shutdown`,
+The applets the boot scripts actually use, extracted from `/init`, `livekitlib` and `/shutdown`
+(listed in [`tests/busybox/required-applets.txt`](../../tests/busybox/required-applets.txt)),
 include several that a bare `defconfig` does not enable: `switch_root`, `pivot_root`, `mdev`,
 `modprobe`, `rmmod`, `losetup`, `mkswap`, `swapon`, `mountpoint`, `tac`, `seq`, `xargs`, `cpio`,
 `tftp`, `wget`, `udhcpc`, `ifconfig`, `route`, `fdisk`, `mknod`, `chroot`.

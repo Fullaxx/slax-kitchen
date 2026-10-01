@@ -120,7 +120,7 @@ The removal is also what makes `from:` come out right. With `05-chromium` gone t
 `01-core … 04-apps`, so apt pulls the shared browser runtime into this bundle and the result stands
 on its own; with `05` still below, apt finds it installed and the bundle is smaller but assumes `05`
 stays. `05-chromium` was never only Chromium: it carries `libnss3`, `libnspr4`, `libopus0`,
-`libflac12`, `libwebpmux3` and eighteen more — see
+`libflac12`, `libwebpmux3` and seventeen more — see
 [the bundle map](../30-inventory/bundle-map.md).
 
 > **This recipe and [`all-browsers`](all-browsers.md) are alternatives, not companions.** Nothing

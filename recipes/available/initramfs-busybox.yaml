@@ -30,7 +30,7 @@ steps:
   # WHY THE BINARY IS NOT IN THIS REPOSITORY. A 1.2 MB blob that runs as root at boot is
   # exactly the thing that should be built from pinned source rather than committed and
   # forgotten. .gitignore keeps build/ out; 00-no-binaries does not look at this file. tools/build-busybox.sh
-  # does it in about 30 seconds, verifying upstream's published sha256 before compiling.
+  # does it, verifying upstream's published sha256 before compiling.
   #
   # APPLET PARITY, measured: 1.26.2 has 248 applets, this build has 406, and the only one
   # that disappears is `catv` -- removed upstream, and unused by Slax. `ar`, `unlzop` and

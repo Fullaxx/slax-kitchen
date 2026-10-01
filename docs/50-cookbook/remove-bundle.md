@@ -45,7 +45,7 @@ Booted afterwards: livekit mounts five bundles instead of six and reaches
 | `05-chromium` | 79 / 115 MiB | **Best first candidate**, and the default. The desktop launcher turns into an on-demand installer rather than breaking — see below. |
 | `06-devel` | — / 81 MiB | Slackware only; gcc, headers, make. |
 | `01-firmware` | 91 / 80 MiB | Only if you know the target hardware. It is wireless/NIC firmware — note it contains **no GPU firmware** at all, so removing it does not affect graphics. |
-| `02-xorg`, `03-desktop` | 59+38 / 15+20 MiB | Leaves a console-only system. Legitimate, but pair with a `text` boot parameter so the X autostart unit does not fire and retry. |
+| `02-xorg`, `03-desktop` | 59+38 / 15+19 MiB | Leaves a console-only system. Legitimate, but pair with a `text` boot parameter so the X autostart unit does not fire and retry. |
 
 **Never remove `01-core`** — it is the root filesystem.
 

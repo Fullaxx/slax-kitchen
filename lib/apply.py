@@ -133,7 +133,7 @@ def step_requires(step: dict) -> dict:
            for k, v in VERB_REQUIRES.get(step.get("verb", ""), {}).items()}
     # These verbs urlopen their `src`, so they need the network only when it is a URL.
     # bundle.fromTarball was missing here while doing the identical fetch: preflight said
-    # nothing, and `kitchen build` unpacked 436 MiB before dying at the download.
+    # nothing, and `kitchen build` unpacked 416 MiB before dying at the download.
     # test_network_is_declared_where_it_is_used keeps the list honest against the code.
     if step.get("verb") in _URL_SRC_VERBS and re.match(r"^https?://", str(step.get("src", ""))):
         req["network"] = True

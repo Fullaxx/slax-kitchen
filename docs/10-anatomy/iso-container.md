@@ -125,9 +125,10 @@ diff <(xorriso -indev A.iso -find / -exec lsdl -- | awk '{print $NF}') \
 | `vmlinuz` | 12,017,856 | 12,017,856 | 10,841,216 | 10,841,216 |
 | `initrfs.img` | 8,872,472 | 8,869,024 | 7,791,856 | 7,802,236 |
 
-Inside `/slax/boot/`, only `vmlinuz` and `initrfs.img` ever differ — **and they differ by word size,
-never by flavour**. The other 30 files are byte-identical on all four images, so a change to the
-bootloader or the menus applies to every target at once.
+Inside `/slax/boot/`, only `vmlinuz` and `initrfs.img` ever differ. `vmlinuz` differs by word size
+alone; `initrfs.img` differs by flavour too, as the table shows. The other 29 files are
+byte-identical on all four images, so a change to the bootloader or the menus applies to every
+target at once.
 
 The 32-bit Debian ISO is *larger* than the 64-bit one (by 206,848 bytes), because `02-xorg` and
 `05-chromium` are both bigger there. Only the initramfs shrinks predictably with word size.

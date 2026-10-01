@@ -1,9 +1,9 @@
 # Commit gates only -- what `ci/run-checks.sh` needs and nothing more.
 # Used by: ci.yml `gates`, and the reference container.
 #
-# The gates job installs only this file, which is why it finishes in ~35 s while a
-# build job takes seven minutes. Keep it that way: anything added here is paid on
-# every push and every PR.
+# The gates job installs only this file, which keeps it fast: docs/60-testing/ci.md
+# has the job times. Keep it that way: anything added here is paid on every push and
+# every PR.
 
 shellcheck
 yamllint

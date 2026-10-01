@@ -9,7 +9,8 @@ kitchen apply add-packages
 kitchen pack
 ```
 
-Copy `recipes/available/add-packages.yaml`, change the `packages` list, done. Takes about 21 s.
+Copy `recipes/available/add-packages.yaml`, change the `packages` list, done. Takes about 21 s on
+`debian-64bit` (2026-10-01).
 
 ## How it works
 
@@ -114,7 +115,7 @@ yourself. The verb's `from:`, delta and exclusion machinery would all be reused 
 
 ### Unaffected
 
-Everything else works identically on Slackware, because it is flavour-agnostic — **30 of 32 files
+Everything else works identically on Slackware, because it is flavour-agnostic — **30 of the 31 files
 under `/slax/boot/` are byte-identical between the two flavours**, `vmlinuz` included. `unpack`,
 `pack`, `probe`, fingerprints, and the `uefi-bootable` / `isohybrid` / `serial-console` recipes are
 all verified on Slackware bases.

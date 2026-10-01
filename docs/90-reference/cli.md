@@ -41,7 +41,8 @@ Runs **unpack → apply → pack → test** from one file, then deletes the work
 | `-f`, `--force` | rebuild over an existing work tree and output |
 | `--local` | run the profile's boot tests here, not on the [boot host](../60-testing/boot-host.md) |
 
-Roughly 4 seconds for a four-recipe profile, excluding boot tests.
+Excluding boot tests, `kitchen build example` took 24 s on 2026-10-01: six recipes, one of them an
+apt install. Four recipes with no apt step took 4.4 s on 2026-09-13.
 
 The base ISO comes from `base.iso` if the profile sets it. Otherwise the filename is **looked up**
 in `compat/sources.yaml`, which states a `file:` for every target — `isos/` plus that name. Only a
@@ -71,7 +72,8 @@ kitchen test out/x.iso --kernel --expect 'dpkg-status: 600 packages'
 
 `--structure` runs `tests/structure/iso_assert.py`: El Torito shape, Rock Ridge, Joliet,
 boot-info-table consistency, squashfs parameters on every bundle, required files, and no
-`boot/efi.img` without an EFI entry. About a second.
+`boot/efi.img` without an EFI entry: 16 assertions on a stock image, in under a second
+(2026-10-01).
 It expects the volume id `slax` unless `--volid` says otherwise; `kitchen build` passes whatever the
 profile's recipes asked `pack` for, read through the same hint reader `pack` uses.
 
@@ -302,7 +304,7 @@ already present.
 ```sh
 kitchen fetch                          # what do I have?
 kitchen fetch debian-64bit-12.2.0      # ~416 MiB
-kitchen fetch --all                    # all four, ~1.8 GiB
+kitchen fetch --all                    # all four, ~1.7 GiB
 kitchen fetch --all --verify-only      # check what is on disk, download nothing
 ```
 
@@ -464,8 +466,8 @@ file that is not an ISO as `/` alone and exits 0. So a listing with no files in 
 it used to diff as an empty image, with every file of the other reported removed.
 
 **Nothing is extracted.** xorriso reports each file's start LBA and size, so content hashes come
-from reading those extents straight out of the image — comparing two 416 MiB ISOs takes about two
-seconds and no scratch space.
+from reading those extents straight out of the image — comparing two 416 MiB ISOs took under a
+second on 2026-10-01, with both in the page cache, and no scratch space.
 
 Two cases get special handling, because the naive answer is confidently wrong:
 
@@ -718,9 +720,8 @@ detail for one. This works on **every** subcommand.
 ## Everything is implemented
 
 Every command in `--help` works. `kernel.replace` is the one remaining **verb** worth building —
-`initramfs.config` and `boot.secureboot` are declared and won't-do, so 23 of 26 are implemented;
-see
-[project status](../00-overview/status.md).
+`initramfs.config` and `boot.secureboot` are declared and won't-do, and every other declared verb
+is implemented; see [project status](../00-overview/status.md).
 
 ---
 

@@ -17,10 +17,11 @@
 #   --allow-dirty      run against a modified tree (the ledger is then not evidence)
 #   --local            boot here, ignoring boot-host.ini
 #
-# WHAT THIS IS FOR. CI has no /dev/kvm, so it can exercise this harness but can never
-# be the evidence. This runs on any KVM-capable Linux host with qemu, qemu-img, xorriso,
-# e2fsprogs and OVMF, and writes back two things that ARE committable, because both are
-# facts about the artifact rather than about the machine that booted it:
+# WHAT THIS IS FOR. A runner does not let CI's job write /dev/kvm, so CI can exercise
+# this harness but can never be the evidence. This runs on any KVM-capable Linux host
+# with qemu, qemu-img, xorriso, e2fsprogs and OVMF, and writes back two things that ARE
+# committable, because both are facts about the artifact rather than about the machine
+# that booted it:
 #
 #   the ledger   one row per boot: which path, image name and size, which markers were
 #                seen, how long it took, and the accelerator and qemu version it booted
@@ -141,7 +142,7 @@ if [ -n "$BOOT_HOST" ]; then
     ACCEL="on $BOOT_HOST"
 elif [ -w /dev/kvm ]; then ACCEL=KVM; else
     ACCEL=TCG
-    say "${Y}no writable /dev/kvm: every boot below runs under TCG, 10-20x slower.${O}"
+    say "${Y}no writable /dev/kvm: every boot below runs under TCG, about 4-5x slower.${O}"
     say "${Y}That is fine for checking the harness still works and wrong for producing${O}"
     say "${Y}evidence -- a ledger row saying accel=tcg is what tells them apart.${O}"
 fi

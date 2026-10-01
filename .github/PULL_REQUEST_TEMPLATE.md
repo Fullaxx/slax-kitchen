@@ -43,9 +43,9 @@ Boot tests do not run on pull requests by default. Ask a maintainer to add the
 `boot-test` label if this change could affect booting -- anything touching the
 initramfs, the bootloader, the kernel, or bundle load order.
 
-The job takes about 8.5 minutes: measured across the last four green runs, 8.5 / 8.5 /
-8.5 / 8.6. It runs under TCG because GitHub runners have no /dev/kvm. This note used to
-say 45 minutes, which was the `timeout-minutes:` ceiling in ci.yml read as if it were a
-runtime -- five times the real figure, and the kind of number that makes people avoid
-asking for a test they should ask for.
+The boot job runs once the build jobs it needs have finished; docs/60-testing/ci.md has
+the job times. It runs under TCG, because a GitHub runner's /dev/kvm is not writable by
+the job's account. This note once said 45 minutes, which was the `timeout-minutes:`
+ceiling in ci.yml read as if it were a runtime -- the kind of number that makes people
+avoid asking for a test they should ask for.
 -->

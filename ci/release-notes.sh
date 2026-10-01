@@ -103,8 +103,8 @@ GATES=$(find ci/checks -name '*.sh' 2>/dev/null | wc -l | tr -d ' ')
 # TIER C: DERIVED, NOT ASSERTED. This paragraph used to be a constant -- "Tier C was not
 # run" printed into every release whether or not that was still true -- and a unit test
 # pinned the constant, so the notes could never start telling the truth about a Tier C
-# run that HAD happened. tests/boot/tier-c.json is written by a KVM host (CI has no
-# /dev/kvm and never can), validated by ci/checks/97-tier-c-ledger.sh, and read here.
+# run that HAD happened. tests/boot/tier-c.json is written by a KVM host (a runner does
+# not let the job write /dev/kvm), validated by ci/checks/97-tier-c-ledger.sh, and read here.
 #
 # Same shape as SHALLOW above: a condition that is usually one way, stated either way,
 # with the negative case spelled out rather than assumed.
@@ -114,10 +114,10 @@ if [ -f "$TIERC_LEDGER" ] && command -v python3 >/dev/null 2>&1; then
 fi
 if [ -z "${TIERC:-}" ]; then
     TIERC="**Tier C was not run.** The full boot matrix -- BIOS menu, UEFI, USB image,
-persistence -- needs \`/dev/kvm\`, which GitHub-hosted runners do not have.
+persistence -- needs a writable \`/dev/kvm\`, which GitHub-hosted runners do not give the job.
 
-All four targets are matrix-verified, not boot-verified. They build and their structure
-is correct; they were not booted.
+The three targets besides \`debian-64bit-12.2.0\` are matrix-verified, not boot-verified.
+They build and their structure is correct; they were not booted.
 
 No release claims a desktop came up. Tier C asserts that every boot path reaches
 \`Live Kit done\` and assembles the filesystem it should; a person looking at Fluxbox is
