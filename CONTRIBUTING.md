@@ -386,20 +386,22 @@ boot-tested" for exactly this reason, and that is a feature.
 
 ### Two labels have to exist
 
-`.github/workflows/ci.yml` gates the boot job on a **`boot-test`** label, and `upstream-watch.yml`
-files its issues under **`upstream-watch`**. Neither is defined in any configuration, so a fresh
-fork has neither, and a workflow referencing a label that does not exist fails quietly. Create
-them once:
+`.github/workflows/ci.yml` runs the Tier C sweep on a pull request labelled **`boot-test`**, and
+`upstream-watch.yml` files its issues under **`upstream-watch`**. Neither is defined in any
+configuration, so a fresh fork has neither, and a workflow referencing a label that does not exist
+fails quietly. Create them once:
 
 ```sh
-gh label create boot-test      --description "Run the QEMU boot job on this PR" --color 0e8a16
+gh label create boot-test      --description "Run the Tier C boot sweep on this PR" --color 0e8a16
 gh label create upstream-watch --description "Filed by the weekly upstream drift check" --color fbca04
 ```
 
 ### Boot tests on a PR
 
-The boot job does **not** run on pull requests by default. Add the **`boot-test` label** to your PR
-to opt in.
+The boot job runs on every pull request: one direct-kernel boot of the `example` profile on
+`debian-64bit-12.2.0`, asserting the livekit markers. The **`boot-test` label** adds the Tier C
+sweep, the bootloader, USB and persistence paths that otherwise run weekly. Ask for it when a
+change could affect booting.
 
 ### Recipes: what we will take
 

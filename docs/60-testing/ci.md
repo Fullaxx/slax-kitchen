@@ -8,7 +8,7 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 | `ci.yml` → `gates` | push to master, or any PR | the thirteen commit gates, no ISOs |
 | `ci.yml` → `container` | push to master, or any PR | builds the reference container on **both** `ubuntu:24.04` and `debian:12`, then `doctor --strict` and the gates *inside* each |
 | `ci.yml` → `build` | push to master, or any PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
-| `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | one direct-kernel QEMU boot, under KVM where the runner has it, asserting |
+| `ci.yml` → `boot` | push to master, or any PR | one direct-kernel QEMU boot, under KVM where the runner has it, asserting; on a PR labelled `boot-test`, the [Tier C](tier-c.md) sweep too |
 | `ci.yml` (weekly) | Thursdays 05:41 UTC, or dispatch | the same, plus the skipped recipes and the [Tier C](tier-c.md) boot matrix |
 | `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml` — **the full matrix**, not the per-push subset — then publish |
 | `upstream-watch.yml` | Mondays 06:17 UTC, or dispatch | linux-live HEAD, new Slax release, mirror health, pinned signing keys |
@@ -55,15 +55,15 @@ want the matrix. It also has to stay unscoped for a PR to be mergeable at all: m
 branch protection requires five checks from this workflow — `commit gates` and the four
 `build <target>` jobs — and `pull_request` is the only trigger that produces them for a PR.
 
-Most of CI runs on every push to master. Two things deliberately do not, and both are on the
-weekly run:
+Most of CI runs on every push to master and every pull request. Two things deliberately do not,
+and both are on the weekly run:
 
-| | per push | weekly / tag / dispatch |
+| | per push or PR | weekly / tag / dispatch |
 |---|---|---|
 | gates, container, 4-target build matrix | ✅ | ✅ |
 | the recipes in [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) | ❌ | ✅ |
 | direct-kernel boot, asserting markers | ✅ | ✅ |
-| [Tier C](tier-c.md): build `boot-matrix`, then four paths and five asserting boots | ❌ | ✅ |
+| [Tier C](tier-c.md): build `boot-matrix`, then four paths and five asserting boots | ❌, unless a PR is labelled `boot-test` | ✅ |
 
 **The bar for `ci/slow-recipes.txt` is not "slow".** It is that the recipe's failure mode is
 *external* — something outside this repository breaks it — so running it per-push converts someone
@@ -260,8 +260,8 @@ here, and a boot to livekit took [several times as long](tier-c.md#kvm-vs-tcg). 
 `KVM, if the runner has it` step opens the device with a udev rule, the one slax-wine's release
 workflow uses, and checks it is writable before anything boots. GitHub does not promise the device:
 on a runner without one the step says so, and the boots run under TCG. The boot job is kept to one
-target and off the per-PR path — add the `boot-test` label to a PR to opt in. `kitchen test` says
-which mode it is using rather than appearing to hang.
+target, and runs on every pull request; a PR's `boot-test` label adds the Tier C sweep.
+`kitchen test` says which mode it is using rather than appearing to hang.
 
 Measured 2026-09-16 at `1463570` on a GitHub runner, the whole boot job. **This table is the only
 copy of these figures:**

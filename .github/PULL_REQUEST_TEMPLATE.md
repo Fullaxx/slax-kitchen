@@ -39,9 +39,11 @@ wrong claim is not. We have no real hardware and no Secure Boot here either.
 - [ ] Docs that state the old behaviour are updated — including docstrings
 
 <!--
-Boot tests do not run on pull requests by default. Ask a maintainer to add the
-`boot-test` label if this change could affect booting -- anything touching the
-initramfs, the bootloader, the kernel, or bundle load order.
+Every pull request gets the boot job: one direct-kernel boot that asserts the livekit
+markers. Ask a maintainer to add the `boot-test` label if this change could affect
+booting -- anything touching the initramfs, the bootloader, the kernel, or bundle load
+order -- and the Tier C sweep runs too: the BIOS and UEFI menus, a USB image and
+persistence.
 
 The boot job runs once the build jobs it needs have finished; docs/60-testing/ci.md has
 the job times. It boots under KVM: the job opens the runner's /dev/kvm, and boots under

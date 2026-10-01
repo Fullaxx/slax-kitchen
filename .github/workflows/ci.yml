@@ -258,13 +258,13 @@ jobs:
           if-no-files-found: ignore
 
   # ------------------------------------------------------------------ boot --
-  # Tier B. One target, and off pull requests unless they are labelled boot-test. The
-  # boots run under KVM where the runner has /dev/kvm: the step below opens it to the job.
+  # Tier B. One target, on every push to master and every pull request. The boots run
+  # under KVM where the runner has /dev/kvm: the step below opens it to the job. A pull
+  # request labelled boot-test also gets the Tier C sweep, at the end of this job.
   boot:
     name: boot test
     runs-on: ubuntu-24.04
     needs: build
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'boot-test')
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
