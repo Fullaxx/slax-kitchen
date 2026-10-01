@@ -17,11 +17,11 @@
 #   --allow-dirty      run against a modified tree (the ledger is then not evidence)
 #   --local            boot here, ignoring boot-host.ini
 #
-# WHAT THIS IS FOR. A runner does not let CI's job write /dev/kvm, so CI can exercise
-# this harness but can never be the evidence. This runs on any KVM-capable Linux host
-# with qemu, qemu-img, xorriso, e2fsprogs and OVMF, and writes back two things that ARE
-# committable, because both are facts about the artifact rather than about the machine
-# that booted it:
+# WHAT THIS IS FOR. CI exercises this harness weekly on one target, but can never be the
+# evidence: that is a recorded run of every target on a clean tree. This runs on any
+# KVM-capable Linux host with qemu, qemu-img, xorriso, e2fsprogs and OVMF, and writes back
+# two things that ARE committable, because both are facts about the artifact rather than
+# about the machine that booted it:
 #
 #   the ledger   one row per boot: which path, image name and size, which markers were
 #                seen, how long it took, and the accelerator and qemu version it booted

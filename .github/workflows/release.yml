@@ -78,7 +78,7 @@ jobs:
 
   # ---------------------------------------------------------------- verify --
   # The whole of ci.yml: every commit gate, the reference container, four targets with
-  # the recipe matrix and round-trip, and the TCG boot test. How long its one run took is
+  # the recipe matrix and round-trip, and the boot test. How long its one run took is
   # in docs/60-testing/ci.md.
   verify:
     needs: guard

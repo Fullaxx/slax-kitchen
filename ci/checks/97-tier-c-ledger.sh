@@ -3,8 +3,8 @@
 # desc: The Tier C ledger is well-formed and carries no facts about the host that ran it.
 #
 # tests/boot/tier-c.json is the only file in this repository written by a machine that is
-# not CI -- a KVM host, because CI boots under TCG: a runner's /dev/kvm is not writable by
-# the job's account.
+# not CI -- a KVM host, recording all four targets from a clean tree. CI's weekly run boots
+# one target and writes its ledger to a scratch path.
 # ci/release-notes.sh reads it, so a release's claim about Tier C is derived from it
 # rather than hardcoded. That makes two things worth gating.
 #

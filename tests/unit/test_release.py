@@ -316,8 +316,8 @@ def test_tier_c_claim_follows_the_evidence():
     run: the test would have failed on the honest output. Both branches are asserted
     here so neither can rot into the other.
 
-    The negative branch is what this checkout produces, because tests/boot/tier-c.json
-    is written by a KVM host and CI has none.
+    The negative branch is what a checkout with no tests/boot/tier-c.json produces: the
+    ledger comes only from a recorded run on a KVM host, which CI's weekly sweep is not.
     """
     ledger = {
         "kitchen": "0.1.0-dev", "commit": "abc1234", "qemu": "8.2.2",

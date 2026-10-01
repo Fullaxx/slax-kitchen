@@ -258,12 +258,10 @@ jobs:
           if-no-files-found: ignore
 
   # ------------------------------------------------------------------ boot --
-  # Tier B. A GitHub runner's /dev/kvm is not writable by the job's account, so QEMU
-  # falls back to TCG, several times slower per boot (docs/60-testing/tier-c.md). Kept
-  # to one target for that reason, and off pull requests unless they are labelled
-  # boot-test.
+  # Tier B. One target, and off pull requests unless they are labelled boot-test. The
+  # boots run under KVM where the runner has /dev/kvm: the step below opens it to the job.
   boot:
-    name: boot test (TCG)
+    name: boot test
     runs-on: ubuntu-24.04
     needs: build
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'boot-test')
@@ -278,6 +276,30 @@ jobs:
           cat containers/packages/build.txt containers/packages/boot.txt \
             | grep -v -e '^#' -e '^$' \
             | xargs sudo apt-get install -y --no-install-recommends
+      # A runner has a /dev/kvm the job's account cannot write. Until this step every boot
+      # here ran under TCG, and the boot log said why: "/dev/kvm is not writable by this
+      # account" (run 36418336723). The udev rule is the one slax-wine's release workflow
+      # uses, and `ls -l` records what it left. GitHub does not promise the device: without
+      # it the boots run under TCG and this says so. A device that is there and still not
+      # writable is this step's failure, and stops the job here rather than as a slow boot
+      # nobody reads.
+      - name: KVM, if the runner has it
+        run: |
+          if [ ! -e /dev/kvm ]; then
+            echo "::notice::no /dev/kvm on this runner: the boots below run under TCG"
+            exit 0
+          fi
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle
+          ls -l /dev/kvm
+          if [ ! -w /dev/kvm ]; then
+            echo "::error::/dev/kvm is there but still not writable by $(id -un)"
+            exit 1
+          fi
+          echo "::notice::/dev/kvm is writable: the boots below run under KVM"
       - uses: actions/cache@v6
         with:
           path: isos/slax-64bit-debian-12.2.0.iso
@@ -343,9 +365,10 @@ jobs:
       #     livekit markers. Reversed, the entry does what its name says.
       #
       # CI can exercise this harness but can never BE the evidence: tests/boot/tier-c.json
-      # is written by a KVM host, and the ledger here goes to a scratch path so a TCG run
-      # cannot overwrite it. What CI does own is the golden diff -- every path must
-      # assemble a filesystem identical to the committed testkit block.
+      # is a recorded run of all four targets on a clean tree, and the ledger here goes to a
+      # scratch path so a run of one target cannot overwrite it. What CI does own is the
+      # golden diff -- every path must assemble a filesystem identical to the committed
+      # testkit block.
       - name: Tier C boot matrix (weekly)
         if: >-
           github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

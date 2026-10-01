@@ -398,9 +398,8 @@ gh label create upstream-watch --description "Filed by the weekly upstream drift
 
 ### Boot tests on a PR
 
-The boot job does **not** run on pull requests by default — on a GitHub runner it boots under TCG,
-so it is slow. Add the **`boot-test` label** to your PR to opt in. This is documented nowhere
-else, which is our fault.
+The boot job does **not** run on pull requests by default. Add the **`boot-test` label** to your PR
+to opt in.
 
 ### Recipes: what we will take
 

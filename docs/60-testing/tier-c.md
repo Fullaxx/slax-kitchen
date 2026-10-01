@@ -4,8 +4,9 @@ Tier A parses the built ISO. Tier B boots the kernel directly and asserts that l
 init ran. **Tier C boots the image the way a machine would** — through a bootloader, off a
 USB device, and twice onto the same disk to prove persistence.
 
-It needs a writable `/dev/kvm`, which a GitHub-hosted runner does not give the job's account, so
-CI can exercise the harness but can never be the evidence. That split is the whole design of this page.
+It needs a writable `/dev/kvm`. CI's boot job opens a runner's and exercises the harness weekly on
+one target, but CI is never the evidence: that is a recorded run of all four targets on a clean
+tree, committed with it. That split is the whole design of this page.
 
 ```sh
 ./kitchen build boot-matrix                       # or --base <target>
@@ -69,8 +70,9 @@ the per-boot ratio, "about 4-5x slower", and a change to this table is a change 
 
 The per-boot figures are time to the markers *after* the menu keystrokes; the UEFI path
 additionally waits 10 s before touching the menu, for reasons measured below. The TCG
-column is the shape the weekly CI run has, and every boot in it matched the golden
-generated under KVM — which is what a golden about an artifact ought to do.
+column was the weekly CI run's shape until the boot job opened the runner's `/dev/kvm`, and
+every boot in it matched the golden generated under KVM — which is what a golden about an
+artifact ought to do.
 
 Everything here runs on **any KVM-capable Linux host** with `qemu-system-x86_64`,
 `qemu-img`, `xorriso`, `e2fsprogs` and OVMF. Nothing is specific to a particular machine,
@@ -130,9 +132,9 @@ appeared weekly.** isolinux draws its menu about a second in under either accele
 a short lead is fine. OVMF does not: under TCG it spends about **nine seconds** in
 firmware before GRUB draws anything, and GRUB's five-second default window had opened and
 shut by fourteen. A two-second lead worked on the KVM host and would have failed every CI
-run. So `uefi-bootable` gained a `menu_timeout` variable, `boot-matrix` asks for 30
-seconds of it, and the harness waits 10 — one lead that is correct under both. Verified
-under TCG in an unaccelerated container: 22 s to all three markers.
+run, all of them under TCG then. So `uefi-bootable` gained a `menu_timeout` variable,
+`boot-matrix` asks for 30 seconds of it, and the harness waits 10 — one lead that is correct
+under both. Verified under TCG in an unaccelerated container: 22 s to all three markers.
 
 **The console order.** `serial-console` used to end `console=ttyS0 console=tty0`.
 `/dev/console` is the *last* `console=`, so userspace wrote to the screen and the serial
@@ -294,8 +296,9 @@ That is the whole of what `/proc` is still used for here.
 
 ## What CI does with all this
 
-The weekly job builds `boot-matrix` and runs the same four paths under TCG. It cannot
-produce the ledger, so it writes one to a scratch path and uploads it as an artifact. What
+The weekly job builds `boot-matrix` and runs the same four paths, under KVM on a runner that has
+`/dev/kvm`. It boots one target and is not a recorded run, so it writes its ledger to a scratch
+path and uploads it as an artifact. What
 it *does* own is the golden diff: if a recipe change alters the assembled filesystem, the
 weekly run goes red against the committed block.
 

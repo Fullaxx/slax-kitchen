@@ -8,7 +8,7 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 | `ci.yml` → `gates` | push to master, or any PR | the thirteen commit gates, no ISOs |
 | `ci.yml` → `container` | push to master, or any PR | builds the reference container on **both** `ubuntu:24.04` and `debian:12`, then `doctor --strict` and the gates *inside* each |
 | `ci.yml` → `build` | push to master, or any PR | 4-target matrix: fetch, probe, recipe matrix, round-trip |
-| `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | one direct-kernel QEMU boot under TCG, asserting |
+| `ci.yml` → `boot` | push to master, or a PR labelled `boot-test` | one direct-kernel QEMU boot, under KVM where the runner has it, asserting |
 | `ci.yml` (weekly) | Thursdays 05:41 UTC, or dispatch | the same, plus the skipped recipes and the [Tier C](tier-c.md) boot matrix |
 | `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml` — **the full matrix**, not the per-push subset — then publish |
 | `upstream-watch.yml` | Mondays 06:17 UTC, or dispatch | linux-live HEAD, new Slax release, mirror health, pinned signing keys |
@@ -253,12 +253,15 @@ log was 0 bytes and nothing noticed. Later, a machine without `xorriso` took the
 image without the entry: "no serial entry in this ISO", a screenshot, and a pass. That was the
 normal outcome there, and it blamed the image.
 
-## Boot tests run under TCG here
+## Boot tests run under KVM, on a runner that has it
 
-A GitHub runner's `/dev/kvm` is not writable by the job's account, so QEMU falls back to TCG and a
-boot to livekit takes [several times as long](tier-c.md#kvm-vs-tcg) as under KVM. The boot job is
-therefore kept to one target and off the per-PR path — add the `boot-test` label to a PR to opt in.
-`kitchen test` says which mode it is using rather than appearing to hang.
+A GitHub runner has a `/dev/kvm` the job's account cannot write, so QEMU used to fall back to TCG
+here, and a boot to livekit took [several times as long](tier-c.md#kvm-vs-tcg). The boot job's
+`KVM, if the runner has it` step opens the device with a udev rule, the one slax-wine's release
+workflow uses, and checks it is writable before anything boots. GitHub does not promise the device:
+on a runner without one the step says so, and the boots run under TCG. The boot job is kept to one
+target and off the per-PR path — add the `boot-test` label to a PR to opt in. `kitchen test` says
+which mode it is using rather than appearing to hang.
 
 Measured 2026-09-16 at `1463570` on a GitHub runner, the whole boot job. **This table is the only
 copy of these figures:**
@@ -280,10 +283,8 @@ the video console.
 
 ## What CI does not run, and how to run it yourself
 
-CI covers nearly everything. What it cannot do is boot an image the way a person would. A
-GitHub-hosted runner's `/dev/kvm` is not writable by the job's account, as the boot job's own log
-says, so QEMU runs under TCG, [several times slower](tier-c.md#kvm-vs-tcg). That is why the boot job
-asserts on a serial log rather than looking at a desktop.
+CI covers nearly everything. What it cannot do is boot an image the way a person would: nothing in
+CI looks at the screen, so the boot job asserts on a serial log rather than on a desktop.
 
 Everything below runs on **any KVM-capable Linux host** with `qemu-system-x86_64`, `qemu-img`,
 `xorriso` and OVMF. Nothing here is specific to a particular machine.
@@ -394,10 +395,10 @@ published, its `SHA256SUMS` checks the download — not a rebuild, since the ISO
 byte-reproducible; see [reproducibility](../40-workflow/reproducibility.md). The four base ISO hashes
 the notes do publish are verifiable, and `kitchen fetch` enforces them on every download.
 
-What it does say is what was *not* done. Tier C — BIOS menu, UEFI, USB image, persistence, boot to a
-desktop — needs a writable `/dev/kvm`, which a GitHub-hosted runner does not give the job's account,
-so no release claims a desktop came up. Three of the four targets are matrix-verified and not
-boot-verified, and the notes say so.
+What it does say is what was *not* done. Its Tier C claim — BIOS menu, UEFI, USB image,
+persistence — comes only from the committed ledger, and says Tier C was not run when there is
+none. No release claims a desktop came up: nothing in CI or in Tier C looks at one. Three of the
+four targets are matrix-verified and not boot-verified, and the notes say so.
 
 ### Cutting one
 
@@ -468,11 +469,11 @@ fetched by a movable tag and run as root on the machine that builds the ISO.
 the filesystem it should. Whether Fluxbox came up is `runtime-verified`, and it needs a
 person and a window — [QEMU by hand](qemu.md).
 
-**The committed Tier C evidence.** A GitHub-hosted runner's `/dev/kvm` is not writable by the
-job's account, so CI runs the four paths under TCG to prove the harness still works, and writes
-its ledger to a scratch path. `tests/boot/tier-c.json` comes from a KVM host. What CI *does* own is the
-golden diff — a recipe change that alters the assembled filesystem turns the weekly run
-red against the committed block.
+**The committed Tier C evidence.** CI's weekly run boots the four paths on one target to prove the
+harness still works, and writes its ledger to a scratch path. `tests/boot/tier-c.json` is a recorded
+run of all four targets on a clean tree ([Tier C](tier-c.md#a-recorded-run-needs-a-clean-tree)).
+What CI *does* own is the golden diff — a recipe change that alters the assembled filesystem turns
+the weekly run red against the committed block.
 
 **Real hardware, and Secure Boot enrolment.** See
 [what is blocked on this machine](../00-overview/status.md#blocked-on-this-machine) and

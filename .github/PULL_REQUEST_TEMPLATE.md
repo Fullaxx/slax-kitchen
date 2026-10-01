@@ -25,7 +25,7 @@ If you skipped a target, does the recipe's `compat:` block say so?
 <!--
 The commands and their output, copied. "Tests pass" is not evidence; the output is.
 If you could not verify something, say which and why -- an honest gap is fine and a
-wrong claim is not. We have no real hardware, no KVM and no Secure Boot here either.
+wrong claim is not. We have no real hardware and no Secure Boot here either.
 -->
 
 ```
@@ -44,8 +44,8 @@ Boot tests do not run on pull requests by default. Ask a maintainer to add the
 initramfs, the bootloader, the kernel, or bundle load order.
 
 The boot job runs once the build jobs it needs have finished; docs/60-testing/ci.md has
-the job times. It runs under TCG, because a GitHub runner's /dev/kvm is not writable by
-the job's account. This note once said 45 minutes, which was the `timeout-minutes:`
-ceiling in ci.yml read as if it were a runtime -- the kind of number that makes people
-avoid asking for a test they should ask for.
+the job times. It boots under KVM: the job opens the runner's /dev/kvm, and boots under
+TCG on a runner that has none. This note once said 45 minutes, which was the
+`timeout-minutes:` ceiling in ci.yml read as if it were a runtime -- the kind of number
+that makes people avoid asking for a test they should ask for.
 -->

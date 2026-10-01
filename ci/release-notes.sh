@@ -103,8 +103,8 @@ GATES=$(find ci/checks -name '*.sh' 2>/dev/null | wc -l | tr -d ' ')
 # TIER C: DERIVED, NOT ASSERTED. This paragraph used to be a constant -- "Tier C was not
 # run" printed into every release whether or not that was still true -- and a unit test
 # pinned the constant, so the notes could never start telling the truth about a Tier C
-# run that HAD happened. tests/boot/tier-c.json is written by a KVM host (a runner does
-# not let the job write /dev/kvm), validated by ci/checks/97-tier-c-ledger.sh, and read here.
+# run that HAD happened. tests/boot/tier-c.json is a recorded run from a KVM host (CI's
+# weekly sweep is not one), validated by ci/checks/97-tier-c-ledger.sh, and read here.
 #
 # Same shape as SHALLOW above: a condition that is usually one way, stated either way,
 # with the negative case spelled out rather than assumed.
@@ -114,7 +114,8 @@ if [ -f "$TIERC_LEDGER" ] && command -v python3 >/dev/null 2>&1; then
 fi
 if [ -z "${TIERC:-}" ]; then
     TIERC="**Tier C was not run.** The full boot matrix -- BIOS menu, UEFI, USB image,
-persistence -- needs a writable \`/dev/kvm\`, which GitHub-hosted runners do not give the job.
+persistence -- is claimed only from a recorded run committed as \`tests/boot/tier-c.json\`,
+and this release has none.
 
 The three targets besides \`debian-64bit-12.2.0\` are matrix-verified, not boot-verified.
 They build and their structure is correct; they were not booted.
@@ -142,7 +143,7 @@ and mean exactly what they say there.
 |---|---|
 | **gate-clean** | all $GATES commit gates |
 | **matrix-verified** | every compatible recipe applied individually to all four targets, then structure-asserted — \`debian-{32,64}bit-12.2.0\`, \`slackware-{32,64}bit-15.0.4\`. A release runs the FULL matrix: the per-push path skips \`ci/slow-recipes.txt\`, a tag does not. |
-| **boot-verified** | \`debian-64bit-12.2.0\` only: direct-kernel QEMU boot under TCG, all three livekit markers, plus \`union: aufs\` and the dpkg package count |
+| **boot-verified** | \`debian-64bit-12.2.0\` only: direct-kernel QEMU boot in CI, all three livekit markers, plus \`union: aufs\` and the dpkg package count |
 
 $TIERC
 $([ -n "$RUN_URL" ] && printf '\nCI run: %s' "$RUN_URL")
