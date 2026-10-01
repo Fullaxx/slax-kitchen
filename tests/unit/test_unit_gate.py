@@ -73,6 +73,21 @@ def test_never_called():
 _LEFTOVER = [test_never_called]
 '''
 
+# What a file declares it has switched off (ci/unit-run.py): the stray test above, with an
+# issue to argue it back, and a test that runs anyway, whose entry is stale. Put in before
+# the probe's sys.exit, the last place in it where code still runs.
+SWITCHED_OFF = '''
+DISABLED = {"test_never_called": "#0 - a fixture's entry, not an issue",
+            "test_that_runs": "#0 - listed, and it ran anyway"}
+
+
+def test_that_runs():
+    pass
+
+
+test_that_runs()
+'''
+
 
 def check(name, got, want):
     if got != want:
@@ -133,12 +148,15 @@ def victim_repo(tmp):
     return repo
 
 
-def gate_fixture(tmp, probe_exit=0, litter=False, stray=False):
+def gate_fixture(tmp, probe_exit=0, litter=False, stray=False, switched_off=False,
+                 skip=False):
     """A REPO_ROOT for the gate: the real lib.sh, the real runner and the real gate, plus
     one probe test.
 
     litter=True leaves the probe's fixture behind, which is what a badly-behaved test does
-    and what the gate's detector exists to name.
+    and what the gate's detector exists to name. switched_off=True gives the probe a
+    DISABLED entry of each kind the runner has a note for, and skip=True adds a second file
+    that skips, as test_build_busybox.py does without tar.
 
     THE REAL RUNNER, not a stand-in. The gate runs every test through ci/unit-run.py, so a
     fixture without it is a fixture where nothing runs at all -- which shows up here as a
@@ -158,9 +176,14 @@ def gate_fixture(tmp, probe_exit=0, litter=False, stray=False):
         # sys.exit, which is exactly how the real thing looks: the function is there, and
         # nothing reaches it.
         body += STRAY
+    if switched_off:
+        body = body.replace("\nsys.exit(", SWITCHED_OFF + "\nsys.exit(", 1)
     with open(p, "w") as fh:
         fh.write(body)
     os.chmod(p, 0o755)
+    if skip:
+        with open(os.path.join(fx, "tests", "unit", "test_skips.py"), "w") as fh:
+            fh.write("#!/usr/bin/env python3\nimport sys\nsys.exit(77)\n")
     return fx
 
 
@@ -431,8 +454,31 @@ def test_a_test_that_never_runs_is_named():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_the_runners_notes_reach_the_gate():
+    """What ci/unit-run.py says about a file that passed: a test switched off with an issue
+    to argue it back, a DISABLED entry for a test that ran anyway, and a file that skipped.
+    The runner printed all three on stdout, and the gate sent stdout to /dev/null -- since
+    a0158bc, a week before any of the three existed -- so the gate had never shown one
+    (#72). "Disabling is declared, never silent", CONTRIBUTING says, and under the gate it
+    was silent. One run of the real gate, with all three in the fixture."""
+    tmp = tempfile.mkdtemp(prefix="unitgate-")
+    try:
+        victim = victim_repo(tmp)
+        fx = gate_fixture(tmp, stray=True, switched_off=True, skip=True)
+        rc, out = run_gate(fx, victim, os.path.join(tmp, "report"))
+        check("a disabled test, a stale entry and a skip still pass", rc, 0)
+        check("...naming the disabled test and its issue",
+              "test_never_called is disabled -- #0 - a fixture's entry" in out, True)
+        check("...the entry to drop",
+              "test_that_runs is listed in DISABLED but ran; drop the entry" in out, True)
+        check("...and the file that skipped", "test_skips.py: skipped" in out, True)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 TESTS = [test_a_test_cannot_reach_the_commit_in_progress,
          test_a_test_that_never_runs_is_named,
+         test_the_runners_notes_reach_the_gate,
          test_a_test_leaves_nothing_behind,
          test_a_test_that_litters_is_named,
          test_it_refuses_to_run_when_git_will_not_name_the_variables,

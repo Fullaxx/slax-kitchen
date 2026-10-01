@@ -104,10 +104,28 @@ export KITCHEN_BOOT_HOST
 # That is also why there is no globals() exemption any more. A file that discovers its
 # tests that way runs them, and the measurement sees it.
 
+# AND WHAT THE RUNNER SAYS ABOUT A PASS IS SHOWN, NOT THROWN AWAY.
+#
+# ci/unit-run.py has three things to say about a file that passed: a test switched off with
+# an issue to argue it back, a DISABLED entry for a test that ran anyway, and a file that
+# skipped (exit 77). It printed them on stdout, which this loop sends to /dev/null, so none
+# of them was ever shown here: all three arrived on 2026-09-20, a week after the redirect,
+# and CONTRIBUTING's "disabling is declared, never silent" was silent at the one place it
+# runs on every commit. Issue #72.
+#
+# A FILE OF THEIR OWN, NOT STDOUT. Every test file prints on stdout too, so keeping it would
+# mean picking the runner's lines out by their wording. KITCHEN_UNIT_NOTES names a file
+# outside the test's TMPDIR -- anything left in there fails the gate -- and the runner
+# removes the variable before the test runs, so a test that drives the runner itself, as
+# test_unit_gate.py does, writes nothing into this one.
+_notes=/tmp/.kitchen-unit-notes.$$
+
 for t in "$REPO_ROOT"/tests/unit/test_*.py; do
     [ -f "$t" ] || continue
     _tmp=$(mktemp -d) || { fail "$(basename "$t"): cannot create its TMPDIR"; continue; }
-    ( unset $_repo_env; TMPDIR=$_tmp; export TMPDIR; \
+    rm -f "$_notes"
+    ( unset $_repo_env; TMPDIR=$_tmp; KITCHEN_UNIT_NOTES=$_notes; \
+      export TMPDIR KITCHEN_UNIT_NOTES; \
       exec python3 "$REPO_ROOT/ci/unit-run.py" "$t" ) \
         >/dev/null 2>/tmp/.kitchen-unit.$$ || {
         fail "$(basename "$t")"
@@ -137,7 +155,10 @@ for t in "$REPO_ROOT"/tests/unit/test_*.py; do
             ls -A "$_tmp" | sed 's/^/      /' >&2
         fi
         rm -rf "$_tmp"
+        if [ -s "$_notes" ]; then
+            while IFS= read -r _n; do note "$_n"; done < "$_notes"
+        fi
     fi
-    rm -f /tmp/.kitchen-unit.$$
+    rm -f /tmp/.kitchen-unit.$$ "$_notes"
 done
 check_result

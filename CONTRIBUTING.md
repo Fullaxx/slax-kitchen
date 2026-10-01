@@ -578,6 +578,10 @@ An entry carrying no issue number fails the gate exactly as an undeclared one do
 nobody has to justify is a quieter way of deleting the test. `grep -rn DISABLED tests/` is the
 list of tests waiting on somebody, and it should be short.
 
+The unit gate names each disabled test and its reason on every run, and names an entry whose test
+ran anyway, so it can be dropped. Until [#72](https://github.com/Fullaxx/slax-kitchen/issues/72)
+it printed neither: the runner said both on stdout, which the gate discards.
+
 Three notes that follow from question 2, all of which the tree already does somewhere:
 
 - **A test that freezes a tool's output names the version it came from.** A frozen transcript keeps
