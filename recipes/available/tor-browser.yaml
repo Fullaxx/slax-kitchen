@@ -26,10 +26,10 @@ vars:
   tor_bundle: "14-tor"
   browser_bundle: "15-tor-browser"
   desktop_bundle: "16-tor-desktop"
-  version: "15.0.23"
+  version: "15.0.24"
   # From sha256sums-signed-build.txt, the file the Tor Project signs -- not from the
-  # download page. Re-fetched and verified against the tarball 2026-09-17.
-  sha256: "0f62f8d65c7fc34dd4b86cbab7fcaaec7381573dda346ac7b17e568e22b4bf39"
+  # download page. Re-fetched and verified against the tarball 2026-10-02.
+  sha256: "b03eefb6ebe2acb53a1d64f82c95c0df0ced9c0f9d626586e8c6c81d9805d604"
 steps:
   # IT ONLY ADDS. Slax's Chromium is still on the image unless a removal takes it out,
   # and that removal is its own recipe, listed first in the profile:
@@ -46,7 +46,8 @@ steps:
   # and 22 that are the shared browser runtime: libnss3, libnspr4, libevent-2.1-7, libopus0,
   # libflac12, libvorbis, libpulse0 and the rest. The obvious worry is that Tor Browser loses them.
   # Measured instead of assumed, by reading DT_NEEDED out of firefox.real, libxul.so and
-  # Tor/tor against the 15.0.23 tarball (2026-09-17):
+  # Tor/tor against the 15.0.23 tarball (2026-09-17), and again against 15.0.24
+  # (2026-10-02), with the same result:
   #
   #   47 sonames needed. 17 of them Tor Browser SHIPS ITSELF, and they are precisely the
   #   ones at risk: libnss3, libnspr4, libnssutil3, libssl3, libsmime3, libplc4, libplds4,
@@ -85,12 +86,14 @@ steps:
   # 27 of its directories and 0600 on 185 of its 220 files -- not one group or world bit
   # anywhere -- and -all-root rewrites ownership to root while leaving mode bits exactly
   # as the archive set them. Without this the bundle is root-only and `guest` cannot even
-  # traverse /opt/tor-browser, let alone run the browser. Measured: 246 paths widened,
-  # dirs 0700 -> 0755, executables 0700 -> 0755, data 0600 -> 0644, and the executable
-  # count stays at 35, so no data file becomes runnable.
+  # traverse /opt/tor-browser, let alone run the browser. Measured on 15.0.23 and again on
+  # 15.0.24 (2026-10-02): 246 paths widened, dirs 0700 -> 0755, executables 0700 -> 0755,
+  # data 0600 -> 0644, and the executable count stays at 35, so no data file becomes
+  # runnable.
   #
   # strip: 1 because the archive is wrapped in a single `tor-browser/` directory.
-  # 137,935,600 bytes compressed, 333 MiB extracted.
+  # 15.0.24: 137,930,492 bytes compressed, 333 MiB extracted as `du -sh` counts it
+  # (2026-10-02).
   - verb: bundle.fromTarball
     bundle: "{{browser_bundle}}"
     src: "https://dist.torproject.org/torbrowser/{{version}}/tor-browser-linux-x86_64-{{version}}.tar.xz"

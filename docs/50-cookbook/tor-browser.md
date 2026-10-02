@@ -62,7 +62,8 @@ packages** than `04-apps`: Chromium's own three, and 22 that are the shared brow
 rest. The obvious worry is that taking the bundle away breaks Tor Browser.
 
 It does not, and the reason is that Tor Browser ships its own copies. Reading `DT_NEEDED` out of
-`firefox.real`, `libxul.so` and `TorBrowser/Tor/tor` in the 15.0.23 tarball:
+`firefox.real`, `libxul.so` and `TorBrowser/Tor/tor` in the 15.0.23 tarball, and again in 15.0.24
+on 2026-10-02 with the same result:
 
 | | |
 |---|---|
@@ -131,7 +132,8 @@ them — so without intervention the bundle is root-only and `guest` cannot even
 `/opt/tor-browser`.
 
 `world_readable: true` mirrors the owner's read bit to group and other, and the execute bit only
-where the owner already has it. Measured on this archive: **246 paths widened** (247 members, less the top-level directory `strip: 1` drops), directories
+where the owner already has it. Measured on this archive, 15.0.23 and again 15.0.24 on 2026-10-02:
+**246 paths widened** (247 members, less the top-level directory `strip: 1` drops), directories
 `0700 → 0755`, executables `0700 → 0755`, data `0600 → 0644`, and the count of executable files
 stays at **35** — no data file becomes runnable. setuid and setgid are never added and cannot be:
 only the low `0o055` bits are ever OR-ed in, and the verb already refuses setuid members outright.
