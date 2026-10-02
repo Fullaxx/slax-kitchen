@@ -4359,6 +4359,9 @@ def main(argv: list[str]) -> int:
                          "kitchen build uses this to preflight from the profile BEFORE "
                          "unpacking 400+ MiB")
     a = ap.parse_args(argv[1:])
+    # Set by `kitchen build` on its second run: its --preflight-only pass has already said
+    # the profile's notes. Removed here, so nothing this run starts inherits it (#76).
+    profile_noted = os.environ.pop("KITCHEN_PROFILE_NOTED", "") == "1"
     # Given back as the command ends, under sudo, whether it succeeded or not (#70).
     GIVE_BACK.append(a.work)
     override = {}
@@ -4391,11 +4394,11 @@ def main(argv: list[str]) -> int:
         # this build machine -- a staged file in the checkout, say. The build uses it as
         # written; the image's provenance records it with the place replaced by its
         # placeholder, which pack does (provenance.redact). Said here, before anything is
-        # unpacked or built -- in `kitchen build`, the --preflight-only pass. It used to be
-        # refused here (#63), and before that after a recipe had run, which left its bundle
-        # in slax/modules/ unrecorded (#26).
+        # unpacked or built -- in `kitchen build`, the --preflight-only pass, and only there:
+        # build's second run said it again (#76). It used to be refused here (#63), and before
+        # that after a recipe had run, which left its bundle in slax/modules/ unrecorded (#26).
         _recorded, changed = provenance.redact(var_overrides, work=os.path.abspath(a.work))
-        for at, value in changed:
+        for at, value in [] if profile_noted else changed:
             print(f"note: {a.profile}: {at} names a place on this build machine; the build "
                   f"uses it as written, and the image's provenance records {value!r}")
     else:

@@ -577,7 +577,10 @@ kitchen_build() {
     kitchen_unpack "$BASE_ISO" -o "$work" || exit 1
     echo
     if [ -n "$RECIPES" ]; then
-        python3 "$REPO_ROOT/lib/apply.py" --profile "$PROFILE_PATH" -w "$work" || exit 1
+        # The preflight pass above has said the profile's notes, so this run does not say
+        # them again (#76). apply removes the variable as it starts.
+        KITCHEN_PROFILE_NOTED=1 python3 "$REPO_ROOT/lib/apply.py" --profile "$PROFILE_PATH" \
+            -w "$work" || exit 1
         echo
     fi
 
