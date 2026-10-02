@@ -12,10 +12,11 @@ rather than from a list someone keeps:
               (docs/30-inventory/manifests/{bootfiles,isofiles,initramfs}-<target>.sha256)
   debian      a bundle a recorded bundle.packages step produced, byte for byte: its packages
   slackware   the same, for Slackware packages
-  prebuilt    a recorded download, installed unmodified -- an archive or a payload -- or
-              bytes pack copied from the build host (the MBR). A file a bundle.files entry
-              downloaded, or copied in naming an upstream_source, is the same thing inside
-              a bundle: a prebuilt part of it, as is each file a script reported fetching
+  prebuilt    a recorded download or local src:, installed unmodified -- an archive or a
+              payload -- or bytes pack copied from the build host (the MBR). A file a
+              bundle.files entry downloaded, or copied in naming an upstream_source, is
+              the same thing inside a bundle: a prebuilt part of it, as is each file a
+              script reported fetching
   built       compiled or assembled here: GRUB's EFI image, a busybox build, a binary a
               bundle.script declares
   recipe      written, generated or copied in by this build: a recipe's step, named, or

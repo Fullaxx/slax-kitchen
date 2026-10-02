@@ -2375,6 +2375,53 @@ def test_a_prefix_cannot_leave_the_bundle():
           [d for d in os.listdir(tempfile.gettempdir()) if d == "escaped"], [])
 
 
+
+def test_a_local_archive_is_recorded_as_a_local_input():
+    """A bundle.fromTarball archive beside the recipe was recorded as a download: no
+    local_inputs, and pinned=False, so `kitchen sources` said "no sha256 was pinned" about a
+    file from the checkout (#75, reproduced before the fix). boot.payload already had the
+    rule this follows: a local src: goes through ctx.local(), and `pinned` is said only of
+    a download.
+
+    The archive sits in a project checkout, as a project's recipe and its files do. Outside
+    both checkouts the record asks the host's package manager who owns the file, which took
+    75 ms here and is not what this tests."""
+    import shutil
+    import tempfile
+    box = tempfile.mkdtemp()
+    saved = os.environ.get("PROJECT_ROOT")
+    try:
+        recipe_dir = os.path.join(box, "recipe")
+        os.makedirs(recipe_dir)
+        _archive(os.path.join(recipe_dir, "app.tar"),
+                 [("app-1.0", "dir", 0o755, None),
+                  ("app-1.0/README", "file", 0o644, "read me\n")], zip_=False)
+        work = os.path.join(box, "work")
+        os.makedirs(os.path.join(work, "iso", "slax", "modules"))
+        ctx = apply.Ctx(work, recipe_dir, "local-tarball")
+        ctx.say = lambda *_a, **_k: None
+        os.environ["PROJECT_ROOT"] = box
+        real, apply._make_bundle = apply._make_bundle, (lambda *_a, **_k: None)
+        try:
+            ctx.begin_step("bundle.fromTarball")     # as apply_recipe does around every verb
+            apply.v_bundle_fromtarball(ctx, {"verb": "bundle.fromTarball", "bundle": "40-app",
+                                             "src": "app.tar", "strip": 1})
+            ctx.end_step()
+        finally:
+            apply._make_bundle = real
+        step = ctx.prov_steps[-1]
+        check("a local archive is recorded where it sits in the checkout",
+              step.get("local_inputs"),
+              [{"root": "project", "path": "recipe/app.tar", "kind": "file"}])
+        check("...and not as an unpinned download", step.get("pinned"), None)
+        check("...and is the bundle's source, by its name", step.get("source"), "app.tar")
+    finally:
+        if saved is None:
+            os.environ.pop("PROJECT_ROOT", None)
+        else:
+            os.environ["PROJECT_ROOT"] = saved
+        shutil.rmtree(box, ignore_errors=True)
+
 def test_all_root_is_per_verb():
     """Which bundles get -all-root is a per-verb decision, and it cannot be global.
 
@@ -4104,6 +4151,7 @@ def main():
                    test_a_zip_unpacks_as_a_tarball_would,
                    test_a_zip_member_is_refused_where_a_tar_member_would_be,
                    test_a_prefix_cannot_leave_the_bundle,
+                   test_a_local_archive_is_recorded_as_a_local_input,
                    test_all_root_is_per_verb,
                    test_bundle_files_refuses_a_setuid_mode,
                    test_bundle_files_fetches_a_pinned_url_itself,

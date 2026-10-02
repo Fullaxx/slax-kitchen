@@ -59,7 +59,9 @@ error.
 one resolver, which records where they sit in the kitchen or project checkout, so the report can
 name them. Nothing is hashed and nothing is held to a commit: a file the project's build staged
 where git ignores it is as good an input as a committed one. A local archive `bundle.fromTarball`
-unpacks is recorded by its name.
+unpacks goes through the same resolver, and is named as the bundle's source by its file name. The
+report's "no sha256 was pinned" is said of a download only, so it is not said of a local archive
+([#75](https://github.com/Fullaxx/slax-kitchen/issues/75)).
 
 ### A file the build downloads
 

@@ -554,7 +554,7 @@ def v_boot_payload(ctx: Ctx, step: dict) -> None:
         remote = bool(re.match(r"^https?://", src))
         if not remote:
             # A file from beside the recipe is recorded the way every other local input
-            # is, so `kitchen sources` can check it against the recorded commit. Ctx.local
+            # is, so `kitchen sources` can name where it sits in the checkout. Ctx.local
             # takes the path and nothing else; it resolves relative to the recipe itself.
             ctx.local(src)
         ctx.prov(source=src if remote else os.path.basename(src),
@@ -1975,19 +1975,26 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
     import tempfile
     work = tempfile.mkdtemp(prefix="kitchen-bt-", dir=os.path.dirname(os.path.abspath(ctx.work)))
     try:
-        if re.match(r"^https?://", src):
+        remote = bool(re.match(r"^https?://", src))
+        if remote:
             archive = os.path.join(work, "src.tar")
             with urllib.request.urlopen(src, timeout=120) as r, open(archive, "wb") as f:
                 shutil.copyfileobj(r, f)
         else:
-            archive = src if os.path.isabs(src) else os.path.join(ctx.recipe_dir, src)
+            # Through ctx.local, so the archive is recorded as copied in from the checkout,
+            # as boot.payload's local file is. This joined the path itself and recorded
+            # nothing (#75).
+            archive = ctx.local(src)
             if not os.path.isfile(archive):
                 raise RuntimeError(f"bundle.fromTarball: no such file: {archive}")
         got = sha256(archive)
         if want and got != want:
             raise RuntimeError(f"bundle.fromTarball: sha256 mismatch\n  want {want}\n  got  {got}")
-        ctx.prov(source=src if re.match(r"^https?://", src) else os.path.basename(src),
-                 source_sha256=got, pinned=bool(want), strip=strip, prefix=prefix or None,
+        ctx.prov(source=src if remote else os.path.basename(src), source_sha256=got,
+                 # `pinned` is said of a download only, as boot.payload says it. A local
+                 # archive recorded pinned=False, and `kitchen sources` reported "no sha256
+                 # was pinned" for a file from the checkout (#75).
+                 pinned=bool(want) if remote else None, strip=strip, prefix=prefix or None,
                  world_readable=world_readable, upstream_source=step.get("upstream_source"))
 
         root = os.path.join(work, "root")
