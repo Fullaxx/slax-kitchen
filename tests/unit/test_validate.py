@@ -82,9 +82,34 @@ def test_every_shipped_recipe_passes():
         check(f"shipped recipe {os.path.basename(f)}", got, [])
 
 
+def test_a_file_that_cannot_be_read_is_reported_not_raised():
+    """`kitchen validate` on a path that does not exist died with a FileNotFoundError
+    traceback (#74): validate_file caught only YAMLError around open(). Reproduced on a
+    missing recipe before the fix. A path that cannot be read is a problem like any other
+    now, so the command names it and exits 1, and profile.py and apply, which call
+    validate_file too, get a line rather than a traceback."""
+    import contextlib
+    import io
+    import shutil
+    d = tempfile.mkdtemp()
+    try:
+        missing = os.path.join(d, "no-such-recipe.yaml")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = validate.main(["kitchen validate", missing])
+        check("a missing file exits 1", rc, 1)
+        check("...naming the path and why", f"{missing}: cannot be read: No such file or "
+              f"directory" in err.getvalue(), True)
+        check("...without a traceback", "Traceback" in err.getvalue(), False)
+        check("a directory is reported the same way",
+              validate.validate_file(d), ["cannot be read: Is a directory"])
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
 def main():
     for fn in [test_a_recipe_that_removes_may_do_nothing_else,
-               test_every_shipped_recipe_passes]:
+               test_every_shipped_recipe_passes,
+               test_a_file_that_cannot_be_read_is_reported_not_raised]:
         # One test crashing must not stop the rest: the count of failures is only honest
         # if every test ran. The traceback still goes to stderr, because a crash's location
         # is the useful half and a one-line summary loses it.

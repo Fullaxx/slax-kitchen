@@ -68,6 +68,10 @@ def validate_file(path: str, overrides: dict | None = None) -> list[str]:
 
     try:
         doc = yaml.safe_load(open(path))
+    except OSError as e:
+        # A missing path, or a directory, is a problem to report like any other: this
+        # raised, and `kitchen validate no-such.yaml` ended in a traceback (#74).
+        return [f"cannot be read: {e.strerror}"]
     except yaml.YAMLError as e:
         return [f"not valid YAML: {e}"]
     if not isinstance(doc, dict):
