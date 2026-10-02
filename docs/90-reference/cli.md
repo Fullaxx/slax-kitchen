@@ -703,8 +703,8 @@ A profile's recipes are resolved as `apply` resolves them, and each entry's `var
 vars its recipe declares, so what `apply` would refuse about them is refused here, before a work
 tree exists ([#68](https://github.com/Fullaxx/slax-kitchen/issues/68)).
 
-A path that cannot be read, a missing file or a directory, is reported like any other problem,
-`<path>: cannot be read: …`, and the command exits 1
+A path that cannot be read, whether a missing file, a directory or a file that is not UTF-8 text,
+is reported like any other problem, `<path>: cannot be read: …`, and the command exits 1
 ([#74](https://github.com/Fullaxx/slax-kitchen/issues/74)).
 
 ## `selftest [stage] [scope]`

@@ -220,12 +220,13 @@ The offline equivalent of upstream's `dir2sb`.
   prefix: /opt/myapp        # place under a subdirectory instead of the root
 ```
 
-`src:` is a tar, plain or compressed with gzip, bzip2 or xz, or a zip. The verb tells them apart by
-content, not by name. A zip is held to everything below, member by member. Its modes and symlinks
-come from the Unix attributes a zip made on a Unix system carries, an entry made without them is
-`0644` (`0755` for a directory), and an encrypted zip is refused
-([#69](https://github.com/Fullaxx/slax-kitchen/issues/69)). `prefix:` is held inside the bundle like
-any path a recipe names.
+`src:` is a URL, or a path beside the recipe that is recorded as
+[any local `src:`](#saying-where-the-source-is) is. It names a tar, plain or compressed with gzip,
+bzip2 or xz, or a zip, and the verb tells them apart by content, not by name. A zip is held to
+everything below, member by member. Its modes and symlinks come from the Unix attributes a zip made
+on a Unix system carries, an entry made without them is `0644` (`0755` for a directory), and an
+encrypted zip is refused ([#69](https://github.com/Fullaxx/slax-kitchen/issues/69)). `prefix:` is
+held inside the bundle like any path a recipe names.
 
 Absolute paths and `..` components in the archive are **refused**, not sanitised — and so
 are link *targets*. A member named `x` that is a symlink to `/etc`, followed by a member
@@ -436,12 +437,14 @@ Files copied into the writable layer at boot by `copy_rootcopy_content`, before 
     - {dest: /etc/skel, src: ./skel}             # a directory, copied with its links
 ```
 
-Each entry takes `content` or `src`, and is placed as a [`bundle.files`](#bundlefiles-) entry is: a
-`src:` directory is copied with its symlinks and hardlinks, a later entry replaces a file an earlier
-one placed rather than writing through it, and `mode:` may not set setuid or setgid. Pack records
-every file in the image as root's, and livekit copies rootcopy with `cp -a`, so `mode: "4755"` would
-make a setuid-root binary; `bundle.script` is the route if one is really needed
-([#77](https://github.com/Fullaxx/slax-kitchen/issues/77)).
+Each entry takes `content`, or a `src:` path beside the recipe, since this verb downloads nothing.
+It is placed as a [`bundle.files`](#bundlefiles-) entry is: a `src:` directory is copied with its
+symlinks and hardlinks, a later entry replaces a file an earlier one placed rather than writing
+through it, and `mode:` may not set setuid or setgid. Pack records every file in the image as
+root's, and livekit copies rootcopy with `cp -a`, so `mode: "4755"` would make a setuid-root binary;
+`bundle.script` is the route if one is really needed
+([#77](https://github.com/Fullaxx/slax-kitchen/issues/77)). Every file an entry places is journalled
+under its own path, so `kitchen status` lists it and `kitchen sources` names the recipe for it.
 
 ### `rootcopy.preinit` ○
 

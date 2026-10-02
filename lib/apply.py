@@ -1521,12 +1521,19 @@ def v_rootcopy_files(ctx: Ctx, step: dict) -> None:
         if ctx.dry:
             ctx.say(f"would place rootcopy/{spec['dest']}")
             continue
-        # Said here rather than by _place_files, whose answer offers `url:`, which this
-        # verb does not take.
+        # Both said here rather than by _place_files, whose answers offer `url:`, which
+        # this verb does not take.
         if "src" not in spec and "content" not in spec:
             raise RuntimeError(f"rootcopy.files: {spec['dest']} needs `src` or `content`")
-        _place_files(ctx, root, [spec], "rootcopy.files", label="rootcopy: ")
-        ctx.record(f"slax/rootcopy{spec['dest']}")
+        if "content" not in spec and re.match(r"^https?://", str(spec["src"])):
+            raise RuntimeError(
+                f"rootcopy.files: {spec['dest']}: src: is a path beside the recipe, and "
+                f"{spec['src']} is a URL. This verb downloads nothing; bundle.files' url: does")
+        # Every file the entry placed is journalled under its own path, because that is
+        # how `kitchen sources` credits a file to a recipe. Journalled as the directory,
+        # a directory's files were reported as unrecorded (found reviewing #77).
+        for rel in _place_files(ctx, root, [spec], "rootcopy.files", label="rootcopy: "):
+            ctx.record(f"slax/rootcopy/{rel}")
 
 
 @verb("rootcopy.preinit")
@@ -1816,10 +1823,17 @@ def _copy_tree(root: str, local: str, dest: str, verb: str) -> None:
                     ignore=contained, copy_function=copy)
 
 
-def _place_files(ctx: "Ctx", root: str, files: list, verb: str, label: str = "  ") -> None:
+def _place_files(ctx: "Ctx", root: str, files: list, verb: str,
+                 label: str = "  ") -> list[str]:
     """Write a list of {dest, src|content, mode} specs under root, saying each entry's dest
     after `label`. A `url:` entry is not placed here: bundle.files fetches those itself,
-    after these (_fetch_files). rootcopy.files places its entries here too (#77)."""
+    after these (_fetch_files). rootcopy.files places its entries here too (#77).
+
+    Returns what it placed, relative to root: the dest of each `content:` or file entry,
+    and every file and symlink a directory `src:` held -- not its directories, and not what
+    was already there."""
+    base = os.path.realpath(root)
+    placed: list[str] = []
     for spec in files:
         dest = _under(root, spec["dest"], verb)
         mode = _mode_of(spec, verb)
@@ -1837,6 +1851,11 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str, label: str = "  
             local = ctx.local(src)
             if os.path.isdir(local):
                 _copy_tree(root, local, dest, verb)
+                for d, dirs, names in os.walk(local):
+                    for n in sorted(names) + sorted(x for x in dirs
+                                                    if os.path.islink(os.path.join(d, x))):
+                        there = os.path.join(dest, os.path.relpath(os.path.join(d, n), local))
+                        placed.append(os.path.relpath(there, base))
             elif os.path.isfile(local):
                 _unlink_file(dest)
                 shutil.copy2(local, dest)
@@ -1852,7 +1871,10 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str, label: str = "  
             raise RuntimeError(f"{verb}: {spec['dest']} needs one of src, content or url")
         if mode is not None:
             os.chmod(dest, mode)
+        if not os.path.isdir(dest):
+            placed.append(os.path.relpath(dest, base))
         ctx.say(f"{label}{spec['dest']}")
+    return placed
 
 
 def _fetch_files(ctx: "Ctx", root: str, files: list, verb: str) -> list[dict]:

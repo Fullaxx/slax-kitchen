@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Unit tests for lib/validate.py's cross-checks -- the rules the JSON Schema cannot state.
+"""Unit tests for lib/validate.py's cross-checks -- the rules the JSON Schema cannot state --
+and for what it says about a file it cannot read, which was a traceback (#74).
 
 The rule under test: a recipe that removes or renumbers a bundle may contain nothing else.
 A recipe that does both hides a deletion inside an addition, which is how `all-browsers`
@@ -86,8 +87,8 @@ def test_a_file_that_cannot_be_read_is_reported_not_raised():
     """`kitchen validate` on a path that does not exist died with a FileNotFoundError
     traceback (#74): validate_file caught only YAMLError around open(). Reproduced on a
     missing recipe before the fix. A path that cannot be read is a problem like any other
-    now, so the command names it and exits 1, and profile.py and apply, which call
-    validate_file too, get a line rather than a traceback."""
+    now, so the command names it and exits 1. A file that is not UTF-8 text still raised,
+    as it was read: the review of #74 found it with a binary file."""
     import contextlib
     import io
     import shutil
@@ -103,13 +104,22 @@ def test_a_file_that_cannot_be_read_is_reported_not_raised():
         check("...without a traceback", "Traceback" in err.getvalue(), False)
         check("a directory is reported the same way",
               validate.validate_file(d), ["cannot be read: Is a directory"])
+        binary = os.path.join(d, "an.iso")
+        with open(binary, "wb") as f:
+            f.write(b"\xff\xfe\x00 not text\n")
+        check("and so is a file that is not UTF-8 text",
+              validate.validate_file(binary), ["cannot be read: not UTF-8 text"])
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
+
 def main():
+    # test_every_shipped_recipe_passes LAST. ci/unit-run.py profiles every call until it
+    # has seen each test begin, and this one validates every shipped recipe. With #74's
+    # test listed after it, it ran under the profiler and cost the gate 0.3 s more.
     for fn in [test_a_recipe_that_removes_may_do_nothing_else,
-               test_every_shipped_recipe_passes,
-               test_a_file_that_cannot_be_read_is_reported_not_raised]:
+               test_a_file_that_cannot_be_read_is_reported_not_raised,
+               test_every_shipped_recipe_passes]:
         # One test crashing must not stop the rest: the count of failures is only honest
         # if every test ran. The traceback still goes to stderr, because a crash's location
         # is the useful half and a one-line summary loses it.

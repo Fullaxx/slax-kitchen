@@ -7,10 +7,12 @@ exists to prevent. A test's docstring should say which, as CONTRIBUTING.md asks 
 "What a test here is for". They need no ISO; what they cost is measured in
 CONTRIBUTING.md, under "Engine changes".
 """
+import contextlib
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 sys.path.insert(0, os.path.join(REPO, "lib"))
@@ -1992,7 +1994,8 @@ def test_fromtarball_wires_both_guards_in():
         ctx = apply.Ctx(work, work, "t")
         step = {"verb": "bundle.fromTarball", "bundle": "07-poc", "src": arc}
         try:
-            apply.v_bundle_fromtarball(ctx, step)
+            with _fixtures_in_a_project():
+                apply.v_bundle_fromtarball(ctx, step)
             FAILURES.append(f"v_bundle_fromtarball accepted {label}")
         except RuntimeError:
             pass
@@ -2140,7 +2143,6 @@ def test_stage_delta_preserves_what_the_chroot_had():
           os.readlink(os.path.join(stage, "usr/bin/link")), "/etc/passwd")
 
 
-
 def test_stage_delta_keeps_a_files_hardlinks():
     """bundle.packages and bundle.script staged each name of a file with copy2, so a file
     the chroot held under several names was packed as several files (#78). Measured
@@ -2181,6 +2183,7 @@ def test_stage_delta_keeps_a_files_hardlinks():
     finally:
         shutil.rmtree(root, ignore_errors=True)
         shutil.rmtree(stage, ignore_errors=True)
+
 
 def test_both_chroot_verbs_use_one_staging_loop():
     """The loop was copy-pasted, so any fix to it landed twice or half-landed.
@@ -2293,6 +2296,25 @@ def _archive(path: str, entries: list, zip_: bool) -> None:
             t.addfile(i, io.BytesIO(data))
 
 
+@contextlib.contextmanager
+def _fixtures_in_a_project(root=None):
+    """PROJECT_ROOT at `root`, by default the directory this file makes its fixtures in, for
+    a test that hands the engine a local file. Outside both checkouts, provenance asks the
+    host's package manager who owns each local input: about 70 ms a file, measured
+    2026-10-02 on Ubuntu 24.04 (time provenance.local_input on a file in a temporary
+    directory). Once bundle.fromTarball recorded its archive (#75), that was 0.9 s of this
+    file's time in the unit gate, spent by four tests about unpacking."""
+    saved = os.environ.get("PROJECT_ROOT")
+    os.environ["PROJECT_ROOT"] = root or tempfile.gettempdir()
+    try:
+        yield
+    finally:
+        if saved is None:
+            os.environ.pop("PROJECT_ROOT", None)
+        else:
+            os.environ["PROJECT_ROOT"] = saved
+
+
 def _staged_by_fromtarball(step: dict, arc: str):
     """Run bundle.fromTarball on `arc` and return what it staged for mksquashfs, by path:
     (type, mode, mtime, link target or content). _make_bundle is replaced by the snapshot
@@ -2324,7 +2346,8 @@ def _staged_by_fromtarball(step: dict, arc: str):
                              else int(st.st_mtime), what)
     real, apply._make_bundle = apply._make_bundle, snapshot
     try:
-        apply.v_bundle_fromtarball(ctx, dict(step, src=arc))
+        with _fixtures_in_a_project():
+            apply.v_bundle_fromtarball(ctx, dict(step, src=arc))
     finally:
         apply._make_bundle = real
     return seen, work
@@ -2417,7 +2440,6 @@ def test_a_prefix_cannot_leave_the_bundle():
           [d for d in os.listdir(tempfile.gettempdir()) if d == "escaped"], [])
 
 
-
 def test_a_local_archive_is_recorded_as_a_local_input():
     """A bundle.fromTarball archive beside the recipe was recorded as a download: no
     local_inputs, and pinned=False, so `kitchen sources` said "no sha256 was pinned" about a
@@ -2425,13 +2447,11 @@ def test_a_local_archive_is_recorded_as_a_local_input():
     rule this follows: a local src: goes through ctx.local(), and `pinned` is said only of
     a download.
 
-    The archive sits in a project checkout, as a project's recipe and its files do. Outside
-    both checkouts the record asks the host's package manager who owns the file, which took
-    75 ms here and is not what this tests."""
+    The archive sits in a project checkout, as a project's recipe and its files do, so the
+    record names it by its place there (_fixtures_in_a_project says what the other way
+    costs)."""
     import shutil
-    import tempfile
     box = tempfile.mkdtemp()
-    saved = os.environ.get("PROJECT_ROOT")
     try:
         recipe_dir = os.path.join(box, "recipe")
         os.makedirs(recipe_dir)
@@ -2442,12 +2462,13 @@ def test_a_local_archive_is_recorded_as_a_local_input():
         os.makedirs(os.path.join(work, "iso", "slax", "modules"))
         ctx = apply.Ctx(work, recipe_dir, "local-tarball")
         ctx.say = lambda *_a, **_k: None
-        os.environ["PROJECT_ROOT"] = box
         real, apply._make_bundle = apply._make_bundle, (lambda *_a, **_k: None)
         try:
             ctx.begin_step("bundle.fromTarball")     # as apply_recipe does around every verb
-            apply.v_bundle_fromtarball(ctx, {"verb": "bundle.fromTarball", "bundle": "40-app",
-                                             "src": "app.tar", "strip": 1})
+            with _fixtures_in_a_project(box):
+                apply.v_bundle_fromtarball(ctx, {"verb": "bundle.fromTarball",
+                                                 "bundle": "40-app", "src": "app.tar",
+                                                 "strip": 1})
             ctx.end_step()
         finally:
             apply._make_bundle = real
@@ -2458,11 +2479,8 @@ def test_a_local_archive_is_recorded_as_a_local_input():
         check("...and not as an unpinned download", step.get("pinned"), None)
         check("...and is the bundle's source, by its name", step.get("source"), "app.tar")
     finally:
-        if saved is None:
-            os.environ.pop("PROJECT_ROOT", None)
-        else:
-            os.environ["PROJECT_ROOT"] = saved
         shutil.rmtree(box, ignore_errors=True)
+
 
 def test_all_root_is_per_verb():
     """Which bundles get -all-root is a per-verb decision, and it cannot be global.
@@ -2796,7 +2814,12 @@ def test_rootcopy_files_places_a_directory_as_bundle_files_does():
     the raw "[Errno 21] Is a directory", and `mode: "4755"` placed a setuid file, which pack
     records as root's (#77, both reproduced before the fix). bundle.files places the same
     entries with _place_files, and now so does this: a directory is copied with its symlinks
-    and hardlinks, and a setuid mode is refused, as bundle.files refuses it."""
+    and hardlinks, and a setuid mode is refused, as bundle.files refuses it.
+
+    Two things the review of #77 found by running it:
+    - the directory was journalled as one path, and `kitchen sources` credits a file to a
+      recipe by its exact path, so the files in it were reported as unrecorded;
+    - a URL in src: was refused with a pointer to url:, which this verb does not take."""
     import shutil
     import tempfile
     box = tempfile.mkdtemp()
@@ -2810,7 +2833,10 @@ def test_rootcopy_files_places_a_directory_as_bundle_files_does():
         os.link(os.path.join(skel, "one"), os.path.join(skel, "two"))
         open(os.path.join(recipe_dir, "tool"), "w").write("#!/bin/sh\n")
         work = os.path.join(box, "work")
-        os.makedirs(os.path.join(work, "iso", "slax"))
+        os.makedirs(os.path.join(work, "iso", "slax", "rootcopy", "etc", "skel"))
+        # Left by an earlier entry. This one merges into the directory and did not write it.
+        open(os.path.join(work, "iso", "slax", "rootcopy", "etc", "skel", "theirs"),
+             "w").write("x\n")
         ctx = apply.Ctx(work, recipe_dir, "t")
         ctx.say = lambda *_a, **_k: None
 
@@ -2825,12 +2851,16 @@ def test_rootcopy_files_places_a_directory_as_bundle_files_does():
               os.path.exists(os.path.join(got, "two")) and
               os.stat(os.path.join(got, "one")).st_ino == os.stat(os.path.join(got, "two")).st_ino,
               True)
-        check("...and the entry is journalled", "slax/rootcopy/etc/skel" in ctx.changes, True)
+        check("...and each file it placed is journalled under its own path",
+              sorted(ctx.changes), ["slax/rootcopy/etc/skel/" + n
+                                    for n in ("link", "one", "sub/a.conf", "two")])
 
         for label, spec, why in (
                 ("a setuid mode", {"dest": "/usr/local/bin/tool", "src": "tool", "mode": "4755"},
                  "setuid"),
-                ("a missing src:", {"dest": "/etc/x", "src": "no-such"}, "source not found")):
+                ("a missing src:", {"dest": "/etc/x", "src": "no-such"}, "source not found"),
+                ("a URL in src:", {"dest": "/etc/y", "src": "https://example.invalid/y"},
+                 "downloads nothing")):
             try:
                 apply.v_rootcopy_files(ctx, {"verb": "rootcopy.files", "files": [spec]})
                 check(f"{label} is refused", "placed", "refused")
@@ -2843,6 +2873,7 @@ def test_rootcopy_files_places_a_directory_as_bundle_files_does():
             os.path.join(work, "iso", "slax", "rootcopy", "usr", "local", "bin", "tool")), False)
     finally:
         shutil.rmtree(box, ignore_errors=True)
+
 
 def test_iso_identity_takes_a_projects_name_and_keeps_an_earlier_one():
     """iso-identity declared volid and publisher and wrote `preparer: slax-kitchen` fixed,
