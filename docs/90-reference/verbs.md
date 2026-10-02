@@ -430,7 +430,15 @@ Files copied into the writable layer at boot by `copy_rootcopy_content`, before 
 - verb: rootcopy.files
   files:
     - {dest: /root/.bashrc, src: ./bashrc}
+    - {dest: /etc/skel, src: ./skel}             # a directory, copied with its links
 ```
+
+Each entry takes `content` or `src`, and is placed as a [`bundle.files`](#bundlefiles-) entry is: a
+`src:` directory is copied with its symlinks and hardlinks, a later entry replaces a file an earlier
+one placed rather than writing through it, and `mode:` may not set setuid or setgid. Pack records
+every file in the image as root's, and livekit copies rootcopy with `cp -a`, so `mode: "4755"` would
+make a setuid-root binary; `bundle.script` is the route if one is really needed
+([#77](https://github.com/Fullaxx/slax-kitchen/issues/77)).
 
 ### `rootcopy.preinit` ○
 

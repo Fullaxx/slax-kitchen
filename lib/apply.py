@@ -1496,26 +1496,24 @@ def v_rootcopy_files(ctx: Ctx, step: dict) -> None:
 
     No bundle rebuild, no squashfs work -- the cheapest customization there is.
     Upstream ships no rootcopy directory at all, so this creates it.
+
+    Each entry is placed as bundle.files places one (_place_files): a directory `src:` is
+    copied with its symlinks and hardlinks, and a setuid or setgid `mode:` is refused.
+    This had a loop of its own, where a directory failed with "Is a directory", and
+    `mode: "4755"` placed a setuid file that pack records as root's (#77).
     """
+    root = ctx.p("slax", "rootcopy")
     for spec in step["files"]:
-        dest = _under(ctx.p("slax", "rootcopy"), spec["dest"], "rootcopy.files")
+        _under(root, spec["dest"], "rootcopy.files")
         if ctx.dry:
             ctx.say(f"would place rootcopy/{spec['dest']}")
             continue
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        if "content" in spec:
-            with open(dest, "w") as f:
-                f.write(spec["content"])
-        else:
-            if "src" not in spec:
-                raise RuntimeError(
-                    f"rootcopy.files: {spec['dest']} needs `src` or `content`")
-            src = spec["src"]
-            local = ctx.local(src)
-            shutil.copy2(local, dest)
-        if "mode" in spec:
-            os.chmod(dest, int(spec["mode"], 8))
-        ctx.record(f"slax/rootcopy{spec['dest']}", f"rootcopy: {spec['dest']}")
+        # Said here rather than by _place_files, whose answer offers `url:`, which this
+        # verb does not take.
+        if "src" not in spec and "content" not in spec:
+            raise RuntimeError(f"rootcopy.files: {spec['dest']} needs `src` or `content`")
+        _place_files(ctx, root, [spec], "rootcopy.files", label="rootcopy: ")
+        ctx.record(f"slax/rootcopy{spec['dest']}")
 
 
 @verb("rootcopy.preinit")
@@ -1738,10 +1736,12 @@ def _mode_of(spec: dict, verb: str, default: int | None = None) -> int | None:
     if "mode" not in spec:
         return default
     mode = int(str(spec["mode"]), 8)
-    # A recipe may not ask for setuid/setgid here. bundle.files is privilege: none and
-    # builds with -all-root, so `mode: "4755"` would be a setuid ROOT binary requested by
-    # a line of YAML that reads like an ordinary permission. bundle.script (chroot) is the
-    # route if it is real.
+    # A recipe may not ask for setuid/setgid here. bundle.files and rootcopy.files are
+    # privilege: none, and what they write is root's in the image: bundle.files builds with
+    # -all-root, and pack records rootcopy's files as root's, which livekit copies with
+    # `cp -a`. So `mode: "4755"` would be a setuid ROOT binary requested by a line of YAML
+    # that reads like an ordinary permission. bundle.script (chroot) is the route if it is
+    # real.
     if mode & (stat.S_ISUID | stat.S_ISGID):
         raise RuntimeError(
             f"{verb}: mode {spec['mode']!r} on {spec.get('dest')!r} sets "
@@ -1803,9 +1803,10 @@ def _copy_tree(root: str, local: str, dest: str, verb: str) -> None:
                     ignore=contained, copy_function=copy)
 
 
-def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
-    """Write a list of {dest, src|content, mode} specs under root. A `url:` entry is not
-    placed here: bundle.files fetches those itself, after these (_fetch_files)."""
+def _place_files(ctx: "Ctx", root: str, files: list, verb: str, label: str = "  ") -> None:
+    """Write a list of {dest, src|content, mode} specs under root, saying each entry's dest
+    after `label`. A `url:` entry is not placed here: bundle.files fetches those itself,
+    after these (_fetch_files). rootcopy.files places its entries here too (#77)."""
     for spec in files:
         dest = _under(root, spec["dest"], verb)
         mode = _mode_of(spec, verb)
@@ -1838,7 +1839,7 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str) -> None:
             raise RuntimeError(f"{verb}: {spec['dest']} needs one of src, content or url")
         if mode is not None:
             os.chmod(dest, mode)
-        ctx.say(f"  {spec['dest']}")
+        ctx.say(f"{label}{spec['dest']}")
 
 
 def _fetch_files(ctx: "Ctx", root: str, files: list, verb: str) -> list[dict]:

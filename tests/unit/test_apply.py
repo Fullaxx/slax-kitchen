@@ -2749,6 +2749,59 @@ def test_a_later_entry_cannot_write_through_an_earlier_entrys_symlink():
           "mine")
 
 
+def test_rootcopy_files_places_a_directory_as_bundle_files_does():
+    """rootcopy.files had a loop of its own around copy2, so a directory `src:` failed with
+    the raw "[Errno 21] Is a directory", and `mode: "4755"` placed a setuid file, which pack
+    records as root's (#77, both reproduced before the fix). bundle.files places the same
+    entries with _place_files, and now so does this: a directory is copied with its symlinks
+    and hardlinks, and a setuid mode is refused, as bundle.files refuses it."""
+    import shutil
+    import tempfile
+    box = tempfile.mkdtemp()
+    try:
+        recipe_dir = os.path.join(box, "recipe")
+        skel = os.path.join(recipe_dir, "skel")
+        os.makedirs(os.path.join(skel, "sub"))
+        open(os.path.join(skel, "sub", "a.conf"), "w").write("a\n")
+        os.symlink("sub/a.conf", os.path.join(skel, "link"))
+        open(os.path.join(skel, "one"), "w").write("shared\n")
+        os.link(os.path.join(skel, "one"), os.path.join(skel, "two"))
+        open(os.path.join(recipe_dir, "tool"), "w").write("#!/bin/sh\n")
+        work = os.path.join(box, "work")
+        os.makedirs(os.path.join(work, "iso", "slax"))
+        ctx = apply.Ctx(work, recipe_dir, "t")
+        ctx.say = lambda *_a, **_k: None
+
+        apply.v_rootcopy_files(ctx, {"verb": "rootcopy.files",
+                                     "files": [{"dest": "/etc/skel", "src": "skel"}]})
+        got = os.path.join(work, "iso", "slax", "rootcopy", "etc", "skel")
+        check("a directory src: is copied", open(os.path.join(got, "sub", "a.conf")).read()
+              if os.path.isfile(os.path.join(got, "sub", "a.conf")) else None, "a\n")
+        check("...a symlink stays one", os.readlink(os.path.join(got, "link"))
+              if os.path.islink(os.path.join(got, "link")) else None, "sub/a.conf")
+        check("...a hardlinked pair stays one inode",
+              os.path.exists(os.path.join(got, "two")) and
+              os.stat(os.path.join(got, "one")).st_ino == os.stat(os.path.join(got, "two")).st_ino,
+              True)
+        check("...and the entry is journalled", "slax/rootcopy/etc/skel" in ctx.changes, True)
+
+        for label, spec, why in (
+                ("a setuid mode", {"dest": "/usr/local/bin/tool", "src": "tool", "mode": "4755"},
+                 "setuid"),
+                ("a missing src:", {"dest": "/etc/x", "src": "no-such"}, "source not found")):
+            try:
+                apply.v_rootcopy_files(ctx, {"verb": "rootcopy.files", "files": [spec]})
+                check(f"{label} is refused", "placed", "refused")
+            except RuntimeError as e:
+                check(f"{label} is refused, saying why",
+                      ("rootcopy.files" in str(e), why in str(e)), (True, True))
+            except OSError as e:
+                check(f"{label} is refused, saying why", f"OSError: {e}", "a RuntimeError")
+        check("...and the setuid file was not placed", os.path.lexists(
+            os.path.join(work, "iso", "slax", "rootcopy", "usr", "local", "bin", "tool")), False)
+    finally:
+        shutil.rmtree(box, ignore_errors=True)
+
 def test_iso_identity_takes_a_projects_name_and_keeps_an_earlier_one():
     """iso-identity declared volid and publisher and wrote `preparer: slax-kitchen` fixed,
     so a profile naming its image's appid or preparer was refused, and slax-wine wrote an
@@ -4157,6 +4210,7 @@ def main():
                    test_bundle_files_fetches_a_pinned_url_itself,
                    test_a_staged_tree_keeps_its_hardlinks,
                    test_a_later_entry_cannot_write_through_an_earlier_entrys_symlink,
+                   test_rootcopy_files_places_a_directory_as_bundle_files_does,
                    test_iso_identity_takes_a_projects_name_and_keeps_an_earlier_one,
                    test_boot_cmdline_reads_a_var_as_a_list_of_parameters,
                    test_what_root_wrote_under_sudo_is_given_back,
