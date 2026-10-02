@@ -3047,6 +3047,13 @@ def test_iso_files_actually_writes_into_the_iso_tree():
     been broken outright with every gate green.
 
     It was not broken outright. It was broken quietly: see the dry-run case below.
+
+    And it copied a directory with copytree, in a loop of its own (#82, reproduced in a
+    built image): a symlink in the tree was followed, so the file it pointed at on the build
+    machine went into the image; a hardlinked pair became two files; the directory was
+    journalled as one path, so `kitchen sources` reported every file in it unrecorded; and
+    `mode: "4755"` was taken, on a medium livekit mounts without nosuid. It now places its
+    entries with _place_files, as bundle.files and rootcopy.files do.
     """
     import tempfile
 
@@ -3056,6 +3063,10 @@ def test_iso_files_actually_writes_into_the_iso_tree():
     os.makedirs(os.path.join(payload, "sub"))
     open(os.path.join(payload, "one.txt"), "w").write("one")
     open(os.path.join(payload, "sub", "two.txt"), "w").write("two")
+    open(os.path.join(payload, "pair-a"), "w").write("pair")
+    os.link(os.path.join(payload, "pair-a"), os.path.join(payload, "pair-b"))
+    open(os.path.join(work, "outside.txt"), "w").write("not part of the payload")
+    os.symlink("../outside.txt", os.path.join(payload, "link"))
     open(os.path.join(work, "single.bin"), "wb").write(b"\x00\x01")
 
     ctx = apply.Ctx(work, work, "t")
@@ -3086,13 +3097,28 @@ def test_iso_files_actually_writes_into_the_iso_tree():
     check("iso.files content", read("docs", "deep", "README.txt"), "hello")
     check("iso.files src file", read("firmware", "blob.bin", binary=True), b"\x00\x01")
     check("iso.files src dir", read("extra", "sub", "two.txt"), "two")
+    check("...a symlink in it stays one, not what it points at on this machine",
+          os.readlink(r("extra", "link")) if os.path.islink(r("extra", "link")) else
+          read("extra", "link"), "../outside.txt")
+    check("...a hardlinked pair stays one inode",
+          os.path.exists(r("extra", "pair-b")) and
+          os.stat(r("extra", "pair-a")).st_ino == os.stat(r("extra", "pair-b")).st_ino, True)
     check("iso.files mode",
           oct(os.stat(r("autorun.sh")).st_mode & 0o777) if os.path.exists(r("autorun.sh"))
           else "<no file>", "0o755")
 
-    # Everything it wrote is in the journal, under the recipe's own spelling of the path.
+    # Everything it wrote is in the journal, each file under its own path: that is how
+    # `kitchen sources` credits a file to a recipe (#82). It was `/extra`, one path.
     check("iso.files journal", sorted(ctx.changes),
-          ["/autorun.sh", "/docs/deep/README.txt", "/extra", "/firmware/blob.bin"])
+          ["/autorun.sh", "/docs/deep/README.txt", "/extra/link", "/extra/one.txt",
+           "/extra/pair-a", "/extra/pair-b", "/extra/sub/two.txt", "/firmware/blob.bin"])
+    try:
+        apply.v_iso_files(ctx, {"verb": "iso.files", "files": [
+            {"dest": "/tool", "src": "single.bin", "mode": "4755"}]})
+        check("a setuid mode is refused", "placed", "refused")
+    except RuntimeError as e:
+        check("a setuid mode is refused, saying so", "setuid" in str(e), True)
+    check("...and the file is not placed", os.path.lexists(r("tool")), False)
 
     # It writes OUTSIDE /slax/, which is the whole point of the verb -- that is what
     # separates it from iso.metadata and from the bundle verbs.

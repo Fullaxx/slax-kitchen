@@ -570,30 +570,35 @@ def v_boot_payload(ctx: Ctx, step: dict) -> None:
 
 @verb("iso.files")
 def v_iso_files(ctx: Ctx, step: dict) -> None:
+    """Place files in the ISO tree, outside /slax/: what a user sees when they mount the
+    disc rather than boot it.
+
+    Each entry is placed as bundle.files and rootcopy.files place theirs (_place_files). This
+    copied a directory with copytree, in a loop of its own: a symlink was followed, so the
+    file it pointed at on the build machine went into the image; a hardlinked pair became
+    two files; the directory was journalled as one path, so `kitchen sources` reported its
+    files unrecorded; and `mode: "4755"` was taken, on a medium livekit mounts without
+    nosuid (#82).
+    """
     for spec in step["files"]:
-        dest = _under(ctx.tree, spec["dest"], "iso.files")
+        _under(ctx.tree, spec["dest"], "iso.files")
         if ctx.dry:
             ctx.say(f"would write {spec['dest']}")
             continue
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        if "content" in spec:
-            with open(dest, "w") as f:
-                f.write(spec["content"])
-        else:
-            # The schema requires only `dest`, so a spec with neither key validates and
-            # reaches here. It used to be a bare KeyError traceback at the recipe author.
-            if "src" not in spec:
-                raise RuntimeError(
-                    f"iso.files: {spec['dest']} needs `src` or `content`")
-            src = spec["src"]
-            local = ctx.local(src)
-            if os.path.isdir(local):
-                shutil.copytree(local, dest, dirs_exist_ok=True)
-            else:
-                shutil.copy2(local, dest)
-        if "mode" in spec and os.path.isfile(dest):
-            os.chmod(dest, int(spec["mode"], 8))
-        ctx.record(spec['dest'], f"wrote {spec['dest']}")
+        # The schema requires only `dest`, so a spec with neither key validates and
+        # reaches here. It used to be a bare KeyError traceback at the recipe author. Both
+        # said here rather than by _place_files, whose answers offer `url:`, which this
+        # verb does not take.
+        if "src" not in spec and "content" not in spec:
+            raise RuntimeError(f"iso.files: {spec['dest']} needs `src` or `content`")
+        if "content" not in spec and re.match(r"^https?://", str(spec["src"])):
+            raise RuntimeError(
+                f"iso.files: {spec['dest']}: src: is a path beside the recipe, and "
+                f"{spec['src']} is a URL. This verb downloads nothing; bundle.files' url: does")
+        # Each file journalled under its own path, which is how `kitchen sources` credits
+        # a file to a recipe, with the leading slash iso.files has always journalled.
+        for rel in _place_files(ctx, ctx.tree, [spec], "iso.files", label="wrote "):
+            ctx.record(f"/{rel}")
 
 
 # --------------------------------------------------------- initramfs --------
@@ -1756,17 +1761,18 @@ def _mode_of(spec: dict, verb: str, default: int | None = None) -> int | None:
     if "mode" not in spec:
         return default
     mode = int(str(spec["mode"]), 8)
-    # A recipe may not ask for setuid/setgid here. bundle.files and rootcopy.files are
-    # privilege: none, and what they write is root's in the image: bundle.files builds with
-    # -all-root, and pack records rootcopy's files as root's, which livekit copies with
-    # `cp -a`. So `mode: "4755"` would be a setuid ROOT binary requested by a line of YAML
-    # that reads like an ordinary permission. bundle.script (chroot) is the route if it is
-    # real.
+    # A recipe may not ask for setuid/setgid here. bundle.files, rootcopy.files and
+    # iso.files are privilege: none, and what they write is root's in the image:
+    # bundle.files builds with -all-root, and pack records the ISO tree's files as root's.
+    # livekit copies rootcopy onto the union with `cp -a`, and mounts the medium iso.files
+    # writes to without nosuid (#82). So `mode: "4755"` would be a setuid ROOT binary
+    # requested by a line of YAML that reads like an ordinary permission. bundle.script
+    # (chroot) is the route if it is real.
     if mode & (stat.S_ISUID | stat.S_ISGID):
         raise RuntimeError(
             f"{verb}: mode {spec['mode']!r} on {spec.get('dest')!r} sets "
-            f"setuid/setgid. This verb is privilege: none and its output runs "
-            f"as root at boot; use bundle.script if that is genuinely needed.")
+            f"setuid/setgid. This verb is privilege: none, and what it writes is root's "
+            f"in the image; use bundle.script if a setuid binary is genuinely needed.")
     return mode
 
 
@@ -1827,7 +1833,8 @@ def _place_files(ctx: "Ctx", root: str, files: list, verb: str,
                  label: str = "  ") -> list[str]:
     """Write a list of {dest, src|content, mode} specs under root, saying each entry's dest
     after `label`. A `url:` entry is not placed here: bundle.files fetches those itself,
-    after these (_fetch_files). rootcopy.files places its entries here too (#77).
+    after these (_fetch_files). rootcopy.files and iso.files place their entries here too
+    (#77, #82).
 
     Returns what it placed, relative to root: the dest of each `content:` or file entry,
     and every file and symlink a directory `src:` held -- not its directories, and not what

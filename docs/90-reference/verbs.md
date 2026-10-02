@@ -644,9 +644,19 @@ path on disk, resolved relative to the recipe's own directory unless it is absol
 `dest` is resolved inside the ISO tree and `..` is refused, symlinks included — a recipe is
 meant to be shared, so a `dest` that walks out to the host is not the author's to choose.
 
-If `src` names a **directory** it is copied recursively. `mode` applies to a single file
-only; on a directory copy it is silently ignored, and the tree keeps the modes it had.
-Under `--dry-run` nothing is written and nothing is created.
+Entries are placed as [`bundle.files`](#bundlefiles-) entries are
+([#82](https://github.com/Fullaxx/slax-kitchen/issues/82)):
+- a `src:` **directory** keeps its symlinks as symlinks, rather than copying in whatever they point
+  at on the build machine. A file with several names in it stays one file, and the tree keeps the
+  modes it had.
+- `mode`, given for a directory, applies to the directory itself.
+- a later entry replaces a file an earlier one placed, rather than writing through it.
+- `mode:` may not set setuid or setgid. Pack records every file as root's, and livekit mounts the
+  medium without `nosuid`, so `mode: "4755"` would make a setuid-root file on the boot medium.
+
+Every file an entry places is journalled under its own path, so `kitchen status` lists it and
+`kitchen sources` names the recipe for it. Under `--dry-run` nothing is written and nothing is
+created.
 
 ### `iso.metadata` ○
 
