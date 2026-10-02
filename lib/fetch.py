@@ -14,6 +14,9 @@ import sys
 import time
 import urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import handback  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Progress bars are for humans. In CI stderr is a file, and rewriting the line with \r
@@ -84,6 +87,18 @@ def download(url: str, dest: str) -> None:
     os.replace(tmp, dest)
 
 
+def _first_missing(path: str) -> str | None:
+    """The highest directory of `path` that does not exist yet, which makedirs will create:
+    the one directory this run makes for the user, with everything it puts under it."""
+    path, top = os.path.abspath(path), None
+    while not os.path.lexists(path):
+        top, parent = path, os.path.dirname(path)
+        if parent == path:
+            break
+        path = parent
+    return top
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="kitchen fetch", description="download + verify a base Slax ISO")
     ap.add_argument("target", nargs="?",
@@ -111,6 +126,9 @@ def main(argv: list[str]) -> int:
             print(f"  {t:<26} {'present' if os.path.isfile(p) else 'not downloaded'}")
         return 0
 
+    made = _first_missing(a.output_dir)
+    if made:
+        MADE.append(made)
     os.makedirs(a.output_dir, exist_ok=True)
     rc = 0
     for t in want:
@@ -127,6 +145,9 @@ def main(argv: list[str]) -> int:
         if why != "missing":
             print(f"  re-fetch {spec['file']}: {why}", file=sys.stderr)
 
+        # What this target's download writes, kept or not: a mirror that fails part-way
+        # leaves the .part file.
+        WROTE.extend([dest, dest + ".part"])
         got = False
         for m in src["mirrors"]:
             url = m["base"] + "/" + m["layout"].format(**spec)
@@ -149,5 +170,21 @@ def main(argv: list[str]) -> int:
     return rc
 
 
+# What this run wrote as root, and the directory it created, for handback to give to the
+# user who ran sudo (#79). Lists the entry point below reads, as apply.py's GIVE_BACK is.
+# Only what this run wrote, never the whole output directory: -o can name ~/Downloads, or a
+# home directory, and walking one would hand over every root-owned file in it.
+WROTE: list = []
+MADE: list = []
+
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    import signal
+    # TERM becomes an exit, as the trap in `kitchen` makes it, so the hand-back still runs:
+    # Python runs no `finally` on a default SIGTERM, and sudo passes one on. Measured: a
+    # download ended by TERM left isos/ and its .part file root's.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    try:
+        rc = main(sys.argv)
+    finally:
+        handback.give_back(WROTE, created=MADE)
+    raise SystemExit(rc)

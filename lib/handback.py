@@ -25,7 +25,8 @@ stock image does, so who owns the tree never reaches the ISO.
 
 Usage: handback.py [--new PATH]... [PATH]...
   --new names a path this run created. The shell side decides that as it registers each
-  path; apply.py calls give_back itself.
+  path; apply.py and fetch.py call give_back themselves. fetch gave nothing back until #79,
+  and gives back only what it wrote, since its -o can name a place like ~/Downloads.
 """
 from __future__ import annotations
 

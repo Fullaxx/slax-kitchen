@@ -20,8 +20,9 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # UNDER SUDO, WHAT A COMMAND WRITES GOES BACK TO WHOEVER RAN IT (#70). unpack, pack, build
 # and test name each path they write in with handback_add; lib/handback.py gives every
 # root-owned path under them to SUDO_UID:SUDO_GID as the command ends, however it ends --
-# `die` exits, and INT and TERM become exits so the trap still runs. apply is exec'd, and
-# does the same in lib/apply.py. Nothing is set up unless this is root run through sudo.
+# `die` exits, and INT and TERM become exits so the trap still runs. apply and fetch are
+# exec'd, and give back from lib/apply.py and lib/fetch.py (#79). Nothing is set up unless
+# this is root run through sudo.
 # A path that does not exist yet is one this run creates, which makes it the user's; call
 # handback_add BEFORE creating anything. Any other is given back only where it is the
 # user's place (lib/handback.py).
