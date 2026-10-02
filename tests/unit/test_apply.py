@@ -2140,6 +2140,48 @@ def test_stage_delta_preserves_what_the_chroot_had():
           os.readlink(os.path.join(stage, "usr/bin/link")), "/etc/passwd")
 
 
+
+def test_stage_delta_keeps_a_files_hardlinks():
+    """bundle.packages and bundle.script staged each name of a file with copy2, so a file
+    the chroot held under several names was packed as several files (#78). Measured
+    installing git, which pulls in perl: usr/bin/perl and usr/bin/perl5.36.0, one inode with
+    two links in the chroot, were two inodes in the bundle, and the stage held 3.8 MB twice.
+    A later name of a file already staged is now linked to that copy, as _copy_tree links a
+    bundle.files tree (#64)."""
+    import shutil
+    import stat
+    import tempfile
+    root = tempfile.mkdtemp()
+    stage = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(root, "usr", "bin"))
+        first = os.path.join(root, "usr", "bin", "perl")
+        open(first, "w").write("elf\n")
+        os.chmod(first, 0o4755)
+        for other in ("perl-again", "perl5.36.0"):
+            os.link(first, os.path.join(root, "usr", "bin", other))
+        lone = os.path.join(root, "usr", "bin", "lone")
+        open(lone, "w").write("x\n")
+        os.link(lone, os.path.join(root, "usr", "bin", "lone-unchanged"))   # not in the delta
+        keep = ["usr/bin", "usr/bin/lone", "usr/bin/perl", "usr/bin/perl-again",
+                "usr/bin/perl5.36.0"]
+        apply._stage_delta(root, keep, stage)
+
+        names = [os.path.join(stage, "usr", "bin", n)
+                 for n in ("perl", "perl-again", "perl5.36.0")]
+        check("three names of one file are one inode in the stage",
+              len({os.lstat(p).st_ino for p in names}), 1)
+        check("...with three links", os.lstat(names[0]).st_nlink, 3)
+        check("...and setuid under every name",
+              {stat.S_IMODE(os.lstat(p).st_mode) for p in names}, {0o4755})
+        check("a file whose other name is not in the delta is staged on its own",
+              (os.lstat(os.path.join(stage, "usr", "bin", "lone")).st_nlink,
+               os.path.lexists(os.path.join(stage, "usr", "bin", "lone-unchanged"))),
+              (1, False))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+        shutil.rmtree(stage, ignore_errors=True)
+
 def test_both_chroot_verbs_use_one_staging_loop():
     """The loop was copy-pasted, so any fix to it landed twice or half-landed.
 
@@ -4199,6 +4241,7 @@ def main():
                    test_fromtarball_wires_both_guards_in,
                    test_extract_members_matches_extractall_on_a_clean_archive,
                    test_stage_delta_preserves_what_the_chroot_had,
+                   test_stage_delta_keeps_a_files_hardlinks,
                    test_both_chroot_verbs_use_one_staging_loop,
                    test_fromtarball_refuses_privileged_members,
                    test_a_zip_unpacks_as_a_tarball_would,

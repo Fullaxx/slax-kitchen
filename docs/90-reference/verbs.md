@@ -388,12 +388,15 @@ installer.
     ssh-keygen -A
 ```
 
-Two behaviours it shares with `bundle.packages`, both load-bearing:
+Three behaviours it shares with `bundle.packages`, all load-bearing:
 
 - the delta is **added or modified** files, never names alone. A filename-only diff misses the
   package database, and a bundle without it leaves new binaries invisible to dpkg.
 - `BUNDLE_EXCLUDE` strips the runtime directories the chroot needed but a bundle must not ship,
   plus caches and lockfiles — including `var/lib/dpkg/status`, which is replaced by a fragment.
+- the delta is staged **as the chroot had it**: owners, modes with setuid and setgid, symlinks, and
+  a file the delta holds under several names as one file, the way dpkg installs perl
+  ([#78](https://github.com/Fullaxx/slax-kitchen/issues/78)).
 
 **A script that downloads something says so.** The engine cannot see what a script fetched, so a
 line on stdout of the form

@@ -1126,7 +1126,16 @@ def _stage_delta(root: str, keep: list[str], stage: str) -> None:
     (-rwsr-xr-x root/root in the stock bundle). A recipe that exists to ship security
     fixes was shipping a Chromium whose sandbox could not work. chmod AFTER chown is the
     order tarfile itself uses, for this reason.
+
+    HARDLINKS were split into separate files. dpkg installs some files under two names,
+    and copy2 wrote each name as a file of its own: installing git, which pulls in perl,
+    staged usr/bin/perl and usr/bin/perl5.36.0 -- one inode in the chroot -- as two, so the
+    stage held 3.8 MB twice and the bundle two files where the package has one (#78). A
+    later name of a file already staged is linked to that copy, as _copy_tree does for
+    bundle.files (#64). Owner and mode belong to the inode, so the first copy's chown and
+    chmod hold for every name.
     """
+    staged: dict = {}
     for rel in keep:
         src, dst = os.path.join(root, rel), os.path.join(stage, rel)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -1139,12 +1148,16 @@ def _stage_delta(root: str, keep: list[str], stage: str) -> None:
             os.makedirs(dst, exist_ok=True)
             shutil.copystat(src, dst)
             os.chown(dst, st.st_uid, st.st_gid)
+        elif st.st_nlink > 1 and (st.st_dev, st.st_ino) in staged:
+            os.link(staged[(st.st_dev, st.st_ino)], dst)
         else:
             shutil.copy2(src, dst)
             os.chown(dst, st.st_uid, st.st_gid)
             # AFTER the chown, which clears setuid/setgid. Not cosmetic: see the
             # docstring.
             os.chmod(dst, stat.S_IMODE(st.st_mode))
+            if st.st_nlink > 1:
+                staged[(st.st_dev, st.st_ino)] = dst
 
 
 def _write_fragment(ctx: "Ctx", stage: str, name: str, before: str, after: str) -> None:
