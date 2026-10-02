@@ -178,13 +178,6 @@ WROTE: list = []
 MADE: list = []
 
 if __name__ == "__main__":
-    import signal
-    # TERM becomes an exit, as the trap in `kitchen` makes it, so the hand-back still runs:
-    # Python runs no `finally` on a default SIGTERM, and sudo passes one on. Measured: a
-    # download ended by TERM left isos/ and its .part file root's.
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
-    try:
-        rc = main(sys.argv)
-    finally:
-        handback.give_back(WROTE, created=MADE)
-    raise SystemExit(rc)
+    # Given back however the run ends, TERM included: a download ended by TERM left isos/
+    # and its .part file root's (#79). handback.run holds the rule for both entry points.
+    raise SystemExit(handback.run(main, sys.argv, WROTE, created=MADE))

@@ -2948,6 +2948,33 @@ def test_boot_cmdline_reads_a_var_as_a_list_of_parameters():
         check("a step with neither field is still refused", "nothing to do" in str(e), True)
 
 
+def test_a_terminated_entry_point_still_gives_back():
+    """`kitchen apply` and `kitchen fetch` give back what root wrote from a `finally` (#70,
+    #79), and Python runs none on a default SIGTERM, which sudo passes on. An apply ended by
+    TERM kept seven root-owned paths in a uid 1000 work tree and left its 1.4 GiB build
+    chroot behind (#81, measured), and fetch had a copy of its own of the cure (#79).
+    handback.run is the one copy now: TERM becomes an exit, and the hand-back runs.
+
+    In a child process, because the signal is real: main() sends itself TERM, and give_back
+    is replaced by one that writes down what it was handed."""
+    marker = os.path.join(tempfile.mkdtemp(), "given")
+    driver = ("import os, signal, sys\n"
+              "sys.path.insert(0, sys.argv[1])\n"
+              "import handback\n"
+              "def give_back(paths=(), env=None, created=()):\n"
+              "    open(sys.argv[2], 'w').write(repr((list(paths), list(created))))\n"
+              "handback.give_back = give_back\n"
+              "def main(argv):\n"
+              "    os.kill(os.getpid(), signal.SIGTERM)\n"
+              "    return 0\n"
+              "sys.exit(handback.run(main, sys.argv, ['/w'], created=['/n']))\n")
+    r = subprocess.run([sys.executable, "-c", driver, os.path.join(REPO, "lib"), marker],
+                       capture_output=True, text=True)
+    check("TERM ends it as an exit, 143, not by the signal", r.returncode, 143)
+    check("...after the hand-back ran, with what main registered",
+          open(marker).read() if os.path.exists(marker) else None, repr((["/w"], ["/n"])))
+
+
 def test_what_root_wrote_under_sudo_is_given_back():
     """Under sudo, what a kitchen command wrote in the user's tree stayed root's, so the next
     unprivileged step could not write the journal, the provenance record or the bundle, or
@@ -4287,6 +4314,7 @@ def main():
                    test_rootcopy_files_places_a_directory_as_bundle_files_does,
                    test_iso_identity_takes_a_projects_name_and_keeps_an_earlier_one,
                    test_boot_cmdline_reads_a_var_as_a_list_of_parameters,
+                   test_a_terminated_entry_point_still_gives_back,
                    test_what_root_wrote_under_sudo_is_given_back,
                    test_iso_files_actually_writes_into_the_iso_tree,
                    test_relax_modes_widens_without_granting,

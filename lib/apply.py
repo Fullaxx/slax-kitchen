@@ -4398,7 +4398,7 @@ def main(argv: list[str]) -> int:
     # Set by `kitchen build` on its second run: its --preflight-only pass has already said
     # the profile's notes. Removed here, so nothing this run starts inherits it (#76).
     profile_noted = os.environ.pop("KITCHEN_PROFILE_NOTED", "") == "1"
-    # Given back as the command ends, under sudo, whether it succeeded or not (#70).
+    # Given back as the command ends, under sudo, however it ends (#70, #81).
     GIVE_BACK.append(a.work)
     override = {}
     if a.facts:
@@ -4568,8 +4568,5 @@ def main(argv: list[str]) -> int:
 GIVE_BACK: list = []
 
 if __name__ == "__main__":
-    try:
-        rc = main(sys.argv)
-    finally:
-        handback.give_back(GIVE_BACK)
-    raise SystemExit(rc)
+    # Given back however the run ends, TERM included (#81).
+    raise SystemExit(handback.run(main, sys.argv, GIVE_BACK))

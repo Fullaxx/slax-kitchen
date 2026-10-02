@@ -6,7 +6,8 @@ and output directory, and nothing gave the files back. The next unprivileged ste
 journal, a provenance record and a bundle it could not write, and a directory it could not
 remove. CI's boot job chowned out/ and work/ after its build, slax-wine's build.sh chowns
 its tree after every apply, and publishing-images.md had a publisher `sudo chown -R` out/.
-This does what those did, once, here, whether the command succeeded or not.
+This does what those did, once, here, however the command ends: the trap in `kitchen`
+makes INT and TERM exits for the shell commands, and run() does it for the Python ones.
 
 What it changes is every path under the given ones that root owns, to SUDO_UID:SUDO_GID:
 - only when this process is root and SUDO_UID names someone else, so root in a container,
@@ -25,7 +26,7 @@ stock image does, so who owns the tree never reaches the ISO.
 
 Usage: handback.py [--new PATH]... [PATH]...
   --new names a path this run created. The shell side decides that as it registers each
-  path; apply.py and fetch.py call give_back themselves. fetch gave nothing back until #79,
+  path; apply.py and fetch.py go through run() below. fetch gave nothing back until #79,
   and gives back only what it wrote, since its -o can name a place like ~/Downloads.
 """
 from __future__ import annotations
@@ -99,6 +100,28 @@ def give_back(paths=(), env=None, created=()) -> int:
     if n:
         print(f"  gave {n} path(s) back to uid {uid}, who ran sudo", file=sys.stderr)
     return n
+
+
+def run(main, argv: list, paths: list, created: list = ()) -> int:
+    """Run an entry point's main(argv), and give back `paths` and `created` as it ends,
+    however it ends: a return, an exception, INT or TERM. The lists are read when main()
+    is done, so it fills them as it goes.
+
+    TERM becomes an exit here, as the trap in `kitchen` makes it for the shell commands.
+    Python runs no `finally` on a default SIGTERM, and sudo passes one on. An apply ended by
+    TERM gave nothing back and left its 1.4 GiB build chroot behind (#81), because both are
+    done in a `finally`. fetch had its own copy of these lines (#79), and this is the one
+    copy now. The previous handler is put back, for a caller in the same process.
+    """
+    import signal
+    previous = signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    try:
+        return main(argv)
+    finally:
+        try:
+            give_back(paths, created=created)
+        finally:
+            signal.signal(signal.SIGTERM, previous)
 
 
 if __name__ == "__main__":
