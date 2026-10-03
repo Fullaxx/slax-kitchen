@@ -263,15 +263,18 @@ on a runner without one the step says so, and the boots run under TCG. The boot 
 target, and runs on every pull request; a PR's `boot-test` label adds the Tier C sweep.
 `kitchen test` says which mode it is using rather than appearing to hang.
 
-Measured 2026-09-16 at `1463570` on a GitHub runner, booting under TCG, the whole boot job.
+The whole boot job on a GitHub runner, step by step. Under TCG it was measured 2026-09-16 at
+`1463570`. Under KVM it was measured 2026-10-02 at `1d7ef68`, in the dispatched run `37075022464`,
+since the job opens the runner's `/dev/kvm`. Re-measure with
+`gh api repos/Fullaxx/slax-kitchen/actions/runs/<id>/jobs`, which gives each step's times.
 **This table is the only copy of these figures:**
 
-| step | | |
-|---|---|---|
-| build the `example` profile | 26 s | per push |
-| boot (direct kernel, asserts livekit markers) | **20 s** | per push |
-| [Tier C](tier-c.md) — build `boot-matrix`, then four paths, five boots | **2 m 07 s** | weekly |
-| | **3 m 21 s** | whole job, weekly |
+| step | TCG | KVM | |
+|---|---|---|---|
+| build the `example` profile | 26 s | 31 s | per push |
+| boot (direct kernel, asserts livekit markers) | **20 s** | **5 s** | per push |
+| [Tier C](tier-c.md) — build `boot-matrix`, then four paths, five boots | **2 m 07 s** | **52 s** | weekly |
+| | **3 m 21 s** | **2 m 04 s** | whole job, weekly |
 
 It was **8 minutes** before the last two passes, of which about 480 seconds was `time.sleep`. The
 job is now less than half that *and* runs four more boots, every one of which asserts — the
