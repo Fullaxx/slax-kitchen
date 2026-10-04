@@ -70,7 +70,7 @@ and both are on the weekly run:
 else's change into a red master at a cadence nobody can act on. Being merely expensive is not
 enough; cost is not a reason to stop checking. Each entry in it is an external dependency:
 `all-browsers`, whose four vendor signing keys are pinned by sha256 and will rotate;
-`tor-browser`, a version-pinned 138 MB download; `firmware-refresh`, 65 sha256-pinned
+`tor-browser`, a version-pinned download from torproject.org; `firmware-refresh`, 65 sha256-pinned
 files fetched from linux-firmware mirrors; and `bundle-from-url`, a version-pinned binary from
 github.com, whose fetch the unit gate tests in-process on every push.
 
@@ -134,6 +134,14 @@ recipe matrix: debian-64bit-12.2.0  (flavour=debian arch=64bit)
   ...
   33 passed, 0 failed, 2 skipped in 1315 s
 ```
+
+<a id="recipe-sizes"></a>
+**The recipe pages' sizes come from this matrix, where a page says so.** The run of 2026-10-04 at
+`c2b3113` built all four targets on Ubuntu 24.04, the release CI's runners use. It ran a copy of the
+script with the cleanup removed, so each recipe's log survived. A bundle's size is from its
+`built slax/modules/…` line. An image's is from its `structure:` line, which rounds to the nearest
+MiB, as the stock sizes do. The `ok` line above rounds down, as `kitchen pack` does, so the same
+image can read one MiB less there.
 
 Skips come from each recipe's own `compat` block, so marking something Debian-only is enough — no
 separate CI list to keep in sync. **This is what catches a recipe that silently only works on 64-bit
@@ -233,8 +241,9 @@ ok   serial contains 'Mounting bundles'
 ok   serial contains 'Live Kit done, starting slax'
 ```
 
-A failure names the stage it stopped at, which is far more useful than "it did not boot". Under TCG
-it reaches a `slax login:` prompt in about 150 s.
+A failure names the stage it stopped at, which is far more useful than "it did not boot". When this
+test was written, on 2026-09-13 (`ff4b313`), a boot under TCG reached a `slax login:` prompt in
+about 150 s.
 
 **`--bios`, `--uefi` and `--usb` assert only through the serial entry**, and it is worth
 understanding why. A stock menu entry carries no `console=ttyS0`, so once the loader hands off,
@@ -276,7 +285,8 @@ since the job opens the runner's `/dev/kvm`. Re-measure with
 | [Tier C](tier-c.md) — build `boot-matrix`, then four paths, five boots | **2 m 07 s** | **52 s** | weekly |
 | | **3 m 21 s** | **2 m 04 s** | whole job, weekly |
 
-It was **8 minutes** before the last two passes, of which about 480 seconds was `time.sleep`. The
+It was **8 minutes** before the last two passes, `c4fbe3f` and `1463570` on 2026-09-16, of which
+about 480 seconds was `time.sleep`. The
 job is now less than half that *and* runs four more boots, every one of which asserts — the
 screenshot modes it replaced could only fail on a zero-byte PNG that nothing ever opened.
 
@@ -312,8 +322,8 @@ Tier C claim is derived from. See [Tier C](tier-c.md).
 
 **Boot it and actually look at it.** This is the part CI structurally cannot do, and it is where a
 local machine earns its place — the recipe matrix is apt and `mksquashfs` and gains nothing from
-virtualisation, but a boot gains everything. Measured: all three livekit markers inside **5 seconds**
-with KVM, against a 150-second budget under TCG.
+virtualisation, but a boot gains everything: with KVM it reaches livekit in seconds, several times
+faster than under TCG, as [Tier C](tier-c.md#kvm-vs-tcg) measures.
 
 ```sh
 tools/qemu/boot.py out/slax-custom.iso --bios

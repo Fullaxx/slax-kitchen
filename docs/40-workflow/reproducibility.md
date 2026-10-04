@@ -32,7 +32,8 @@ reference container, five runs of `find . -print` over an unchanged tree:
 | ext2/3/4 | identical every time — stable, but arbitrary (hash order, not alphabetical) |
 | **overlayfs** (Docker's default) | **5 runs, 5 different orders** |
 
-So on a container filesystem, two consecutive repacks of the *same* tree produce different archives:
+So on a container filesystem, two consecutive repacks of the *same* tree produce different archives.
+As captured when this page was written, on 2026-09-13 (`a8b3fc1`):
 
 ```
 unsorted, run A    8,869,652 B

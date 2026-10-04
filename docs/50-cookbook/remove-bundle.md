@@ -27,16 +27,21 @@ naming this one twice is refused rather than quietly dropping the second entry a
 
 ## Measured
 
-Removing `05-chromium` from 64-bit Debian:
+Removing `05-chromium` from 64-bit Debian, measured 2026-10-04: the ISO by the
+[recipe matrix](../60-testing/ci.md#recipe-sizes), and `slax/modules/` by summing its files' sizes
+in the stock image (`du -sm` rounds each up, and reads one MiB more):
 
 | | Before | After |
 |---|---|---|
-| `slax/modules/` | 394 MiB | 315 MiB |
-| ISO | 416 MiB | **336 MiB** |
+| `slax/modules/` | 393 MiB | 314 MiB |
+| ISO | 416 MiB | **337 MiB** |
 
-Booted afterwards: livekit mounts five bundles instead of six and reaches
-`Live Kit done, starting slax`. `kitchen probe` reports the change as one line —
-`bundles.05-chromium.sb  expected 'present', got 'REMOVED'`.
+On 64-bit Slackware, in the same 2026-10-04 run, the recipe takes the ISO from 455 to **340 MiB**:
+its Chromium bundle is 115 MiB.
+
+Booted afterwards, when the recipe was written on 2026-09-13 (`a7a4650`): livekit mounts five
+bundles instead of six and reaches `Live Kit done, starting slax`. `kitchen probe` reports the
+change as one line — `bundles.05-chromium.sb  expected 'present', got 'REMOVED'`.
 
 ## What is safe to drop
 
@@ -147,9 +152,9 @@ behind:
 - **`firmware-linux-free` stays** — it lives in `01-core`, and it is free firmware.
 - **Or replace it rather than dropping it.** Removing `01-firmware` *and* applying
   [`firmware-refresh`](firmware-refresh.md) gives two bundles with their license texts and no b43
-  blobs: `09-firmware-debian.sb`, measured at **139.4 MiB** against 48.8 MiB when it layers on top
-  of the stock bundle — because the reinstall then really reinstalls the firmware instead of only
-  the documentation Slax deleted — and `09-firmware-linux.sb` at 5.4 MiB either way.
+  blobs: `09-firmware-debian.sb`, measured on 2026-09-17 at **139.4 MiB** against 48.8 MiB when it
+  layers on top of the stock bundle — because the reinstall then really reinstalls the firmware
+  instead of only the documentation Slax deleted — and `09-firmware-linux.sb` at 5.4 MiB either way.
 - **The package database still lists the removed packages as installed.** Each stock bundle carries a
   complete `var/lib/dpkg/status`, and the ones above `01-firmware` still record them. That is
   documented rather than changed. A recipe that installs one of those packages again afterwards has

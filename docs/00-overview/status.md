@@ -38,14 +38,14 @@ the resulting ISO in QEMU and reading the console.
 | `isohybrid` | ✅ MBR + GPT + type-`0xEF` partition verified in the image |
 | `serial-console` | ✅ entry present in both configs |
 | `memtest86plus` | ✅ **booted on BIOS and UEFI** — Memtest86+ 8.10 selected from each menu and running |
-| `remove-bundle` | ✅ **booted** — ISO 416 → 336 MiB, five bundles instead of six. The only recipe that removes anything; 455 → 340 MiB on Slackware |
+| `remove-bundle` | ✅ **booted** — five bundles instead of six. The only recipe that removes anything; [its page](../50-cookbook/remove-bundle.md#measured) has the sizes |
 | `rootcopy-overlay` | ✅ **booted** — file copy and preinit hook both confirmed firing |
 | `add-packages` | ✅ **booted** on Debian — bundle mounts last, `Live Kit done, starting slax` |
 | `initramfs-add-binary` | ✅ **booted** — file survives the repack, image still reaches `slax login:` |
 | `initramfs-add-modules` | ✅ **booted** — promotes from a bundle; verified on both flavours and both arches |
 | `initramfs-boot-timeout` | ✅ **booted** — `sh -n` gate proven against a deliberately boot-bricking patch |
-| `branding` | ✅ **booted** — 4 KiB override bundle beats 01-core; shipped bundles untouched |
-| `firmware-refresh` | ✅ **booted** — two bundles above Slax's own (48.8 + 5.4 MiB, ISO 416 → 469 MiB); measured against the 1,959 firmware names the kernel's modules ask for, of which stock has 295 |
+| `branding` | ✅ **booted** — a small override bundle beats 01-core; shipped bundles untouched |
+| `firmware-refresh` | ✅ **booted** — two bundles above Slax's own, chosen by measuring the firmware the kernel's modules ask for against what stock has; [its page](../50-cookbook/firmware-refresh.md) has the sizes and counts |
 
 The same ISO boots on **both** BIOS and UEFI after `uefi-bootable` + `isohybrid`, which stock Slax
 cannot do at all.
@@ -75,7 +75,7 @@ its source. Publishing one is a handful of commands: see
 
 ### `bundle.packages` on Slackware
 
-**It works** — it installs, produces a correct 448 KiB bundle, and the ISO boots. It is unsupported
+**It works** — it installs, produces a correct bundle, and the ISO boots. It is unsupported
 because Slackware has **no dependency resolution** (by design) and the stock mirror is
 `slackware64-current`, years ahead of the frozen 2023 base. Neither is fixable from this repo.
 Full reasoning: [add-packages cookbook page](../50-cookbook/add-packages.md).

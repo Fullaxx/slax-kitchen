@@ -46,19 +46,22 @@ session** — almost always what you want.
 
 ## Verified
 
-Debian 12.2.0 64-bit, `packages: [tmux, ncdu]`:
+Debian 12.2.0 64-bit, `packages: [tmux, ncdu]`, from the
+[recipe matrix](../60-testing/ci.md#recipe-sizes) on 2026-10-04:
 
 ```
-unpacked 01-core.sb + 01-firmware.sb + 02-xorg.sb + 03-desktop.sb + 04-apps.sb + 05-chromium.sb
-delta: 72 added, 31 modified, 43 kept after exclusions
-dpkg fragment: 3 package(s) declared (merged into 98-dpkg-db.sb at pack time)
-built slax/modules/07-extras.sb (592 KiB, 32 files)
+unpacked 01-core.sb + 01-firmware.sb + 02-xorg.sb + 03-desktop.sb + 04-apps.sb + 05-chromium.sb as the build root
+verified installed: tmux, ncdu
+delta: 77 added, 38 modified, 54 kept after exclusions
+dpkg fragment: 4 package(s) declared (merged into 98-dpkg-db.sb at pack time)
+built slax/modules/07-extras.sb (660 KiB, 42 files)
 ```
 
 The bundle carries `usr/bin/tmux`, `usr/bin/ncdu`, their dpkg `.list` files, and a fragment naming
-the three packages it added. It carries **no `var/lib/dpkg/status`** — `pack` merges the fragment
-into `98-dpkg-db.sb`, giving 603 packages against `05-chromium`'s 600. Booted: livekit mounts the
-bundle and reaches `Live Kit done, starting slax`.
+the four packages apt installed: `tmux`, `ncdu`, `libevent-core-2.1-7`, and a security update to the
+`libevent-2.1-7` that `05-chromium` already records. It carries **no `var/lib/dpkg/status`** —
+`pack` merges the fragment into `98-dpkg-db.sb`, giving 603 packages against `05-chromium`'s 600.
+Booted: livekit mounts the bundle and reaches `Live Kit done, starting slax`.
 
 > This recipe used to build from `01-core` alone and ship a 299-package `status` that outranked
 > `05-chromium`'s 600, so a fully loaded image lost about three hundred packages from dpkg's view,
@@ -71,11 +74,11 @@ bundle and reaches `Live Kit done, starting slax`.
 
 This is worth stating precisely, because the reason is **not** that it fails.
 
-**It works.** Against `slax-64bit-slackware-15.0.4.iso` the same recipe installs `tmux`, produces a
-448 KiB bundle containing exactly the binary, its config, man page, doc and `pkgtools` entries, and
-the packed ISO boots with `modules/07-extras.sb` mounted last, handing off to
-`INIT: version 3.08 booting`. `slackpkg` is official Slackware (it ships in the `ap` series), as are
-`pkgtools`.
+**It works.** Tried on 2026-09-13 (`96e7466`) against `slax-64bit-slackware-15.0.4.iso`, the same
+recipe installed `tmux`, produced a 448 KiB bundle containing exactly the binary, its config, man
+page, doc and `pkgtools` entries, and the packed ISO booted with `modules/07-extras.sb` mounted
+last, handing off to `INIT: version 3.08 booting`. `slackpkg` is official Slackware (it ships in the
+`ap` series), as are `pkgtools`.
 
 It is unsupported because of two properties we cannot fix from here:
 
@@ -100,7 +103,7 @@ piece of it is load-bearing on **both** flavours:
 
 | Kept | Why |
 |---|---|
-| **`_installed()` verification** | **The most valuable thing the Slackware experiment produced.** A package manager can report success while installing nothing: slackpkg exits 0 after silently declining its own confirmation prompt, and the verb cheerfully built a 4 KiB "successful" bundle containing no packages. Verifying against the package database turns that from silent into loud. Costs nothing on Debian; keep it forever. |
+| **`_installed()` verification** | **The most valuable thing the Slackware experiment produced.** A package manager can report success while installing nothing: slackpkg exits 0 after silently declining its own confirmation prompt, and on 2026-09-13 the verb cheerfully built a 4 KiB "successful" bundle containing no packages. Verifying against the package database turns that from silent into loud. Costs nothing on Debian; keep it forever. |
 | `yes` on stdin | Gets past slackpkg's `-current` confirmation, which `-batch=on` does not cover. |
 | Dead-repo pruning | `slackonly.com` is NXDOMAIN and hardcoded in Slax 15.0.4, so `slackpkg update` fails on a stock image without it. |
 | `mirror:` field | Lets someone pin a stable mirror if they take this on. |

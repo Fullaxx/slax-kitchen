@@ -87,11 +87,14 @@ Renaming the **directory** is the thing that has consequences, and this recipe d
 ## Checksums are written after mastering
 
 Necessarily — the checksum of an image cannot live inside that image. `kitchen pack` writes it next
-to the output once the ISO exists:
+to the output once the ISO exists. From `kitchen build` on 2026-10-04, of the `example` profile with
+`iso-identity` added; pack prints the image's path in full, shortened here:
 
 ```
-ok   wrote out/slax-example-12.2.0.iso  (415 MiB)
+ok   wrote out/slax-example-12.2.0.iso  (423 MiB)
+note: xorriso uppercased the application id to SLAX
 ok   wrote out/slax-example-12.2.0.iso.sha256
+ok   wrote out/slax-example-12.2.0.iso.provenance.json
 ```
 
 The filename inside is **relative**, so verification works from the output directory regardless of

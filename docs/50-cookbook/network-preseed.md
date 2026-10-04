@@ -1,7 +1,7 @@
 # `network-preseed` — ship a Wi-Fi network
 
 **Status: artifact boot-verified** — built and structurally asserted on all four
-targets; then booted under QEMU with [`testkit`](testkit.md), which confirmed the ConnMan provisioning file reached the union (201 bytes).
+targets; then booted under QEMU with [`testkit`](testkit.md) on 2026-09-14, which confirmed the ConnMan provisioning file reached the union (201 bytes).
 **Runtime behaviour is still untested** — that the file is correct is not the same as
 the feature working, and the difference needs a full desktop boot.
 

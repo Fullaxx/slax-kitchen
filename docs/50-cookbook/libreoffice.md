@@ -11,7 +11,8 @@ Zero configuration. Debian only.
 
 ## Measured
 
-LibreOffice **7.4.7-1+deb12u14**, built on both Debian targets:
+LibreOffice **7.4.7-1+deb12u14**, built on both Debian targets by the
+[recipe matrix](../60-testing/ci.md#recipe-sizes) on 2026-10-04:
 
 | | 64-bit | 32-bit |
 |---|---|---|
@@ -20,9 +21,10 @@ LibreOffice **7.4.7-1+deb12u14**, built on both Debian targets:
 | files | 7,065 | 7,152 |
 | ISO | 416 → **532 MiB** | 416 → **539 MiB** |
 
-Installed size of the 64-bit delta is 408 MB.
+When the recipe was written, on 2026-09-15 (`519d0e2`), the 64-bit delta's installed size was
+408 MB, and the bundle the same 116 MiB.
 
-It compresses about 3.4:1 under xz (408 MB is 389 MiB, against 116 MiB of bundle), which is why it
+So it compresses about 3.4:1 under xz (408 MB is 389 MiB, against 116 MiB of bundle), which is why it
 costs less on the ISO than the firmware refresh plus a browser.
 
 ## The two choices, and why
@@ -31,7 +33,7 @@ Neither is the one you would guess, so both are worth reading before you copy th
 
 ### 1. Three applications, not the `libreoffice` metapackage — and not for size
 
-Measured, the same way as everything else here:
+Measured on `debian-64bit-12.2.0` on 2026-09-15 (`519d0e2`):
 
 | set | bundle | packages |
 |---|---|---|

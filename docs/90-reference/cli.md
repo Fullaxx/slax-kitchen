@@ -438,7 +438,8 @@ exists. Pick another number` — which is true, unhelpful, and points at the wro
 
 What changed between two images — identity, boot structure, and every entry. Where `probe` asks
 "is this a known release, and has it been modified?", `diff` answers "what is the difference between
-**these two**?", which is the question you have when both are yours.
+**these two**?", which is the question you have when both are yours. Captured on 2026-09-14
+(`20e82bd`), when the command was written:
 
 ```
 $ kitchen diff isos/slax-64bit-debian-12.2.0.iso out/custom.iso

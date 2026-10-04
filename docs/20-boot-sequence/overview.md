@@ -83,7 +83,9 @@ flavour-agnostic even though the init systems are not.
 
 ## Timings
 
-Rough, on a 2 GHz machine from a USB 3 stick:
+**Rough, and recorded nowhere as a measurement.** They were written with this page on 2026-09-13
+(`f3f727f`), for a 2 GHz machine booting from a USB 3 stick. The settings and sizes beside them are
+the stock image's:
 
 | | |
 |---|---|
@@ -97,6 +99,9 @@ Rough, on a 2 GHz machine from a USB 3 stick:
 
 `find_data` dominates when it goes wrong, because it retries for a full 45 seconds before failing.
 Everything else is bounded.
+
+Under KVM the livekit stages are measured, one by one, in
+[Tier C](../60-testing/tier-c.md#per-stage-under-kvm).
 
 ## Observing it
 

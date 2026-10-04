@@ -22,20 +22,21 @@ Nothing exotic is needed to fix it. The stock `/etc/apt/sources.list` already ca
 
 ## Measured
 
-Built on debian-64bit, 2026:
+Built on `debian-64bit-12.2.0` on 2026-10-04, with the removal listed first. The version is the
+one `bookworm-security` carried that day:
 
 | | |
 |---|---|
 | before | `05-chromium.sb`, chromium **117.0.5938.149**, 79 MiB |
-| after | `10-chromium.sb`, chromium **152.0.7977.82-1~deb12u1**, 114 MiB |
+| after | `10-chromium.sb`, chromium **154.0.8037.92-1~deb12u1**, 116 MiB |
 | packages declared | 20 |
 
 The bundle is larger because the 22 media and crypto libraries that came with the old Chromium
 left with it, and the new bundle carries current versions of all of them.
 
-Those figures are from a build with the removal listed first. Applied on its own the ISO is
-**526 MiB** (2026-09-17) — the 2023 bundle stays, and this bundle is smaller because apt finds its
-libraries already installed.
+Applied on its own, the [recipe matrix](../60-testing/ci.md#recipe-sizes) measured the ISO at
+**528 MiB** on 2026-10-04: the 2023 bundle stays, and this bundle is smaller, 113 MiB with four
+packages declared, because apt finds its libraries already installed.
 
 ## Pair it with a removal, listed first
 

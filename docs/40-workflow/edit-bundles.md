@@ -133,8 +133,8 @@ losing to a user's saved session, which is almost always what you want.
 
 ## Slackware is a different animal
 
-The Debian path is straightforward. Slackware needed four separate fixes, all of them cases where
-something reported success while doing nothing:
+The Debian path is straightforward. Slackware needed four separate fixes, found on 2026-09-13
+(`a0158bc`), all of them cases where something reported success while doing nothing:
 
 **1. `-batch=on` does not silence every prompt.** The stock mirror is `slackware64-current` while the
 base reports `15.0+`, so slackpkg asks *"Is this really what you want?"*. With no stdin it takes the

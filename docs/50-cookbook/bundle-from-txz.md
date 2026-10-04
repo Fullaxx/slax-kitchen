@@ -1,7 +1,8 @@
 # `bundle-from-txz` — install Slackware packages, properly
 
 **Status: matrix-verified** — `nano` and `rsync` fetched from a pinned 15.0 mirror and installed with
-`installpkg` on Slackware 64-bit; resulting bundle 1.1 MiB, 143 files, package database updated.
+`installpkg` on Slackware 64-bit; resulting bundle 1.1 MiB, 143 files, package database updated
+(the [recipe matrix](../60-testing/ci.md#recipe-sizes), 2026-10-04).
 
 ```sh
 kitchen apply bundle-from-txz
@@ -80,14 +81,15 @@ Do **not** reach for `--no-check-certificate` instead. This script installs code
 root on every boot of every image built from it.
 
 **Deliberate side effect:** `/etc/ssl/cert.pem` lands in the delta, so the built bundle carries a
-working CA store and the resulting image has working TLS. 218 KiB for a fix to something genuinely
-broken is a good trade.
+working CA store and the resulting image has working TLS. 213 KiB (2026-10-04, on 64-bit) for a fix
+to something genuinely broken is a good trade.
 
 ## What lands in the bundle
 
 `bundle.script` packages **added and modified** files, never names alone — a filename-only diff
 would miss `/var/log/packages/*`, and a bundle without those entries leaves the new binaries
-invisible to the package database.
+invisible to the package database. From the recipe matrix on 2026-10-04, on
+`slackware-64bit-15.0.4`:
 
 ```
 delta: 204 added, 38 modified, 235 kept after exclusions

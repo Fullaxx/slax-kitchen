@@ -37,11 +37,14 @@ and a handful more — so entire classes are absent from early boot while sittin
   modules: [nbd]
 ```
 
+From the [recipe matrix](../60-testing/ci.md#recipe-sizes) on 2026-10-04, on `debian-64bit-12.2.0`:
+
 ```
 module pool: 01-core.sb (4,777 files)
+unpacked initrfs.img (583 files, 184 dirs, 7 device nodes preserved)
 initramfs: + lib/modules/6.1.38/kernel/extra/nbd.ko
 module directory read from the tree: 6.1.38
-repacked initrfs.img  8,872,472 -> 8,882,836 bytes (+10,364)
+repacked initrfs.img  8,872,472 -> 8,883,932 bytes (+11,460)
 ```
 
 Nothing external is needed, and the module is **guaranteed to match the running kernel's ABI** —

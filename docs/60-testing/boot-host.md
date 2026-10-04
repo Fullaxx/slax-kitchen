@@ -169,7 +169,7 @@ whose absence for thirty seconds means the same thing. Either one sends `SIGTERM
 run's whole process group — qemu is in it — then `SIGKILL` ten seconds later, and removes
 the run directory.
 
-Measured, with a real guest up on the boot host:
+Measured 2026-09-19 (`c1e65a3`), with a real guest up on the boot host:
 
 | what was done here | what happened there |
 |---|---|

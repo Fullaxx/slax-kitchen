@@ -75,6 +75,22 @@ column was the weekly CI run's shape until the boot job opened the runner's `/de
 every boot in it matched the golden generated under KVM — which is what a golden about an
 artifact ought to do.
 
+<a id="per-stage-under-kvm"></a>
+**Per stage, under KVM**, measured 2026-10-04 at `c2b3113`: three direct-kernel boots of the
+`boot-matrix` image on a KVM host, `kitchen test <ISO> --kernel`, read from its `first seen`
+line ([#87](https://github.com/Fullaxx/slax-kitchen/issues/87)). That line counts from qemu's
+start, and the harness polls every half second, so each time is when the line was first
+*seen*: it was printed up to half a second before. The three boots gave the same times:
+
+| livekit's line | first seen |
+|---|---|
+| `Looking for slax data` | 3.7 s |
+| `Mounting bundles` | 3.7 s, the same poll: `find_data` found the CD at once |
+| `Live Kit done, starting slax` | 4.2 s |
+
+So everything before livekit looks for its data takes under 3.7 s: qemu's start, the kernel,
+the initramfs and `modprobe_everything`. Finding and mounting the bundles takes under a second.
+
 Everything here runs on **any KVM-capable Linux host** with `qemu-system-x86_64`,
 `qemu-img`, `xorriso`, `e2fsprogs` and OVMF. Nothing is specific to a particular machine,
 and nothing about the machine ends up in the repository.
@@ -135,7 +151,8 @@ firmware before GRUB draws anything, and GRUB's five-second default window had o
 shut by fourteen. A two-second lead worked on the KVM host and would have failed every CI
 run, all of them under TCG then. So `uefi-bootable` gained a `menu_timeout` variable,
 `boot-matrix` asks for 30 seconds of it, and the harness waits 10 — one lead that is correct
-under both. Verified under TCG in an unaccelerated container: 22 s to all three markers.
+under both. Verified under TCG in an unaccelerated container on 2026-09-16 (`bd6a3e6`): 22 s
+to all three markers.
 
 **The console order.** `serial-console` used to end `console=ttyS0 console=tty0`.
 `/dev/console` is the *last* `console=`, so userspace wrote to the screen and the serial
@@ -177,9 +194,10 @@ read-only. That is why this attaches a second device rather than writing to the 
 | `slackware-64bit-15.0.4` | ok | ok | ok | **FAIL** |
 | `slackware-32bit-15.0.4` | ok | ok | ok | **FAIL** |
 
-**296 s wall clock for all four**, measured, with KVM and a 60 s ceiling: about 45 s for a
-target whose four paths all pass, and about 100 s for one where persistence boot 2 burns
-the ceiling. The hang is the expensive case, which is the right way round.
+**296 s wall clock for all four**, measured 2026-09-16 (`494d173`), with KVM and a 60 s
+ceiling: about 45 s for a target whose four paths all pass, and about 100 s for one where
+persistence boot 2 burns the ceiling. The hang is the expensive case, which is the right way
+round.
 
 **Persistence boot 2 wedges on both Slackware targets and passes on both Debian ones** —
 [issue #15](https://github.com/Fullaxx/slax-kitchen/issues/15). Boot 1 mounts the device,

@@ -81,6 +81,9 @@ One download per build. `boot.payload` and `bundle.fromTarball` do not cache, so
 tarballs you pay each fetch on every target — which in CI means four times. Prefer one archive with
 several extractions over several archives where the choice exists.
 
+Measured 2026-10-04: the download is fzf 0.74.4's tarball as served that day, and the bundle is
+from the [recipe matrix](../60-testing/ci.md#recipe-sizes) on `debian-64bit-12.2.0`:
+
 | | |
 |---|---|
 | download | 2.2 MiB |

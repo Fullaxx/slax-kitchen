@@ -26,7 +26,9 @@ recipes:
 ```
 
 > **CI builds this weekly, not on every push.** The tarball is an external dependency with a pinned
-> sha256, so a Tor Browser release fails the build *by design*. Running it per-push would turn the
+> sha256, so a Tor Browser release fails the build *by design*. The 15.0.24 tarball is 138 MB
+> (137,930,492 bytes on 2026-10-04), a figure `ci/slow-recipes.txt` prints as the matrix's skip
+> reason: a version bump that moves one moves both. Running it per-push would turn the
 > Tor Project shipping a security update into a red master. `ci/upstream-watch.sh` checks the
 > version every Monday and files an issue instead. See [ci.md](../60-testing/ci.md).
 
@@ -116,12 +118,12 @@ written**.
 
 ### ⚠️ Budget the RAM
 
-That state reached **39 MiB** after a single launch. Without persistence the union's writable
-branch is RAM, so it is 39 MiB of memory that the running system does not get — more as you
-browse, because the cache lives there too. On a 2 GiB machine this is fine; on a 512 MiB one it is
-not. Boot with [perch](../10-anatomy/union-and-persistence.md) if you want the profile to survive,
-which for Tor Browser also means your bookmarks and your `torrc` survive — decide whether you want
-that before enabling it.
+That state reached **39 MiB** after a single launch, measured 2026-09-17 (`bcd4f00`). Without
+persistence the union's writable branch is RAM, so it is 39 MiB of memory that the running system
+does not get — more as you browse, because the cache lives there too. On a 2 GiB machine this is
+fine; on a 512 MiB one it is not. Boot with [perch](../10-anatomy/union-and-persistence.md) if you
+want the profile to survive, which for Tor Browser also means your bookmarks and your `torrc`
+survive — decide whether you want that before enabling it.
 
 ## Permissions: why `world_readable: true` is not tidiness
 

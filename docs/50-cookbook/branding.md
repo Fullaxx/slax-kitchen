@@ -24,7 +24,8 @@ vars:
 ## Override, don't edit
 
 All three live in `01-core.sb`. The recipe does **not** unpack and repack that 122 MiB bundle to
-change three text files — it builds a 4 KiB `07-branding.sb`, and load order does the rest:
+change three text files — it builds a 4 KiB `07-branding.sb` (in the
+[recipe matrix](../60-testing/ci.md#recipe-sizes) of 2026-10-04), and load order does the rest:
 
 ```
 branch 0   changes            (writable)

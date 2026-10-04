@@ -16,7 +16,10 @@ No Slax image ships a second browser. `firefox-esr` is in Debian proper — no v
 signing key — and it is genuinely built for **i386 as well as amd64**, which is rare enough among
 browsers to matter on a distribution that still ships 32-bit images.
 
-Measured: **140.15.0esr-1~deb12u1**, a 73 MiB `.deb`, producing a bundle of about 78 MiB.
+Measured 2026-10-04: **153.4.0esr-1~deb12u1**, the version `bookworm-security` carried that day, is
+a 76.1 MiB `.deb` on amd64 and 79.6 MiB on i386. The [recipe
+matrix](../60-testing/ci.md#recipe-sizes) built it into an 81.3 MiB bundle on `debian-64bit-12.2.0`
+and 85.7 MiB on `debian-32bit-12.2.0`.
 
 Contrast with Brave, Chrome, Edge and Vivaldi, which are distributed only through vendor apt
 repositories and therefore need `apt.sources` — see [`bundle.packages`](../90-reference/verbs.md).
@@ -26,7 +29,8 @@ that cannot launch.
 
 ## This recipe is where `from:` is easiest to see
 
-The same YAML, three bundle sets, all correct:
+The same YAML, three bundle sets, all correct. Measured on `debian-64bit-12.2.0`: rows 1 and 2 on
+2026-09-14 (`d0f48e8`), with `140.15.0esr`, and row 3 on 2026-09-15 (`7ab6793`):
 
 | beneath it | bundle | packages declared |
 |---|---|---|
@@ -44,8 +48,8 @@ the default resolves to once it exists — no ordering declaration needed.
 > **Row 3 read `5` until [#2](https://github.com/Fullaxx/slax-kitchen/issues/2) was fixed**, because
 > a build chroot never merged the status fragments of the add-on bundles beneath it — so `apt` read
 > `04-apps.sb`'s 575 packages and believed `10-chromium.sb` had installed nothing. The size did not
-> change (79,648 KiB before and after, on `debian-64bit-12.2.0`): the files were always right, and
-> it was the *declaration* that was wrong by two packages.
+> change (79,648 KiB before and after, on `debian-64bit-12.2.0`, 2026-09-15): the files were always
+> right, and it was the *declaration* that was wrong by two packages.
 >
 > **Three, not two.** Row 1 is not the target to match, and it is worth seeing why. Firefox now
 > declares `firefox-esr`, `libevent-2.1-7` and `libvpx7`. Stock `05-chromium` carries

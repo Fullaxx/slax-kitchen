@@ -35,11 +35,11 @@ steps:
   #   with 05-chromium removed   the same YAML pulls that runtime in itself
   #                              -> 81,004 KiB, 5 packages declared
   #
-  # Measured, not estimated -- and note it is only 1.9%. Firefox's own payload dominates,
-  # so `from:` is not a size knob here. What it actually decides is whether this bundle
-  # still works if someone removes 05-chromium later. Both are correct, and the status
-  # fragment merges correctly either way; leaving `from:` unset means "whatever is
-  # actually below me", which is the right default.
+  # Measured on 2026-09-14, not estimated -- and note it is only 1.9%. Firefox's own
+  # payload dominates, so `from:` is not a size knob here. What it actually decides is
+  # whether this bundle still works if someone removes 05-chromium later. Both are
+  # correct, and the status fragment merges correctly either way; leaving `from:` unset
+  # means "whatever is actually below me", which is the right default.
   - verb: bundle.packages
     bundle: "{{bundle}}"
     packages: [firefox-esr]

@@ -76,12 +76,12 @@ less the little this bundle saves by finding its runtime already installed.
 Both estimates landed, and both landed at the **top** of their range — which is what the reasoning
 below predicted they would do.
 
-[composing-bundles](../40-workflow/composing-bundles.md) independently predicts **1.0–1.2 GB for a
-seven-browser image**, written before this recipe existed. Two calculations with no shared inputs
-landing in the same band is worth something — but note it lands at the *top* of it, which is what you
-would expect, since Edge alone is 640.5 MiB installed today against the 564 MiB that prediction
-assumed. Browser binaries hold more already-compressed data than an office suite, so the real number
-is more likely above this range than below it.
+[composing-bundles](../40-workflow/composing-bundles.md) independently predicted **1.0–1.2 GB for a
+seven-browser image** on 2026-09-14, before this recipe existed. Two calculations with no shared
+inputs landing in the same band is worth something — but note it lands at the *top* of it, which is
+what you would expect, since Edge alone was 640.5 MiB installed on 2026-09-16, against the 564 MiB
+that prediction assumed. Browser binaries hold more already-compressed data than an office suite, so
+the real number is more likely above this range than below it.
 
 Both documented ceilings still hold, with roughly 3× headroom: under 4 GiB for a single `.sb`, and
 under 4 GiB for the ISO to sit on a FAT32 stick as a file. **`toram` does not.** It copies the whole
@@ -206,17 +206,18 @@ one-word change per source if that failure is ever seen. See
 Base — see [`libreoffice`](libreoffice.md). Doing the same check here: **the four vendor packages
 declare no `Recommends:` at all.** `fonts-liberation`, `libvulkan1`, `xdg-utils`, `wget` and
 `ca-certificates` are hard `Depends:` on all four, so nothing is silently dropped. Every real gap is
-on the Debian side, and three are named explicitly:
+on the Debian side, and three are named explicitly. The two that cost real space are sized in
+[`debian-browsers`' measurements](debian-browsers.md#measured):
 
 - **`chromium-sandbox`** — a `Recommends` of `chromium`, and its entire content is the setuid sandbox
   helper. Without it Chromium runs with no sandbox. `bundle.packages` preserves setuid correctly
   (`chmod` after `chown`, because the kernel clears the bit on `chown`), so it survives the pack.
-- **`libavcodec59`** — a `Recommends` of `firefox-esr` and its only route to H.264 and AAC, 14.3 MiB.
+- **`libavcodec59`** — a `Recommends` of `firefox-esr` and its only route to H.264 and AAC.
   The five Chromium-family browsers ship their own codecs, so this buys playback for Firefox alone. A
   browser that silently cannot play video is exactly the failure this project refuses to ship. The
   `Recommends` is a 20-way alternation; `59` is the one bookworm actually has, and
   `libavcodec-extra59` adds encoders nobody needs in order to browse.
-- **`libgl1-mesa-dri`** — a `Recommends` of `chromium-common`, 24.6 MiB. Without it every
+- **`libgl1-mesa-dri`** — a `Recommends` of `chromium-common`. Without it every
   Chromium-family browser here falls back to llvmpipe. Whether `02-xorg` already carries it is
   **unverified**; if it does, apt sees it installed and the line costs nothing, which is why naming it
   is safe either way.

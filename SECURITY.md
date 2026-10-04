@@ -71,7 +71,7 @@ a 2023 image is better served by knowing than by not:
 
 - **The shipped browser is three years old.** Both flavours carry chromium
   **117.0.5938.149** (September 2023); the `bookworm-security` suite the image already points at
-  now offers **152.0.7977.82**. A live system is mostly used for browsing, so this is the largest
+  carried **154.0.8037.92** on 2026-10-04. A live system is mostly used for browsing, so this is the largest
   attack surface in the image and the one with the shortest security half-life. The
   `chromium-current` recipe replaces it on Debian; on Slackware there is no supported route, and
   `remove-bundle` is the honest fallback.

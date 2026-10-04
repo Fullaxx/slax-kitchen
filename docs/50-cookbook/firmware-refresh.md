@@ -76,14 +76,16 @@ and `wireless-regdb`.
 ## What it adds
 
 Two new bundles. `01-firmware.sb` is not modified: it stays byte-identical to the one Slax shipped.
+Measured 2026-10-04 by the [recipe matrix](../60-testing/ci.md#recipe-sizes), on both Debian
+targets:
 
 | bundle | from | size |
 |---|---|---|
 | `09-firmware-debian.sb` | 16 bookworm packages, installed as Debian ships them, and 10 stock packages reinstalled | 48.8 MiB, 2,118 files |
 | `09-firmware-linux.sb` | 53 linux-firmware files and 8 links, their 11 license files and `WHENCE` | 5.4 MiB, 73 entries |
 
-**Cost: the ISO goes from 416 MiB to 469 MiB.** Identical on both word sizes, because firmware
-packages are architecture-independent.
+**Cost, on 2026-10-04: the ISO goes from 416 MiB to 470 MiB.** Identical on both word sizes, because
+firmware packages are architecture-independent.
 
 **`09-firmware-debian.sb` is built with apt.** The verb stacks every bundle below it into a chroot,
 runs
@@ -97,10 +99,10 @@ and keeps only what the install added or changed on disk. Sixteen of the package
 image. The other ten are Slax's own, already installed at the version bookworm still carries, so a
 plain install would skip them. `--reinstall` unpacks them again: their firmware comes back identical
 and stays out of the bundle, and what lands is what Slax's build had deleted — their `copyright`
-files. Measured contents: 1,971 firmware entries (307 MiB unpacked), 57 files under
-`/usr/share/doc`, 58 dpkg records, and 32 others — alternatives links, man pages, AppStream,
-bug-report and lintian metadata, `atmel_fwl` and its config, and the package-status fragment
-`kitchen pack` merges into `98-dpkg-db.sb`.
+files. Measured contents, 2026-09-17 (`0570fc7`): 1,971 firmware entries (307 MiB unpacked), 57
+files under `/usr/share/doc`, 58 dpkg records, and 32 others — alternatives links, man pages,
+AppStream, bug-report and lintian metadata, `atmel_fwl` and its config, and the package-status
+fragment `kitchen pack` merges into `98-dpkg-db.sb`.
 
 **`09-firmware-linux.sb` is not apt.** A script fetches only files no Debian package ships, each
 pinned by sha256, and refuses any path that already exists below it — see
@@ -191,7 +193,8 @@ each license covers. The step refuses any path that already exists below its bun
 when there is one, is the only copy. The bundle names are chosen for that: `09-firmware-debian` sorts
 before `09-firmware-linux`, so the linux-firmware step builds on top of everything Debian installed.
 
-**Fetched per file, pinned per file.** The release tarball is 662 MB for these 65 files. Mirrors are
+**Fetched per file, pinned per file.** The release tarball of the pinned tag, `20260916`, is 662 MB
+(2026-10-04) for these 65 files. Mirrors are
 tried in order — GitLab, linux-firmware's own home, then `git.kernel.org`, which answered 503 to a
 burst of requests while the list was measured — and the sha256 in the recipe is the authority. A file
 no mirror serves, or one that fails its hash, fails the build; both refusals were run once and read:

@@ -114,16 +114,11 @@ yours, and that default is right almost always.
   depends on those bundles staying on the ISO.
 - **Shorter stack** → a self-contained bundle that survives its neighbours being removed.
 
-**The dial is mostly about correctness and removability, not size.** Measured, building
-`firefox-esr` two ways on debian-64bit:
-
-| `05-chromium` beneath it | bundle | packages declared |
-|---|---|---|
-| present | 79,480 KiB | 2 |
-| absent | 81,004 KiB | 5 |
-
-1.9% — Firefox's own payload dominates, and the shared runtime it can borrow is small beside it.
-Do not choose `from:` for the megabytes.
+**The dial is mostly about correctness and removability, not size.**
+[`firefox-esr`](../50-cookbook/firefox-esr.md#this-recipe-is-where-from-is-easiest-to-see) measured
+the same recipe built on three different stacks, and its bundle barely moved: Firefox's own payload
+dominates, and the shared runtime it can borrow is small beside it. Do not choose `from:` for the
+megabytes.
 
 Choose it for the other two. Name a shorter stack casually and `apt` installs a second copy of
 libraries that already exist lower down; because your bundle is higher, *your* copies win — a
@@ -189,9 +184,10 @@ Tor Browser is the exception worth knowing before you try: `torbrowser-launcher`
 The actual browser arrives on first run, over the network, at runtime. It cannot be baked into a
 bundle without pre-seeding the user profile, and an offline boot gets a launcher that cannot launch.
 
-Sizes are real and they add up. Chromium alone is 79 MiB compressed and 223 MB installed; Firefox
-ESR's `.deb` is 73 MiB before installation. A seven-browser image lands around 1.0–1.2 GB, against
-a 416 MiB stock ISO.
+Sizes are real and they add up. The stock Chromium alone is a 79 MiB bundle, and its `chromium`
+package is 218 MiB installed. Before [`all-browsers`](../50-cookbook/all-browsers.md#the-iso)
+existed, this page predicted, on 2026-09-14 (`23561ba`), that a seven-browser image would land
+around 1.0–1.2 GB against a 416 MiB stock ISO. That page has what was measured.
 
 ### Ceilings nothing else documents
 

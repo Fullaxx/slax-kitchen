@@ -56,8 +56,10 @@ after the others, and one that lands on a path another entry wrote is refused.
 | staging the file where git ignores it, and `bundle.files` `src:` | a build step of the project's own to fetch the file first, and a pin only if that step checks one; `kitchen sources` lists it, pointing at its source if the entry gives `upstream_source:` |
 
 [A file the build downloads](../90-reference/verbs.md#a-file-the-build-downloads) has the whole
-comparison. Measured for #59 with a Notepad++ installer: the image built with the `bundle.script`
-route took 9 s, and the same image with a one-file `bundle.files` step took 2 s.
+comparison. Measured in the development container on 2026-09-26, when
+[#59](https://github.com/Fullaxx/slax-kitchen/issues/59) was filed, with a Notepad++ installer: the
+image built with the `bundle.script` route took 9 s, and the same image with a one-file
+`bundle.files` step took 2 s.
 
 ## Both arches, one step each
 
@@ -72,8 +74,11 @@ One download per build — `url:` entries are not cached — and in CI it is bui
 every push, since github.com is outside this repository; the fetch itself is tested in-process on
 every push. See [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt).
 
+Measured 2026-10-04: the downloads are jq 1.8.2's binaries as served that day, and the bundles are
+from the [recipe matrix](../60-testing/ci.md#recipe-sizes) on the two Debian targets:
+
 | | |
 |---|---|
 | download | 2.2 MiB (amd64), 2.1 MiB (i386) |
-| bundle | 708 KiB (amd64) |
+| bundle | 708 KiB (amd64), 660 KiB (i386) |
 | files | 1 |

@@ -103,6 +103,6 @@ points.
 - **No `depmod`, no `ldconfig`** — the initramfs has neither. Static, self-contained, or it does not
   run.
 - **Size costs boot time.** The image is read into RAM before anything executes; the shipped one is
-  8.5 MiB compressed and 43.5 MiB unpacked.
+  8.5 MiB compressed and 43.5 MiB unpacked on `debian-64bit-12.2.0`.
 - **Not for kernel modules** — use [`initramfs-add-modules`](initramfs-add-modules.md), which puts
   them in the version-specific directory and can pull them out of a bundle.

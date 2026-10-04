@@ -37,7 +37,8 @@ copies the tzfile. That is correct on Slackware by convention and accepted on De
 
 The tzfile comes from the **build host's** `/usr/share/zoneinfo`, not the image's. The image does
 carry zoneinfo (900 files on Debian, 1866 on Slackware), but a recipe cannot reference a path
-inside the tree it is building. It is 2.3 KiB, and the tzfile format has been stable for decades.
+inside the tree it is building. `Europe/Prague`, the default, is 2,301 bytes from Ubuntu 24.04's
+tzdata 2026b (2026-10-04), and the tzfile format has been stable for decades.
 
 Each flavour also gets its companion file: `/etc/timezone` on Debian, `/etc/hardwareclock` on
 Slackware. The latter is left saying `localtime`, meaning the RTC holds local time rather than UTC —

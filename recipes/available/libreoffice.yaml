@@ -21,8 +21,8 @@ steps:
   # TWO CHOICES HERE ARE DELIBERATE, and neither is the one you would guess.
   #
   # 1. THREE APPLICATIONS, NOT THE `libreoffice` METAPACKAGE -- and NOT for size.
-  #    Measured on debian-64bit: this set is 116.2 MiB and the metapackage is 129.0
-  #    MiB. Thirteen megabytes is not worth a decision.
+  #    Measured on debian-64bit on 2026-09-15: this set is 116.2 MiB and the
+  #    metapackage is 129.0 MiB. Thirteen megabytes is not worth a decision.
   #
   #    The real reason is that the metapackage gives you a Base THAT CANNOT OPEN A
   #    DATABASE. Base needs a JRE, and `default-jre` is a Recommends rather than a

@@ -72,7 +72,7 @@ steps:
       # will run as root on every boot of every image built from it.
       # Side effect, and a deliberate one: /etc/ssl/cert.pem lands in the delta, so the
       # built bundle carries a working CA store and the resulting image has working TLS.
-      # 218 KiB for a fix to something genuinely broken is a good trade.
+      # 213 KiB (2026-10-04, on 64-bit) for a fix to something genuinely broken is a good trade.
       [ -s /etc/ssl/cert.pem ] || cat /etc/ssl/certs/*.pem > /etc/ssl/cert.pem
 
       # Add packages here. Each is <series>/<package-file>, exactly as it appears on the

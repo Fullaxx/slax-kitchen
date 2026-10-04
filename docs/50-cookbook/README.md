@@ -38,7 +38,7 @@ kitchen build <profile>             # fetch -> unpack -> apply* -> pack -> test
 | [`boot-cmdline`](boot-cmdline.md) | bake `toram` and friends into every entry; drop the broken `automount` | ○ |
 | [`host-grub-entry`](host-grub-entry.md) | a GRUB entry for booting Slax from a bootloader you already have | ○ |
 | [`iso-identity`](iso-identity.md) | label the image as yours, and write a verifiable checksum | ○ |
-| [`firmware-refresh`](firmware-refresh.md) | firmware so the ISO works on more hardware — Debian's plus what only linux-firmware has; +53 MiB | ◐ |
+| [`firmware-refresh`](firmware-refresh.md) | firmware so the ISO works on more hardware — Debian's plus what only linux-firmware has | ◐ |
 
 The first two fix real gaps in every stock image, and together produce one file that boots four
 ways: BIOS optical, UEFI optical, BIOS `dd`'d stick, UEFI `dd`'d stick.
@@ -68,7 +68,7 @@ to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
 | [`tor-browser`](tor-browser.md) | Tor Browser from a pinned tarball — 64-bit, runs as `guest`; pair it with `remove-bundle` | ◐ |
 | [`firefox-esr`](firefox-esr.md) | add the second browser no Slax image ships; amd64 **and** i386 | ◐ |
 | [`libreoffice`](libreoffice.md) | Writer, Calc, Impress and Draw | ◐ |
-| [`branding`](branding.md) | hostname, version string and login banner, from a 4 KiB override bundle | ○ |
+| [`branding`](branding.md) | hostname, version string and login banner, from a small override bundle | ○ |
 | [`bundle-from-dir`](bundle-from-dir.md) | pack a directory of your own files as a filesystem root | ○ |
 | [`bundle-from-tarball`](bundle-from-tarball.md) | fetch a published release tarball, verify it, pack it | ○ |
 | [`bundle-from-url`](bundle-from-url.md) | put one pinned download in a bundle — a static binary, an installer — with no chroot | ○ |
@@ -100,9 +100,9 @@ Cheapest first. Prefer the first one that solves your problem:
 
 | you want | use | cost |
 |---|---|---|
-| Slax to see a disk it currently cannot find | [`initramfs-add-modules`](initramfs-add-modules.md) | one repack, ~10 KiB |
+| Slax to see a disk it currently cannot find | [`initramfs-add-modules`](initramfs-add-modules.md) | one repack |
 | a config file, a script, an ssh key on the live system | [`rootcopy-overlay`](rootcopy-overlay.md) | **nothing** — copied in at boot |
-| extra software | [`add-packages`](add-packages.md) | one `mksquashfs`, ~450 KiB |
+| extra software | [`add-packages`](add-packages.md) | one `mksquashfs` |
 | a smaller image | [`remove-bundle`](remove-bundle.md) | one bundle deleted |
 | it to boot on a modern laptop | [`uefi-bootable`](uefi-bootable.md) | rebuild |
 | it on a USB stick via `dd` | [`isohybrid`](isohybrid.md) + `uefi-bootable` | rebuild |

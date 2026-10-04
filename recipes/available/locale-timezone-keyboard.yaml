@@ -35,7 +35,7 @@ steps:
   #                       /etc/localtime is the older but still supported form.
   #                       The source is the BUILD HOST's tzdata: the image carries
   #                       /usr/share/zoneinfo, but a recipe cannot reference a path
-  #                       inside the tree it is building. 2.3 KiB, and the tzfile format
+  #                       inside the tree it is building. A few KiB, and the tzfile format
   #                       has been stable for decades.
   #
   #   .fluxbox/kblayout   .fluxbox/startup runs `fbsetkb $(cat ~/.fluxbox/kblayout)`,

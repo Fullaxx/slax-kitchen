@@ -43,8 +43,8 @@ September 2023, so this is a large jump in a browser's worth of security fixes.
 | `firefox-esr` | 140.16.0esr-1~deb12u1 | 77.4 / 290.9 MiB | 73.3 / 272.2 MiB |
 | **total** | | **183.8 / 614.2 MiB** | **177.3 / 611.2 MiB** |
 
-Plus `libavcodec59` at 14.3 MiB and `libgl1-mesa-dri` at 26.2 MiB (i386) / 24.6 MiB (amd64)
-installed, both named deliberately — see below.
+Plus, on 2026-09-16, `libavcodec59` at 14.3 MiB and `libgl1-mesa-dri` at 26.2 MiB (i386) / 24.6 MiB
+(amd64) installed, both named deliberately — see below.
 
 ### Built — measured 2026-09-16
 
@@ -70,7 +70,8 @@ because the direction of the error is the useful part.
 Two things nobody predicted, both real: the 32-bit bundle is *larger* than the 64-bit one despite
 i386 binaries usually being smaller, and it declares one package fewer.
 
-Unlike [`all-browsers`](all-browsers.md) at 1227 MiB, `toram` stays practical here.
+Unlike [`all-browsers`](all-browsers.md#the-iso), more than twice the size, `toram` stays practical
+here.
 
 > **A gotcha, if you go looking for these versions yourself.** They are in **`bookworm-security`**,
 > not `bookworm` — main still carries chromium 150.0.7871.100 and firefox-esr 140.12.0esr. The
@@ -159,7 +160,8 @@ does not change.
   ship a `guest` user (uid 1000) purely to run the browser. Firefox is the exception. Nothing here
   changes who the desktop runs as.
 - **It does not give you Brave, Chrome, Edge or Vivaldi** — that is [`all-browsers`](all-browsers.md),
-  and it costs four vendor repositories in your image plus roughly another 600 MiB of ISO.
+  and it costs four vendor repositories in your image plus roughly another 670 MiB of ISO, going by
+  the two pages' measurements of 2026-09-16.
 - **It does not work on Slackware.** Slax's Slackware base is frozen while its `slackpkg` points at a
   mirror years ahead of it, so packages installed from it may not run. The supported route there is a
   pinned `.txz` through [`bundle-from-txz`](bundle-from-txz.md).

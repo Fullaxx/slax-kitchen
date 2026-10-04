@@ -34,7 +34,9 @@ libraries. VNC is compiled in separately and works. So on these machines **VNC i
 see a framebuffer at all**, and it happens to be the right answer for a server anyway: the ISO
 usually lives where you build it, and VNC tunnels over ssh.
 
-The launcher prints the tunnel command for you. Captured in the dev container, which has no KVM:
+The launcher prints the tunnel command for you. Captured on 2026-09-17 (`f8631aa`) in the dev
+container, which had qemu and no KVM. Three lines have been brought up to date since, as the
+program's own text changed (the last on 2026-10-01, `5c6321e`), and the host is a placeholder:
 
 ```console
 $ tools/qemu/boot.py out/slax-boot-matrix-debian-64bit-12.2.0.iso --bios
@@ -489,12 +491,14 @@ The default is 2048 MiB, which matches the test harness and is comfortable for a
 takes MiB, or a number with an `M` or `G` suffix.
 
 **"Run Slax from RAM" needs RAM at least the size of the ISO**, before the running system gets any.
-That is fine for a 560 MiB image and a real constraint for a big one:
+That is fine for most images and a real constraint for a big one. Each page has its image's size.
+These figures follow from that rule. They were written on 2026-09-16 (`2712c1f`), with no
+measurement recorded:
 
 | ISO | `toram` wants |
 |---|---|
-| [`debian-browsers`](../50-cookbook/debian-browsers.md), 560 MiB | `--mem 1536` and up |
-| [`all-browsers`](../50-cookbook/all-browsers.md), 1227 MiB | `--mem 3072` and up |
+| [`debian-browsers`](../50-cookbook/debian-browsers.md) | `--mem 1536` and up |
+| [`all-browsers`](../50-cookbook/all-browsers.md) | `--mem 3072` and up |
 
 Without `toram` the image is read from the virtual CD as it goes, and 2048 is plenty for either.
 
@@ -551,10 +555,12 @@ handles — `2` for a refusal or a usage error, and `128+N` if QEMU was killed o
 ## How fast
 
 KVM is used whenever the host has it, and the banner says which you got. The difference is large.
-Measured on the build host with the 1227 MiB `all-browsers` ISO, direct kernel boot, bisecting the
-harness budget: **all three livekit markers appear inside 5 seconds** with KVM. The same image under
-TCG in an unaccelerated container wants the harness's 150-second budget. Add the menu's own timeout
-to either figure when booting through it — 4 seconds for isolinux, 5 for GRUB by default.
+Measured on 2026-09-16 (`ca2f71b`) on a KVM host with the
+[`all-browsers`](../50-cookbook/all-browsers.md) ISO, direct kernel boot, by bisecting the harness
+budget: **all three livekit markers appeared inside 5 seconds** with KVM. The same image under TCG
+in an unaccelerated container needed the 150-second budget the harness had then. [Tier
+C](tier-c.md#kvm-vs-tcg) has the current per-boot figures. Add the menu's own timeout when booting
+through it — 4 seconds for isolinux, 5 for GRUB by default.
 
 So: with KVM this is an interactive tool. Without it, it is something you start and come back to.
 

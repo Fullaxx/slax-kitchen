@@ -102,11 +102,11 @@ So there is one binary to build, not four.
 
 ## The binary is not in this repository
 
-A 1.2 MB blob that runs as root at boot is exactly what should be built from pinned source rather
-than committed and forgotten. It lives in `build/`, which `.gitignore` keeps out.
-`ci/checks/00-no-binaries.sh` is not what keeps it out, and would not stop a forced add: it rejects by
-extension, directory and size, and this is an extensionless 1.2 MB file. Measured by staging it with
-`git add -f`: the gate passed.
+A 1.2 MB blob (the build of 2026-09-14, below) that runs as root at boot is exactly what should be
+built from pinned source rather than committed and forgotten. It lives in `build/`, which
+`.gitignore` keeps out. `ci/checks/00-no-binaries.sh` is not what keeps it out, and would not stop a
+forced add: it rejects by extension, directory and size, and this is an extensionless 1.2 MB file.
+Measured on 2026-09-17 (`51d39b5`) by staging it with `git add -f`: the gate passed.
 
 `tools/build-busybox.sh` builds it inside `i386/alpine`, in about 30 seconds on 2026-09-14,
 verifying upstream's published sha256 **before compiling a line**. The container is needed because
@@ -173,6 +173,8 @@ That is why this is a verb and not an `initramfs.files` entry.
    Leaving it gives a `catv` in `PATH` that fails at runtime rather than being absent. Upstream
    never had to think about this because it builds the tree from empty — this edits one in place.
 
+From the build of 2026-09-14 (`affbc4d`), on `debian-64bit-12.2.0`:
+
 ```
 busybox 739,784 -> 1,213,688 bytes, 248 -> 406 applets
 applets removed upstream: catv
@@ -199,4 +201,5 @@ says so plainly — and that is the same limitation a kernel without `CONFIG_IA3
 
 ## Cost
 
-The initramfs grows 8,872,472 → 9,152,792 bytes (**+280 KB**); the ISO stays 415 MiB.
+Measured 2026-09-14 (`affbc4d`) on `debian-64bit-12.2.0`: the initramfs grows 8,872,472 →
+9,152,792 bytes (**+280 KB**), and the ISO stays at the stock 416 MiB.

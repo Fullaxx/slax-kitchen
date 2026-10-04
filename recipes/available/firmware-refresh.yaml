@@ -105,7 +105,8 @@ steps:
   # bookworm package ships, and the script refuses any path that already exists below
   # this bundle -- so Debian's copy, when there is one, is the only copy.
   #
-  # FETCHED PER FILE, PINNED PER FILE. The release tarball is 662 MB for these 65 files.
+  # FETCHED PER FILE, PINNED PER FILE. The tag's release tarball is 662 MB (2026-10-04)
+  # for these 65 files.
   # GitLab is linux-firmware's own home and git.kernel.org carries the same tag; mirrors
   # are tried in order and sha256 is the authority, the rule lib/fetch.py follows.
   # git.kernel.org answered 503 to a burst of sequential requests while this list was

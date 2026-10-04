@@ -216,6 +216,8 @@ browsing, so the browser is the largest attack surface in the image, and it is t
 the shortest security half-life — Chromium ships a stable release roughly every four weeks, and
 several of those carry actively exploited zero-days.
 
+As found on 2026-09-14 (`d0f48e8`):
+
 ```
 $ # the image, on both flavours
   chromium 117.0.5938.149          September 2023
@@ -223,7 +225,8 @@ $ # Debian bookworm-security, same suite the image already points at
   chromium 152.0.7977.82-1~deb12u1
 ```
 
-Thirty-five major versions.
+Thirty-five major versions, and thirty-seven by 2026-10-04, when the suite carried
+`154.0.8037.92-1~deb12u1`.
 
 **Fix:** [`chromium-current`](../50-cookbook/chromium-current.md) on Debian. Nothing exotic is
 needed — the stock `/etc/apt/sources.list` already carries `bookworm-security`, so this is an
