@@ -1524,7 +1524,10 @@ def v_rootcopy_files(ctx: Ctx, step: dict) -> None:
     for spec in step["files"]:
         _under(root, spec["dest"], "rootcopy.files")
         if ctx.dry:
-            ctx.say(f"would place rootcopy/{spec['dest']}")
+            # The path in the tree, as the journal and rootcopy.preinit's dry run spell it. A
+            # dest is written /etc/motd, and joining it to "rootcopy/" printed
+            # rootcopy//etc/motd (#84).
+            ctx.say(f"would place slax/rootcopy/{spec['dest'].lstrip('/')}")
             continue
         # Both said here rather than by _place_files, whose answers offer `url:`, which
         # this verb does not take.
