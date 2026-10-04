@@ -206,7 +206,7 @@ Two files, both facts about the artifact:
 
 | | |
 |---|---|
-| `tests/boot/tier-c.json` | one row per boot: path, image name and size, markers seen, duration, result, and the accelerator and qemu version that booted it. [`ci/release-notes.sh`](ci.md#releases) reads it, so a release's Tier C claim is derived rather than asserted |
+| `tests/boot/tier-c.json` | one row per boot: path, image name and size, markers seen and when each first appeared (from rows recorded after [#87](https://github.com/Fullaxx/slax-kitchen/issues/87)), duration, result, and the accelerator and qemu version that booted it. [`ci/release-notes.sh`](ci.md#releases) reads it, so a release's Tier C claim is derived rather than asserted |
 | `tests/boot/golden/<profile>-<target>.testkit` | the testkit block the image produces. One per **image**, not per path |
 
 Nothing about the machine goes in either, and that is gated rather than trusted:

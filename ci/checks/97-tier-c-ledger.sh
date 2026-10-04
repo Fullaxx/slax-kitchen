@@ -47,7 +47,7 @@ RUN_KEYS = {"accel": str, "golden": str, "iso_bytes": int, "iso_name": str,
             "markers": list, "missing": list, "path": str, "profile": str,
             "result": str, "screenshot_bytes": int, "seconds_ceiling": int,
             "target": str, "waited_s": (int, float), "run_tag": str,
-            "busybox": str, "commit": str, "date": str, "qemu": str}
+            "busybox": str, "commit": str, "date": str, "qemu": str, "seen_s": dict}
 # A per-run `qemu` is not REQUIRED: rows recorded before qemu_boot.py wrote one are still
 # true, and the top-level `qemu` speaks for them. What is refused is a value that says
 # nothing -- the top level recorded "unknown" whenever tier-c.sh's machine had no qemu of
@@ -120,6 +120,17 @@ for i, r in enumerate(doc.get("runs", [])):
         bad.append(f"{where}.commit: a run that cannot name its tree is not evidence")
     if "qemu" in r and r["qemu"] in UNSAID:
         bad.append(f"{where}.qemu: a run that cannot name its qemu is not evidence")
+    # WHEN EACH MARKER APPEARED, in seconds since qemu started (#87). qemu_boot.py records it
+    # since then, so without the key in the closed set above, the next recorded ledger would
+    # have been refused as an unknown key. Allowed, and held to what it says: a time for a
+    # marker this row says it saw. Rows recorded before #87 have none.
+    seen = r.get("seen_s")
+    if isinstance(seen, dict):
+        for m, t in seen.items():
+            if m not in (r.get("markers") or []):
+                bad.append(f"{where}.seen_s: {m!r} is not a marker this run saw")
+            if isinstance(t, bool) or not isinstance(t, (int, float)) or t < 0:
+                bad.append(f"{where}.seen_s[{m!r}]: should be seconds, got {t!r}")
 
 # NO SEPARATORS, ANYWHERE. Every string in a ledger is a name, a version, a boot marker or
 # one of a closed set -- an image by basename, a target, a qemu version, `match` -- so a `/`

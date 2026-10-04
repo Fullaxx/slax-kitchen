@@ -77,10 +77,17 @@ intervals:
 | 14 s | `EFI stub: Loaded initrd…` — GRUB's menu has already come and gone |
 
 So OVMF spends about nine seconds in firmware, and the five-second window had opened and
-shut before 14. A keystroke lead tuned on a KVM host — where the same menu appears in
-about one second — lands in dead air on a slower one. That is the worst shape a test can
-have: green on the fast machine, red on the slow one, for reasons having nothing to do
-with the thing under test.
+shut before 14. On a KVM host the harness first saw the same menu in the serial log
+2.2–2.7 s after qemu started, median 2.7 s, in three UEFI boots of the boot-matrix image on
+2026-10-04. It polls every half second, so the menu was drawn up to half a second before
+that. A keystroke lead tuned there lands in dead air on a slower machine. That is the
+worst shape a test can have: green on the fast machine, red on the slow one, for reasons
+having nothing to do with the thing under test.
+
+To re-measure, run `kitchen test <boot-matrix ISO> --uefi --no-keys --expect "GNU GRUB"`,
+and read its `first seen` line ([#87](https://github.com/Fullaxx/slax-kitchen/issues/87)).
+The run reports FAIL: with no key to select the serial entry, no livekit marker can reach
+the log, and the harness says so.
 
 [`profiles/boot-matrix.yaml`](../60-testing/tier-c.md) sets 30 for exactly this reason,
 and `kitchen test --uefi` waits 10 seconds before touching the menu. An unattended boot

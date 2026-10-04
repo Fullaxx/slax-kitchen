@@ -110,6 +110,35 @@ def test_a_separator_anywhere_is_refused_by_name():
         check(f"...and the gate names {field}", f"ledger.{field}:" in out, True)
 
 
+def test_a_row_may_say_when_each_marker_appeared():
+    """qemu_boot.py records when each expectation first appeared, `seen_s`, since #87. The
+    gate's key set is closed, so without the key the next recorded ledger would have been
+    refused as an unknown key: found in #87's self-review. Allowed, and held to what it
+    claims: each key is a marker the row says it saw, and each value is a time."""
+    if not os.path.isfile(LEDGER):
+        FAILURES.append("tests/boot/tier-c.json is absent, so the ledger rules are "
+                        "asserted against nothing")
+        return
+    base = json.load(open(LEDGER))
+    i = next(n for n, r in enumerate(base["runs"]) if r.get("markers"))
+    markers = base["runs"][i]["markers"]
+
+    doc = copy.deepcopy(base)
+    doc["runs"][i]["seen_s"] = {m: 1.0 + n for n, m in enumerate(markers)}
+    rc, _out = run(doc)
+    check("a row may carry seen_s", rc, 0)
+
+    for label, seen, says in (
+            ("a marker the row did not see", {"never printed": 2.0}, "is not a marker this run saw"),
+            ("a time that is not a number", {markers[0]: "2s"}, "should be seconds"),
+            ("a negative time", {markers[0]: -1.0}, "should be seconds")):
+        doc = copy.deepcopy(base)
+        doc["runs"][i]["seen_s"] = seen
+        rc, out = run(doc)
+        check(f"seen_s with {label} fails the gate", rc, 1)
+        check(f"...and the gate says why ({label})", says in out, True)
+
+
 def test_qemu_must_name_a_version():
     """qemu is a fact about the machine that booted, so it has to be one.
 
@@ -149,7 +178,8 @@ def main():
     os.environ["TMPDIR"] = box
     try:
         for fn in [test_a_separator_anywhere_is_refused_by_name,
-                   test_qemu_must_name_a_version]:
+                   test_qemu_must_name_a_version,
+                   test_a_row_may_say_when_each_marker_appeared]:
             # One test crashing must not stop the rest: the count of failures is only honest
             # if every test ran. The traceback still goes to stderr, because a crash's location
             # is the useful half and a one-line summary loses it.

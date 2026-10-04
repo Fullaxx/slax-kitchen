@@ -217,7 +217,8 @@ def send_keys(q: "Qmp", spec: str) -> None:
 LIVEKIT_MARKERS = ("Looking for", "Mounting bundles", "Live Kit done", "Setting up")
 
 
-def _wait(serial: str, seconds: int, expect: list) -> float:
+def _wait(serial: str, seconds: int, expect: list, seen: dict | None = None,
+          since: float | None = None) -> float:
     """Wait for the guest, and return how long that actually took.
 
     WHY THIS IS NOT time.sleep(seconds). It used to be, and `--seconds` was therefore not
@@ -232,8 +233,16 @@ def _wait(serial: str, seconds: int, expect: list) -> float:
 
     Polling only on ALL expectations matters: returning on the first would stop before the
     later stages ran, and this test's whole value is that `Live Kit done` comes last.
+
+    `seen`, when given, gets the seconds at which each expectation was first found, counted
+    from `since` -- qemu's launch, which boot() passes -- or else from this call. The total
+    alone could not date how long GRUB's menu or a livekit stage took (#87). It is as fine as
+    the poll, half a second. Polling starts after any --keys are sent, so with keys a line
+    that appeared meanwhile is recorded at the first poll: an upper bound. Kernel mode, and
+    a menu mode run with --no-keys, send none.
     """
     start = time.time()
+    origin = start if since is None else since
     if not expect:
         time.sleep(seconds)
         return time.time() - start
@@ -244,6 +253,11 @@ def _wait(serial: str, seconds: int, expect: list) -> float:
                 txt = f.read()
         except OSError:
             continue
+        if seen is not None:
+            now = time.time() - origin
+            for w in expect:
+                if w not in seen and w in txt:
+                    seen[w] = now
         if all(w in txt for w in expect):
             break
     return time.time() - start
@@ -396,9 +410,10 @@ def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
 
     # Asked before the guest starts, so the question never overlaps the boot being timed.
     version = qemu_version(cmd[0])
+    launched = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     result = {"iso": iso, "mode": mode, "serial": serial, "screenshot": shot,
-              "kvm": "-enable-kvm" in cmd, "qemu": version, "died": False}
+              "kvm": "-enable-kvm" in cmd, "qemu": version, "died": False, "seen": {}}
     try:
         try:
             q = Qmp(qmp)
@@ -420,7 +435,8 @@ def boot(iso: str, mode: str, seconds: int, outdir: str, mem: int = 2048,
                                + ("\n  ".join(msg) if msg else "(no stderr output)"))
         if keys:
             send_keys(q, keys)
-        result["waited"] = _wait(serial, seconds, expect or [])
+        result["waited"] = _wait(serial, seconds, expect or [], seen=result["seen"],
+                                 since=launched)
         # QEMU writes PPM unless told otherwise -- the filename extension is NOT
         # enough, and a .png that is really a PPM silently breaks every image reader
         # downstream. The format argument exists since QEMU 7.1; older builds get a
@@ -477,6 +493,8 @@ def record(path: str, r: dict, a, rc: int, golden: str) -> None:
         # this boot, and this is the only process that knows them first-hand.
         "qemu": r.get("qemu", "unknown"),
         "waited_s": round(r.get("waited", 0), 1),
+        # When each expectation first appeared, in seconds since qemu started (#87).
+        "seen_s": {w: round(t, 1) for w, t in (r.get("seen") or {}).items()},
         "seconds_ceiling": a.seconds,
         "markers": [w for w in a.expect if w in text],
         "missing": [w for w in a.expect if w not in text],
@@ -579,6 +597,10 @@ def main(argv: list[str]) -> int:
     if a.expect:
         print(f"  waited     : {waited:.0f}s of a {a.seconds}s ceiling"
               f"{' (all expectations seen)' if waited < a.seconds - 1 else ' -- HIT THE CEILING'}")
+        if r.get("seen"):
+            print("  first seen : " + ", ".join(
+                f"{t:.1f}s {w!r}" for w, t in sorted(r["seen"].items(), key=lambda kv: kv[1]))
+                + " (since qemu started)")
     if r.get("died"):
         print(f"  note       : qemu exited before the harness did ({r['died_why']}); "
               f"asserting on whatever serial output it left")

@@ -60,13 +60,25 @@ def _append_later(path, delay, text):
 
 
 def test_returns_as_soon_as_every_expectation_is_present():
-    """The point of the change: stop when the guest has said everything we asked for."""
+    """The point of the change: stop when the guest has said everything we asked for.
+
+    And say when each line first appeared. The harness reported only the total, so a doc
+    could not date how long GRUB's menu or livekit's stages took (#87). The two lines here
+    are written at 0.2 s and 0.7 s, so the same wait checks the times with no sleep of its
+    own."""
     log = _log()
     _append_later(log, 0.2, "Looking for slax data\n")
     _append_later(log, 0.7, "Live Kit done, starting slax\n")
-    took = qb._wait(log, 4, ["Looking for slax data", "Live Kit done"])
+    seen = {}
+    took = qb._wait(log, 4, ["Looking for slax data", "Live Kit done"], seen=seen)
     check("returned early", took < 2.5, True)
     check("did not return before the last marker", took >= 0.7, True)
+    first, last = seen.get("Looking for slax data"), seen.get("Live Kit done")
+    check("each line's first sighting is recorded", None not in (first, last), True)
+    if None not in (first, last):
+        check("...in the order they appeared", first < last, True)
+        check("...no earlier than each was written", (first >= 0.2, last >= 0.7), (True, True))
+        check("...and no later than the wait ended", last <= took + 0.01, True)
 
 
 def test_a_missing_expectation_still_burns_the_whole_ceiling():
