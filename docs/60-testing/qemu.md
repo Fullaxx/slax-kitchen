@@ -35,7 +35,7 @@ see a framebuffer at all**, and it happens to be the right answer for a server a
 usually lives where you build it, and VNC tunnels over ssh.
 
 The launcher prints the tunnel command for you. Captured on 2026-09-17 (`f8631aa`) in the dev
-container, which had qemu and no KVM. Three lines have been brought up to date since, as the
+container, which had qemu and no KVM. Two lines have been brought up to date since, as the
 program's own text changed (the last on 2026-10-01, `5c6321e`), and the host is a placeholder:
 
 ```console
@@ -492,8 +492,8 @@ takes MiB, or a number with an `M` or `G` suffix.
 
 **"Run Slax from RAM" needs RAM at least the size of the ISO**, before the running system gets any.
 That is fine for most images and a real constraint for a big one. Each page has its image's size.
-These figures follow from that rule. They were written on 2026-09-16 (`2712c1f`), with no
-measurement recorded:
+The `--mem` figures below follow from that rule; they were written on 2026-09-16 (`2712c1f`), with
+no measurement recorded:
 
 | ISO | `toram` wants |
 |---|---|
@@ -557,10 +557,9 @@ handles — `2` for a refusal or a usage error, and `128+N` if QEMU was killed o
 KVM is used whenever the host has it, and the banner says which you got. The difference is large.
 Measured on 2026-09-16 (`ca2f71b`) on a KVM host with the
 [`all-browsers`](../50-cookbook/all-browsers.md) ISO, direct kernel boot, by bisecting the harness
-budget: **all three livekit markers appeared inside 5 seconds** with KVM. The same image under TCG
-in an unaccelerated container needed the 150-second budget the harness had then. [Tier
-C](tier-c.md#kvm-vs-tcg) has the current per-boot figures. Add the menu's own timeout when booting
-through it — 4 seconds for isolinux, 5 for GRUB by default.
+budget: **all three livekit markers appeared inside 5 seconds** with KVM. Under TCG a boot takes
+several times as long; [Tier C](tier-c.md#kvm-vs-tcg) has the per-boot figures for both. Add the
+menu's own timeout when booting through it — 4 seconds for isolinux, 5 for GRUB by default.
 
 So: with KVM this is an interactive tool. Without it, it is something you start and come back to.
 

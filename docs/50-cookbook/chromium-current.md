@@ -31,8 +31,11 @@ one `bookworm-security` carried that day:
 | after | `10-chromium.sb`, chromium **154.0.8037.92-1~deb12u1**, 116 MiB |
 | packages declared | 20 |
 
-The bundle is larger because the 22 media and crypto libraries that came with the old Chromium
-left with it, and the new bundle carries current versions of all of them.
+The bundle is larger because the 22 libraries that came with the old Chromium left with it. The
+same build, repeated on 2026-10-05 to the same size and package count, carries 16 of them, the ones
+the new Chromium still pulls in, plus `libharfbuzz-subset0`, all at current versions. The other six
+— `libatomic1`, `libevent-2.1-7`, `libjsoncpp25`, `libsnappy1v5`, `libwebpmux3` and `libwoff1` —
+leave the image with the old bundle.
 
 Applied on its own, the [recipe matrix](../60-testing/ci.md#recipe-sizes) measured the ISO at
 **528 MiB** on 2026-10-04: the 2023 bundle stays, and this bundle is smaller, 113 MiB with four

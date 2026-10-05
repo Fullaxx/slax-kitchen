@@ -29,7 +29,7 @@ naming this one twice is refused rather than quietly dropping the second entry a
 
 Removing `05-chromium` from 64-bit Debian, measured 2026-10-04: the ISO by the
 [recipe matrix](../60-testing/ci.md#recipe-sizes), and `slax/modules/` by summing its files' sizes
-in the stock image (`du -sm` rounds each up, and reads one MiB more):
+in the stock image (`du -sm` rounds up, and reads one MiB more):
 
 | | Before | After |
 |---|---|---|

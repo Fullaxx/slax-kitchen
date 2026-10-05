@@ -70,8 +70,8 @@ because the direction of the error is the useful part.
 Two things nobody predicted, both real: the 32-bit bundle is *larger* than the 64-bit one despite
 i386 binaries usually being smaller, and it declares one package fewer.
 
-Unlike [`all-browsers`](all-browsers.md#the-iso), more than twice the size, `toram` stays practical
-here.
+Unlike [`all-browsers`](all-browsers.md#the-iso), whose image is more than twice this one's, `toram`
+stays practical here.
 
 > **A gotcha, if you go looking for these versions yourself.** They are in **`bookworm-security`**,
 > not `bookworm` — main still carries chromium 150.0.7871.100 and firefox-esr 140.12.0esr. The

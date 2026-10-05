@@ -238,6 +238,12 @@ on every run, so the gate and the builds it judges cannot disagree about which t
 was the one field with no set at all, which is how a misspelt `--target` once appended a fifth
 target's rows beside the four and passed.
 
+`seen_s`, when a row has it ([#87](https://github.com/Fullaxx/slax-kitchen/issues/87)), is held to
+what it claims: each key must be one of the row's own `markers`, and each value a time in seconds,
+not negative. That is also what keeps its keys under the separator rule. The gate's walk visits
+values, not keys, and `seen_s` is the first field whose keys are free text; the markers they must
+match are checked as strings.
+
 The ledger also refuses to be written without a commit. The first run recorded
 `"commit": "unknown"` because git will not read a repository owned by another user
 ("dubious ownership") — and said nothing. A ledger that cannot name the tree it tested is

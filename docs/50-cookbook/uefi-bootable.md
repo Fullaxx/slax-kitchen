@@ -31,9 +31,9 @@ UEFI works from a stick but never from the disc.
 
 Adds a second El Torito entry pointing at a real FAT EFI System Partition, and puts **GRUB** in it
 rather than syslinux — because GRUB can read iso9660. That means a small ESP holding only
-`BOOTX64.EFI` (6 to 10 MiB, depending on the build host's GRUB, [measured
-below](#the-grub-in-your-esp-is-your-build-hosts-grub)), while the kernel, initramfs and bundles
-stay on the ISO filesystem where they already are.
+`BOOTX64.EFI` (6 to 10 MiB, depending on the build host's GRUB,
+[measured below](#the-grub-in-your-esp-is-your-build-hosts-grub)), while the kernel, initramfs and
+bundles stay on the ISO filesystem where they already are.
 
 From `kitchen apply memtest86plus serial-console uefi-bootable` on `debian-64bit-12.2.0`, on
 2026-10-04, with Ubuntu 24.04's GRUB 2.12:

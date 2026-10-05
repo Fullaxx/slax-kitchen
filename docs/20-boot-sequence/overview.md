@@ -83,9 +83,9 @@ flavour-agnostic even though the init systems are not.
 
 ## Timings
 
-**Rough, and recorded nowhere as a measurement.** They were written with this page on 2026-09-13
-(`f3f727f`), for a 2 GHz machine booting from a USB 3 stick. The settings and sizes beside them are
-the stock image's:
+**These timings are rough, and recorded nowhere as a measurement.** They were written with this
+page on 2026-09-13 (`f3f727f`), for a 2 GHz machine booting from a USB 3 stick. The settings and
+sizes beside them are the stock image's:
 
 | | |
 |---|---|

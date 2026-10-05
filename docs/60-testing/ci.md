@@ -137,11 +137,13 @@ recipe matrix: debian-64bit-12.2.0  (flavour=debian arch=64bit)
 
 <a id="recipe-sizes"></a>
 **The recipe pages' sizes come from this matrix, where a page says so.** The run of 2026-10-04 at
-`c2b3113` built all four targets on Ubuntu 24.04, the release CI's runners use. It ran a copy of the
-script with the cleanup removed, so each recipe's log survived. A bundle's size is from its
-`built slax/modules/…` line. An image's is from its `structure:` line, which rounds to the nearest
-MiB, as the stock sizes do. The `ok` line above rounds down, as `kitchen pack` does, so the same
-image can read one MiB less there.
+`c2b3113` built all four targets on Ubuntu 24.04, as CI's runners are. It ran a copy of the script
+with the cleanup removed, so each recipe's log survived. `firmware-refresh` and `libreoffice` were
+run again that day with `TMPDIR` unset: the first run had set it, the build chroot inherits it, and
+both failed on a temporary file ([#88](https://github.com/Fullaxx/slax-kitchen/issues/88)). A
+bundle's size is from its `built slax/modules/…` line. An image's is from its `structure:` line,
+which rounds to the nearest MiB, as the stock sizes do. The `ok` line above rounds down, as
+`kitchen pack` does, so the same image can read one MiB less there.
 
 Skips come from each recipe's own `compat` block, so marking something Debian-only is enough — no
 separate CI list to keep in sync. **This is what catches a recipe that silently only works on 64-bit

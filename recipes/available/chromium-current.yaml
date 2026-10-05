@@ -36,9 +36,9 @@ steps:
   # so those stay visible in the union while 05 is there.
   #
   # `from:` follows from that, and this recipe is the clearest place to see the dial:
-  # with 05-chromium removed first, the stack is 01-core .. 04-apps, the 22 media and
-  # crypto libraries that came with the old Chromium are gone with it, and apt pulls the
-  # current versions in -- a self-contained bundle. With 05 still below, apt finds those
+  # with 05-chromium removed first, the stack is 01-core .. 04-apps, the 22 libraries that
+  # came with the old Chromium are gone with it, and apt pulls in current versions of the
+  # ones the new Chromium needs -- a self-contained bundle. With 05 still below, apt finds those
   # libraries installed and ships fewer of them, which is smaller and assumes 05 stays.
   # Both are correct; see docs/40-workflow/composing-bundles.md.
   #

@@ -26,11 +26,12 @@ recipes:
 ```
 
 > **CI builds this weekly, not on every push.** The tarball is an external dependency with a pinned
-> sha256, so a Tor Browser release fails the build *by design*. The 15.0.24 tarball is 138 MB
-> (137,930,492 bytes on 2026-10-04), a figure `ci/slow-recipes.txt` prints as the matrix's skip
-> reason: a version bump that moves one moves both. Running it per-push would turn the
+> sha256, so a Tor Browser release fails the build *by design*. Running it per-push would turn the
 > Tor Project shipping a security update into a red master. `ci/upstream-watch.sh` checks the
 > version every Monday and files an issue instead. See [ci.md](../60-testing/ci.md).
+>
+> The 15.0.24 tarball is 138 MB (137,930,492 bytes on 2026-10-04), a figure `ci/slow-recipes.txt`
+> prints as the matrix's skip reason, so a version bump that changes the size changes both.
 
 ## There is no Tor Browser package, anywhere
 

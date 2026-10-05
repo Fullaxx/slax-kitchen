@@ -123,7 +123,9 @@ for i, r in enumerate(doc.get("runs", [])):
     # WHEN EACH MARKER APPEARED, in seconds since qemu started (#87). qemu_boot.py records it
     # since then, so without the key in the closed set above, the next recorded ledger would
     # have been refused as an unknown key. Allowed, and held to what it says: a time for a
-    # marker this row says it saw. Rows recorded before #87 have none.
+    # marker this row says it saw. Rows recorded before #87 have none. The membership test is
+    # also what keeps these keys under the separator rule below: walk() visits values, not
+    # keys, and this is the first field whose keys are free text.
     seen = r.get("seen_s")
     if isinstance(seen, dict):
         for m, t in seen.items():

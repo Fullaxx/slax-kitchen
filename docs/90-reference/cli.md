@@ -123,6 +123,14 @@ three markers in the serial log. `--expect STRING` adds your own requirements, r
 with the [`testkit`](../50-cookbook/testkit.md) recipe, which prints facts about the assembled
 union just before `change_root`, and a structural claim becomes a boot assertion.
 
+A boot that has expectations prints how long it waited for them, and a `first seen` line for those
+that appeared: when each was first found in the serial log, in seconds since qemu started, to the
+half second the log is polled at ([#87](https://github.com/Fullaxx/slax-kitchen/issues/87)). Keys
+sent to a menu come before the first poll, so a line printed while they were typed is seen late;
+with `--no-keys`, or under `--kernel`, none are sent.
+[Tier C](../60-testing/tier-c.md#per-stage-under-kvm) times livekit's stages this way, and
+[`uefi-bootable`](../50-cookbook/uefi-bootable.md) GRUB's menu.
+
 ## `boot-host [check|clean|show]` — the machine boot tests run on
 
 A `boot-host.ini` at the project's root names a machine with KVM to run the boot modes above on,

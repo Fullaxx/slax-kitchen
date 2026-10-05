@@ -61,7 +61,10 @@ The bundle carries `usr/bin/tmux`, `usr/bin/ncdu`, their dpkg `.list` files, and
 the four packages apt installed: `tmux`, `ncdu`, `libevent-core-2.1-7`, and a security update to the
 `libevent-2.1-7` that `05-chromium` already records. It carries **no `var/lib/dpkg/status`** —
 `pack` merges the fragment into `98-dpkg-db.sb`, giving 603 packages against `05-chromium`'s 600.
-Booted: livekit mounts the bundle and reaches `Live Kit done, starting slax`.
+Booted: livekit mounts the bundle and reaches `Live Kit done, starting slax`. That is checked on
+every push: CI's boot job boots the `example` profile, which carries this recipe, and asserts
+`dpkg-status: 603 packages` in the running image
+([CI](../60-testing/ci.md#boot-tests-one-per-push-four-more-weekly)).
 
 > This recipe used to build from `01-core` alone and ship a 299-package `status` that outranked
 > `05-chromium`'s 600, so a fully loaded image lost about three hundred packages from dpkg's view,

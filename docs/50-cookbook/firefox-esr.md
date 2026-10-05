@@ -17,9 +17,9 @@ signing key — and it is genuinely built for **i386 as well as amd64**, which i
 browsers to matter on a distribution that still ships 32-bit images.
 
 Measured 2026-10-04: **153.4.0esr-1~deb12u1**, the version `bookworm-security` carried that day, is
-a 76.1 MiB `.deb` on amd64 and 79.6 MiB on i386. The [recipe
-matrix](../60-testing/ci.md#recipe-sizes) built it into an 81.3 MiB bundle on `debian-64bit-12.2.0`
-and 85.7 MiB on `debian-32bit-12.2.0`.
+a 76.1 MiB `.deb` on amd64 and 79.6 MiB on i386. The
+[recipe matrix](../60-testing/ci.md#recipe-sizes) built it into an 81.3 MiB bundle on
+`debian-64bit-12.2.0` and 85.7 MiB on `debian-32bit-12.2.0`.
 
 Contrast with Brave, Chrome, Edge and Vivaldi, which are distributed only through vendor apt
 repositories and therefore need `apt.sources` — see [`bundle.packages`](../90-reference/verbs.md).
