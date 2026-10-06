@@ -606,7 +606,8 @@ filesystem — the full Slax stack unpacks in about seven seconds.
 is deleted on exit and the `.sb` files are never written. That is deliberate: a session of
 typing is not reproducible, so the supported way to capture changes is
 [`bundle.script`](verbs.md#bundlescript--chroot), which runs a script in this same
-environment and packs the delta.
+environment and packs the delta. Inside, as in a build chroot, `TMPDIR` is the chroot's own
+`/tmp` ([#88](https://github.com/Fullaxx/slax-kitchen/issues/88)).
 
 **Only `01-core` ships a userland.** Every other bundle is a fragment meant to be layered
 on it, so chrooting into one alone has no `/bin/sh`. `shell` detects that and prints the

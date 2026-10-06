@@ -4264,6 +4264,60 @@ def test_a_missing_from_label_is_refused_before_either_file_is_written():
         shutil.rmtree(work, ignore_errors=True)
 
 
+def test_a_chroot_gets_its_own_tmpdir():
+    """A command in a build chroot, or in `kitchen shell`, gets the chroot's /tmp as TMPDIR.
+
+    #88: both started from the host's whole environment, so a TMPDIR naming a host directory
+    reached every maintainer script and every bundle.script, where nothing can be created under
+    it. firmware-refresh's `mktemp -d` and dictionaries-common's postinst (via libreoffice)
+    failed on both Debian targets, and the matrix reported two broken recipes. A recipe whose
+    only step made a temporary directory failed under `kitchen apply` and `kitchen shell`
+    alike. So TMPDIR, and TMP and TEMP, which Python's tempfile reads after it, all name a
+    directory of the host's here. subprocess.run is stubbed, so this needs neither root nor
+    a chroot.
+    """
+    import shell
+    host = {k: os.environ.get(k) for k in ("TMPDIR", "TMP", "TEMP")}
+    outside = tempfile.mkdtemp()  # made before TMPDIR moves, so tempfile's own choice stands
+    for k in host:
+        os.environ[k] = outside
+    entered = []
+
+    def stub(cmd, **kw):
+        if cmd[0] == "unsquashfs":
+            # kitchen shell refuses a stack with no /bin/sh, so the stub's 01-core has one.
+            root = cmd[cmd.index("-d") + 1]
+            os.makedirs(os.path.join(root, "bin"), exist_ok=True)
+            open(os.path.join(root, "bin", "sh"), "w").close()
+        elif cmd[0] == "chroot":
+            entered.append(kw.get("env") or {})
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    saved = apply.subprocess.run, apply.shutil.which, apply._prepare_chroot
+    apply.subprocess.run = stub
+    apply.shutil.which = lambda tool: f"/usr/bin/{tool}"
+    apply._prepare_chroot = lambda root: None
+    d = tempfile.mkdtemp()
+    try:
+        open(os.path.join(d, "01-core.sb"), "w").close()
+        apply._in_chroot(d, ["/bin/true"])
+        check("kitchen shell ran its command", shell.main(["kitchen shell", d, "-c", "true"]), 0)
+    finally:
+        apply.subprocess.run, apply.shutil.which, apply._prepare_chroot = saved
+        for k, v in host.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(d, ignore_errors=True)
+        shutil.rmtree(outside, ignore_errors=True)
+    check("both chroots were entered", len(entered), 2)
+    for who, env in zip(("a build chroot", "kitchen shell"), entered):
+        check(f"{who}: TMPDIR is the chroot's /tmp", env.get("TMPDIR"), "/tmp")
+        check(f"{who}: the host's TMP and TEMP stay outside",
+              sorted(k for k in ("TMP", "TEMP") if k in env), [])
+
+
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
     # 17 of this file's 25 mkdtemp() calls had no cleanup on 2026-09-18, so running it by hand left
@@ -4356,6 +4410,9 @@ def main():
                    test_a_menu_entry_names_a_payload_that_is_there,
                    test_an_entry_copied_from_a_label_carries_the_edits_made_before_it,
                    test_serial_console_on_the_stock_menus_is_the_entry_that_was_booted,
+                   # Not last: unit-run.py's profiler stays on until every test has begun,
+                   # so a cheap test listed last keeps the one before it profiled.
+                   test_a_chroot_gets_its_own_tmpdir,
                    test_a_missing_from_label_is_refused_before_either_file_is_written]:
             # One test crashing must not stop the rest: the count of failures is only honest
             # if every test ran. The traceback still goes to stderr, because a crash's location

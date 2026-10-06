@@ -463,8 +463,11 @@ expectation is not a measurement either.
 ([`ci/unit-run.py`](ci/unit-run.py)): the tests are 17.3 s on their own, 20.5 s through the runner,
 on the same tree, and 2.2 s of the difference is `test_apply.py`'s. `sys.setprofile` is called for
 every function call in the process, which is what being certain costs; the hook stops itself once
-the last test has been seen. Two cheaper versions of this check read the source instead, and both
-could be satisfied by a test that never ran.
+the last test has been seen. So list order is part of the cost: the hook is on for every test but
+the last one to run, and a cheap test added after a file's heaviest keeps the heaviest under it.
+On 2026-10-05 that made `test_apply.py` 0.16 s slower, until `test_a_chroot_gets_its_own_tmpdir`
+moved up one place. A file's heaviest test belongs last. Two cheaper versions of this check read the source instead, and
+both could be satisfied by a test that never ran.
 
 **This paragraph is the only copy of that number.** `ci/checks/80-unit.sh` used to restate it; the
 two were measured at different times and drifted to 18 s and 16 s, neither of them wrong when it was

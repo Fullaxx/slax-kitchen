@@ -2403,7 +2403,10 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
     The chroot inherits whatever network the host has -- there is no isolation here, and
     there cannot be without a user namespace. Declare `network: true` on the step when
     the script fetches something, so a recipe that depends on the internet says so in
-    the YAML and preflight fails fast instead of unsquashing 122 MiB first.
+    the YAML and preflight fails fast instead of unsquashing 122 MiB first. It inherits
+    the host's environment too, except what _in_chroot sets -- PATH, the locale,
+    DEBIAN_FRONTEND -- and the temporary directory, which is the chroot's own /tmp: see
+    _host_env_for_chroot (#88).
     """
     script = step.get("script")
     if not script:
@@ -3398,9 +3401,32 @@ def _prepare_chroot(root: str) -> None:
         shutil.copy2("/etc/resolv.conf", os.path.join(root, "etc", "resolv.conf"))
 
 
+def _host_env_for_chroot() -> dict:
+    """The environment a command in a chroot starts from: the host's, but with the
+    chroot's own /tmp as its temporary directory.
+
+    #88: this was dict(os.environ) in _in_chroot and in kitchen shell, so a TMPDIR naming
+    a directory the chroot does not have reached every maintainer script and every
+    bundle.script, and nothing could be created under it. firmware-refresh's mktemp and
+    dictionaries-common's postinst failed on both Debian targets, and the matrix reported
+    two broken recipes. _prepare_chroot makes /tmp in every chroot, and BUNDLE_EXCLUDE keeps
+    tmp/ out of every bundle, so nothing written there ships. TMP and TEMP, which Python's
+    tempfile reads after TMPDIR, are dropped rather than repointed.
+
+    The rest of the host's environment still passes through, on purpose: an http_proxy
+    reaches apt that way, and whether an allowlist should replace this is #88's open
+    question, not one to settle by accident here.
+    """
+    e = dict(os.environ)
+    for k in ("TMP", "TEMP"):
+        e.pop(k, None)
+    e["TMPDIR"] = "/tmp"
+    return e
+
+
 def _in_chroot(root: str, argv: list[str], env: dict | None = None,
                stdin: str | None = None) -> subprocess.CompletedProcess:
-    e = dict(os.environ)
+    e = _host_env_for_chroot()
     e.update({"DEBIAN_FRONTEND": "noninteractive", "LC_ALL": "C", "LANG": "C",
               "PATH": "/usr/sbin:/usr/bin:/sbin:/bin"})
     if env:
