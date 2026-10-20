@@ -104,10 +104,11 @@ There is a real route, and it is a different recipe, [`tor-browser`](tor-browser
 `bundle.fromTarball` against Tor's current `tor-browser-linux-*.tar.xz`, checked against Tor's
 signing key ([#90](https://github.com/Fullaxx/slax-kitchen/issues/90)). Tor publishes **both**
 `x86_64` and `i686` builds (15.0.23 when this was written, and 15.0.24 on 2026-10-02), and the
-archive is a single `tor-browser/` root, so `strip: 1` places it. Note that Tor Browser is
-reported to refuse running as root, which matters because Slax boots as root —
-**unverified here**, though every Chromium-derived browser refuses root too, which is why Slax
-already ships a `guest` user to run one.
+archive is a single `tor-browser/` root, so `strip: 1` places it. Tor Browser refuses to run as
+root, which matters because Slax boots as root: `start-tor-browser` exits 1 for uid 0 (read in
+15.0.25 on 2026-10-20). Every Chromium-derived browser refuses root too, which is why Slax already
+ships a `guest` user, and `tor-browser`
+[runs it as that user](tor-browser.md#running-as-guest-without-patching-upstream).
 
 ## Why 64-bit only
 

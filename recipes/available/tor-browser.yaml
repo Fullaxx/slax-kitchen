@@ -127,7 +127,7 @@ steps:
   # DESKTOP INTEGRATION, AND THE ONE FILE THAT MAKES A READ-ONLY INSTALL WORK.
   #
   # opt/tor-browser/Browser/is-packaged-app is empty and is the whole trick.
-  # start-tor-browser:214-222 reads it:
+  # start-tor-browser reads it (lines 215-222 in 15.0.25):
   #
   #     if test -f "$browser_dir/is-packaged-app"; then
   #       system_install=1

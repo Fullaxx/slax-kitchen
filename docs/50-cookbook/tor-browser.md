@@ -125,7 +125,7 @@ missing, which is no worse than stock.
 
 A bundle is a read-only squashfs branch, but Tor Browser keeps its profile and tor state **inside
 its own tree**. That would be fatal — except upstream already handles it
-(`start-tor-browser:214-222`):
+(`start-tor-browser`, lines 215–222 in 15.0.25):
 
 ```sh
 if test -f "$browser_dir/is-packaged-app"; then
