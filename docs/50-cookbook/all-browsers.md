@@ -101,10 +101,11 @@ It was not forgotten, and the reason is packaging rather than preference.
   that cannot launch, and an offline boot from a stick is most of what a live system is for.
 
 There is a real route, and it is a different recipe, [`tor-browser`](tor-browser.md):
-`bundle.fromTarball` against a pinned `tor-browser-linux-*.tar.xz`. Tor publishes **both** `x86_64`
-and `i686` builds (15.0.23 when this was written, and 15.0.24, which the recipe pins, on 2026-10-02),
-and the archive is a single `tor-browser/` root, so `strip: 1` places it. Note that
-Tor Browser is reported to refuse running as root, which matters because Slax boots as root —
+`bundle.fromTarball` against Tor's current `tor-browser-linux-*.tar.xz`, checked against Tor's
+signing key ([#90](https://github.com/Fullaxx/slax-kitchen/issues/90)). Tor publishes **both**
+`x86_64` and `i686` builds (15.0.23 when this was written, and 15.0.24 on 2026-10-02), and the
+archive is a single `tor-browser/` root, so `strip: 1` places it. Note that Tor Browser is
+reported to refuse running as root, which matters because Slax boots as root —
 **unverified here**, though every Chromium-derived browser refuses root too, which is why Slax
 already ships a `guest` user to run one.
 

@@ -36,10 +36,10 @@
 # base is two Containerfiles wearing a trench coat, and it hides the divergence
 # instead of recording it.
 #
-# WHY A FLOATING TAG. Every other download in this project is pinned by sha256 --
-# base ISOs, apt signing keys, the busybox tarball -- because those end up inside
-# an image that boots as root. Two things from THIS image do too, and it is worth
-# being straight about them:
+# WHY A FLOATING TAG. Every other download in this project is pinned -- base ISOs,
+# apt signing keys and the busybox tarball by sha256, Tor Browser by its signing key
+# (#90) -- because those end up inside an image that boots as root. Two things from
+# THIS image do too, and it is worth being straight about them:
 #
 #   BOOTX64.EFI   built here by grub-mkstandalone, copied into boot/efi.img, and
 #                 the first code UEFI firmware executes

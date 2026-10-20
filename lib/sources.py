@@ -36,7 +36,8 @@ initramfs is opened and its members compared with the stock manifest one by one,
 
 WHAT THE REPORT RESTS ON IS SAID. A download nobody pinned, a pointer nobody gave, a
 checkout with uncommitted changes and a sidecar that describes another ISO are stated in
-the report; none of them changes the exit status. Offline: nothing is fetched.
+the report; none of them changes the exit status. A followed release says which version
+its feed named and whose signature it carried (#90). Offline: nothing is fetched.
 """
 from __future__ import annotations
 
@@ -296,10 +297,15 @@ def _copied_parts(step: dict, by: str) -> list[dict]:
 def _pointer_for_prebuilt(step: dict) -> dict:
     """What a downloaded file points at. `pinned` is False when the recipe named no sha256,
     so the file is whatever that server served on build day: recorded, but not reproducible.
-    Steps written before the verbs recorded it say nothing, and nothing is claimed for them."""
+    Steps written before the verbs recorded it say nothing, and nothing is claimed for them.
+
+    A followed release (#90) is unpinned too, and carries what WAS checked instead: the feed
+    and the version it named, the signature, and the key that made it."""
     return {"source": step.get("source"), "source_sha256": step.get("source_sha256"),
             "member": step.get("member"), "upstream_source": step.get("upstream_source"),
-            "pinned": step.get("pinned")}
+            "pinned": step.get("pinned"),
+            **{k: step.get(k) for k in ("release_feed", "version", "signature", "key_url",
+                                        "signer", "signing_key", "signed_at")}}
 
 
 def _debian_pointer(rec: dict) -> dict:
@@ -662,6 +668,17 @@ def _joined(v) -> str:
     return ", ".join(_listed(v))
 
 
+def _pin_note(c: dict) -> str:
+    """How a download was held to what the recipe meant. A followed release (#90) has no
+    pinned sha256 either, but its signature was checked, and "no sha256 was pinned" alone
+    would make the strongest check here read like the weakest."""
+    if c.get("signer"):
+        return (f"; no sha256 was pinned: version {c.get('version')} is the release "
+                f"{c.get('release_feed')} named on build day, and its signature verified as "
+                f"made by key {c['signer']}")
+    return "; no sha256 was pinned" if c.get("pinned") is False else ""
+
+
 def markdown(doc: dict) -> str:
     img = doc.get("image") or {}
     base = doc.get("base") or {}
@@ -726,7 +743,7 @@ def markdown(doc: dict) -> str:
             lines.append(f"- `{comp['path']}` — {comp.get('what') or comp.get('source')}"
                          + (f" — source: {_joined(comp.get('upstream_source'))}"
                             if comp.get("upstream_source") else "")
-                         + ("; no sha256 was pinned" if comp.get("pinned") is False else ""))
+                         + _pin_note(comp))
         pre = [p for p in comp.get("parts") or [] if p.get("class") == "prebuilt"]
         if len(pre) == 1:
             p = pre[0]

@@ -4318,6 +4318,373 @@ def test_a_chroot_gets_its_own_tmpdir():
               sorted(k for k in ("TMP", "TEMP") if k in env), [])
 
 
+# ---- #90's fixtures: OpenPGP public keys and detached signatures, for real gpgv runs ------
+# Captured from: gpg (GnuPG) 2.4.4, on 2026-10-20. Every key is ed25519 and version 4, so
+# debian:12's gpgv 2.2.40 reads them as ubuntu:24.04's 2.4.4 does (both were run on them).
+#   A  a certify-only primary with a separate signing subkey: the shape of Tor's key
+#   B  an ordinary key
+#   C  expired: made at a faked 2020-01-01 with a one-day expiry
+#   D  revoked, by its own revocation certificate
+# _FX_SIG_x is a detached signature over _FX_ARCHIVE (a gzip of a tar holding app/README) by
+# x: A's made by its subkey, C's at a faked 2020-01-01T12:00. To regenerate, with GNUPGHOME a
+# SHORT directory -- gpg-agent puts its socket there when /run/user/<uid> is missing -- and
+# G="gpg --batch --pinentry-mode loopback --passphrase ''":
+#   $G --quick-generate-key 'A' ed25519 cert never;  $G --quick-add-key <A> ed25519 sign never
+#   $G --quick-generate-key 'B' ed25519 sign,cert never;  same for 'D'
+#   $G --faked-system-time '20200101T000000!' --quick-generate-key 'C' ed25519 sign,cert 1d
+#   $G --armor --detach-sign -u '<signing key>!' archive.tar.gz   (C's at '20200101T120000!')
+#   $G --import <D's openpgp-revocs.d/<fpr>.rev, with the ':' before -----BEGIN removed>
+#   gpg --armor --export <fpr>
+# then remove that GNUPGHOME. No private key ever left it.
+_FX_A = "2D6C97EA5AF3821180FC71D127FDA32C889A8D99"
+_FX_A_SUB = "BAABACC2E794D6BC468F8B9176CDEBD608FBF5CA"
+_FX_B = "8247F6B152D3782A332AC1FBDBEC19BFA22A7A84"
+_FX_C = "757FF8019D7B373D6062B771FC0D534F31AFCAC5"
+_FX_D = "891808F88C2A8FD25DDC12F9D49D7EAAAEAC4ED7"
+_FX_ARCHIVE = ("H4sIAAAAAAACA+3RMQ6CQBBA0ak9xdxAFIatTaS04QZr3CgxIRvBgtuzUhIt15j4XzMz1RTfx7iVzIrE"
+               "mS0zWc83e217EzX5gucw+kd6Kf/Jp/5tcziemrz966r63L/crfq70jnRgv7ZDd21Dxc9Tzregsauf133"
+               "MG0EAAAAAAAAAAAAAAAAwK+bAdaTZl8AKAAA")
+_FX_KEY_A = """\
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEateRhRYJKwYBBAHaRw8BAQdANq5kTsb4L5IX8Q6b4Yy7DA/trjy2W++5qZPC
+xXPmjra0M0ZpeHR1cmUgQSwgY2VydGlmeS1vbmx5IHByaW1hcnkgPGFAZml4dHVy
+ZS5pbnZhbGlkPoiTBBMWCgA7FiEELWyX6lrzghGA/HHRJ/2jLIiajZkFAmrXkYUC
+GwEFCwkIBwICIgIGFQoJCAsCBBYCAwECHgcCF4AACgkQJ/2jLIiajZkXjAD/VXmt
+6JRgmMkZ70DqHQH4IYCfGjH384MKb75YsJsk+Q0BAPX22mE3FNtXayX3HrI/8c5G
+PgTAIO4OOxtX3DleJ5MJuDMEateRhRYJKwYBBAHaRw8BAQdACSpGAXnZCg8kRZ8G
+xuUepF6WjlS+uNyxq+dfTce/gJ6I7wQYFgoAIBYhBC1sl+pa84IRgPxx0Sf9oyyI
+mo2ZBQJq15GFAhsCAIEJECf9oyyImo2ZdiAEGRYKAB0WIQS6q6zC55TWvEaPi5F2
+zevWCPv1ygUCateRhQAKCRB2zevWCPv1yhkLAQDyffbuoeXYhGOXG39LSl9wdTGQ
+fMykaYnnQTLPlHtqtgD9H8o2KqUp4XTXvceFr+3e630n38mbkIxezurRlC8RwwjW
+cwD/XkJRTYPeMzRKXgEflchFBFaqtPYhhkzm3tQuT5MS5GgA/R7BrPJWCc2G74aE
+hVS9gt5nakFKjTzPUhqa2xbC214O
+=fdi4
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+_FX_KEY_B = """\
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEateRhRYJKwYBBAHaRw8BAQdAMuP/v5ohTrruBzmwJTskAwjZat5fStLs+/Pa
+gdRKw7a0HUZpeHR1cmUgQiA8YkBmaXh0dXJlLmludmFsaWQ+iJMEExYKADsWIQSC
+R/axUtN4KjMqwfvb7Bm/oip6hAUCateRhQIbAwULCQgHAgIiAgYVCgkICwIEFgID
+AQIeBwIXgAAKCRDb7Bm/oip6hCzlAQDZhMPi/ExbaY0m4/upzi8pQi5L7C95d9N0
+oIeuTHSQEgEAw+KDa+YmIKjrEcSZ0fxFPaZRSMYlsdlNzX2Na3DPZgk=
+=wple
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+_FX_KEY_C = """\
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEXgvhABYJKwYBBAHaRw8BAQdA3ZOf++UbEP/iorhVEM0wgphELM7gJkn5tXz0
+fulsYna0JkZpeHR1cmUgQywgZXhwaXJlZCA8Y0BmaXh0dXJlLmludmFsaWQ+iJkE
+ExYKAEEWIQR1f/gBnXs3PWBit3H8DVNPMa/KxQUCXgvhAAIbAwUJAAFRgAULCQgH
+AgIiAgYVCgkICwIEFgIDAQIeBwIXgAAKCRD8DVNPMa/KxdGuAP9SLh7e9dlytkJJ
+qJNxt/KNK6IkP32seGnsNIzPAGO18gEAz6RJc1ddKESOvMHQbB58ZF39UWld1KHC
+8rsheKWXMQ4=
+=5T4Q
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+_FX_KEY_D = """\
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEateRhRYJKwYBBAHaRw8BAQdAcWpLhMOYR4RoDhAbfUzFWuvOFqo2Z/7xo7D3
+0gtd2i6IeAQgFgoAIBYhBIkYCPiMKo/SXdwS+dSdfqqurE7XBQJq15GFAh0AAAoJ
+ENSdfqqurE7XqcQBANgK9xoLaYA5IWCQzTB/Urt4zsxPTxIB9jP2OKVcqgnOAP9j
+LcVsbomWTmiHtKq7NBf4M0WRuSIWDdEcxT5ccKPKDbQmRml4dHVyZSBELCByZXZv
+a2VkIDxkQGZpeHR1cmUuaW52YWxpZD6IkwQTFgoAOxYhBIkYCPiMKo/SXdwS+dSd
+fqqurE7XBQJq15GFAhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJENSd
+fqqurE7Xn7ABAKHCbqK3LBnMtG35hyUQhTJQcr7fMWdBqYEuC3ffpTJQAP0W2jgM
+LKSKZecdbQoYI2f5eX7ywpiysztegVI2MQuJAA==
+=B1zi
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+_FX_SIG_A = """\
+-----BEGIN PGP SIGNATURE-----
+
+iHUEABYKAB0WIQS6q6zC55TWvEaPi5F2zevWCPv1ygUCateRhQAKCRB2zevWCPv1
+yrxqAQDHRsK58C1IXuncQN4Cs7RxhxFm4rhjAWlPEIIl0KK4jAD/WRqe3ZOGU6b2
+miXQLdkj/0ObELcagqqiUWE/wN6SlQE=
+=Ae0S
+-----END PGP SIGNATURE-----
+"""
+_FX_SIG_B = """\
+-----BEGIN PGP SIGNATURE-----
+
+iHUEABYKAB0WIQSCR/axUtN4KjMqwfvb7Bm/oip6hAUCateRhQAKCRDb7Bm/oip6
+hLLpAQDt7fJPnIY3OBEa3SjMoTRt2YkrypdIyb0PL3soX/YZBgEAlMNWSytlTJhk
+CUqEXqfNmezwtvux1hBqHD/Leex+3gw=
+=dEx+
+-----END PGP SIGNATURE-----
+"""
+_FX_SIG_C = """\
+-----BEGIN PGP SIGNATURE-----
+
+iHUEABYKAB0WIQR1f/gBnXs3PWBit3H8DVNPMa/KxQUCXgyJwAAKCRD8DVNPMa/K
+xev7AP4wSB9VZkXRhfejw++Gq5m2oXJ07JgUT4Ynb7dzd8gg+wD/SeUwSabRqHMA
+LplbKAxCb6xFoFpHmffUP9EWNJ3NdA8=
+=pEfj
+-----END PGP SIGNATURE-----
+"""
+_FX_SIG_D = """\
+-----BEGIN PGP SIGNATURE-----
+
+iHUEABYKAB0WIQSJGAj4jCqP0l3cEvnUnX6qrqxO1wUCateRhQAKCRDUnX6qrqxO
+10SVAP94T5A+3tnvf/37f9zdVwmgt6HF1SzPe5Lax4p1qQc9IgD9H4VNqJQiE0gf
+V4bzhLUzqnvchzmDeRdxkjNXHNYBbgs=
+=Mto+
+-----END PGP SIGNATURE-----
+"""
+
+
+_FEED_URL = "https://feed.invalid/release.json"
+_KEY_URL = "https://keys.invalid/key"
+_BIN_URL = "https://dist.invalid/app/1.2/app-1.2.tar.gz"
+_SIG_URL = _BIN_URL + ".asc"
+
+
+def _followed(step: dict, served: dict, dry: bool = False):
+    """Run bundle.fromTarball with urlopen serving `served` by URL (a 404 for anything else)
+    and _make_bundle replaced by a snapshot. Returns (error, URLs asked in order, lines
+    said, provenance step, files staged by path, kitchen-bt-* directories left behind)."""
+    import io
+    import urllib.error
+    asked, said, staged = [], [], {}
+
+    def fake(url, timeout=None):
+        asked.append(url)
+        if url not in served:
+            raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
+        return io.BytesIO(served[url])
+
+    def snapshot(_ctx, root, name, verb, all_root=False):
+        for d, _dirs, files in os.walk(root):
+            for n in files:
+                p = os.path.join(d, n)
+                with open(p) as f:
+                    staged[os.path.relpath(p, root)] = f.read()
+
+    box = tempfile.mkdtemp()
+    work = os.path.join(box, "work")
+    os.makedirs(os.path.join(work, "iso", "slax", "modules"))
+    ctx = apply.Ctx(work, box, "followed", dry=dry)
+    ctx.say = lambda *a, **_k: said.append(" ".join(map(str, a)))
+    saved = apply.urllib.request.urlopen, apply._make_bundle
+    apply.urllib.request.urlopen, apply._make_bundle = fake, snapshot
+    err = None
+    try:
+        ctx.begin_step("bundle.fromTarball")
+        try:
+            apply.v_bundle_fromtarball(ctx, dict({"verb": "bundle.fromTarball",
+                                                  "bundle": "40-app"}, **step))
+        except RuntimeError as e:
+            err = str(e)
+        ctx.end_step()
+    finally:
+        apply.urllib.request.urlopen, apply._make_bundle = saved
+        left = [n for n in os.listdir(box) if n.startswith("kitchen-bt-")]
+        shutil.rmtree(box, ignore_errors=True)
+    return err, asked, said, (ctx.prov_steps[-1] if ctx.prov_steps else {}), staged, left
+
+
+def test_a_release_feed_names_the_archive_and_a_bad_one_is_refused_by_name():
+    """bundle.fromTarball reading a release feed, and each way that is refused by name.
+
+    #90: run 38719028077 (2026-10-15, b735862) failed with a bare `HTTP Error 404: Not
+    Found` -- tor-browser's pinned release had left dist.torproject.org -- which named
+    neither the file nor its URL. #80 was the same break a release earlier. The recipe now
+    follows Tor's feed, so what a feed can get wrong is refused here, and before the archive
+    is fetched wherever it can be; a plain src's 404 names its URL; and preflight infers the
+    network and gpgv from the step, so a missing gpgv is said before anything is unpacked.
+    urlopen is stubbed and gpgv never runs: the signature itself is the next test's.
+    """
+    import json
+    import yaml
+    import validate
+    feed = {"version": "1.2", "binary": _BIN_URL, "sig": _SIG_URL}
+    step = {"release_feed": _FEED_URL, "signed_by": {"fingerprint": _FX_A, "key_url": _KEY_URL},
+            "strip": 1, "prefix": "/opt/app"}
+    fetch = "bundle.fromTarball: could not fetch"
+
+    err, asked, *_ = _followed(step, {})
+    check("an unreachable feed is named", err,
+          f"{fetch} the release feed {_FEED_URL}: HTTP Error 404: Not Found")
+    check("...and nothing after it is asked for", asked, [_FEED_URL])
+    err, *_ = _followed(step, {_FEED_URL: b"<!doctype html>"})
+    check("a feed that is not JSON", (err or "").startswith(
+        f"bundle.fromTarball: the release feed {_FEED_URL} is not JSON"), True)
+    err, asked, *_ = _followed(step, {_FEED_URL: json.dumps(
+        {"version": "1.2", "binary": _BIN_URL}).encode()})
+    check("a feed naming no signature, with what it does name", err,
+          f"bundle.fromTarball: the release feed {_FEED_URL} names no sig "
+          f"(it has: binary, version)")
+    check("...refused before the key is fetched", asked, [_FEED_URL])
+    err, *_ = _followed(step, {_FEED_URL: json.dumps(
+        dict(feed, binary="http://dist.invalid/app.tar.gz")).encode()})
+    check("an archive over plain http", "gives binary as 'http://dist.invalid/app.tar.gz'; "
+          "only https is fetched" in (err or ""), True)
+    err, *_ = _followed(step, {_FEED_URL: json.dumps(dict(feed, version="../x")).encode()})
+    check("a version that is not one", "names version '../x', which is not a version"
+          in (err or ""), True)
+    served = {_FEED_URL: json.dumps(feed).encode(), _KEY_URL: b"<!doctype html>"}
+    err, asked, *_ = _followed(step, served)
+    check("a key URL serving a web page", err,
+          f"bundle.fromTarball: {_KEY_URL} did not serve an OpenPGP public key")
+    served = {_FEED_URL: json.dumps(feed).encode(), _KEY_URL: _FX_KEY_A.encode(),
+              _SIG_URL: b"-----BEGIN PGP MESSAGE-----\n\nowGbwMvMwMV4\n-----END PGP MESSAGE-----\n"}
+    err, asked, *_ = _followed(step, served)
+    check("a signed message where a detached signature belongs", err,
+          f"bundle.fromTarball: {_SIG_URL} is an OpenPGP MESSAGE, not a detached signature")
+    check("...refused before the archive is fetched", asked, [_FEED_URL, _KEY_URL, _SIG_URL])
+
+    err, asked, *_ = _followed({"src": _BIN_URL}, {})
+    check("a pinned src's 404 now names the archive and its URL (#90's own failure)", err,
+          f"{fetch} the archive {_BIN_URL}: HTTP Error 404: Not Found")
+    err, asked, *_ = _followed({"src": _BIN_URL, "upstream_source": "https://s.invalid/{version}/"},
+                               {})
+    check("{version} with no feed to fill it", err, "bundle.fromTarball: upstream_source uses "
+          "{version}, which only a release_feed fills")
+    check("...refused before anything is fetched", asked, [])
+    err, asked, said, *_ = _followed(step, {}, dry=True)
+    check("a dry run fetches nothing", (err, asked), (None, []))
+    check("...and says what it would follow, and whose signature it needs", said,
+          [f"would unpack the release named by {_FEED_URL}, signed by {_FX_A} "
+           f"-> slax/modules/40-app.sb under /opt/app"])
+
+    full = dict(step, verb="bundle.fromTarball", bundle="40-app")
+    req = apply.step_requires(full)
+    check("a followed release needs the network, gpgv and mksquashfs",
+          (req.get("network"), sorted(req.get("tools", []))), (True, ["gpgv", "mksquashfs"]))
+    req = apply.step_requires({"verb": "bundle.fromTarball", "bundle": "40-app", "src": _BIN_URL})
+    check("a pinned src still needs no gpgv", "gpgv" in req.get("tools", []), False)
+    saved = apply.shutil.which
+    apply.shutil.which = lambda tool: None if tool == "gpgv" else f"/usr/bin/{tool}"
+    try:
+        said = apply.preflight([("tor-browser", full)], check_network=False)
+    finally:
+        apply.shutil.which = saved
+    check("preflight names a missing gpgv, and the package to install",
+          any("missing tool 'gpgv'" in s and "apt-get install gpgv" in s for s in said), True)
+
+    head = {"apiVersion": "slax-kitchen/v1", "kind": "Recipe",
+            "metadata": {"name": "followed",
+                         "summary": "A recipe written for this test, long enough"},
+            "compat": {"flavours": ["debian"], "arch": ["64bit"], "privilege": "none"}}
+    box = tempfile.mkdtemp()
+
+    def problems(**fields):
+        path = os.path.join(box, "followed.yaml")
+        with open(path, "w") as f:
+            yaml.safe_dump(dict(head, steps=[dict({"verb": "bundle.fromTarball",
+                                                   "bundle": "40-app"}, **fields)]), f)
+        return validate.validate_file(path)
+
+    signed = {"fingerprint": _FX_A, "key_url": _KEY_URL}
+    sha = "a" * 64
+    try:
+        for label, fields in (
+                ("a release feed with its key", {"release_feed": _FEED_URL, "signed_by": signed}),
+                ("a fingerprint as gpg prints it",
+                 {"release_feed": _FEED_URL, "signed_by": dict(signed, fingerprint=" ".join(
+                     _FX_A[i:i + 4] for i in range(0, 40, 4)).lower())}),
+                ("the old pinned shape", {"src": _BIN_URL, "sha256": sha})):
+            check(f"the schema accepts {label}", problems(**fields), [])
+        for label, fields in (
+                ("a feed and a src",
+                 {"release_feed": _FEED_URL, "signed_by": signed, "src": _BIN_URL}),
+                ("a feed with no signed_by", {"release_feed": _FEED_URL}),
+                ("signed_by on a src", {"src": _BIN_URL, "signed_by": signed}),
+                ("a feed and a sha256",
+                 {"release_feed": _FEED_URL, "signed_by": signed, "sha256": sha}),
+                ("neither src nor feed", {}),
+                ("a feed over plain http", {"release_feed": "http://feed.invalid/r.json",
+                                            "signed_by": signed}),
+                ("a fingerprint one digit short",
+                 {"release_feed": _FEED_URL, "signed_by": dict(signed, fingerprint=_FX_A[:39])}),
+                ("signed_by with no key_url", {"release_feed": _FEED_URL,
+                                               "signed_by": {"fingerprint": _FX_A}}),
+                ("a misspelt signed_by key", {"release_feed": _FEED_URL,
+                                              "signed_by": dict(signed, fingerprnt=_FX_A)})):
+            check(f"the schema refuses {label}", bool(problems(**fields)), True)
+    finally:
+        shutil.rmtree(box, ignore_errors=True)
+
+
+def test_a_followed_release_is_unpacked_only_if_the_pinned_key_signed_it():
+    """The signature check that replaced tor-browser's pin, run through real gpgv.
+
+    #90 traded a pinned sha256 for this: the archive a feed names is unpacked only if it
+    carries a good detached signature by the pinned primary key or one of its subkeys. A
+    check that cannot fail is worse than none, so every refusal is made to happen, with
+    committed fixtures (above) and the gpgv every reference container already has. Two of
+    the refusals exist because gpgv's exit status is not enough: measured with gpgv 2.2.40
+    and 2.4.4, a signature by an expired or a revoked key exits 0. And gpgv accepts any key
+    in the keyring it is given; only the pin refuses a good signature by another one.
+    """
+    import base64
+    import hashlib
+    import json
+    if not shutil.which("gpgv"):
+        FAILURES.append("gpgv is not installed, so nothing tests a followed release's signature "
+                        "check (apt-get install gpgv)")
+        return
+    arc = base64.b64decode(_FX_ARCHIVE)
+    feed = json.dumps({"version": "1.2", "binary": _BIN_URL, "sig": _SIG_URL}).encode()
+
+    def run(key, sig, data=arc, pin=None):
+        spaced = " ".join(_FX_A[i:i + 4] for i in range(0, 40, 4)).lower()
+        step = {"release_feed": _FEED_URL, "strip": 1, "prefix": "/opt/app",
+                "signed_by": {"fingerprint": pin or spaced, "key_url": _KEY_URL},
+                "upstream_source": "https://src.invalid/app/{version}/"}
+        return _followed(step, {_FEED_URL: feed, _KEY_URL: key.encode(), _SIG_URL: sig.encode(),
+                                _BIN_URL: data})
+
+    err, asked, said, prov, staged, left = run(_FX_KEY_A, _FX_SIG_A)
+    check("a good signature by the pinned key's subkey is unpacked", err, None)
+    check("...feed, key and signature fetched before the archive", asked,
+          [_FEED_URL, _KEY_URL, _SIG_URL, _BIN_URL])
+    check("...and the archive is what was staged", staged,
+          {"opt/app/README": "signed by the pinned key\n"})
+    check("...and the record says what was followed and who signed it",
+          {k: prov.get(k) for k in ("source", "source_sha256", "pinned", "release_feed", "version",
+                                    "signature", "key_url", "signer", "signing_key", "signed_at",
+                                    "upstream_source")},
+          {"source": _BIN_URL, "source_sha256": hashlib.sha256(arc).hexdigest(), "pinned": False,
+           "release_feed": _FEED_URL, "version": "1.2", "signature": _SIG_URL, "key_url": _KEY_URL,
+           "signer": _FX_A, "signing_key": _FX_A_SUB, "signed_at": "2026-10-20T16:06:29Z",
+           "upstream_source": "https://src.invalid/app/1.2/"})
+    check("...and says so", any(s.startswith(f"signature: good, by {_FX_A} (subkey {_FX_A_SUB})")
+                                for s in said), True)
+    check("...and leaves nothing behind", left, [])
+
+    tampered = bytearray(arc)
+    tampered[-10] ^= 1
+    for label, args, want in (
+            ("one flipped byte", dict(key=_FX_KEY_A, sig=_FX_SIG_A, data=bytes(tampered)),
+             f"bundle.fromTarball: the archive does not match its signature {_SIG_URL}"),
+            ("a good signature by another key the keyring holds",
+             dict(key=_FX_KEY_A + _FX_KEY_B, sig=_FX_SIG_B),
+             f"bundle.fromTarball: {_SIG_URL} is a good signature by key {_FX_B} (signing subkey "
+             f"{_FX_B}), and the recipe pins {_FX_A}"),
+            ("a signature by a key the keyring does not hold", dict(key=_FX_KEY_A, sig=_FX_SIG_B),
+             f"bundle.fromTarball: {_SIG_URL} was made by key {_FX_B}, which {_KEY_URL} does "
+             f"not hold"),
+            ("a pinned subkey", dict(key=_FX_KEY_A, sig=_FX_SIG_A, pin=_FX_A_SUB),
+             f"bundle.fromTarball: {_SIG_URL} is a good signature by key {_FX_A} (signing subkey "
+             f"{_FX_A_SUB}), and the recipe pins {_FX_A_SUB}; {_FX_A_SUB} is that signing subkey, "
+             f"and signed_by pins the primary key, so that a subkey rotation does not break "
+             f"the build"),
+            ("an expired key", dict(key=_FX_KEY_C, sig=_FX_SIG_C, pin=_FX_C),
+             f"bundle.fromTarball: {_SIG_URL} was made by key {_FX_C}, which has expired, and "
+             f"{_KEY_URL} still serves it that way"),
+            ("a revoked key", dict(key=_FX_KEY_D, sig=_FX_SIG_D, pin=_FX_D),
+             f"bundle.fromTarball: {_SIG_URL} was made by key {_FX_D}, which its owner has "
+             f"revoked")):
+        err, _asked, _said, _prov, staged, left = run(**args)
+        check(f"{label}: refused, by name", err, want)
+        check(f"...{label}: nothing staged, and nothing left behind", (staged, left), ({}, []))
+
+
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY.
     # 17 of this file's 25 mkdtemp() calls had no cleanup on 2026-09-18, so running it by hand left
@@ -4386,6 +4753,8 @@ def main():
                    test_a_zip_member_is_refused_where_a_tar_member_would_be,
                    test_a_prefix_cannot_leave_the_bundle,
                    test_a_local_archive_is_recorded_as_a_local_input,
+                   test_a_release_feed_names_the_archive_and_a_bad_one_is_refused_by_name,
+                   test_a_followed_release_is_unpacked_only_if_the_pinned_key_signed_it,
                    test_all_root_is_per_verb,
                    test_bundle_files_refuses_a_setuid_mode,
                    test_bundle_files_fetches_a_pinned_url_itself,

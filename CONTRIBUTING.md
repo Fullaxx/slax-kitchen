@@ -445,29 +445,29 @@ Pure logic — anything that does not need an ISO — belongs in `tests/unit/tes
 as one of the thirteen gates. Each case there should say in its docstring why it exists, and
 "What a test here is for", below, says what counts.
 
-**Seconds, not milliseconds, and it is worth knowing where they go.** Measured 2026-10-01 at
-`9388098` on Ubuntu 24.04 with python 3.12, median of three, each file timed the way the gate runs
-it: the whole unit gate is **about 20 s**, and 5.1 s of that is `tests/unit/test_qemu_boot.py`
-alone — it drives a poller, so real sleeps *are* the thing under test, and its own docstring says
-so. Then `test_apply.py` at 3.8 s, `test_tier_c_run.py` at 2.5 s and `test_boot_host.py` at 1.8 s;
-the other twenty-one files together come to about 7.4 s. That cost is paid at **both**
-`pre-commit` and `pre-push`.
+**Seconds, not milliseconds, and it is worth knowing where they go.** Measured 2026-10-20 on
+`b735862` with [#90](https://github.com/Fullaxx/slax-kitchen/issues/90)'s change, on Ubuntu 24.04
+with python 3.12, median of three, each file timed the way the gate runs it: the whole unit gate is
+**about 21.5 s**, and 5.1 s of that is `tests/unit/test_qemu_boot.py` alone — it drives a poller, so
+real sleeps *are* the thing under test, and its own docstring says so. Then `test_apply.py` at
+4.6 s, `test_tier_c_run.py` at 2.4 s and `test_boot_host.py` at 1.8 s; the other twenty-one files
+together come to about 7.5 s. That cost is paid at **both** `pre-commit` and `pre-push`.
 
 The shape moved between `e08c053` and here, which is why the figures are re-derived rather than
 adjusted: `test_apply.py` was "about a second" and is now the second most expensive file in the
-tree. `test_diff.py` was expected to be costly, since it packs real squashfs images — it is 0.15 s,
+tree. `test_diff.py` was expected to be costly, since it packs real squashfs images — it is 0.14 s,
 because those trees hold a handful of files apiece and the ISO layer around them is a stub. An
 expectation is not a measurement either.
 
-**About 3.2 s of that is the measurement that every test defined actually ran**
-([`ci/unit-run.py`](ci/unit-run.py)): the tests are 17.3 s on their own, 20.5 s through the runner,
-on the same tree, and 2.2 s of the difference is `test_apply.py`'s. `sys.setprofile` is called for
+**About 3.7 s of that is the measurement that every test defined actually ran**
+([`ci/unit-run.py`](ci/unit-run.py)): the tests are 17.7 s on their own, 21.4 s through the runner,
+on the same tree, and 2.7 s of the difference is `test_apply.py`'s. `sys.setprofile` is called for
 every function call in the process, which is what being certain costs; the hook stops itself once
 the last test has been seen. So list order is part of the cost: the hook is on for every test but
 the last one to run, and a cheap test added after a file's heaviest keeps the heaviest under it.
 On 2026-10-05 that made `test_apply.py` 0.16 s slower, until `test_a_chroot_gets_its_own_tmpdir`
-moved up one place. A file's heaviest test belongs last. Two cheaper versions of this check read the source instead, and
-both could be satisfied by a test that never ran.
+moved up one place. A file's heaviest test belongs last. Two cheaper versions of this check read
+the source instead, and both could be satisfied by a test that never ran.
 
 **This paragraph is the only copy of that number.** `ci/checks/80-unit.sh` used to restate it; the
 two were measured at different times and drifted to 18 s and 16 s, neither of them wrong when it was

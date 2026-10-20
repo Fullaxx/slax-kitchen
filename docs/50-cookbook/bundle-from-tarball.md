@@ -30,6 +30,12 @@ release process produces.
 
 A mismatch aborts the step and deletes the download; nothing half-fetched reaches the tree.
 
+A publisher that keeps only its current release online breaks a pinned `src:` at every release.
+For one that publishes a release feed and signs its archives, the verb can follow the feed instead,
+checking each archive's signature against a pinned key: see
+[following a release](../90-reference/verbs.md#following-a-release-instead-of-pinning-one), which is
+how [`tor-browser`](tor-browser.md) fetches Tor Browser.
+
 ## `strip:` and `prefix:`
 
 Two fields that between them handle almost every real tarball:

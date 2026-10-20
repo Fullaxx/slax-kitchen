@@ -137,6 +137,18 @@ def step_requires(step: dict) -> dict:
     # test_network_is_declared_where_it_is_used keeps the list honest against the code.
     if step.get("verb") in _URL_SRC_VERBS and re.match(r"^https?://", str(step.get("src", ""))):
         req["network"] = True
+    # A release feed is fetched like a `src`, and so is the key signed_by names; gpgv checks
+    # the signature (#90). Inferred here, so preflight names a missing gpgv before anything
+    # is unpacked rather than at the end of a download.
+    if step.get("verb") in _URL_SRC_VERBS and re.match(r"^https?://",
+                                                      str(step.get("release_feed", ""))):
+        req["network"] = True
+    if isinstance(step.get("signed_by"), dict):
+        req.setdefault("tools", [])
+        if "gpgv" not in req["tools"]:
+            req["tools"].append("gpgv")
+        if re.match(r"^https?://", str(step["signed_by"].get("key_url", ""))):
+            req["network"] = True
     if step.get("verb") in _URL_FILE_VERBS and any(
             isinstance(f, dict) and re.match(r"^https?://", str(f.get("url", "")))
             for f in step.get("files") or []):
@@ -1993,6 +2005,211 @@ def v_bundle_files(ctx: Ctx, step: dict) -> None:
         shutil.rmtree(work, ignore_errors=True)
 
 
+# ---- following a release feed, and checking a detached OpenPGP signature (#90) ----
+#
+# tor-browser pinned a version and its sha256, and dist.torproject.org keeps only current
+# releases, so every Tor release turned the weekly build red with a bare "HTTP Error 404"
+# until someone bumped the pin: #80, then run 38719028077 on 2026-10-15. A release_feed step
+# takes whatever release the feed names instead, and what makes that safe is signed_by: the
+# archive must carry a good signature by the pinned primary key, or one of its subkeys.
+# Each helper is called by bare name from the verb, so the AST test that holds every urlopen
+# to a verb declaring the network attributes _download's to bundle.fromTarball.
+
+_FEED_VERSION = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+~_-]{0,63}$")
+
+
+def _download(url: str, dest: str, verb: str, what: str) -> None:
+    """Fetch `url` into `dest`, or raise naming what was being fetched and from where.
+
+    The bare urlopen this replaced said `HTTP Error 404: Not Found` and nothing else --
+    not the file, not its URL (#90). A partial file never survives a failure.
+    """
+    import http.client
+    part = dest + ".part"
+    try:
+        with urllib.request.urlopen(url, timeout=120) as r, open(part, "wb") as f:
+            shutil.copyfileobj(r, f)
+    except (OSError, ValueError, http.client.HTTPException) as e:
+        if os.path.lexists(part):
+            os.unlink(part)
+        raise RuntimeError(f"{verb}: could not fetch {what} {url}: {e}") from None
+    os.replace(part, dest)
+
+
+def _release_feed(path: str, url: str, verb: str) -> tuple[str, str, str]:
+    """(version, binary, sig) from a release feed, in Tor's update-server format.
+
+    The feed is not signed, and is trusted only as far as https goes: it decides WHICH
+    release, and the signature decides whether what arrived is genuinely that release. So
+    what it names is held to that shape, and anything else is refused by name.
+    """
+    import json
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except ValueError as e:
+        raise RuntimeError(f"{verb}: the release feed {url} is not JSON: {e}") from None
+    if not isinstance(doc, dict):
+        raise RuntimeError(f"{verb}: the release feed {url} is not a JSON object")
+    missing = [k for k in ("version", "binary", "sig") if not isinstance(doc.get(k), str)]
+    if missing:
+        raise RuntimeError(f"{verb}: the release feed {url} names no {' or '.join(missing)} "
+                           f"(it has: {', '.join(sorted(map(str, doc))) or 'nothing'})")
+    version, binary, sig = doc["version"], doc["binary"], doc["sig"]
+    if not _FEED_VERSION.match(version):
+        raise RuntimeError(f"{verb}: the release feed {url} names version {version!r}, which "
+                           f"is not a version; it goes into the record and into URLs")
+    for k, v in (("binary", binary), ("sig", sig)):
+        if not v.startswith("https://"):
+            raise RuntimeError(f"{verb}: the release feed {url} gives {k} as {v!r}; only "
+                               f"https is fetched")
+    return version, binary, sig
+
+
+def _packet_tag(first: int) -> int | None:
+    """The OpenPGP packet tag a first byte declares, or None if it declares none."""
+    if not first & 0x80:
+        return None
+    return first & 0x3F if first & 0x40 else (first >> 2) & 0x0F
+
+
+def _keyring(raw: bytes, dest: str, key_url: str, verb: str) -> None:
+    """Write the key `key_url` served as a binary keyring, which is what gpgv reads.
+
+    gpgv reads no ASCII armour, and the reference containers have no gpg to dearmour with,
+    so armour is decoded here, every PUBLIC KEY BLOCK in the file. A binary key -- Tor
+    publishes one -- is written as it came. Anything else is refused rather than handed
+    to gpgv, whose answer to a web page would be a puzzling "no public key".
+    """
+    import base64
+    import binascii
+    data = raw
+    if raw.lstrip().startswith(b"-----BEGIN PGP PUBLIC KEY BLOCK-----"):
+        data = b""
+        blocks = re.findall(rb"-----BEGIN PGP PUBLIC KEY BLOCK-----(.*?)"
+                            rb"-----END PGP PUBLIC KEY BLOCK-----", raw, re.S)
+        for block in blocks:
+            lines = [ln.strip() for ln in block.replace(b"\r\n", b"\n").split(b"\n")]
+            if b"" in lines[1:]:
+                # Armour headers ("Comment: ...") end at the first blank line.
+                lines = lines[lines.index(b"", 1) + 1:]
+            body = b"".join(ln for ln in lines if ln and not ln.startswith(b"="))
+            try:
+                data += base64.b64decode(body, validate=True)
+            except (binascii.Error, ValueError):
+                raise RuntimeError(f"{verb}: {key_url} holds an armoured key that does not "
+                                   f"decode") from None
+    if not data or _packet_tag(data[0]) != 6:
+        raise RuntimeError(f"{verb}: {key_url} did not serve an OpenPGP public key")
+    with open(dest, "wb") as f:
+        f.write(data)
+
+
+def _detached_signature(path: str, sig_url: str, verb: str) -> None:
+    """Refuse anything at `sig_url` but a detached signature, before the archive is fetched.
+
+    gpgv refuses a signed MESSAGE in the signature's place ("not a detached signature",
+    exit 2, measured with gpgv 2.2.40 and 2.4.4), so this is not what keeps one out. It
+    says so by name, and before the archive is downloaded rather than after.
+    """
+    with open(path, "rb") as f:
+        raw = f.read()
+    head = raw.lstrip()
+    if head.startswith(b"-----BEGIN PGP SIGNATURE-----"):
+        return
+    if head.startswith(b"-----BEGIN PGP "):
+        kind = head[len(b"-----BEGIN PGP "):].split(b"-----", 1)[0].decode("ascii", "replace")
+        raise RuntimeError(f"{verb}: {sig_url} is an OpenPGP {kind}, not a detached signature")
+    if raw and _packet_tag(raw[0]) == 2:
+        return
+    raise RuntimeError(f"{verb}: {sig_url} is not an OpenPGP signature")
+
+
+def _fingerprint(raw: str) -> str:
+    """A fingerprint as gpg compares it: no spaces, upper case."""
+    return re.sub(r"\s+", "", str(raw)).upper()
+
+
+def _gpgv_verdict(rc: int, status: str, err: str, want: str, sig_url: str, key_url: str,
+                  verb: str) -> dict:
+    """What gpgv's --status-fd lines say about a signature, held to the pinned primary key.
+
+    Only `[GNUPG:]` lines on stdout count; gpg's own messages go to stderr, and the two are
+    kept apart, which is what stops a crafted user id from posing as a status line. The
+    exit status is not enough on its own: measured with gpgv 2.2.40 and 2.4.4, a signature
+    by an EXPIRED or REVOKED key exits 0, beside EXPKEYSIG or REVKEYSIG and a VALIDSIG. And
+    gpgv accepts a signature by ANY key in the keyring it is given, so the pin is checked
+    here: VALIDSIG's last field is the primary key's fingerprint, its first the key that
+    signed, which for Tor is a subkey.
+    """
+    lines: dict[str, list[list[str]]] = {}
+    for ln in status.splitlines():
+        if ln.startswith("[GNUPG:] "):
+            f = ln.split()[1:]
+            if f:
+                lines.setdefault(f[0], []).append(f[1:])
+    valid = lines.get("VALIDSIG") or []
+
+    def signer(keyword: str) -> str:
+        if valid and len(valid[0]) > 9:
+            return valid[0][9]
+        got = lines.get(keyword) or [["?"]]
+        return got[0][0] if got[0] else "?"
+
+    if "BADSIG" in lines:
+        raise RuntimeError(f"{verb}: the archive does not match its signature {sig_url}")
+    if "ERRSIG" in lines or "NO_PUBKEY" in lines:
+        e = (lines.get("ERRSIG") or [[]])[0]
+        who = e[6] if len(e) > 6 and e[6] != "-" else (e[0] if e else signer("NO_PUBKEY"))
+        raise RuntimeError(f"{verb}: {sig_url} was made by key {who}, which {key_url} does not "
+                           f"hold")
+    if "EXPKEYSIG" in lines:
+        raise RuntimeError(f"{verb}: {sig_url} was made by key {signer('EXPKEYSIG')}, which has "
+                           f"expired, and {key_url} still serves it that way")
+    if "REVKEYSIG" in lines:
+        raise RuntimeError(f"{verb}: {sig_url} was made by key {signer('REVKEYSIG')}, which its "
+                           f"owner has revoked")
+    if "EXPSIG" in lines:
+        raise RuntimeError(f"{verb}: the signature {sig_url} has expired")
+    if rc != 0 or "GOODSIG" not in lines or not valid:
+        tail = " ".join(err.split())[-300:] or "no message"
+        raise RuntimeError(f"{verb}: gpgv could not check {sig_url} (exit {rc}): {tail}")
+    for v in valid:
+        signing, primary = v[0], (v[9] if len(v) > 9 else v[0])
+        if primary != want:
+            hint = (f"; {want} is that signing subkey, and signed_by pins the primary key, so "
+                    f"that a subkey rotation does not break the build" if want == signing else "")
+            raise RuntimeError(f"{verb}: {sig_url} is a good signature by key {primary} (signing "
+                               f"subkey {signing}), and the recipe pins {want}{hint}")
+    first = valid[0]
+    signing, primary, when = first[0], (first[9] if len(first) > 9 else first[0]), first[2]
+    if "T" not in when:
+        from datetime import datetime, timezone
+        when = datetime.fromtimestamp(int(when), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {"signer": primary, "signing_key": signing, "signed_at": when}
+
+
+def _verify_signature(sig: str, archive: str, keyring: str, work: str, want: str,
+                      sig_url: str, key_url: str, verb: str) -> dict:
+    """Run gpgv on the archive and its detached signature; return who signed, or raise.
+
+    --homedir keeps ~/.gnupg and $GNUPGHOME out of it, and with --keyring given gpgv reads
+    no other keyring.
+    """
+    home = os.path.join(work, "gnupg")
+    os.makedirs(home, mode=0o700, exist_ok=True)
+    try:
+        r = subprocess.run(["gpgv", "--homedir", home, "--keyring", keyring, "--status-fd", "1",
+                            sig, archive], stdin=subprocess.DEVNULL, capture_output=True,
+                           encoding="utf-8", errors="replace", timeout=600)
+    except FileNotFoundError:
+        raise RuntimeError(f"{verb}: signed_by needs gpgv, which is not installed "
+                           f"(apt-get install {TOOL_PKG.get('gpgv', 'gpgv')})") from None
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"{verb}: gpgv did not finish checking {sig_url} within 600 s") from None
+    return _gpgv_verdict(r.returncode, r.stdout, r.stderr, want, sig_url, key_url, verb)
+
+
 @verb("bundle.fromTarball")
 def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
     """Unpack a tarball or a zip and pack it as a bundle.
@@ -2005,15 +2222,36 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
     A zip goes through the same checks as a tar, member by member (_ZipArchive). Software
     for Windows, games especially, is published as zips, and slax-rpgs ships five; a zip
     failed here with tarfile's own error, which never mentions zip (#69).
+
+    `release_feed:` takes the archive from whatever release a feed names on build day,
+    instead of a pinned `src:` and `sha256:`, and `signed_by:` comes with it: the archive is
+    unpacked only if it carries a good detached signature by the pinned primary key, or one
+    of its subkeys (#90).
     """
-    name = _bundle_name(step["bundle"], "bundle.fromTarball")
-    src = step["src"]
+    verb = "bundle.fromTarball"
+    name = _bundle_name(step["bundle"], verb)
+    feed = step.get("release_feed")
+    signed_by = step.get("signed_by") or {}
+    src = step.get("src")
     want = step.get("sha256")
     strip = int(step.get("strip", 0))
     prefix = (step.get("prefix") or "").strip("/")
     world_readable = bool(step.get("world_readable", False))
+    upstream = step.get("upstream_source")
+    if not feed and not src:
+        raise RuntimeError(f"{verb}: needs src, or a release_feed")
+    if feed and not signed_by:
+        raise RuntimeError(f"{verb}: release_feed needs signed_by: the feed decides which "
+                           f"archive arrives, and nothing else would check it")
+    # Filled from the feed (#90). Without one it would be recorded as a URL with a literal
+    # "{version}" in it, which names nothing.
+    if not feed and "{version}" in str(upstream or ""):
+        raise RuntimeError(f"{verb}: upstream_source uses {{version}}, which only a "
+                           f"release_feed fills")
+    pinned_key = _fingerprint(signed_by["fingerprint"]) if signed_by else None
     if ctx.dry:
-        ctx.say(f"would unpack {src} -> slax/modules/{name}"
+        what = f"the release named by {feed}, signed by {pinned_key}" if feed else src
+        ctx.say(f"would unpack {what} -> slax/modules/{name}"
                 + (f" under /{prefix}" if prefix else ""))
         return
 
@@ -2021,11 +2259,29 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
     import tempfile
     work = tempfile.mkdtemp(prefix="kitchen-bt-", dir=os.path.dirname(os.path.abspath(ctx.work)))
     try:
+        followed: dict = {}
+        if feed:
+            # The small files first, so a bad feed, key or signature costs nothing before
+            # the archive -- 138 MB for Tor Browser.
+            key_url = signed_by["key_url"]
+            _download(feed, os.path.join(work, "feed.json"), verb, "the release feed")
+            version, src, sig_url = _release_feed(os.path.join(work, "feed.json"), feed, verb)
+            ctx.say(f"release feed names {version}: {src}")
+            _download(key_url, os.path.join(work, "key"), verb, "the signing key")
+            with open(os.path.join(work, "key"), "rb") as f:
+                _keyring(f.read(), os.path.join(work, "keyring.gpg"), key_url, verb)
+            _download(sig_url, os.path.join(work, "src.sig"), verb, "the signature")
+            _detached_signature(os.path.join(work, "src.sig"), sig_url, verb)
+            followed = {"release_feed": feed, "version": version, "signature": sig_url,
+                        "key_url": key_url}
+            if upstream:
+                upstream = ([u.replace("{version}", version) for u in upstream]
+                            if isinstance(upstream, list)
+                            else upstream.replace("{version}", version))
         remote = bool(re.match(r"^https?://", src))
         if remote:
             archive = os.path.join(work, "src.tar")
-            with urllib.request.urlopen(src, timeout=120) as r, open(archive, "wb") as f:
-                shutil.copyfileobj(r, f)
+            _download(src, archive, verb, "the archive")
         else:
             # Through ctx.local, so the archive is recorded as copied in from the checkout,
             # as boot.payload's local file is. This joined the path itself and recorded
@@ -2036,12 +2292,22 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
         got = sha256(archive)
         if want and got != want:
             raise RuntimeError(f"bundle.fromTarball: sha256 mismatch\n  want {want}\n  got  {got}")
+        if feed:
+            followed.update(_verify_signature(
+                os.path.join(work, "src.sig"), archive, os.path.join(work, "keyring.gpg"), work,
+                pinned_key, followed["signature"], followed["key_url"], verb))
+            ctx.say(f"signature: good, by {followed['signer']}"
+                    + (f" (subkey {followed['signing_key']})"
+                       if followed["signing_key"] != followed["signer"] else "")
+                    + f", made {followed['signed_at']}")
         ctx.prov(source=src if remote else os.path.basename(src), source_sha256=got,
                  # `pinned` is said of a download only, as boot.payload says it. A local
                  # archive recorded pinned=False, and `kitchen sources` reported "no sha256
-                 # was pinned" for a file from the checkout (#75).
+                 # was pinned" for a file from the checkout (#75). A followed release is
+                 # pinned=False too, and true: its signature is what was checked, and the
+                 # fields beside it say by whom (#90).
                  pinned=bool(want) if remote else None, strip=strip, prefix=prefix or None,
-                 world_readable=world_readable, upstream_source=step.get("upstream_source"))
+                 world_readable=world_readable, upstream_source=upstream, **followed)
 
         root = os.path.join(work, "root")
         os.makedirs(root)

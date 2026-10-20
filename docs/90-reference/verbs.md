@@ -51,9 +51,12 @@ state. Nothing requires it, and nothing refuses a recipe that leaves it out
 | `upstream_source` | `boot.payload`, `bundle.fromTarball`, `bundle.script`, each `apt.sources` entry, each `bundle.files` `url:` or `src:` entry | where the publisher of something installed **unmodified** keeps its source: a URL, or a list of them |
 | `sha256` | `boot.payload`, `bundle.fromTarball`, each `bundle.files` `url:` entry | the download's sha256, pinned when the recipe is written. The engine refuses a download that does not match; without one, what it fetched is whatever that server served that day, and the report marks it |
 | `declares` | `bundle.script` | binaries the script **compiled**, each with `path`, `source_url`, `source_sha256` and optionally `license` |
+| `release_feed` | `bundle.fromTarball` | instead of `src:`, a JSON feed naming the current release. The archive is whichever release it names on build day, and `signed_by:` comes with it ([below](#following-a-release-instead-of-pinning-one)) |
+| `signed_by` | `bundle.fromTarball`, with `release_feed` | the OpenPGP key the archive's signature must be by: its primary key's `fingerprint`, and the `key_url` that serves it |
 
 A pointer nobody gave reads "not named" in `SOURCES.md`. Neither that nor an unpinned download is an
-error.
+error. A followed release reads as unpinned too, and its line says which version the feed named and
+which key signed it ([#90](https://github.com/Fullaxx/slax-kitchen/issues/90)).
 
 **A local `src:` is copied in as it is.** Files a verb copies in from beside the recipe go through
 one resolver, which records where they sit in the kitchen or project checkout, so the report can
@@ -227,6 +230,43 @@ everything below, member by member. Its modes and symlinks come from the Unix at
 on a Unix system carries, an entry made without them is `0644` (`0755` for a directory), and an
 encrypted zip is refused ([#69](https://github.com/Fullaxx/slax-kitchen/issues/69)). `prefix:` is
 held inside the bundle like any path a recipe names.
+
+#### Following a release instead of pinning one
+
+A publisher that keeps only its current release on its download host breaks a pinned `src:` at
+every release. `tor-browser` failed the weekly build with `HTTP Error 404` at two Tor releases in a
+row, until each time the pin was bumped ([#80](https://github.com/Fullaxx/slax-kitchen/issues/80),
+[#90](https://github.com/Fullaxx/slax-kitchen/issues/90)). `release_feed:` names a JSON feed
+instead, and the archive is whichever release it names on build day:
+
+```yaml
+- verb: bundle.fromTarball
+  bundle: 15-tor-browser
+  release_feed: "https://aus1.torproject.org/torbrowser/update_3/release/download-linux-x86_64.json"
+  signed_by:
+    fingerprint: "EF6E 286D DA85 EA2A 4BA7  DE68 4E2C 6E87 9329 8290"
+    key_url: "https://torproject.org/.well-known/openpgpkey/hu/kounek7zrdx745qydx6p59t9mqjpuhdf"
+  upstream_source: "https://archive.torproject.org/tor-package-archive/torbrowser/{version}/"
+  strip: 1
+  prefix: /opt/tor-browser
+```
+
+- **The feed** is Tor's update-server format: a JSON object whose `version`, `binary` and `sig` name
+  the release, its archive and its detached signature. `binary` and `sig` must be https, and a feed
+  missing any of the three is refused, naming what it does have.
+- **`signed_by:` is required with it.** The engine fetches the key and the signature, refuses
+  anything that is not a detached signature, and runs `gpgv`. The archive is unpacked only if the
+  signature is good and was made by the pinned **primary** key or one of its subkeys. A signature
+  by an expired or a revoked key is refused, although `gpgv` itself exits 0 for both. Pin the
+  primary: publishers sign with subkeys and rotate them, and a pinned subkey is refused with a hint
+  saying so.
+- **`{version}`** in `upstream_source:`, in single braces, is filled from the feed.
+- **The step needs `gpgv`.** Preflight names it if it is missing. apt depends on it on Debian 12 and
+  Ubuntu 24.04, so those bases have it; Debian 13's apt verifies with `sqv` instead, so there it has
+  to be installed, which `containers/packages/build.txt` does.
+- **What is not checked: freshness.** The feed is not signed, and is trusted only as far as https
+  goes, so it could name an older release that is still genuinely signed. `kitchen sources` says
+  which version each build took.
 
 Absolute paths and `..` components in the archive are **refused**, not sanitised — and so
 are link *targets*. A member named `x` that is a symlink to `/etc`, followed by a member

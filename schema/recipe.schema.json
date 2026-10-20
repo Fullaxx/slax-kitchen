@@ -707,8 +707,7 @@
           },
           "then": {
             "required": [
-              "bundle",
-              "src"
+              "bundle"
             ],
             "properties": {
               "bundle": {
@@ -719,6 +718,31 @@
               },
               "sha256": {
                 "type": "string"
+              },
+              "release_feed": {
+                "description": "instead of src: an https URL to a JSON release feed naming `version`, `binary` and `sig` (Tor's update-server format). The archive is whichever release it names on build day, and signed_by is required with it (#90)",
+                "type": "string",
+                "pattern": "^https://"
+              },
+              "signed_by": {
+                "description": "the OpenPGP key whose signature the archive must carry: its primary key's fingerprint, and where the key is published. gpgv checks the feed's `sig` against the archive (#90)",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fingerprint",
+                  "key_url"
+                ],
+                "properties": {
+                  "fingerprint": {
+                    "description": "the primary key's 40-hex-digit fingerprint; spaces and either case are accepted, as gpg prints it",
+                    "type": "string",
+                    "pattern": "^[0-9A-Fa-f]{4}( {0,2}[0-9A-Fa-f]{4}){9}$"
+                  },
+                  "key_url": {
+                    "type": "string",
+                    "pattern": "^https://"
+                  }
+                }
               },
               "strip": {
                 "type": [
@@ -735,6 +759,32 @@
               "upstream_source": {
                 "$ref": "#/$defs/upstreamSource"
               }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "src"
+                ]
+              },
+              {
+                "required": [
+                  "release_feed"
+                ]
+              }
+            ],
+            "dependentRequired": {
+              "release_feed": [
+                "signed_by"
+              ],
+              "signed_by": [
+                "release_feed"
+              ]
+            },
+            "not": {
+              "required": [
+                "release_feed",
+                "sha256"
+              ]
             }
           }
         },

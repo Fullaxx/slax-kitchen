@@ -31,9 +31,10 @@ when its build jobs took 159–464 s.
 
 **What a test in the `gates` job may assume is installed**: `containers/packages/lint.txt` —
 `shellcheck`, `yamllint`, `python3-yaml`, `python3-jsonschema`, `python3-pyflakes` — plus whatever
-the `ubuntu-24.04` runner image happens to ship, which today includes `squashfs-tools` and **does
-not include `xorriso`**. Nothing else is installed for it. A unit test that needs to read or write an
-image serves canned output from a stub and writes the few sectors it needs in Python:
+the `ubuntu-24.04` runner image happens to ship, which today includes `squashfs-tools` and `gpgv`
+(apt depends on it) and **does not include `xorriso`**. Nothing else is installed for it. A unit
+test that needs to read or write an image serves canned output from a stub and writes the few
+sectors it needs in Python:
 [`test_listing.py`](../../tests/unit/test_listing.py) and
 [`test_diff.py`](../../tests/unit/test_diff.py) both do, and say so at the top.
 
@@ -70,9 +71,10 @@ and both are on the weekly run:
 else's change into a red master at a cadence nobody can act on. Being merely expensive is not
 enough; cost is not a reason to stop checking. Each entry in it is an external dependency:
 `all-browsers`, whose four vendor signing keys are pinned by sha256 and will rotate;
-`tor-browser`, a version-pinned download from torproject.org; `firmware-refresh`, 65 sha256-pinned
-files fetched from linux-firmware mirrors; and `bundle-from-url`, a version-pinned binary from
-github.com, whose fetch the unit gate tests in-process on every push.
+`tor-browser`, whichever release Tor's feed names that day, checked against Tor's signing key;
+`firmware-refresh`, 65 sha256-pinned files fetched from linux-firmware mirrors; and
+`bundle-from-url`, a version-pinned binary from github.com, whose fetch the unit gate tests
+in-process on every push.
 
 Each skip is printed with its reason. A matrix that quietly ran less than it looks like would be
 worse than a slow one:

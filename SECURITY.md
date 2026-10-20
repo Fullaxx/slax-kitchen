@@ -45,7 +45,8 @@ In scope:
 - Anything that makes `kitchen` write outside the tree it was pointed at, or execute code from a
   recipe in a way a reader of that recipe would not expect. Recipes are meant to be **shared**, so
   a recipe that can do more than it appears to is a real finding.
-- Anything that lets a downloaded artifact through without its pinned checksum being enforced.
+- Anything that lets a downloaded artifact through without its pinned checksum being enforced, or
+  without its signature by the key a recipe pins (`signed_by:`) being checked.
 - Anything that weakens a built image relative to what the recipe says it does — a credential that
   is more permissive than documented, a service enabled that should not be, a trust store that
   accepts more than it should.

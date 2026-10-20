@@ -37,5 +37,11 @@ dosfstools
 grub-efi-amd64-bin
 grub-common
 
+# A followed release's detached signature (bundle.fromTarball signed_by:, #90). apt
+# depends on gpgv on debian:12 and ubuntu:24.04, so there this installs nothing new.
+# Debian 13's apt verifies with sqv and no longer pulls gpgv in, and naming it here is
+# what keeps it in the image when the base moves.
+gpgv
+
 python3-yaml
 python3-jsonschema

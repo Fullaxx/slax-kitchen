@@ -2,7 +2,7 @@ apiVersion: slax-kitchen/v1
 kind: Recipe
 metadata:
   name: tor-browser
-  summary: Tor Browser from a pinned tarball, with the system tor daemon
+  summary: The current Tor Browser release, signature-checked against Tor's key, with the tor daemon
   tags: [browser, bundle, packages, tarball, privacy]
 compat:
   # Debian only, for the reason every bundle.packages recipe here is Debian only: Slax's
@@ -13,7 +13,7 @@ compat:
   # would work right now, which is exactly the trap. The Tor Project has announced that
   # 15.0 is the LAST major release to support 32-bit Linux; 16.0 drops i686 and is
   # already at 16.0a9 (read 2026-09-17). Declaring [32bit, 64bit] would go green today
-  # and break at the next version bump, with nothing to say why. Same shape as
+  # and break the day Tor's feed moves to 16.0, with nothing to say why. Same shape as
   # bundle-from-tarball, where fzf publishes no i386 at all.
   arch: [64bit]
   slax: ">=12.0.0"
@@ -26,10 +26,6 @@ vars:
   tor_bundle: "14-tor"
   browser_bundle: "15-tor-browser"
   desktop_bundle: "16-tor-desktop"
-  version: "15.0.24"
-  # From sha256sums-signed-build.txt, the file the Tor Project signs -- not from the
-  # download page. Re-fetched and verified against the tarball 2026-10-02.
-  sha256: "b03eefb6ebe2acb53a1d64f82c95c0df0ced9c0f9d626586e8c6c81d9805d604"
 steps:
   # IT ONLY ADDS. Slax's Chromium is still on the image unless a removal takes it out,
   # and that removal is its own recipe, listed first in the profile:
@@ -47,7 +43,8 @@ steps:
   # libflac12, libvorbis, libpulse0 and the rest. The obvious worry is that Tor Browser loses them.
   # Measured instead of assumed, by reading DT_NEEDED out of firefox.real, libxul.so and
   # Tor/tor against the 15.0.23 tarball (2026-09-17), and again against 15.0.24
-  # (2026-10-02), with the same result:
+  # (2026-10-02), with the same result, and against 15.0.25 (2026-10-20) with the same
+  # counts and nothing missing:
   #
   #   47 sonames needed. 17 of them Tor Browser SHIPS ITSELF, and they are precisely the
   #   ones at risk: libnss3, libnspr4, libnssutil3, libssl3, libsmime3, libplc4, libplds4,
@@ -74,7 +71,7 @@ steps:
       - tor-geoipdb
       - torsocks
 
-  # THE BROWSER, AS A PINNED TARBALL, BECAUSE THERE IS NO OTHER WAY.
+  # THE BROWSER, AS WHICHEVER RELEASE TOR'S FEED NAMES, AND ONLY IF TOR SIGNED IT.
   #
   # No Tor Browser .deb exists anywhere. deb.torproject.org ships tor, tor-geoipdb and a
   # keyring -- the daemon. torbrowser-launcher (bookworm contrib) is a DOWNLOADER: the
@@ -86,22 +83,43 @@ steps:
   # 27 of its directories and 0600 on 185 of its 220 files -- not one group or world bit
   # anywhere -- and -all-root rewrites ownership to root while leaving mode bits exactly
   # as the archive set them. Without this the bundle is root-only and `guest` cannot even
-  # traverse /opt/tor-browser, let alone run the browser. Measured on 15.0.23 and again on
-  # 15.0.24 (2026-10-02): 246 paths widened, dirs 0700 -> 0755, executables 0700 -> 0755,
-  # data 0600 -> 0644, and the executable count stays at 35, so no data file becomes
-  # runnable.
+  # traverse /opt/tor-browser, let alone run the browser. Measured on 15.0.23, again on
+  # 15.0.24 (2026-10-02) and on 15.0.25 (2026-10-20): 246 paths widened, dirs 0700 ->
+  # 0755, executables 0700 -> 0755, data 0600 -> 0644, and the executable count stays at
+  # 35, so no data file becomes runnable.
   #
   # strip: 1 because the archive is wrapped in a single `tor-browser/` directory.
   # 15.0.24: 137,930,492 bytes compressed, 333 MiB extracted as `du -sh` counts it
-  # (2026-10-02).
+  # (2026-10-02). 15.0.25: 137,994,120 bytes, 334 MiB (2026-10-20).
+  #
+  # FOLLOWED, NOT PINNED (#90). This pinned a version and its sha256 until 2026-10-20, and
+  # dist.torproject.org keeps only current releases, so every Tor release turned the
+  # weekly build red with "HTTP Error 404" until someone bumped the pin: #80 (15.0.24),
+  # then 15.0.25, released 2026-10-12. Now the build takes the release Tor's update feed names
+  # that day, and unpacks it only if gpgv finds a good signature by Tor Browser's signing
+  # key. The primary key is pinned, not a subkey and not the key file's sha256: Tor signs
+  # with subkeys and rotates them (15.0.25 was signed by subkey 022DA248...D62D07D9), and
+  # a pin on either would break at the next rotation. key_url is Tor's WKD address for
+  # torbrowser@torproject.org, in WKD's direct form; the advanced form under
+  # openpgpkey.torproject.org served the same 6,693 bytes on 2026-10-20.
+  #
+  # What this does NOT check: freshness. The feed is not signed, and is trusted only as
+  # far as https goes, so it could name an OLDER release that is genuinely signed. Nor
+  # does a green build mean the browser runs (#91). One commit of this recipe builds
+  # different releases over time; `kitchen sources` says which. A fork that wants one
+  # fixed release can still write `src:` on archive.torproject.org, which keeps every
+  # release, with that release's sha256 from its signed sha256sums-signed-build.txt.
   - verb: bundle.fromTarball
     bundle: "{{browser_bundle}}"
-    src: "https://dist.torproject.org/torbrowser/{{version}}/tor-browser-linux-x86_64-{{version}}.tar.xz"
-    sha256: "{{sha256}}"
+    release_feed: "https://aus1.torproject.org/torbrowser/update_3/release/download-linux-x86_64.json"
+    signed_by:
+      fingerprint: "EF6E 286D DA85 EA2A 4BA7  DE68 4E2C 6E87 9329 8290"
+      key_url: "https://torproject.org/.well-known/openpgpkey/hu/kounek7zrdx745qydx6p59t9mqjpuhdf"
     # Where the Tor Project publishes the source of this exact release -- the src-*.tar.xz
     # tarballs sit beside the binaries. archive.torproject.org, not dist: dist keeps only
-    # current releases, the archive keeps every one. Recorded in the image's provenance.
-    upstream_source: "https://archive.torproject.org/tor-package-archive/torbrowser/{{version}}/"
+    # current releases, the archive keeps every one. Recorded in the image's provenance,
+    # with {version} filled from the feed.
+    upstream_source: "https://archive.torproject.org/tor-package-archive/torbrowser/{version}/"
     strip: 1
     prefix: /opt/tor-browser
     world_readable: true

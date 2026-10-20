@@ -11,8 +11,9 @@ kitchen apply tor-browser
 kitchen build tor
 ```
 
-Installs the system `tor` daemon, unpacks a **pinned** Tor Browser
-tarball to `/opt/tor-browser`, and points the desktop at it.
+Installs the system `tor` daemon, unpacks **whichever Tor Browser release Tor's feed names that
+day** to `/opt/tor-browser` once its signature checks out against Tor's signing key, and points
+the desktop at it.
 
 Slax's own Chromium stays unless something removes it, and for this image you almost certainly want
 it gone — a browser that leaks beside one that does not is a strange image. That is a separate
@@ -25,13 +26,15 @@ recipes:
   - tor-browser
 ```
 
-> **CI builds this weekly, not on every push.** The tarball is an external dependency with a pinned
-> sha256, so a Tor Browser release fails the build *by design*. Running it per-push would turn the
-> Tor Project shipping a security update into a red master. `ci/upstream-watch.sh` checks the
-> version every Monday and files an issue instead. See [ci.md](../60-testing/ci.md).
+> **CI builds this weekly, not on every push.** Each weekly build takes whichever release Tor's
+> feed names that day, so a new Tor release is a new build, not a failure ([#90](https://github.com/Fullaxx/slax-kitchen/issues/90)). It fails only
+> for a named reason: the feed, the key or the signature cannot be fetched, the signature is bad or
+> is not by Tor's key, or the archive trips the verb's checks. Running it per-push would let Tor's
+> servers break master at a cadence nobody here sets. See [ci.md](../60-testing/ci.md).
 >
-> The 15.0.24 tarball is 138 MB (137,930,492 bytes on 2026-10-04), a figure `ci/slow-recipes.txt`
-> prints as the matrix's skip reason, so a version bump that changes the size changes both.
+> A green weekly build means the release downloaded, verified, unpacked and bundled, not that the
+> browser starts: nothing in CI boots an image with Tor in it. [#91](https://github.com/Fullaxx/slax-kitchen/issues/91) proposes checking each
+> release's libraries at build time, the check every pin bump used to get by hand.
 
 ## There is no Tor Browser package, anywhere
 
@@ -46,15 +49,34 @@ This is the first thing to understand, because every other route looks easier an
 The launcher is the tempting one and it is the worst fit here: an offline boot gets a launcher that
 cannot launch, and an offline boot is most of what a USB stick is for.
 
-So the tarball, pinned by sha256 taken from the Tor Project's **signed** `sha256sums-signed-build.txt`
-rather than scraped off the download page. Version and hash live in the recipe's `vars:`.
+So the tarball, and since 2026-10-20 the **current** one ([#90](https://github.com/Fullaxx/slax-kitchen/issues/90)). The recipe used to pin a version
+and its sha256. dist.torproject.org keeps only current releases, so every Tor release broke the
+weekly build with `HTTP Error 404` until someone bumped the pin. [#80](https://github.com/Fullaxx/slax-kitchen/issues/80) was 15.0.24; 15.0.25,
+out on 2026-10-12, broke the build of 2026-10-15 the same way. Now:
+
+- **Which release:** whichever one Tor's update server names on build day, in
+  `download-linux-x86_64.json`.
+- **How it is checked:** `gpgv` must find a good signature by Tor Browser's signing key,
+  `EF6E 286D DA85 EA2A 4BA7 DE68 4E2C 6E87 9329 8290`, fetched from Tor's WKD address. The
+  **primary** key is pinned, not a subkey: 15.0.25 was signed by subkey `022D A248 … D62D 07D9`,
+  and Tor rotates subkeys.
+- **What is not checked:** freshness, because the feed is unsigned and trusted only as far as
+  https goes, so it could name an older release that is still genuinely signed. Nor whether the
+  browser runs ([#91](https://github.com/Fullaxx/slax-kitchen/issues/91)).
+- **Which version a build took:** `kitchen sources` says, with the feed and the signer.
+
+So one commit of this recipe builds different releases over time. A fork that wants one fixed
+release can write `src:` on archive.torproject.org, which keeps every release, with that release's
+sha256 from its signed `sha256sums-signed-build.txt`. The recipe no longer declares `version` or
+`sha256`, so a profile that overrides either is refused rather than silently ignored.
 
 ## 64-bit only, and that is upstream's decision
 
 Tor Browser 15.0.x ships **both** `linux-x86_64` and `linux-i686`, so a 32-bit build would work
 today. That is exactly the trap. The Tor Project has said 15.0 is the **last** major release to
 support 32-bit Linux; 16.0 drops i686 and is already at `16.0a9` (read 2026-09-17). Declaring
-`arch: [32bit, 64bit]` would be green now and break at the next bump with nothing to explain why.
+`arch: [32bit, 64bit]` would be green now and break the day the feed moves to 16.0, with nothing to
+explain why.
 
 ## Removing Chromium costs the browser nothing — measured
 
@@ -65,8 +87,8 @@ packages** than `04-apps`: Chromium's own three, and 22 that are the shared brow
 rest. The obvious worry is that taking the bundle away breaks Tor Browser.
 
 It does not, and the reason is that Tor Browser ships its own copies. Reading `DT_NEEDED` out of
-`firefox.real`, `libxul.so` and `TorBrowser/Tor/tor` in the 15.0.23 tarball, and again in 15.0.24
-on 2026-10-02 with the same result:
+`firefox.real`, `libxul.so` and `TorBrowser/Tor/tor` in the 15.0.23 tarball, again in 15.0.24
+on 2026-10-02 with the same result, and in 15.0.25 on 2026-10-20 with the same counts:
 
 | | |
 |---|---|
@@ -135,7 +157,8 @@ them — so without intervention the bundle is root-only and `guest` cannot even
 `/opt/tor-browser`.
 
 `world_readable: true` mirrors the owner's read bit to group and other, and the execute bit only
-where the owner already has it. Measured on this archive, 15.0.23 and again 15.0.24 on 2026-10-02:
+where the owner already has it. Measured on 15.0.23, again on 15.0.24 on 2026-10-02, and on 15.0.25
+on 2026-10-20, with the same counts:
 **246 paths widened** (247 members, less the top-level directory `strip: 1` drops), directories
 `0700 → 0755`, executables `0700 → 0755`, data `0600 → 0644`, and the count of executable files
 stays at **35** — no data file becomes runnable. setuid and setgid are never added and cannot be:

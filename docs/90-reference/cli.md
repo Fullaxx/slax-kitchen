@@ -557,7 +557,8 @@ it, the way the isohybrid MBR does.
 **What the report rests on is said, and changes nothing.**
 
 - A download the recipe pinned no `sha256:` for is marked: what it fetched is whatever that server
-  served that day.
+  served that day. A [followed release](verbs.md#following-a-release-instead-of-pinning-one) is
+  marked so too, and its line says which version the feed named and which key signed it.
 - A pointer nobody gave reads "not named".
 - A package there is nothing to point at is listed with the reason: an archive the step does not
   declare, or no recorded source version.

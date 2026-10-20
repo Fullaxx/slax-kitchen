@@ -168,6 +168,7 @@ shellcheck|shellcheck|commit gate
 yamllint|yamllint|commit gate
 jq|jq|JSON handling
 curl|curl|fetch base ISOs
+gpgv|gpgv|check the signature of a followed release (bundle.fromTarball signed_by:)
 file|file|artifact identification'
 
 # Is a tool installed? mkfs.* lives in /usr/sbin, which a non-login PATH can lack --

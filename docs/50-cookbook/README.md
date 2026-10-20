@@ -7,9 +7,9 @@ targets by CI (or on the subset its `compat:` block declares) — with the excep
 [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) lists:
 [`all-browsers`](all-browsers.md), [`tor-browser`](tor-browser.md),
 [`firmware-refresh`](firmware-refresh.md) and [`bundle-from-url`](bundle-from-url.md) are built
-weekly rather than on every push, because four sha256-pinned vendor keys, a version-pinned Tor
-Browser tarball, 65 files fetched from linux-firmware mirrors and a version-pinned binary from
-github.com are external dependencies — someone else's release should not redden master. See
+weekly rather than on every push, because four sha256-pinned vendor keys, Tor's current Browser
+release, 65 files fetched from linux-firmware mirrors and a version-pinned binary from github.com
+are external dependencies — someone else's release should not redden master. See
 [CI](../60-testing/ci.md). Each page opens with the rung of
 the [verification ladder](../../CONTRIBUTING.md) it actually reached — `matrix-verified`,
 `artifact boot-verified`, `boot-verified` or `runtime-verified` — and the `95-status-vocab` gate
@@ -65,7 +65,7 @@ to live here. The initramfs carries 301 modules against 4,766 in `01-core.sb`.
 | [`chromium-current`](chromium-current.md) | replace the 2023 browser — stock is chromium **117**, from September 2023 | ◐ |
 | [`debian-browsers`](debian-browsers.md) | current Chromium **and** Firefox in one bundle — both arches, no vendor repos | ◐ |
 | [`all-browsers`](all-browsers.md) | six browsers in one bundle — 64-bit; pair it with `remove-bundle` | ◐ |
-| [`tor-browser`](tor-browser.md) | Tor Browser from a pinned tarball — 64-bit, runs as `guest`; pair it with `remove-bundle` | ◐ |
+| [`tor-browser`](tor-browser.md) | Tor Browser's current release, signature-checked against Tor's key — 64-bit, runs as `guest`; pair it with `remove-bundle` | ◐ |
 | [`firefox-esr`](firefox-esr.md) | add the second browser no Slax image ships; amd64 **and** i386 | ◐ |
 | [`libreoffice`](libreoffice.md) | Writer, Calc, Impress and Draw | ◐ |
 | [`branding`](branding.md) | hostname, version string and login banner, from a small override bundle | ○ |

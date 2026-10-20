@@ -44,6 +44,7 @@ docker run --rm -it -v "$PWD:/work" slax-kitchen
 |---|---|---|
 | `mksquashfs` | `squashfs-tools` | build `.sb` bundles |
 | `unsquashfs` | `squashfs-tools` | read them — **in place, via `-o <offset>`**, without extracting the ISO |
+| `gpgv` | `gpgv` | check a followed release's signature, for `bundle.fromTarball`'s `signed_by:`. apt depends on it on Debian 12 and Ubuntu 24.04, but not on Debian 13, whose apt verifies with `sqv` |
 
 Version matters less than you would expect: the format is squashfs 4.0 with xz, and every
 `squashfs-tools` since 4.2 produces it. What matters is passing upstream's exact four flags — see

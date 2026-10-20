@@ -33,6 +33,8 @@ TOOL_PKG = {
     "isohybrid": "syslinux-utils", "extlinux": "extlinux", "syslinux": "syslinux",
     "qemu-system-x86_64": "qemu-system-x86", "chroot": "coreutils",
     "file": "file", "git": "git", "mkfs.ext4": "e2fsprogs",
+    # bundle.fromTarball's signed_by: checks a followed release's signature (#90).
+    "gpgv": "gpgv",
     # Only a boot host needs these, and only on the machine driving one; kitchen test
     # asks for them instead of qemu when boot-host.ini is in play.
     "ssh": "openssh-client", "rsync": "rsync",

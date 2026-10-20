@@ -272,6 +272,36 @@ def test_an_unpinned_download_is_said_out_loud():
     check("a pinned one is not", "no sha256 was pinned" in sources.markdown(doc), False)
 
 
+def test_a_signature_checked_download_says_what_was_checked():
+    """A followed release (#90) is unpinned, and its signature was checked. Rendered with
+    only "no sha256 was pinned", the strongest check bundle.fromTarball makes would read
+    like the weakest; the report says which version the feed named and whose key signed it.
+    An unsigned unpinned download still reads exactly as it did."""
+    followed = {"release_feed": "https://example.org/release.json", "version": "1.2",
+                "signature": "https://example.org/app-1.2.tar.xz.asc",
+                "key_url": "https://example.org/key",
+                "signer": "2D6C97EA5AF3821180FC71D127FDA32C889A8D99",
+                "signing_key": "BAABACC2E794D6BC468F8B9176CDEBD608FBF5CA",
+                "signed_at": "2026-10-20T16:06:29Z"}
+    step = dict({"verb": "bundle.fromTarball", "output": "slax/modules/15-app.sb",
+                 "output_sha256": H["3"], "source": "https://example.org/app-1.2.tar.xz",
+                 "upstream_source": "https://example.org/src/1.2/", "pinned": False}, **followed)
+    doc = run({"slax/modules/15-app.sb": H["3"]}, prov([{"recipe": "app", "steps": [step]}]))
+    comp = doc["components"][0]
+    check("the component carries what was checked", {k: comp.get(k) for k in followed}, followed)
+    head = ("- `slax/modules/15-app.sb` — https://example.org/app-1.2.tar.xz — "
+            "source: https://example.org/src/1.2/; no sha256 was pinned")
+    check("and SOURCES.md says it", head + (
+        ": version 1.2 is the release https://example.org/release.json named on build day, and "
+        "its signature verified as made by key 2D6C97EA5AF3821180FC71D127FDA32C889A8D99")
+          in sources.markdown(doc).splitlines(), True)
+    for k in followed:
+        del step[k]
+    doc = run({"slax/modules/15-app.sb": H["3"]}, prov([{"recipe": "app", "steps": [step]}]))
+    check("an unsigned unpinned download reads as it did",
+          head in sources.markdown(doc).splitlines(), True)
+
+
 def test_a_mirror_path_cannot_impersonate_debian():
     """The origin is an apt list filename with / turned into _, so `debian.org` can appear
     in the PATH of some other host: mirror.example.com_debian.org_pub_... . Matching the
@@ -700,6 +730,7 @@ def main():
                test_a_script_that_had_network_says_so,
                test_the_initramfs_note_counts_members_instead_of_asserting_them,
                test_an_unpinned_download_is_said_out_loud,
+               test_a_signature_checked_download_says_what_was_checked,
                test_a_mirror_path_cannot_impersonate_debian,
                test_packages_point_at_snapshot_including_reinstalls,
                test_a_package_from_a_recipe_repository_points_at_that_repository,

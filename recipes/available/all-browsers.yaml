@@ -85,8 +85,9 @@ steps:
   # the browser. torbrowser-launcher (bookworm contrib) is a DOWNLOADER, so the browser
   # arrives on first run, over the network, into the live overlay, every boot without
   # persistence. An offline boot gets a launcher that cannot launch, and an offline boot
-  # is most of what a USB stick is for. The tarball route -- bundle.fromTarball against a
-  # pinned tor-browser-linux-*.tar.xz -- is real and is a different recipe.
+  # is most of what a USB stick is for. The tarball route -- bundle.fromTarball against
+  # Tor's current tor-browser-linux-*.tar.xz, signature-checked -- is real and is a
+  # different recipe.
   #
   # `from:` IS UNSET ON PURPOSE, and that is why the removal has to come first. With
   # 05-chromium gone the default resolves to 01-core .. 04-apps, so the shared browser
