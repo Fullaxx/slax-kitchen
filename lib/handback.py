@@ -7,7 +7,7 @@ journal, a provenance record and a bundle it could not write, and a directory it
 remove. CI's boot job chowned out/ and work/ after its build, slax-wine's build.sh chowns
 its tree after every apply, and publishing-images.md had a publisher `sudo chown -R` out/.
 This does what those did, once, here, however the command ends: the trap in `kitchen`
-makes INT and TERM exits for the shell commands, and run() does it for the Python ones.
+makes INT, TERM and HUP exits for the shell commands, and run() does it for the Python ones.
 
 What it changes is every path under the given ones that root owns, to SUDO_UID:SUDO_GID:
 - only when this process is root and SUDO_UID names someone else, so root in a container,
@@ -104,24 +104,35 @@ def give_back(paths=(), env=None, created=()) -> int:
 
 def run(main, argv: list, paths: list, created: list = ()) -> int:
     """Run an entry point's main(argv), and give back `paths` and `created` as it ends,
-    however it ends: a return, an exception, INT or TERM. The lists are read when main()
-    is done, so it fills them as it goes.
+    however it ends: a return, an exception, INT, TERM or HUP. The lists are read when
+    main() is done, so it fills them as it goes.
 
-    TERM becomes an exit here, as the trap in `kitchen` makes it for the shell commands.
-    Python runs no `finally` on a default SIGTERM, and sudo passes one on. An apply ended by
-    TERM gave nothing back and left its 1.4 GiB build chroot behind (#81), because both are
-    done in a `finally`. fetch had its own copy of these lines (#79), and this is the one
-    copy now. The previous handler is put back, for a caller in the same process.
+    TERM and HUP become exits here, as the trap in `kitchen` makes them for the shell
+    commands, with the shell's status for a process a signal ended: 128 + the signal.
+    Python runs no `finally` on a default SIGTERM or SIGHUP, and sudo passes both on. An
+    apply ended by TERM gave nothing back and left its 1.4 GiB build chroot behind (#81),
+    because both are done in a `finally`, and HUP, which a dropped ssh session or a closed
+    terminal sends, did the same (#83). fetch had its own copy of these lines (#79), and
+    this is the one copy now. The previous handlers are put back, for a caller in the same
+    process.
+
+    A signal ignored on entry stays ignored, as it does for the shell's trap, which POSIX
+    does not let a script set for one. Under nohup HUP is ignored, and that means carry on:
+    the first version of #83's fix made it an exit, and ended the run nohup was keeping.
     """
     import signal
-    previous = signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    previous = {}
+    for s in (signal.SIGTERM, signal.SIGHUP):
+        if signal.getsignal(s) is not signal.SIG_IGN:
+            previous[s] = signal.signal(s, lambda signum, _frame: sys.exit(128 + signum))
     try:
         return main(argv)
     finally:
         try:
             give_back(paths, created=created)
         finally:
-            signal.signal(signal.SIGTERM, previous)
+            for s, handler in previous.items():
+                signal.signal(s, handler)
 
 
 if __name__ == "__main__":

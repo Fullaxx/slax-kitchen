@@ -2950,29 +2950,41 @@ def test_boot_cmdline_reads_a_var_as_a_list_of_parameters():
 
 def test_a_terminated_entry_point_still_gives_back():
     """`kitchen apply` and `kitchen fetch` give back what root wrote from a `finally` (#70,
-    #79), and Python runs none on a default SIGTERM, which sudo passes on. An apply ended by
-    TERM kept seven root-owned paths in a uid 1000 work tree and left its 1.4 GiB build
-    chroot behind (#81, measured), and fetch had a copy of its own of the cure (#79).
-    handback.run is the one copy now: TERM becomes an exit, and the hand-back runs.
+    #79), and Python runs none on a default SIGTERM or SIGHUP, which sudo passes on. An
+    apply ended by TERM kept seven root-owned paths in a uid 1000 work tree and left its
+    1.4 GiB build chroot behind (#81, measured), and fetch had a copy of its own of the cure
+    (#79). HUP, which a dropped ssh session or a closed terminal sends, did the same: seven
+    paths and a 1.8 GiB chroot (#83, measured). handback.run is the one copy now: either
+    becomes an exit, and the hand-back runs.
 
-    In a child process, because the signal is real: main() sends itself TERM, and give_back
-    is replaced by one that writes down what it was handed."""
-    marker = os.path.join(tempfile.mkdtemp(), "given")
+    But a HUP ignored on entry stays ignored. That is nohup, which means carry on, and the
+    first version of #83's fix made it an exit, ending the run nohup was keeping.
+
+    In a child process, because the signal is real: main() sends itself the signal, and
+    give_back is replaced by one that writes down what it was handed."""
     driver = ("import os, signal, sys\n"
               "sys.path.insert(0, sys.argv[1])\n"
               "import handback\n"
               "def give_back(paths=(), env=None, created=()):\n"
               "    open(sys.argv[2], 'w').write(repr((list(paths), list(created))))\n"
               "handback.give_back = give_back\n"
+              "sig = getattr(signal, 'SIG' + sys.argv[3])\n"
+              "if sys.argv[4] == 'ignored':\n"
+              "    signal.signal(sig, signal.SIG_IGN)\n"
               "def main(argv):\n"
-              "    os.kill(os.getpid(), signal.SIGTERM)\n"
+              "    os.kill(os.getpid(), sig)\n"
               "    return 0\n"
               "sys.exit(handback.run(main, sys.argv, ['/w'], created=['/n']))\n")
-    r = subprocess.run([sys.executable, "-c", driver, os.path.join(REPO, "lib"), marker],
-                       capture_output=True, text=True)
-    check("TERM ends it as an exit, 143, not by the signal", r.returncode, 143)
-    check("...after the hand-back ran, with what main registered",
-          open(marker).read() if os.path.exists(marker) else None, repr((["/w"], ["/n"])))
+    for sig, entry, status, says in (
+            ("TERM", "default", 143, "TERM ends it as an exit, 143, not by the signal"),
+            ("HUP", "default", 129, "HUP ends it as an exit, 129, not by the signal"),
+            ("HUP", "ignored", 0, "a HUP ignored on entry (nohup) stays ignored: main carries on")):
+        marker = os.path.join(tempfile.mkdtemp(), "given")
+        r = subprocess.run([sys.executable, "-c", driver, os.path.join(REPO, "lib"), marker,
+                            sig, entry], capture_output=True, text=True)
+        check(says, r.returncode, status)
+        check(f"...and the hand-back ran, with what main registered ({sig}, {entry})",
+              open(marker).read() if os.path.exists(marker) else None, repr((["/w"], ["/n"])))
 
 
 def test_what_root_wrote_under_sudo_is_given_back():

@@ -4871,5 +4871,5 @@ def main(argv: list[str]) -> int:
 GIVE_BACK: list = []
 
 if __name__ == "__main__":
-    # Given back however the run ends, TERM included (#81).
+    # Given back however the run ends, TERM and HUP included (#81, #83).
     raise SystemExit(handback.run(main, sys.argv, GIVE_BACK))

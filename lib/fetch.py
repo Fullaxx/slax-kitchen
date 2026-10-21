@@ -181,6 +181,6 @@ WROTE: list = []
 MADE: list = []
 
 if __name__ == "__main__":
-    # Given back however the run ends, TERM included: a download ended by TERM left isos/
-    # and its .part file root's (#79). handback.run holds the rule for both entry points.
+    # Given back however the run ends, TERM and HUP included: a download ended by TERM left
+    # isos/ and its .part file root's (#79). handback.run holds the rule for both entry points.
     raise SystemExit(handback.run(main, sys.argv, WROTE, created=MADE))
