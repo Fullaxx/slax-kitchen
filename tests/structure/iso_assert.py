@@ -19,6 +19,7 @@ import need  # noqa: E402
 # By these names, not `import diff`: main() has a local `diff` of its own.
 from diff import ListingError, _entries as image_entries  # noqa: E402
 from isoparse import IsoReader  # noqa: E402
+import units  # noqa: E402
 
 # Every stock bundle on all four reference ISOs has exactly these parameters, and so must
 # anything we build -- create_bundle(), dir2sb and savechanges all use the same
@@ -66,7 +67,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     t = Asserter()
-    print(f"structure: {a.iso}  ({os.path.getsize(a.iso) / 1048576:.0f} MiB)")
+    print(f"structure: {a.iso}  ({units.mib(os.path.getsize(a.iso))} MiB)")
 
     with IsoReader(a.iso) as r:
         info = r.info()

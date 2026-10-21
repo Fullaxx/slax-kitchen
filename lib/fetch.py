@@ -16,6 +16,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import handback  # noqa: E402
+import units  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -76,6 +77,8 @@ def download(url: str, dest: str) -> None:
                 f.write(chunk)
                 done += len(chunk)
                 if TTY and total:
+                    # Live progress counts whole MiB that have arrived, so both figures
+                    # round down and read equal at the end. A finished size is units.mib.
                     rate = done / max(time.time() - start, 0.01) / 1048576
                     print(f"\r  {100 * done // total}%  {done // 1048576}/{total // 1048576} MiB"
                           f"  {rate:.1f} MiB/s", end="", file=sys.stderr)
@@ -83,7 +86,7 @@ def download(url: str, dest: str) -> None:
         print("\r" + " " * 48 + "\r", end="", file=sys.stderr)
     else:
         elapsed = time.time() - start
-        print(f"  downloaded {done // 1048576} MiB in {elapsed:.0f}s", file=sys.stderr)
+        print(f"  downloaded {units.mib(done)} MiB in {elapsed:.0f}s", file=sys.stderr)
     os.replace(tmp, dest)
 
 

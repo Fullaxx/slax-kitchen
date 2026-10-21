@@ -228,7 +228,7 @@ OUT_BEFORE=$(du -sk out 2>/dev/null | cut -f1)
 
 say ""
 say "${B}Tier C boot matrix${O}"
-say "  image    $(basename "$ISO") ($(( $(stat -c%s "$ISO") / 1048576 )) MiB)"
+say "  image    $(basename "$ISO") ($(python3 "$REPO_ROOT/lib/units.py" "$ISO") MiB)"
 say "  target   $TARGET"
 say "  paths    $PATHS"
 say "  accel    $ACCEL"

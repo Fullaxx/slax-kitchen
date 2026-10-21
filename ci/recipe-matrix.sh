@@ -162,7 +162,7 @@ PY
         fail=$((fail+1)); rm -rf "$tree" "$out"; continue
     fi
 
-    sz=$(( $(stat -c%s "$out") / 1048576 ))
+    sz=$(python3 "$REPO_ROOT/lib/units.py" "$out")
     # Seconds per recipe: what belongs in ci/slow-recipes.txt is an EXTERNAL failure mode,
     # not cost -- but the cost claim in that file has to come from somewhere, and a run
     # that does not print it leaves it to memory.

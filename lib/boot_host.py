@@ -95,6 +95,14 @@ AF_UNIX_MAX = 107
 QMP_TAIL = "/qb-XXXXXXXX/q"          # mkdtemp's 8 random characters, plus the socket
 
 
+def _mib(n: int) -> int:
+    """`n` bytes in whole MiB, the nearest, a half rounding up: lib/units.py's mib(), which
+    every other line printing a size in whole MiB uses (#93). A copy, because this file runs
+    on the boot host as the agent and imports nothing of ours; tests/unit/test_boot_host.py
+    fails if the two round any size differently."""
+    return (n + 524288) // 1048576
+
+
 class ConfigError(Exception):
     """boot-host.ini says something this cannot act on. Exit 2, before any ssh."""
 
@@ -898,7 +906,7 @@ def cmd_test(cfg: Config, args: list) -> int:
             if os.path.exists(golden):
                 s.push_file(golden, gold_remote)
         _echo(f"  {D}sent {n} files"
-              + (f" and {sent // 1048576} MiB of image" if sent
+              + (f" and {_mib(sent)} MiB of image" if sent
                  else " (image already cached)")
               + f", {time.time() - t0:.1f}s{O}")
 
@@ -1071,7 +1079,7 @@ def launch(cfg: Config, a, make_argv) -> int:
         n = s.push_tree()
         iso_remote, sent = s.push_iso(a.iso)
         _echo(f"  {D}sent {n} files"
-              + (f" and {sent // 1048576} MiB of image" if sent
+              + (f" and {_mib(sent)} MiB of image" if sent
                  else " (image already cached)") + O)
 
         # The command line is built by the caller, because the caller owns the parser
@@ -1429,7 +1437,7 @@ class Agent:
         left = len([n for n in os.listdir(runs) if os.path.isdir(os.path.join(runs, n))])
         self.emit(t="swept", runs_removed=removed, killed=killed,
                   cache_removed=cache_removed, runs_left=left,
-                  cache_n=cache_n, cache_mb=cache_b // 1048576)
+                  cache_n=cache_n, cache_mb=_mib(cache_b))
 
     def op_open(self, msg: dict) -> None:
         run_id = self._component(msg.get("run_id"), "run_id")
@@ -1616,7 +1624,7 @@ class Agent:
         # B/disks is never touched: tools/qemu/boot.py's relative --disk paths land there,
         # so it holds work somebody asked for, not this tool's bookkeeping.
         self.emit(t="cleaned", runs=runs, images=images, agents=agents,
-                  mb=freed // 1048576)
+                  mb=_mib(freed))
 
     def op_done(self, msg: dict) -> None:
         """Tear down HERE, and say what happened, before the connection goes.

@@ -213,7 +213,7 @@ print(status.start_over(sys.argv[2]))' "$REPO_ROOT/lib" "$_work")
     esac
 
     _abs=$(cd "$(dirname "$out")" && pwd)/$(basename "$out")
-    _mib=$(( $(stat -c%s "$out") / 1048576 ))
+    _mib=$(python3 "$REPO_ROOT/lib/units.py" "$out")
     printf '  %sok%s   wrote %s  (%s MiB)\n' "$G" "$O" "$_abs" "$_mib"
     [ "$backend" = xorriso ] && [ "$appid" != "$(printf '%s' "$appid" | tr a-z A-Z)" ] && \
         printf '  %snote: xorriso uppercased the application id to %s%s\n' "$Y" \

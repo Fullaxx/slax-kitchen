@@ -567,6 +567,28 @@ def test_printed_paths_are_paths_here():
         check(name, boot_host._paths_home(line, pairs), want)
 
 
+def test_a_size_reads_the_same_mib_on_every_line():
+    """One image, one figure, whichever line prints it (#93).
+
+    Every line that printed a size in whole MiB did its own arithmetic. kitchen pack, the
+    matrix, Tier C, apply, fetch, boot.py and this file's own lines dropped the remainder,
+    and the structure check rounded to the nearest. So the same image read one MiB less on
+    one line than on another, and a331979 found two such figures in the docs, beside a stock
+    416 that is rounded: remove-bundle's 336 was 337, and firmware-refresh's 469 was 470.
+
+    lib/units.py holds the rule now. boot_host.py keeps a copy, because it runs on the boot
+    host as the agent and imports nothing of ours, and this test lives beside that copy. The
+    two must agree at every boundary. A half must round up: the structure line's float :.0f
+    sent 416.5 MiB to 416, so a half above an even MiB is the case that tells the rules apart.
+    """
+    import units
+    half, mib = 524288, 1048576
+    for n, want in [(0, 0), (half - 1, 0), (half, 1), (mib, 1), (mib + half - 1, 1),
+                    (mib + half, 2), (416 * mib + half, 417), (448 * mib + half, 449)]:
+        check(f"units.mib({n})", units.mib(n), want)
+        check(f"boot_host._mib({n}) agrees", boot_host._mib(n), units.mib(n))
+
+
 def test_the_gate_refuses_a_committed_config():
     """ci/checks/10-no-dnc.sh, driven over a throwaway repo -- and the template passes."""
     tmp = tempfile.mkdtemp(prefix="bh-gate-")
@@ -726,6 +748,7 @@ def main():
                    test_the_tree_sent_is_the_tree_git_sees,
                    test_a_stale_screenshot_is_not_this_run_s_evidence,
                    test_printed_paths_are_paths_here,
+                   test_a_size_reads_the_same_mib_on_every_line,
                    test_the_gate_refuses_a_committed_config,
                    test_active_answers_with_a_status,
                    test_a_boot_answers_for_its_own_group_and_nobody_elses]:

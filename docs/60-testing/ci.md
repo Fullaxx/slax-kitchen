@@ -144,8 +144,10 @@ with the cleanup removed, so each recipe's log survived. `firmware-refresh` and 
 run again that day with `TMPDIR` unset: the first run had set it, the build chroot then inherited
 it, and both failed on a temporary file ([#88](https://github.com/Fullaxx/slax-kitchen/issues/88)). A
 bundle's size is from its `built slax/modules/…` line. An image's is from its `structure:` line,
-which rounds to the nearest MiB, as the stock sizes do. The `ok` line above rounds down, as
-`kitchen pack` does, so the same image can read one MiB less there.
+which rounds to the nearest MiB, as the stock sizes do. Since
+[#93](https://github.com/Fullaxx/slax-kitchen/issues/93) the `ok` line and `kitchen pack` round the
+same way. The `ok` lines above are from 2026-09-17, when they rounded down, so either can read one
+MiB less than the same image would now.
 
 Skips come from each recipe's own `compat` block, so marking something Debian-only is enough — no
 separate CI list to keep in sync. **This is what catches a recipe that silently only works on 64-bit

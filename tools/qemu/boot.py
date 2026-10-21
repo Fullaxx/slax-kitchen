@@ -46,6 +46,7 @@ from dataclasses import dataclass, field
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(_REPO, "lib"))
 from isoparse import SECTOR, IsoInfo, IsoReader  # noqa: E402
+import units  # noqa: E402
 # The VNC address rules live with the boot-host configuration that also carries one, so
 # there is a single answer to "is this address safe to bind an unauthenticated VNC server
 # to" rather than two that can disagree.
@@ -830,7 +831,7 @@ def scratch_base(iso: str) -> str:
 def summary(a: argparse.Namespace, cfg: Config, printing: bool, created: list[str]) -> list[str]:
     out = [""]
     name = os.path.basename(a.iso)
-    size = f" ({os.path.getsize(a.iso) // 1048576} MiB)" if os.path.isfile(a.iso) else ""
+    size = f" ({units.mib(os.path.getsize(a.iso))} MiB)" if os.path.isfile(a.iso) else ""
     out.append(f"  iso       {name}{size}, {ISO_MEDIA[cfg.iso_bus]}")
     out.append(f"  machine   {cfg.machine}{' with SMM' if cfg.smm else ''}, {cfg.binary}, "
                f"{a.smp} cpu{'s' if a.smp != 1 else ''}{', cpu ' + a.cpu if a.cpu else ''}")

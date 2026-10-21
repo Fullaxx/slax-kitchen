@@ -36,7 +36,10 @@ usually lives where you build it, and VNC tunnels over ssh.
 
 The launcher prints the tunnel command for you. Captured on 2026-09-17 (`f8631aa`) in the dev
 container, which had qemu and no KVM. Two lines have been brought up to date since, as the
-program's own text changed (the last on 2026-10-01, `5c6321e`), and the host is a placeholder:
+program's own text changed (the last on 2026-10-01, `5c6321e`), and the host is a placeholder.
+The `iso` line's size is as it was then, rounded down; since
+[#93](https://github.com/Fullaxx/slax-kitchen/issues/93) it rounds to the nearest MiB, so the same
+image can read one more:
 
 ```console
 $ tools/qemu/boot.py out/slax-boot-matrix-debian-64bit-12.2.0.iso --bios

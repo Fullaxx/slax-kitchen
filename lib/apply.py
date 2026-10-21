@@ -33,6 +33,7 @@ import fingerprint  # noqa: E402
 import handback  # noqa: E402
 import isoparse  # noqa: E402
 import provenance  # noqa: E402
+import units  # noqa: E402
 from validate import recipe_name, validate_file  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -2800,7 +2801,7 @@ def v_bundle_remove(ctx: Ctx, step: dict) -> None:
         size = os.path.getsize(os.path.join(mods, n))
         if not ctx.dry:
             os.unlink(os.path.join(mods, n))
-        ctx.record(f"-slax/modules/{n}", f"removed {n} (-{size // 1048576} MiB)")
+        ctx.record(f"-slax/modules/{n}", f"removed {n} (-{units.mib(size)} MiB)")
 
 
 # ---- syslinux config editing -------------------------------------------------

@@ -22,6 +22,7 @@ Run directly: python3 tests/unit/test_tier_c_run.py
 """
 import json
 import os
+import re
 import signal
 import shutil
 import subprocess
@@ -34,6 +35,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 TIER_C = os.path.join(ROOT, "ci", "tier-c.sh")
 RUN_BOOT = os.path.join(ROOT, "ci", "run-boot.py")
 TARGET_PY = os.path.join(ROOT, "lib", "target.py")
+UNITS_PY = os.path.join(ROOT, "lib", "units.py")
 SOURCES = os.path.join(ROOT, "compat", "sources.yaml")
 
 
@@ -190,6 +192,9 @@ def fixture(tmp, boot_host=False):
     # compat/sources.yaml, so that comes too, unedited: the target these runs name has to
     # be one that really exists, which is the point of #36.
     write(os.path.join(repo, "lib", "target.py"), open(TARGET_PY).read(), 0o755)
+    # And lib/units.py, which the header uses to name the image's size (#93). Without it
+    # the header read "image slax-stub.iso ( MiB)", and every run here still passed.
+    write(os.path.join(repo, "lib", "units.py"), open(UNITS_PY).read())
     write(os.path.join(repo, "compat", "sources.yaml"), open(SOURCES).read())
     write(os.path.join(repo, "kitchen"), STUB_KITCHEN, 0o755)
     # Everything tier-c.sh writes is sent outside the repository, so nothing here can make
@@ -338,6 +343,10 @@ def test_the_ledger_names_the_machine_that_booted(tmp, box):
     check("the run passes", rc, 0)
     check("qemu is the one that booted", doc and doc["qemu"], "8.2.2")
     check("accel is the one that booted", doc and doc["accel"], "kvm")
+    # The header too. This fixture lacked lib/units.py after #93, so the header read
+    # "( MiB)", and every run here still passed.
+    check("the header names the image's size",
+          bool(re.search(r"image +slax-stub\.iso \(\d+ MiB\)", out)), True)
 
 
 @in_a_box
