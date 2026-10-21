@@ -143,7 +143,7 @@ different things.
 |---|---|
 | `matrix-verified` — builds and passes structure assertions on its declared targets | 15 |
 | `artifact boot-verified` — booted, and `testkit` confirms the artifact reached the union | 4 |
-| `boot-verified` — booted to `slax login:` with all three livekit markers | 13 |
+| `boot-verified` — booted to `slax login:` with all three livekit markers | 14 |
 | `runtime-verified` — the feature was watched working | 4 |
 
 ### Documentation

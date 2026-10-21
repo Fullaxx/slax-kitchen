@@ -123,6 +123,12 @@ sudo ./kitchen build example --keep                            # what the boot j
 Every recipe is applied **individually** to each of the four targets, then packed and asserted.
 One recipe per work tree, so a failure names exactly one recipe and recipes cannot mask each other.
 
+The assertions include what the recipe journalled, read back from the provenance record `kitchen
+pack` writes beside the image: every path the recipe wrote has to be on the disc, and every path it
+removed has to be gone ([#85](https://github.com/Fullaxx/slax-kitchen/issues/85)). Judged by its name
+and pack hints alone, a recipe whose file never reached the disc passed. A recipe that journals
+nothing is still not caught.
+
 Measured on this hardware with nothing skipped, `debian-64bit`, 2026-09-17: **33 recipes in 1315 s**,
 a median of 6 s each. Four recipes account for more than half of it — `all-browsers` 456 s,
 `debian-browsers` 165 s, `libreoffice` 112 s, `firmware-refresh` and `tor-browser` 92 s each. Each
@@ -154,7 +160,9 @@ separate CI list to keep in sync. **This is what catches a recipe that silently 
 Debian**, which is the easy mistake to make when that is the ISO in front of you.
 
 Assertions are derived from what the recipe claims: `uefi-bootable` is checked for an EFI El Torito
-entry, `isohybrid` for a hybrid MBR. A recipe that runs cleanly and changes nothing fails.
+entry, `isohybrid` for a hybrid MBR, a recipe that asked `pack` for a volume id for that id, and
+every recipe for the files it journalled. So `uefi-bootable` or `isohybrid` running cleanly and
+changing nothing fails, while a recipe that changes nothing and journals nothing still passes.
 
 The matrix does not run [`kitchen sources`](../90-reference/cli.md#sources-iso---json-f---markdown-f)
 any more. It did, and failed a recipe whose image held a file no recorded step explained — which is

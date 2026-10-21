@@ -2,7 +2,7 @@
 
 One page per shipped recipe. Each states what it does, what it measured, and what it cannot do.
 
-**Thirty-six recipes ship today.** Every one is built and structurally asserted on all four
+**Thirty-seven recipes ship today.** Every one is built and structurally asserted on all four
 targets by CI (or on the subset its `compat:` block declares) — with the exceptions
 [`ci/slow-recipes.txt`](../../ci/slow-recipes.txt) lists:
 [`all-browsers`](all-browsers.md), [`tor-browser`](tor-browser.md),
@@ -38,6 +38,7 @@ kitchen build <profile>             # fetch -> unpack -> apply* -> pack -> test
 | [`boot-cmdline`](boot-cmdline.md) | bake `toram` and friends into every entry; drop the broken `automount` | ○ |
 | [`host-grub-entry`](host-grub-entry.md) | a GRUB entry for booting Slax from a bootloader you already have | ○ |
 | [`iso-identity`](iso-identity.md) | label the image as yours, and write a verifiable checksum | ○ |
+| [`disc-readme`](disc-readme.md) | a note at the root of the disc, for whoever mounts it instead of booting it | ○ |
 | [`firmware-refresh`](firmware-refresh.md) | firmware so the ISO works on more hardware — Debian's plus what only linux-firmware has | ◐ |
 
 The first two fix real gaps in every stock image, and together produce one file that boots four
@@ -115,12 +116,12 @@ shipped bundle is for **removal only**; nothing else needs it.
 
 ## Flavour coverage
 
-**Twenty-five of the thirty-six work on all four targets.** Counted from the `compat:` blocks:
+**Twenty-six of the thirty-seven work on all four targets.** Counted from the `compat:` blocks:
 eight are Debian-only (`add-packages`, `all-browsers`, `chromium-current`, `debian-browsers`,
 `firefox-esr`, `firmware-refresh`, `libreoffice`, `tor-browser`), two are Slackware-only
 (`bundle-from-txz`, `fix-slackware-bugs`), and three ship 64-bit vendor builds only
-(`all-browsers`, `bundle-from-tarball`, `tor-browser`). So a target's matrix runs 34 recipes on
-debian-64bit, 31 on debian-32bit, 28 on slackware-64bit and 27 on slackware-32bit. The one that
+(`all-browsers`, `bundle-from-tarball`, `tor-browser`). So a target's matrix runs 35 recipes on
+debian-64bit, 32 on debian-32bit, 29 on slackware-64bit and 28 on slackware-32bit. The one that
 most often surprises people:
 
 | | |

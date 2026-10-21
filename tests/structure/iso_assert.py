@@ -4,13 +4,14 @@
 This is the Tier A check, cheap enough for every build. It catches the failures that are
 expensive to find any other way -- a bootloader that will not load, a bundle built with
 the wrong compressor, a UEFI recipe that silently did not take effect, a UEFI entry a
-rebuild silently dropped.
+rebuild silently dropped, a file a recipe wrote that never reached the disc.
 
 Exit 0 if every assertion holds.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 
@@ -58,6 +59,9 @@ def main(argv: list[str]) -> int:
                     help="extra path that must exist in the ISO")
     ap.add_argument("--forbid", action="append", default=[],
                     help="path that must NOT exist in the ISO, e.g. a bundle a recipe removed")
+    ap.add_argument("--artifacts", metavar="PROVENANCE",
+                    help="an <iso>.provenance.json: require every path its recipes wrote, and "
+                         "forbid every path they removed")
     a = ap.parse_args(argv[1:])
     # xorriso lists the image's files. Checked first: without it the listing below died in
     # a traceback, after half the assertions had already printed.
@@ -68,6 +72,20 @@ def main(argv: list[str]) -> int:
 
     t = Asserter()
     print(f"structure: {a.iso}  ({units.mib(os.path.getsize(a.iso))} MiB)")
+
+    required, forbidden = list(a.require), list(a.forbid)
+    if a.artifacts:
+        # A record that cannot be read fails, rather than checking nothing: the caller asked
+        # for every recipe's claims to be held to the image.
+        try:
+            with open(a.artifacts, encoding="utf-8") as fh:
+                wrote, removed = claims(json.load(fh))
+        except (OSError, ValueError) as e:
+            t.check(False, "the recipes' record of what they wrote can be read",
+                    f"{a.artifacts}: {e.strerror if isinstance(e, OSError) else e}")
+        else:
+            required += wrote
+            forbidden += removed
 
     with IsoReader(a.iso) as r:
         info = r.info()
@@ -145,7 +163,7 @@ def main(argv: list[str]) -> int:
         except ListingError as e:
             t.check(False, "the image's files can be listed", str(e))
         else:
-            check_files(t, paths, a.require, a.forbid)
+            check_files(t, paths, required, forbidden)
             check_esp(t, paths, efi, a.expect_uefi)
 
     if a.max_size_mib:
@@ -153,6 +171,29 @@ def main(argv: list[str]) -> int:
 
     print(f"\n{t.ok} passed, {len(t.fail)} failed")
     return 1 if t.fail else 0
+
+
+def claims(prov: dict) -> tuple[list, list]:
+    """What the recipes in a provenance record say the image holds: (required, forbidden).
+
+    Every path a recipe journalled is required, and every path it removed (`-path`) is
+    forbidden. A later entry for the same path wins, so where one recipe removes what another
+    wrote, its absence is asked for. Paths are read as lib/sources.py reads them: with the
+    leading slash iso.files journals, or without it, as every other verb does.
+
+    WHY. The recipe matrix judged a recipe's effect only by its name (uefi-bootable,
+    isohybrid) or its pack hints (volid), so a recipe whose file never reached the disc
+    passed it, and so would one whose removed bundle came back. iso.files was exercised by
+    no recipe at all, and #82's change to how it places files was checked only by a unit
+    test and a scratch build (#85).
+    """
+    state: dict = {}
+    for r in prov.get("recipes") or []:
+        for art in r.get("artifacts") or []:
+            gone = art.startswith("-")
+            state["/" + (art[1:] if gone else art).lstrip("/")] = not gone
+    return (sorted(p for p, there in state.items() if there),
+            sorted(p for p, there in state.items() if not there))
 
 
 def check_files(t: Asserter, paths: set, extras: list, forbidden: list = ()) -> None:

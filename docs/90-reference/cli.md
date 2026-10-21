@@ -94,6 +94,11 @@ A profile's `test:` list can carry them to `kitchen build`, as in the
 [profile format](#profile-format) below. Like `--structure` itself, none of them ever goes to a
 boot host.
 
+`iso_assert.py` also takes `--artifacts <iso>.provenance.json`, which requires every path the
+image's recipes journalled and forbids every path they removed. The recipe matrix passes it for
+every recipe ([#85](https://github.com/Fullaxx/slax-kitchen/issues/85)); `kitchen test` and
+`kitchen build` do not.
+
 The required files are found in the same listing `diff` and `sources` use, by exact path. An image
 whose files cannot be listed gets one failure saying so, not five claiming the kernel and bootloader
 are missing. An image with no `/slax/boot` gets one failure saying it is not a Slax image.

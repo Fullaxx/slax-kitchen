@@ -1,0 +1,55 @@
+apiVersion: slax-kitchen/v1
+kind: Recipe
+metadata:
+  name: disc-readme
+  summary: A note at the root of the disc, for whoever mounts it instead of booting it
+  tags: [iso, docs]
+compat:
+  flavours: [debian, slackware]
+  arch: [32bit, 64bit]
+  slax: ">=12.0.0"
+  privilege: none
+vars:
+  # A project names the file after itself and says what its image is. The default says
+  # what any image built here is, and how to boot it.
+  file: ABOUT.txt
+  readme: |
+    This disc is a Slax live system, built with slax-kitchen.
+
+    To run it from a CD or DVD, start the machine from the disc in legacy (BIOS)
+    mode. It starts in UEFI mode only if it was built with UEFI support.
+
+    To run it from a USB drive:
+      1) Copy the whole /slax/ directory to the drive.
+      2) On the drive, open the /slax/boot/ directory.
+      3) Run bootinst.bat there on Windows, or bootinst.sh as root on Linux.
+         It sets the drive up to boot.
+
+    readme.txt, beside this file, is Slax's own note on the same steps.
+steps:
+  # WHAT SOMEONE SEES WHEN THEY MOUNT THE DISC rather than boot it, or open it in a file
+  # manager: the root of the ISO, beside /slax/, which is all livekit looks for. iso.files
+  # is the verb for that, and this is the shipped recipe that exercises it (#85).
+  #
+  # BESIDE SLAX'S OWN readme.txt, NOT IN PLACE OF IT, and not as README.txt. Every stock
+  # image has /readme.txt at its root, Slax's 823-byte note on making a USB drive boot,
+  # byte-identical on all four. Measured 2026-10-21:
+  #
+  #   README.txt  beside it on 64-bit Debian, packed with genisoimage (pack's default):
+  #               Slax's stayed README.TXT;1 in plain ISO 9660 and the new one became
+  #               READM000.TXT;1, without a word; to anything that ignores case, it is a
+  #               second file of the same name
+  #   names       on 64-bit Debian: ABOUT.TXT;1 in plain ISO 9660 under genisoimage,
+  #               ABOUT.txt;1 under xorriso, and ABOUT.txt in Joliet and Rock Ridge, 0644,
+  #               owned 0:0
+  #   cost        one 2,048-byte sector for the default's 513 bytes: on every target with
+  #               genisoimage, and with xorriso on 64-bit Debian
+  #   boot        unchanged: livekit works from the slax directory, and kitchen test
+  #               --kernel reached all three livekit markers on all four targets
+  #
+  # `file: readme.txt` replaces Slax's note instead: iso.files' content: writes over a file
+  # that is already there.
+  - verb: iso.files
+    files:
+      - dest: "/{{file}}"
+        content: "{{readme}}"

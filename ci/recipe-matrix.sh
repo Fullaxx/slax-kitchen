@@ -146,7 +146,7 @@ PY
         fail=$((fail+1)); rm -rf "$tree"; continue
     fi
 
-    # Assert on what the recipe claims to do, so a no-op recipe is caught.
+    # Assert on what the recipe claims to do, so one whose claim did not take effect is caught.
     set -- "$REPO_ROOT/tests/structure/iso_assert.py" "$out"
     [ "$name" = uefi-bootable ] && set -- "$@" --expect-uefi
     [ "$name" = isohybrid ] && set -- "$@" --expect-hybrid
@@ -156,6 +156,11 @@ PY
     # reader pack and `kitchen build` use too.
     _volid=$(pack_hint "$tree/.kitchen/pack.yaml" volid)
     [ -n "$_volid" ] && set -- "$@" --volid "$_volid"
+    # And what the recipe journalled, read back from the provenance record pack wrote beside
+    # the image: every path it wrote has to be on the disc, and every path it removed has to
+    # be gone. Judged by name and hints alone, a recipe whose file never reached the disc
+    # passed (#85). A recipe that journals nothing is still not caught.
+    set -- "$@" --artifacts "$out.provenance.json"
     if ! python3 "$@" >>"$log" 2>&1; then
         printf '  %sFAIL%s %-18s structure assertions failed\n' "$R" "$O" "$name"
         grep FAIL "$log" | sed 's/^/        /'

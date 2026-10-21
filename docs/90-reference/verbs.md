@@ -672,7 +672,13 @@ Refuses to finish if `blkid` or `eject` has stopped being a real binary. Build t
 
 Place a file anywhere in the ISO tree, outside `/slax/`. This is the verb for things a
 user sees when they mount the disc rather than boot it — a README, a licence, a folder of
-documents.
+documents. [`disc-readme`](../50-cookbook/disc-readme.md) is the shipped recipe that uses it.
+
+Every stock image already has `/readme.txt`, Slax's note on making a USB drive boot. A
+`/README.txt` beside it is renamed in plain ISO 9660 by `genisoimage`, to `READM000.TXT;1`, and
+reads as a second file of the same name to anything that ignores case (measured 2026-10-21; see
+`disc-readme`). A `content:` entry replaces a file that is already there, so `dest: /readme.txt`
+rewrites Slax's note instead.
 
 Each entry needs `dest` plus exactly one source: `content` for inline text, or `src` for a
 path on disk, resolved relative to the recipe's own directory unless it is absolute.
@@ -680,7 +686,7 @@ path on disk, resolved relative to the recipe's own directory unless it is absol
 ```yaml
 - verb: iso.files
   files:
-    - {dest: /README.txt, content: "…"}
+    - {dest: /ABOUT.txt, content: "…"}
     - {dest: /LICENSE, src: files/gpl-2.0.txt}
     - {dest: /autorun.sh, content: "#!/bin/sh\n", mode: "0755"}
     - {dest: /docs, src: files/manual}

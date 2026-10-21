@@ -216,6 +216,36 @@ def test_a_forbidden_path_fails_where_it_is_there():
     check("...and passes once it is gone, with or without the leading /", t.fail, [])
 
 
+def test_a_recipe_s_journal_is_what_the_disc_must_hold():
+    """What a recipe wrote must be on the disc, and what it removed must not be (#85).
+
+    The recipe matrix judged a recipe only by its name or its pack hints, so a recipe whose
+    file never reached the disc passed, and iso.files ran in no recipe at all. The matrix now
+    hands this the image's provenance record, and claims() reads each recipe's journal from
+    it: iso.files journals a path with a leading slash and every other verb without one, a
+    removal starts with "-", and a later recipe's entry for a path wins over an earlier
+    one's."""
+    prov = {"recipes": [
+        {"recipe": "a", "artifacts": ["/ABOUT.txt", "slax/rootcopy/etc/motd",
+                                      "-slax/modules/05-chromium.sb"]},
+        {"recipe": "b", "artifacts": ["-slax/rootcopy/etc/motd", "slax/modules/07-x.sb"]}]}
+    wrote, removed = iso_assert.claims(prov)
+    check("what was written is required, journalled with a leading slash or without",
+          wrote, ["/ABOUT.txt", "/slax/modules/07-x.sb"])
+    check("what was removed is forbidden, and a later removal wins over an earlier write",
+          removed, ["/slax/modules/05-chromium.sb", "/slax/rootcopy/etc/motd"])
+    check("a record of no recipes claims nothing", iso_assert.claims({}), ([], []))
+
+    full = {"/", "/slax", "/slax/boot", "/slax/modules", "/slax/modules/07-x.sb",
+            "/ABOUT.txt"} | {f"/slax/boot/{n}" for n in FIVE}
+    check("the image the journal describes passes", run_checks(full, wrote, removed).fail, [])
+    check("a written file missing from the image fails, by name",
+          run_checks(full - {"/ABOUT.txt"}, wrote, removed).fail, ["/ABOUT.txt present"])
+    check("a removed bundle that came back fails, by name",
+          run_checks(full | {"/slax/modules/05-chromium.sb"}, wrote, removed).fail,
+          ["/slax/modules/05-chromium.sb absent"])
+
+
 def test_a_size_over_the_ceiling_says_by_how_much():
     """A size ceiling's failure has to read as a failure. The check compared unrounded MiB
     and printed whole MiB, so the stock 32-bit Slackware ISO -- 470,161,408 bytes, 448.38
@@ -271,9 +301,9 @@ def test_the_structure_check_end_to_end(tmp):
     iso = tiny_iso(os.path.join(tmp, "slax.iso"))
     stub = Stub(tmp)
 
-    def structure():
+    def structure(*extra):
         p = subprocess.run([sys.executable, os.path.join(ROOT, "tests", "structure",
-                                                         "iso_assert.py"), iso],
+                                                         "iso_assert.py"), iso, *extra],
                            env=stub.env(), capture_output=True, text=True, timeout=60)
         return p.stdout + p.stderr
 
@@ -285,6 +315,16 @@ def test_the_structure_check_end_to_end(tmp):
           all(f"ok   slax/boot/{n} present" in out for n in FIVE), True)
     check("...with no traceback", "Traceback" in out, False)
     check("...and no ESP question, with no ESP in the image", "boot/efi.img" in out, False)
+
+    # --artifacts reaches the file checks, which no plain-data test can show (#85).
+    record = os.path.join(tmp, "slax.iso.provenance.json")
+    with open(record, "w") as fh:
+        json.dump({"recipes": [{"recipe": "x",
+                                "artifacts": ["slax/boot/vmlinuz", "/ABOUT.txt"]}]}, fh)
+    out = structure("--artifacts", record)
+    check("--artifacts: a journalled path the image holds passes",
+          "ok   /slax/boot/vmlinuz present" in out, True)
+    check("...and one it lacks fails, by name", "FAIL /ABOUT.txt present" in out, True)
 
     stub.says(lsdl(["/"], []))
     out = structure()
@@ -361,6 +401,7 @@ def main():
         for fn in [test_entries_refuses_a_listing_it_cannot_trust,
                    test_check_files_with_plain_data,
                    test_a_forbidden_path_fails_where_it_is_there,
+                   test_a_recipe_s_journal_is_what_the_disc_must_hold,
                    test_a_size_over_the_ceiling_says_by_how_much,
                    test_the_structure_check_end_to_end,
                    test_an_esp_nothing_points_at_fails,
