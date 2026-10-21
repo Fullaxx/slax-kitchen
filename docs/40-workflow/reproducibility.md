@@ -151,6 +151,11 @@ apt:
 Without pinning, the same recipe run six months apart produces different bundles, and that has
 nothing to do with the tooling here.
 
+The caller's environment is an input too, and that one is the tooling's. A build chroot inherits
+it, `HOME` included, so a script that writes under `$HOME` builds a different bundle from a root
+shell than under `sudo -E` ([#94](https://github.com/Fullaxx/slax-kitchen/issues/94)). No shipped
+recipe writes there, measured 2026-10-21.
+
 ## What to do
 
 **If you just want to diff two builds**, sort the initramfs. That is the whole fix, and it is worth

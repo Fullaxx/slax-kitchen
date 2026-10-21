@@ -3681,7 +3681,7 @@ def _host_env_for_chroot() -> dict:
     tempfile reads after TMPDIR, are dropped rather than repointed.
 
     The rest of the host's environment still passes through, on purpose: an http_proxy
-    reaches apt that way, and whether an allowlist should replace this is #88's open
+    reaches apt that way, and whether an allowlist should replace this is #94's
     question, not one to settle by accident here.
     """
     e = dict(os.environ)
