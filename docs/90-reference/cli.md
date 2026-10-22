@@ -621,9 +621,10 @@ is deleted on exit and the `.sb` files are never written. That is deliberate: a 
 typing cannot be repeated, so the supported way to capture changes is
 [`bundle.script`](verbs.md#bundlescript--chroot), which runs a script in this same
 environment and packs the delta. Inside, as in a build chroot, `TMPDIR` is the chroot's own
-`/tmp` ([#88](https://github.com/Fullaxx/slax-kitchen/issues/88)), `PATH`, the prompt and the C
-locale are kitchen's, and the rest of your environment passes through
-([#94](https://github.com/Fullaxx/slax-kitchen/issues/94)).
+`/tmp` ([#88](https://github.com/Fullaxx/slax-kitchen/issues/88)) and `HOME` its own `/root`, with
+none of your XDG base-directory variables
+([#94](https://github.com/Fullaxx/slax-kitchen/issues/94)). `PATH`, the prompt and the C locale are
+kitchen's, and the rest of your environment passes through.
 
 **Only `01-core` ships a userland.** Every other bundle is a fragment meant to be layered
 on it, so chrooting into one alone has no `/bin/sh`. `shell` detects that and prints the

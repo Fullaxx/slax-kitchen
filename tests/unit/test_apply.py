@@ -4276,23 +4276,13 @@ def test_a_missing_from_label_is_refused_before_either_file_is_written():
         shutil.rmtree(work, ignore_errors=True)
 
 
-def test_a_chroot_gets_its_own_tmpdir():
-    """A command in a build chroot, or in `kitchen shell`, gets the chroot's /tmp as TMPDIR.
-
-    #88: both started from the host's whole environment, so a TMPDIR naming a host directory
-    reached every maintainer script and every bundle.script, where nothing can be created under
-    it. firmware-refresh's `mktemp -d` and dictionaries-common's postinst (via libreoffice)
-    failed on both Debian targets, and the matrix reported two broken recipes. A recipe whose
-    only step made a temporary directory failed under `kitchen apply` and `kitchen shell`
-    alike. So TMPDIR, and TMP and TEMP, which Python's tempfile reads after it, all name a
-    directory of the host's here. subprocess.run is stubbed, so this needs neither root nor
-    a chroot.
+def _chroot_envs(host: dict) -> tuple:
+    """Enter a build chroot, then `kitchen shell`, with the host's environment changed by
+    `host`, and return the shell's exit status and the environment each chroot was entered
+    with. subprocess.run is stubbed, so this needs neither root nor a chroot.
     """
     import shell
-    host = {k: os.environ.get(k) for k in ("TMPDIR", "TMP", "TEMP")}
-    outside = tempfile.mkdtemp()  # made before TMPDIR moves, so tempfile's own choice stands
-    for k in host:
-        os.environ[k] = outside
+    before = {k: os.environ.get(k) for k in host}
     entered = []
 
     def stub(cmd, **kw):
@@ -4306,28 +4296,90 @@ def test_a_chroot_gets_its_own_tmpdir():
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     saved = apply.subprocess.run, apply.shutil.which, apply._prepare_chroot
+    d = tempfile.mkdtemp()  # before the host's TMPDIR moves, so tempfile's own choice stands
+    os.environ.update(host)
     apply.subprocess.run = stub
     apply.shutil.which = lambda tool: f"/usr/bin/{tool}"
     apply._prepare_chroot = lambda root: None
-    d = tempfile.mkdtemp()
     try:
         open(os.path.join(d, "01-core.sb"), "w").close()
         apply._in_chroot(d, ["/bin/true"])
-        check("kitchen shell ran its command", shell.main(["kitchen shell", d, "-c", "true"]), 0)
+        rc = shell.main(["kitchen shell", d, "-c", "true"])
     finally:
         apply.subprocess.run, apply.shutil.which, apply._prepare_chroot = saved
-        for k, v in host.items():
+        for k, v in before.items():
             if v is None:
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
         shutil.rmtree(d, ignore_errors=True)
+    return rc, entered
+
+
+def test_a_chroot_gets_its_own_tmpdir():
+    """A command in a build chroot, or in `kitchen shell`, gets the chroot's /tmp as TMPDIR.
+
+    #88: both started from the host's whole environment, so a TMPDIR naming a host directory
+    reached every maintainer script and every bundle.script, where nothing can be created under
+    it. firmware-refresh's `mktemp -d` and dictionaries-common's postinst (via libreoffice)
+    failed on both Debian targets, and the matrix reported two broken recipes. A recipe whose
+    only step made a temporary directory failed under `kitchen apply` and `kitchen shell`
+    alike. So TMPDIR, and TMP and TEMP, which Python's tempfile reads after it, all name a
+    directory of the host's here. subprocess.run is stubbed, so this needs neither root nor
+    a chroot.
+    """
+    outside = tempfile.mkdtemp()  # made before TMPDIR moves, so tempfile's own choice stands
+    try:
+        rc, entered = _chroot_envs({k: outside for k in ("TMPDIR", "TMP", "TEMP")})
+    finally:
         shutil.rmtree(outside, ignore_errors=True)
+    check("kitchen shell ran its command", rc, 0)
     check("both chroots were entered", len(entered), 2)
     for who, env in zip(("a build chroot", "kitchen shell"), entered):
         check(f"{who}: TMPDIR is the chroot's /tmp", env.get("TMPDIR"), "/tmp")
         check(f"{who}: the host's TMP and TEMP stay outside",
               sorted(k for k in ("TMP", "TEMP") if k in env), [])
+
+
+def test_a_chroot_gets_its_own_home():
+    """A command in a build chroot, or in `kitchen shell`, gets the chroot's /root as HOME and
+    none of the caller's XDG base directories, and the rest of the caller's environment.
+
+    #94: the caller's HOME came through the same way as #88's TMPDIR, and under sudo -E it is
+    theirs. Measured 2026-10-21 with HOME=/home/runner: a bundle.script's write under
+    $HOME/.cache shipped as home/runner/.cache/..., and bundle.packages on Slackware failed in
+    slackpkg's gpg, which could not create /home/runner/.gnupg. The XDG variables name the
+    caller's directories the same way. The rest passes through on purpose, and that is checked
+    too: a proxy set for kitchen reaches apt only through this copy.
+    """
+    xdg = ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME",
+           "XDG_RUNTIME_DIR", "XDG_CONFIG_DIRS", "XDG_DATA_DIRS")
+    host = {"HOME": "/home/runner", "http_proxy": "http://127.0.0.1:9", "CI": "true"}
+    host.update({k: f"/home/runner/{k.lower()}" for k in xdg})
+    rc, entered = _chroot_envs(host)
+    check("kitchen shell ran its command", rc, 0)
+    check("both chroots were entered", len(entered), 2)
+    for who, env in zip(("a build chroot", "kitchen shell"), entered):
+        check(f"{who}: HOME is the chroot's /root", env.get("HOME"), "/root")
+        check(f"{who}: none of the caller's XDG base directories",
+              sorted(k for k in xdg if k in env), [])
+        check(f"{who}: the rest of the caller's environment passes, the proxy included",
+              (env.get("http_proxy"), env.get("CI")), ("http://127.0.0.1:9", "true"))
+
+
+def test_a_chroot_does_not_get_kitchens_repo_root():
+    """A command in a build chroot, or in `kitchen shell`, does not get kitchen's REPO_ROOT.
+
+    #94: the `kitchen` wrapper exports REPO_ROOT, the checkout's path, and every chroot the
+    command started inherited it. Measured 2026-10-22: a bundle.script that wrote its
+    environment into /opt shipped the path, which provenance only ever records as <kitchen>.
+    What passes through on purpose is the caller's environment, and this is kitchen's.
+    """
+    rc, entered = _chroot_envs({"REPO_ROOT": "/home/runner/work/slax-kitchen/slax-kitchen"})
+    check("kitchen shell ran its command", rc, 0)
+    check("both chroots were entered", len(entered), 2)
+    for who, env in zip(("a build chroot", "kitchen shell"), entered):
+        check(f"{who}: kitchen's REPO_ROOT stays outside", "REPO_ROOT" in env, False)
 
 
 # ---- #90's fixtures: OpenPGP public keys and detached signatures, for real gpgv runs ------
@@ -4791,6 +4843,8 @@ def main():
                    test_a_menu_entry_names_a_payload_that_is_there,
                    test_an_entry_copied_from_a_label_carries_the_edits_made_before_it,
                    test_serial_console_on_the_stock_menus_is_the_entry_that_was_booted,
+                   test_a_chroot_gets_its_own_home,
+                   test_a_chroot_does_not_get_kitchens_repo_root,
                    # Not last: unit-run.py's profiler stays on until every test has begun,
                    # so a cheap test listed last keeps the one before it profiled.
                    test_a_chroot_gets_its_own_tmpdir,

@@ -120,8 +120,13 @@ PY
     # the initramfs verbs want CAP_MKNOD, because the archive holds seven device nodes
     # and a non-root cpio silently turns them into empty files. Runners allow sudo; the
     # dev container is already root.
+    #
+    # Plain sudo, which is how the docs tell users to run kitchen and how ci.yml's boot job
+    # runs it. This was sudo -E from the start (9e0c90f), with no reason recorded, so every
+    # recipe that needs root got most of the runner's environment, which a user's plain sudo
+    # does not give. Until #94 that included HOME=/home/runner, in every chroot.
     if [ "$priv" != none ] && [ "$priv" != kvm ] && [ "$(id -u)" != 0 ]; then
-        RUN="sudo -E"
+        RUN="sudo"
     else
         RUN=""
     fi

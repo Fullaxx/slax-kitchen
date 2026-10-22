@@ -2672,8 +2672,8 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
     the script fetches something, so a recipe that depends on the internet says so in
     the YAML and preflight fails fast instead of unsquashing 122 MiB first. It inherits
     the host's environment too, except what _in_chroot sets -- PATH, the locale,
-    DEBIAN_FRONTEND -- and the temporary directory, which is the chroot's own /tmp: see
-    _host_env_for_chroot (#88).
+    DEBIAN_FRONTEND -- and the temporary directory and the home, which are the chroot's own
+    /tmp and /root: see _host_env_for_chroot (#88, #94).
     """
     script = step.get("script")
     if not script:
@@ -3668,9 +3668,15 @@ def _prepare_chroot(root: str) -> None:
         shutil.copy2("/etc/resolv.conf", os.path.join(root, "etc", "resolv.conf"))
 
 
+# The XDG Base Directory Specification's seven variables. Each names the caller's directories,
+# not the chroot's, so a chroot gets none of them (#94).
+XDG_BASE_DIRS = ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME",
+                 "XDG_RUNTIME_DIR", "XDG_CONFIG_DIRS", "XDG_DATA_DIRS")
+
+
 def _host_env_for_chroot() -> dict:
     """The environment a command in a chroot starts from: the host's, but with the
-    chroot's own /tmp as its temporary directory.
+    chroot's own /tmp as its temporary directory and its own /root as its home.
 
     #88: this was dict(os.environ) in _in_chroot and in kitchen shell, so a TMPDIR naming
     a directory the chroot does not have reached every maintainer script and every
@@ -3680,14 +3686,31 @@ def _host_env_for_chroot() -> dict:
     tmp/ out of every bundle, so nothing written there ships. TMP and TEMP, which Python's
     tempfile reads after TMPDIR, are dropped rather than repointed.
 
+    #94: HOME came through the same way, and under sudo -E it is the caller's. Measured
+    2026-10-21 with HOME=/home/runner: a bundle.script's write under $HOME/.cache shipped as
+    home/runner/.cache/..., and bundle.packages on Slackware failed in slackpkg's gpg, which
+    could not create /home/runner/.gnupg. With HOME=/root, and the rest of that environment,
+    the same build passed. /root is HOME as root and under plain sudo already, and it is the
+    home BUNDLE_EXCLUDE's root/.gnupg and root/.wget-hsts are written for. The XDG base
+    directories name the caller's directories too, so they are dropped, as TMP and TEMP are.
+
     The rest of the host's environment still passes through, on purpose: an http_proxy
-    reaches apt that way, and whether an allowlist should replace this is #94's
-    question, not one to settle by accident here.
+    reaches apt only this way, and so does anything a caller sets for a script. #94 weighed
+    building this from an allowlist and kept the copy: the only harm it measured was the
+    home's, and an allowlist would need a way back in for every variable a caller sets on
+    purpose.
+
+    REPO_ROOT is kitchen's own, not the caller's: the `kitchen` wrapper exports the
+    checkout's path under that name, and every chroot the command started got it too.
+    Measured 2026-10-22: a bundle.script that wrote its environment into /opt shipped that
+    path, which provenance only ever records as <kitchen>. So the copy leaves it out, and
+    kitchen's own process keeps it.
     """
     e = dict(os.environ)
-    for k in ("TMP", "TEMP"):
+    for k in ("TMP", "TEMP", "REPO_ROOT") + XDG_BASE_DIRS:
         e.pop(k, None)
     e["TMPDIR"] = "/tmp"
+    e["HOME"] = "/root"
     return e
 
 

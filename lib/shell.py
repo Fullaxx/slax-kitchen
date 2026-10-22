@@ -167,8 +167,9 @@ def main(argv: list[str]) -> int:
             print("  exit or Ctrl-D to leave.")
 
         argvv = ["/bin/sh", "-c", a.command] if a.command else ["/bin/sh", "-i"]
-        # The chroot's own /tmp, as a build chroot gets: a host TMPDIR can name a directory
-        # this tree does not have, and mktemp failed under one (#88).
+        # The chroot's own /tmp and home, as a build chroot gets: a host TMPDIR can name a
+        # directory this tree does not have, and mktemp failed under one (#88). Under sudo -E,
+        # so can the caller's HOME (#94).
         env = ap_mod._host_env_for_chroot()
         env.update({"PS1": r"(kitchen:\W) # ", "LC_ALL": "C", "LANG": "C",
                     "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",

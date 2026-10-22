@@ -429,7 +429,7 @@ installer.
     ssh-keygen -A
 ```
 
-Five behaviours it shares with `bundle.packages`, all load-bearing:
+Six behaviours it shares with `bundle.packages`, all load-bearing:
 
 - the delta is **added or modified** files, never names alone. A filename-only diff misses the
   package database, and a bundle without it leaves new binaries invisible to dpkg.
@@ -443,12 +443,18 @@ Five behaviours it shares with `bundle.packages`, all load-bearing:
   a script's `mktemp` or a package's maintainer script failed under one
   ([#88](https://github.com/Fullaxx/slax-kitchen/issues/88)). `BUNDLE_EXCLUDE` keeps `tmp/` out of
   the bundle.
-- the rest of the **caller's environment passes through**. Kitchen sets only `TMPDIR`, `PATH`,
-  `DEBIAN_FRONTEND=noninteractive` and the C locale (`LANG`, `LC_ALL`). An `http_proxy` set for
-  kitchen reaches apt and the script that way, and so does `HOME`. Under plain `sudo`, Debian's and
-  Ubuntu's default policy drops `http_proxy` before kitchen starts and resets `HOME` to `/root`.
-  `sudo -E` keeps both, so `HOME` is the caller's own. Whether an allowlist should replace this is
-  [#94](https://github.com/Fullaxx/slax-kitchen/issues/94).
+- the chroot's **home is its own `/root`**, and the seven XDG base-directory variables
+  (`XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_RUNTIME_DIR`,
+  `XDG_CONFIG_DIRS`, `XDG_DATA_DIRS`) are left out, so nothing in the chroot is pointed at the
+  caller's directories. Under `sudo -E` the caller's `HOME` used to come through: a file a script
+  wrote under `$HOME` shipped under the caller's home, and slackpkg's GPG check failed on a home
+  the image does not have ([#94](https://github.com/Fullaxx/slax-kitchen/issues/94)).
+- the rest of the **caller's environment passes through**, on purpose. Kitchen sets only `TMPDIR`,
+  `HOME`, `PATH`, `DEBIAN_FRONTEND=noninteractive` and the C locale (`LANG`, `LC_ALL`), and leaves
+  out its own `REPO_ROOT`, the checkout's path, which a script could otherwise write into the
+  image. An `http_proxy` set for kitchen reaches apt and the script that way, and so does anything
+  else the caller sets for a script. Under plain `sudo`, Debian's and Ubuntu's default policy drops
+  `http_proxy` before kitchen starts, and `sudo -E` keeps it.
 
 **A script that downloads something says so.** The engine cannot see what a script fetched, so a
 line on stdout of the form
