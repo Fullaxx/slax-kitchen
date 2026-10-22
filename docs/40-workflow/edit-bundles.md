@@ -169,4 +169,4 @@ Two more differences worth knowing:
 
 Debian 12 is oldstable, and Slackware `-current` has moved a long way past the 2023 snapshot Slax was
 built from. Unpinned installs will drift from the base. Pin to `snapshot.debian.org` or a dated
-Slackware mirror when reproducibility matters.
+Slackware mirror when two builds need the same packages.

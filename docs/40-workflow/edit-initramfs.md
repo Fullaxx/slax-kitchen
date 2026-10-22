@@ -64,7 +64,7 @@ Strms  Blocks   Compressed Uncompressed  Ratio  Check
 
 `Check` must read `CRC32`. `-T0` and `--extreme` only affect build time and size.
 
-### Add `| LC_ALL=C sort` if you want reproducible output
+### Add `| LC_ALL=C sort` if you want to diff the repack
 
 Upstream's command has no `sort`, so entry order follows `find`'s readdir order — which is **not
 stable**. Measured on the reference container:
@@ -85,7 +85,8 @@ sorted,   run 2    8,869,652 B   sha256 4ad7c7f9…   ← byte-identical
 ```
 
 Sorting costs nothing at boot — cpio order is irrelevant to extraction — and it turns the repack into
-something you can diff. See [reproducibility](reproducibility.md).
+something you can diff. Kitchen's own initramfs verbs already sort. See
+[reproducibility](reproducibility.md).
 
 ## Put it back
 

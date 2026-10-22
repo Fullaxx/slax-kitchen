@@ -93,7 +93,7 @@ Full reasoning: [add-packages cookbook page](../50-cookbook/add-packages.md).
 | **`initramfs.config` verb** | Only 2 of the 8 variables in `/lib/config` are read at runtime — `LIVEKITNAME` (14 uses) and `BEXT` (3). The other six are build-time only. And `LIVEKITNAME` is merely the *default* for `from=` (`livekitlib:640`), so a second Live Kit tree on one stick needs no rename at all. Renaming costs the `from=…iso` and PXE paths, and on CD requires re-patching `isolinux.bin`. A verb for one variable nobody should change. |
 | **`proot` for unprivileged chroot** | **Unsafe.** proot 5.1.0 does not translate `statx()`, so `stat` escapes the fake root and reads the **host** filesystem. Silent and selective — paths that exist on the host appear to work. Could emit a corrupt bundle. Real `chroot` works instead. |
 | **`fakechroot`** | LD_PRELOADs host binaries against target libs, so it fails on any glibc mismatch. Measured on the `ubuntu:24.04` container: 2.39 cannot load against Debian 12's 2.36. |
-| **byte-identical ISO rebuilds** | No single backend is both faithful and reproducible: `genisoimage` matches upstream but cannot pin dates; `xorriso` pins dates but uppercases the application id. Both ship; pick by task. |
+| **byte-identical ISO rebuilds** | Not possible for a build that changes anything: each change records when it happened, and the image keeps that ([reproducibility](../40-workflow/reproducibility.md)). What ships instead: a repack with no recipes keeps every file's bytes and mode, and `kitchen diff` compares two images' contents. |
 
 ---
 

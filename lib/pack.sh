@@ -7,15 +7,16 @@
 #                three PVD timestamp fields -- 19 differing sectors out of 212,819
 #                (0.009%), identical total size. This is what Tomas M. actually uses
 #                (see vendor/linux-live/build and /usr/bin/genslaxiso). It cannot pin
-#                dates (cdrkit dropped cdrtools' -*-date flags) and cannot emit a
-#                hybrid GPT on its own.
+#                dates (cdrkit dropped cdrtools' -*-date flags), so --date warns and is
+#                ignored, and it cannot emit a hybrid GPT on its own.
 #
-#   xorriso      required for UEFI (-eltorito-alt-boot) and isohybrid MBR/GPT. Accepts
-#                --modification-date so builds are reproducible. Caveat: it enforces
-#                ECMA-119 d-characters and UPPERCASES the application id, so a stock
-#                'slax' becomes 'SLAX'. Cosmetic -- nothing in livekitlib reads it --
-#                but it does mean an xorriso rebuild will not fingerprint-match a stock
-#                ISO on that one field.
+#   xorriso      required for UEFI (-eltorito-alt-boot) and isohybrid MBR/GPT. --date
+#                reaches it as --modification-date, which pins the volume's dates and
+#                nothing else: each file's times still come from the tree, so two builds
+#                are not bit-identical (#95). Caveat: it enforces ECMA-119 d-characters
+#                and UPPERCASES the application id, so a stock 'slax' becomes 'SLAX'.
+#                Cosmetic -- nothing in livekitlib reads it -- but it does mean an xorriso
+#                rebuild will not fingerprint-match a stock ISO on that one field.
 #
 # Default: genisoimage when neither --uefi nor --hybrid is requested, xorriso otherwise.
 #
@@ -151,6 +152,12 @@ print(status.start_over(sys.argv[2]))' "$REPO_ROOT/lib" "$_work")
     fi
     if [ "$backend" = genisoimage ] && { [ "$uefi" = 1 ] || [ "$hybrid" = 1 ]; }; then
         die "pack: --uefi/--hybrid need the xorriso backend (genisoimage cannot emit a hybrid GPT)"
+    fi
+    # --date pins the volume's dates, and only xorriso can: cdrkit dropped cdrtools' -*-date
+    # flags. It was accepted here and ignored without a word (#95).
+    if [ -n "$mdate" ] && [ "$backend" = genisoimage ]; then
+        printf '  %swarn%s %s\n' "$Y" "$O" \
+            "--date has no effect with genisoimage, which cannot set the volume dates; --backend xorriso can"
     fi
     have "$backend" || die "pack: $backend not installed"
 

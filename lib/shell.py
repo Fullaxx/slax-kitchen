@@ -10,7 +10,7 @@ temporary directory that is deleted on exit; the .sb files are opened read-only 
 never written. The obvious expectation of a command called `shell` is that edits stick,
 so the banner says they do not, every time, and the exit message says it again. If you
 want changes captured, `bundle.script` runs a script in exactly this environment and
-packs the delta into a new bundle -- that is the supported path, and it is reproducible,
+packs the delta into a new bundle -- that is the supported path, and it is repeatable,
 which a session of typing never is.
 
 Needs CAP_SYS_CHROOT and CAP_MKNOD, the same as bundle.packages. proot is not an

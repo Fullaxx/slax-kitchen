@@ -290,7 +290,7 @@ Rebuilds an ISO from a work tree. Default output is `./out/<source>-custom.iso`,
 | `--backend genisoimage\|xorriso` | default: genisoimage, or xorriso if `--uefi`/`--hybrid` |
 | `--uefi`, `--hybrid` | normally set by recipes via pack hints, not by hand |
 | `--volid`, `--appid`, `--sysid`, `--publisher`, `--preparer` | volume descriptor fields; [`iso-identity`](../50-cookbook/iso-identity.md) sets them as hints, and a flag given here wins |
-| `--date YYYYMMDDhhmmsscc` | pin timestamps (xorriso only) |
+| `--date YYYYMMDDhhmmsscc` | pin the volume's dates (xorriso only). Each file's own times still come from the tree |
 
 See [repack-iso.md](../40-workflow/repack-iso.md) for why there are two backends. The xorriso
 backend is judged the way [`unpack`](#unpack-iso--o-dir) judges an extraction — a non-zero exit,
@@ -299,7 +299,9 @@ or a line at `SORRY` or above, `MISHAP` included — and on failure `pack` shows
 `pack` warns when the image it writes will not have a UEFI entry or a hybrid MBR that the unpacked
 image had, as `unpack` recorded it, and names the recipe that writes it: they do not come with the
 tree ([LAYERING.md](../../LAYERING.md#what-a-consumer-does), step 6). A warning, not a refusal,
-because a build may mean to drop one.
+because a build may mean to drop one. It warns, too, when `--date` is given to genisoimage, which
+cannot set the volume's dates, and packs without them
+([#95](https://github.com/Fullaxx/slax-kitchen/issues/95)).
 
 **`pack` writes `<iso>.provenance.json` beside the ISO**: what each applied recipe fetched and built
 — URLs and sha256s, the package versions apt resolved and each `.deb`'s sha256, the build host's
@@ -509,6 +511,10 @@ rather than leaving you to guess:
     (identical content -- every entry matches; only the container's own bytes differ, as a rebuild's do)
 ```
 
+The verdict still counts the bundle's own bytes, so two builds that each make a bundle end
+`DIFFERENT`, exit 1, even when every rebuilt bundle says this (measured 2026-10-22). The bundles'
+lines, not the exit status, tell a rebuild from a change.
+
 This is the one place `diff` extracts, and only for a bundle whose bytes already differ: a
 content hash of a file inside a squashfs cannot be read from the ISO's extents. A bundle
 that cannot be read is refused with exit 2, not reported as a bundle with no files.
@@ -612,7 +618,7 @@ filesystem — the full Slax stack unpacks in about seven seconds.
 
 **Nothing you do inside persists.** The bundles are unpacked to a temporary directory that
 is deleted on exit and the `.sb` files are never written. That is deliberate: a session of
-typing is not reproducible, so the supported way to capture changes is
+typing cannot be repeated, so the supported way to capture changes is
 [`bundle.script`](verbs.md#bundlescript--chroot), which runs a script in this same
 environment and packs the delta. Inside, as in a build chroot, `TMPDIR` is the chroot's own
 `/tmp` ([#88](https://github.com/Fullaxx/slax-kitchen/issues/88)), `PATH`, the prompt and the C

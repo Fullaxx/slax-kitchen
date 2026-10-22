@@ -28,7 +28,7 @@ with no useful message. Anything that rewrites this file must keep the flag.
 
 `-T0` (all threads) and `--extreme` affect size and build time only.
 
-### It is not byte-reproducible, and that is upstream's doing
+### Its entry order is not stable, and that is upstream's doing
 
 `find . -print` has no `sort`, so entry order follows readdir order — and that is not merely
 host-dependent, it is **not stable at all on some filesystems**. Measured over five runs on an
@@ -41,9 +41,9 @@ byte-identical except that Slackware adds `usr/share/terminfo/l/linux`, yet Debi
 image is 3,448 bytes *smaller* despite having four more entries, purely because xz compressed a
 different ordering.
 
-Add `| LC_ALL=C sort` after the `find` and the output becomes byte-identical across runs. It changes
+Add `| LC_ALL=C sort` after the `find` and two packs of one tree become byte-identical. It changes
 nothing at boot — cpio order is irrelevant to extraction — and it is worth doing unconditionally,
-because an unsorted repack cannot be diffed even against itself.
+because an unsorted repack cannot be diffed even against itself. Kitchen's initramfs verbs do it.
 → [reproducibility](../40-workflow/reproducibility.md)
 
 ## Layout

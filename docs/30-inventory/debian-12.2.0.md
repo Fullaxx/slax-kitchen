@@ -134,5 +134,5 @@ result, and packs the delta as a new high-numbered bundle. Requires real `chroot
 [`40-workflow/container-vs-host.md`](../40-workflow/container-vs-host.md) and
 [`50-cookbook/add-packages.md`](../50-cookbook/add-packages.md).
 
-**Bookworm is oldstable.** Pin `snapshot.debian.org` if you need a reproducible result, and expect
-that unpinned installs drift from the 2023 snapshot the rest of the image was built from.
+**Bookworm is oldstable.** Pin `snapshot.debian.org` if two builds need the same packages, and
+expect that unpinned installs drift from the 2023 snapshot the rest of the image was built from.

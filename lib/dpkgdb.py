@@ -277,8 +277,8 @@ def merge_tree(iso: str, quiet: bool = False) -> int:
         # Explicit, not umask-dependent. os.makedirs and open() above take whatever
         # umask the caller happened to have, and -all-root then fixes the ids but not
         # the modes -- so without this the generated bundle's permissions varied by who
-        # ran pack, which also quietly contradicted the reproducibility claim in
-        # docs/40-workflow/reproducibility.md.
+        # ran pack: one tree packed by two people held different contents, which
+        # `kitchen diff --bundles` reports, since it compares modes.
         os.chmod(os.path.join(stage, STATUS), 0o644)
         for d in ("var/lib/dpkg", "var/lib", "var"):
             os.chmod(os.path.join(stage, d), 0o755)

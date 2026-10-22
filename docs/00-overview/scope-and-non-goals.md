@@ -56,7 +56,7 @@ bundle layout. `kitchen probe` will tell you what you have and report `unknown` 
 | **Slackware package installation is deferred** | Slackware has no official dependency-resolving package manager, and the shipped `slackpkg` configuration points at a dead host and a moved mirror. Installing from pinned `.txz` files does work and is the supported route. → [add-packages](../50-cookbook/add-packages.md) |
 | **The initramfs `busybox` is not replaced by default** | it is the one binary every other boot component depends on. The recipe exists but is opt-in and gated on a five-stage test harness. |
 | **`kernel.replace` warns loudly** | a stock distribution kernel has no aufs, which silently downgrades the union and breaks `slax activate` with no error at any point. |
-| **Reproducible builds are not promised** | upstream's own `initramfs_pack` uses `find . -print` with no `sort`, so even identical content compresses differently. We document how to make it reproducible; we do not claim the stock images are. |
+| **Reproducible builds are not promised** | a build that changes a file records when it did, so two builds that change anything are never bit-identical. `kitchen diff` compares their contents instead ([reproducibility](../40-workflow/reproducibility.md)). Upstream's own images vary too: `initramfs_pack` uses `find . -print` with no `sort`, so even identical content compresses differently. |
 
 ## Privilege
 

@@ -66,9 +66,9 @@ when you ask for `--uefi` or `--hybrid`.
 
 | | `genisoimage` | `xorriso` |
 |---|---|---|
-| Matches upstream byte-for-byte | **yes** (see below) | no — see application id |
+| Matches upstream byte-for-byte | all but three volume timestamps (see below) | no — see application id |
 | Application id case | preserves `slax` | **uppercases to `SLAX`** (enforces ECMA-119 d-characters) |
-| Pin timestamps for reproducible builds | no — cdrkit dropped cdrtools' `-*-date` flags | **yes**, `--modification-date=YYYYMMDDhhmmsscc` |
+| Pin the volume's dates (`--date`) | no — cdrkit dropped cdrtools' `-*-date` flags, so `kitchen pack` warns and ignores `--date` | yes, as `--modification-date=YYYYMMDDhhmmsscc` |
 | El Torito EFI alt-boot (`-eltorito-alt-boot`) | yes | yes |
 | isohybrid MBR + GPT in one pass | no (needs a separate `isohybrid` run) | **yes**, `-isohybrid-mbr` / `-isohybrid-gpt-basdat` |
 
@@ -109,16 +109,18 @@ never match `vendor/linux-live/bootfiles/isolinux.bin` on disk. Any fidelity che
 or compare the patched fields separately. `lib/isoparse.py` parses the table and reports
 `self_consistent`, which is the check that actually means something.
 
-## Reproducible builds
+## Pinning the volume's dates
 
 `genisoimage` has no way to pin the volume timestamps, so two runs minutes apart differ in those 19
-sectors. If you need bit-identical rebuilds, use the xorriso backend with an explicit date:
+sectors. The xorriso backend can pin them, at the cost of the uppercased application id:
 
 ```sh
 kitchen pack -s work/iso -o out.iso --backend xorriso --date 2023100920484300
 ```
 
-and accept the uppercased application id, or post-normalise the PVD timestamps.
+That pins the volume's dates and nothing else. Each file's own times still come from the tree, and
+a build that changes anything records when it did, so two builds that change anything are never
+bit-identical. To compare two, use `kitchen diff`; see [reproducibility](reproducibility.md).
 
 ## UEFI and hybrid builds
 

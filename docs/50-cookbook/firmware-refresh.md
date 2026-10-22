@@ -248,7 +248,7 @@ license text travels with the firmware.
   license prompt.
 - **It is not proof that any device works.** Boot-verified means the image with these bundles boots;
   whether an AMD RX 7800 initialises is a question only that card can answer.
-- **The bundles are not reproducible across time.** `wireless-regdb` and any future bookworm firmware
+- **The bundles' contents change over time.** `wireless-regdb` and any future bookworm firmware
   update land when the recipe runs; the linux-firmware files are pinned.
 
 ## Building without firmware

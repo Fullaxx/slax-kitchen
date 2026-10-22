@@ -585,10 +585,11 @@ kitchen pack [-s DIR] [-o FILE]   rebuild an ISO from a work tree
       --hybrid         add an isohybrid MBR (and a GPT alongside UEFI)
       --volid ID       volume id            --appid ID     application id
       --sysid ID       system id            --publisher S  --preparer S
-      --date STAMP     pin the image timestamps, YYYYMMDDhhmmsscc (xorriso only)
+      --date STAMP     pin the volume's dates, YYYYMMDDhhmmsscc (xorriso only)
 
 Recipes record these as hints in <work>/.kitchen/pack.yaml; a flag given here wins.
 Warns when this image will not have a UEFI entry or hybrid MBR the unpacked one had.
+Warns when --date is given to genisoimage, which cannot use it.
 Debian status fragments are merged into 98-dpkg-db.sb at this point.
 H
         ;;

@@ -54,9 +54,9 @@ support Slax upstream."
 
 IMAGE_CHECKSUM_NOTE="No image is attached to this release, so there is no image checksum here. Where an image
 *is* published, its \`SHA256SUMS\` checks the download. It does not promise that a rebuild
-matches, because **images are not byte-reproducible**: \`genisoimage\` varies both the
-volume timestamps and the extent order, and an identical tree rebuilt elsewhere has been
-measured differing in 99.9% of its sectors. See
+matches, because **images are not byte-reproducible**: a build that changes a file records
+when it did. \`genisoimage\` also varies the volume timestamps and the extent order, and an
+identical tree rebuilt elsewhere has been measured differing in 99.9% of its sectors. See
 [reproducibility]($BLOB/docs/40-workflow/reproducibility.md)."
 
 # The tag being released is usually not yet an object (the workflow runs on the ref,

@@ -115,9 +115,10 @@ piece of it is load-bearing on **both** flavours:
 ### If you want to take it on
 
 The promising route is **not** slackpkg — it is `installpkg` against a **pinned local package set**,
-which is what upstream's own `txz2sb` does. That gives exact reproducibility and sidesteps mirror
-drift entirely, at the cost of requiring you to assemble the package set (and its dependencies)
-yourself. The verb's `from:`, delta and exclusion machinery would all be reused unchanged.
+which is what upstream's own `txz2sb` does. That installs the same packages every time and
+sidesteps mirror drift entirely, at the cost of requiring you to assemble the package set (and its
+dependencies) yourself. The verb's `from:`, delta and exclusion machinery would all be reused
+unchanged.
 
 ### Unaffected
 

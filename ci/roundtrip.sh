@@ -13,8 +13,8 @@
 # sector-by-sector comparison called that 99.9% corrupted. It was not. Comparing layout
 # position tests the build host, not the build.
 #
-# Reproducible byte-identical output is a separate goal with a separate mechanism --
-# `kitchen pack --backend xorriso --date ...`. See docs/40-workflow/reproducibility.md.
+# Nor does anything else here promise byte-identical output: a build that changes a file records
+# when it did, so no rebuild can give it (#95). See docs/40-workflow/reproducibility.md.
 set -u
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 ISO=${1:?usage: roundtrip.sh <iso>}

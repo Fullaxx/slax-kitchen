@@ -115,7 +115,7 @@ The pack command is the canonical one, CRC32 and all:
 find . -print | cpio -o -H newc | xz -T0 -f --extreme --check=crc32
 ```
 
-Note there is no `sort` — see the reproducibility note in
+Note there is no `sort` — see the note on its entry order in
 [`10-anatomy/initramfs.md`](../10-anatomy/initramfs.md).
 
 ### `pxe`

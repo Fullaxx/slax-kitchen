@@ -384,6 +384,35 @@ in the right place is not a working feature — `ssh.service` being symlinked is
 login. Claim the rung you reached, not the one you hoped for. Several cookbook pages say "not
 boot-tested" for exactly this reason, and that is a feature.
 
+### Promise only what can be true
+
+A build that changes a file on an ISO changes its contents and its timestamps. The contents can be
+checked, and may match between builds. The timestamps record when the change happened, and no
+rebuild can reproduce them. So no page here should promise bit-identical output from a build that
+changes anything.
+
+More counts as a change than a recipe's own writes:
+- **every bundle a build makes** records when it was made, in its superblock. So does the ISO's
+  entry for it.
+- **`98-dpkg-db.sb`** is rebuilt by `kitchen pack` on every pack of a tree where a recipe installed
+  Debian packages ([`lib/dpkgdb.py`](lib/dpkgdb.py)), so for that tree, packing is itself a change.
+- **an initramfs** that a verb has repacked.
+
+| promise | backed by |
+|---|---|
+| a repack with no recipes keeps every file's bytes and mode | [`ci/roundtrip.sh`](ci/roundtrip.sh), in CI |
+| two images' contents can be compared | [`kitchen diff`](docs/90-reference/cli.md#diff-isoa-isob---bundles---limit-n). It hashes every file, and under `--bundles` every entry inside a bundle, leaving mtimes out. A rebuilt bundle still counts as changed, because its own bytes differ; `--bundles` says when every entry inside it matches |
+| two builds' contents match | not promised in general. They can, when the inputs match: pinned package sources, and a script that writes the same thing every run |
+
+**Don't make a promise hold by changing the times.** Stamping every file with one date, or
+`mksquashfs -all-time 0`, would give a changed file the wrong time, and the image would hand that
+to its users.
+
+[#95](https://github.com/Fullaxx/slax-kitchen/issues/95) is why this is here. From 2026-09-13
+until #95 was resolved, `docs/40-workflow/reproducibility.md` promised bit-identical rebuilds from
+`kitchen pack --backend xorriso --date`, nothing had measured it, and a rebuild cannot deliver it.
+[That page](docs/40-workflow/reproducibility.md) now says what varies between two builds, and why.
+
 ### Two labels have to exist
 
 `.github/workflows/ci.yml` runs the Tier C sweep on a pull request labelled **`boot-test`**, and

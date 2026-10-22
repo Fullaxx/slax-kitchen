@@ -44,7 +44,7 @@ n/rsync-3.2.3-ARCH-4.txz"
 
 A bare package name is not something a Slackware mirror can resolve — there is no dependency
 resolver and no "latest" indirection. That is the honest difference from `apt`, and pinning the
-exact versioned filename is a feature: the build is reproducible.
+exact versioned filename is a feature: the build installs the same package every time.
 
 `ARCH` is substituted with `x86_64` or `i586`, derived from the target's own `/var/log/packages`
 rather than `uname -m`, which inside a chroot reports the **build host's** kernel.
