@@ -1,6 +1,6 @@
 # `bundle-from-txz` — install Slackware packages, properly
 
-**Status: matrix-verified** — `nano` and `rsync` fetched from a pinned 15.0 mirror and installed with
+**Status: matrix-verified** — `nano` and `rsync` fetched from the 15.0 tree and installed with
 `installpkg` on Slackware 64-bit; resulting bundle 1.1 MiB, 143 files, package database updated
 (the [recipe matrix](../60-testing/ci.md#recipe-sizes), 2026-10-04).
 
@@ -11,7 +11,13 @@ kitchen apply bundle-from-txz
 ```yaml
 vars:
   bundle: 07-slackpkgs
-  mirror: "https://mirrors.slackware.com/slackware"
+  mirrors: >-
+    https://mirrors.kernel.org/slackware
+    https://slackware.osuosl.org
+    https://mirror.slackbuilds.org/slackware
+    https://mirrors.xmission.com/slackware
+    https://mirror.fcix.net/slackware
+    https://dfw.mirror.rackspace.com/slackware
   release: "15.0"
 ```
 
@@ -53,6 +59,23 @@ rather than `uname -m`, which inside a chroot reports the **build host's** kerne
 which has drifted years past this frozen 2023 base — see
 [issues 8 and 9](../30-inventory/known-upstream-bugs.md). A `-current` package linked against a
 newer glibc installs cleanly and then fails to run.
+
+## Six pinned mirrors, tried in order
+
+`mirrors` lists six Slackware mirrors, and the script fetches each package from the first that
+serves it. A mirror that fails, whether from an expired certificate, a missing file or an outage, is
+named on stderr, and the next is tried. Each attempt is two tries with a 30-second timeout, so a
+mirror that hangs cannot stall the build. If no mirror serves a file, the build fails and names it.
+
+**Not `mirrors.slackware.com`.** That is a MirrorBrain redirector, which picks a mirror for each
+request. On 2026-10-22 it sent 80 requests in a row, made from one host, to `mirror.techrich.hk`,
+one of whose two servers still presented a certificate that had expired on 2026-10-20. So a
+download worked or failed by which server answered, and CI's push run on `1bb805a` failed on it. Each of the six served both
+packages, for both arches, over valid TLS that day, and all but `slackware.osuosl.org` are in the
+redirector's own list of 70.
+
+TLS is the only check on what a mirror serves, so the list is short and named. To use your own,
+override `mirrors` in a profile, keeping it one string with the mirrors separated by spaces.
 
 ## It fixes TLS first, because TLS is broken
 

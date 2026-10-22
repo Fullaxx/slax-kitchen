@@ -155,7 +155,8 @@ Two problems, both measured:
 
 `kitchen`'s `bundle.packages` therefore supports Debian fully and treats Slackware as deferred. What
 does work is installing from **pinned `.txz` files** — which is what `txz2sb` does on a running
-system, and what a future `bundle-from-txz` recipe will do offline. Details in
+system, and what the [`bundle-from-txz`](../50-cookbook/bundle-from-txz.md) recipe does at build
+time, fetching each from a list of pinned mirrors. Details in
 [`50-cookbook/add-packages.md`](../50-cookbook/add-packages.md) and issues 8 and 9 in
 [`known-upstream-bugs.md`](known-upstream-bugs.md).
 

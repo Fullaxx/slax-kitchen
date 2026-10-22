@@ -15,7 +15,24 @@ compat:
   privilege: chroot
 vars:
   bundle: 07-slackpkgs
-  mirror: "https://mirrors.slackware.com/slackware"
+  # Six mirrors, tried in this order for each package. The first that serves it wins, and a
+  # failure on one -- an expired certificate, a missing file, an outage -- moves to the next.
+  #
+  # NOT mirrors.slackware.com. That is a MirrorBrain redirector, which picks a mirror for each
+  # request. On 2026-10-22 it sent 80 requests in a row, made from one host, to
+  # mirror.techrich.hk, one of whose two servers still presented a certificate that had
+  # expired on 2026-10-20. So a download worked or failed by which server answered, and
+  # CI's push run on 1bb805a failed on it. Each of these six served both packages below, for
+  # both arches, over valid TLS that day, and all but slackware.osuosl.org are in the
+  # redirector's own list of 70. One string, the mirrors separated by spaces; a profile can
+  # replace it.
+  mirrors: >-
+    https://mirrors.kernel.org/slackware
+    https://slackware.osuosl.org
+    https://mirror.slackbuilds.org/slackware
+    https://mirrors.xmission.com/slackware
+    https://mirror.fcix.net/slackware
+    https://dfw.mirror.rackspace.com/slackware
   # Pinned to 15.0, NOT -current. The stock /etc/slackpkg/mirrors points at
   # slackware64-current, which has drifted years past this frozen 2023 base -- see
   # known-upstream-bugs.md issues 8 and 9. A -current package linked against a newer
@@ -44,8 +61,9 @@ steps:
     network: true
     # Slackware publishes each release's source beside its packages, one tree for both
     # arches. `kitchen sources` points the packages installed here at it. Written out
-    # rather than built from {{mirror}}/{{release}}: the schema checks it is a URL before
-    # vars are substituted. Change it when you change `release:`.
+    # rather than built from a mirror and {{release}}: the schema checks it is a URL before
+    # vars are substituted. Change it when you change `release:`. It is only a pointer, so
+    # the redirector is fine here: nothing downloads from it.
     upstream_source: https://mirrors.slackware.com/slackware/slackware-15.0/source/
     script: |
       #!/bin/sh
@@ -93,11 +111,27 @@ steps:
       cd /tmp
       for p in $PKGS; do
           f=$(echo "$p" | sed "s/ARCH/$ARCH/")
-          echo "fetching $f"
-          wget -nv "{{mirror}}/${TREE}-{{release}}/${TREE}/$f" -O "/tmp/$(basename "$f")"
+          out="/tmp/$(basename "$f")"
+          got=
+          # Each mirror in turn, until one serves the file. --tries and --timeout bound a
+          # mirror that hangs: wget's defaults (20 tries, a 900 s read timeout) would stall
+          # the build for hours before the next mirror was tried. An expired certificate or
+          # a 404 fails at once either way.
+          for base in {{mirrors}}; do
+              echo "fetching $f from $base"
+              if wget -nv --tries=2 --timeout=30 "$base/${TREE}-{{release}}/${TREE}/$f" -O "$out"; then
+                  got=1
+                  break
+              fi
+              echo "bundle-from-txz: $base did not serve $f; trying the next mirror" >&2
+          done
+          if [ -z "$got" ]; then
+              echo "bundle-from-txz: no mirror served $f" >&2
+              exit 1
+          fi
           # installpkg runs doinst.sh and registers the package in /var/log/packages,
           # which is what makes the result a real installation rather than an unpacked
           # tarball. bundle.script's delta then picks up both.
-          /sbin/installpkg "/tmp/$(basename "$f")"
-          rm -f "/tmp/$(basename "$f")"
+          /sbin/installpkg "$out"
+          rm -f "$out"
       done
