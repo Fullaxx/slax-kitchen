@@ -35,7 +35,7 @@ sed -i -r 's/^NETWORK.*/NETWORK=true/' $THIS/../../config
 | [repo-map](repo-map.md) | what is in the repository, annotated |
 | [livekit-build](livekit-build.md) | `build` — the master script, line by line |
 | [livekit-config](livekit-config.md) | `config` — every variable, and the Slax delta |
-| [livekitlib-reference](livekitlib-reference.md) | all 49 functions, in execution order |
+| [livekitlib-reference](livekitlib-reference.md) | all 50 functions, in execution order |
 | [initramfs-create](initramfs-create.md) | how `initrfs.img` is assembled |
 | [slax-debian12](slax-debian12.md) | the Debian flavour's build |
 | [slax-slackware15](slax-slackware15.md) | the Slackware flavour's build |

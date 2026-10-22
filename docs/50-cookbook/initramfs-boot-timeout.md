@@ -102,7 +102,7 @@ clean as shipped, so this is a reliable gate, and it is the difference between *
 | `livekitlib` `df … cut -d " " -f 1` | harden to `df -P` — a real latent bug for device names over 20 characters |
 | `livekitlib` `modprobe_everything` | stop skipping network drivers, for a machine that boots over the network |
 
-Read [`livekitlib-reference`](../15-upstream/livekitlib-reference.md) first; it lists all 49
+Read [`livekitlib-reference`](../15-upstream/livekitlib-reference.md) first; it lists all 50
 functions with line numbers.
 
 ## Verify, every time

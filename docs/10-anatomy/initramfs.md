@@ -52,7 +52,7 @@ because an unsorted repack cannot be diffed even against itself. Kitchen's initr
 /init                     2,317 B   the boot script
 /shutdown                 2,504 B   run by systemd / rc.6 on the way down
 /lib/config               1,778 B   LIVEKITNAME, BEXT, LMK, NETWORK
-/lib/livekitlib          28,608 B   49 functions
+/lib/livekitlib          28,608 B   50 functions
 /bin/                               8 real binaries + 245 applet symlinks + bin/init
 /lib/modules/6.1.38/                301 .ko
 /etc/passwd                  25 B   root::0:0::/root:/bin/sh   (empty password field)

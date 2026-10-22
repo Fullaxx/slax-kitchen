@@ -72,7 +72,7 @@ binaries and `find_data` breaks at boot, silently, because busybox's `blkid` has
 | | size | |
 |---|---|---|
 | `/init` | 2,317 | eighteen function calls. [`10-anatomy/livekit-init.md`](../10-anatomy/livekit-init.md) |
-| `/lib/livekitlib` | 28,608 | 49 functions. [`15-upstream/livekitlib-reference.md`](../15-upstream/livekitlib-reference.md) |
+| `/lib/livekitlib` | 28,608 | 50 functions. [`15-upstream/livekitlib-reference.md`](../15-upstream/livekitlib-reference.md) |
 | `/lib/config` | 1,778 | `LIVEKITNAME=slax`, `NETWORK=true`, `BEXT=sb`, `MKMOD`, `LMK` |
 | `/shutdown` | 2,504 | [`10-anatomy/shutdown.md`](../10-anatomy/shutdown.md) |
 

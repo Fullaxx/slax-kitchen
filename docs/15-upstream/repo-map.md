@@ -7,7 +7,7 @@
 linux-live/
 ├── build                     Linux Live Kit master build script
 ├── config                    build-time settings (LIVEKITNAME, VMLINUZ, MKMOD, NETWORK…)
-├── livekitlib                49 shell functions -- shared by the build AND the initramfs
+├── livekitlib                50 shell functions -- shared by the build AND the initramfs
 ├── bootinfo.txt              becomes readme.txt on the ISO
 ├── README                    "turn your existing installed Linux into a Live Kit"
 │

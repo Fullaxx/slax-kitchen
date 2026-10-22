@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """kitchen upstream-diff -- has Linux Live Kit moved under our documentation?
 
-docs/15-upstream/ describes upstream's own source in detail: what `livekitlib`'s 49
+docs/15-upstream/ describes upstream's own source in detail: what `livekitlib`'s 50
 functions do, what `initramfs_create` copies, what `build` assembles. Every one of those
 pages is a claim about a file in vendor/linux-live at the pinned commit. When upstream
 moves, those claims go stale silently -- nothing in the repo changes, no test fails, and
@@ -123,7 +123,7 @@ def render(a: str, b: str, documented: list, undocumented: list, ncommits: str,
 
     The action this output exists to prompt is "go re-read that page", so the page is
     the unit, not the file. Forty upstream commits touched 42 files here, most of them
-    icons; a flat file list buries `livekitlib +81 -25` -- the one file a 49-function
+    icons; a flat file list buries `livekitlib +81 -25` -- the one file a 50-function
     reference page describes -- in the middle of six galculator PNGs.
     """
     out = []

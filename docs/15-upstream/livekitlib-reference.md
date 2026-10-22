@@ -1,4 +1,4 @@
-# `livekitlib` — the 49 functions
+# `livekitlib` — the 50 functions
 
 `vendor/linux-live/livekitlib`, 1109 lines. Sourced twice for different purposes: by `build` at
 build time, and — copied into the initramfs as `/lib/livekitlib` — by `/init` at boot.
