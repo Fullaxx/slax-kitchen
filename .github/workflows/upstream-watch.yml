@@ -4,9 +4,11 @@
 
 name: upstream-watch
 
-# Slax has shipped nothing since 2023-10-10 and linux-live has not been touched since
-# 2024-11-14, so any movement here is genuinely notable. Mirrors also rot silently --
-# slackonly.com went NXDOMAIN and broke slackpkg on every stock Slax image.
+# Slax has shipped nothing since 2023-10-10, so a new release is genuinely notable. Mirrors
+# also rot silently -- slackonly.com went NXDOMAIN and broke slackpkg on every stock Slax
+# image. linux-live's commits are only reported in the log: upstream has been committing
+# toward Slax 13 since 2026-10-09 without releasing, and none of it changes what we build
+# until it ships (#89).
 on:
   schedule:
     - cron: "17 6 * * 1"      # Mondays, 06:17 UTC

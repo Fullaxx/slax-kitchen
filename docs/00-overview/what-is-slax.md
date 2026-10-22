@@ -75,10 +75,12 @@ Three properties, in increasing order of how much work they save you:
 
 ## Where it stands
 
-**Nothing has shipped since 2023-10-10.** 12.2.0 and 15.0.4 are the newest releases, and the only
-commit upstream since is from 2024-11-14 and never shipped. That is stable rather than abandoned —
-it means the four fingerprints in `compat/` stay valid, and a weekly CI job watches for the day that
-changes.
+**Nothing has shipped since 2023-10-10.** 12.2.0 and 15.0.4 are the newest releases. Upstream's
+repository was quiet from 2024-11-14 until 2026-10-09. Then 15 commits toward Slax 13 arrived:
+Debian 13, GRUB2 and UEFI, and no Slackware
+([#89](https://github.com/Fullaxx/slax-kitchen/issues/89)). None had shipped when this was checked,
+on 2026-10-22. So the four fingerprints in `compat/` stay valid until a release, and a weekly CI
+job watches for it.
 
 ## Next
 

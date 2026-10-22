@@ -1,12 +1,14 @@
 #!/bin/bash
-# Detect upstream movement: a new Slax release, a linux-live commit, or a dead mirror.
+# Detect upstream movement that changes what we build: a new Slax release, a dead mirror,
+# or a rotated signing key. linux-live's own commits are reported, not flagged.
 #
 #   ci/upstream-watch.sh [--baseline compat/upstream-baseline.yaml]
 #
-# Exit 0 = nothing changed. Exit 1 = something moved and a human should look.
+# Exit 0 = nothing that changes a build moved. Exit 1 = a release, a mirror or a key did,
+# and a human should look: the workflow then raises an issue.
 #
-# Upstream has been dormant since 2023-10-10 and mirrors rot silently (slackonly.com
-# went NXDOMAIN and broke slackpkg on every stock Slax). This is how we find out.
+# Slax has shipped nothing since 2023-10-10, and mirrors rot silently (slackonly.com went
+# NXDOMAIN and broke slackpkg on every stock Slax). This is how we find out.
 set -u
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BASELINE="$REPO_ROOT/compat/upstream-baseline.yaml"
@@ -16,18 +18,28 @@ changed=0
 say()  { printf '  %s\n' "$*"; }
 flag() { printf '  CHANGED: %s\n' "$*"; changed=1; }
 
-want_head=$(sed -n 's/^ *linux_live_head: *//p' "$BASELINE" | tr -d '"')
+# The pin: the commit vendor/linux-live is pinned to, which the shipped ISOs were built from.
+# Read from the gitlink, so a checkout that never fetched the submodule has it too.
+want_head=$(git -C "$REPO_ROOT" ls-tree HEAD vendor/linux-live 2>/dev/null | awk '{print $3}')
 
 echo "upstream watch"
 
 # --- linux-live HEAD -------------------------------------------------------
+# REPORTED, NOT FLAGGED. kitchen builds from the published ISOs, and a linux-live commit
+# changes nothing here until a release ships it, which the release check below catches.
+# While linux-live was dormant (2024-11-14 to 2026-10-09) any commit was news, so this
+# flagged. Then upstream started committing toward Slax 13 without releasing: the
+# 2026-10-12 run opened #89, and the next run commented on it again.
 got_head=$(git ls-remote https://github.com/Tomas-M/linux-live HEAD 2>/dev/null | cut -f1)
-if [ -z "$got_head" ]; then
+if [ -z "$want_head" ]; then
+    say "linux-live: no vendor/linux-live pin in this checkout (skipping)"
+elif [ -z "$got_head" ]; then
     say "linux-live: could not reach github (skipping)"
 elif [ "$got_head" = "$want_head" ]; then
-    say "linux-live HEAD unchanged ($(echo "$want_head" | cut -c1-12))"
+    say "linux-live HEAD is at the pin ($(echo "$want_head" | cut -c1-12))"
 else
-    flag "linux-live HEAD $(echo "$want_head" | cut -c1-12) -> $(echo "$got_head" | cut -c1-12)"
+    say "linux-live HEAD $(echo "$want_head" | cut -c1-12) -> $(echo "$got_head" | cut -c1-12):" \
+        "past the pin; reported, not flagged"
     say "  review: https://github.com/Tomas-M/linux-live/compare/$want_head...$got_head"
 fi
 
@@ -153,7 +165,7 @@ PY
 
 echo
 if [ "$changed" -eq 0 ]; then
-    echo "nothing changed"
+    echo "nothing flagged"
 else
     echo "upstream moved -- see docs/70-compat/ for the adoption procedure"
 fi

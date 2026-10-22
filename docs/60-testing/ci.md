@@ -11,7 +11,7 @@ in the YAML — that is deliberate, so a CI failure is reproducible on a laptop 
 | `ci.yml` → `boot` | push to master, or any PR | one direct-kernel QEMU boot, under KVM where the runner has it, asserting; on a PR labelled `boot-test`, the [Tier C](tier-c.md) sweep too |
 | `ci.yml` (weekly) | Thursdays 05:41 UTC, or dispatch | the same, plus the skipped recipes and the [Tier C](tier-c.md) boot matrix |
 | `release.yml` | a `v*` tag, or dispatch | guard, then all of `ci.yml` — **the full matrix**, not the per-push subset — then publish |
-| `upstream-watch.yml` | Mondays 06:17 UTC, or dispatch | linux-live HEAD, new Slax release, mirror health, pinned signing keys |
+| `upstream-watch.yml` | Mondays 06:17 UTC, or dispatch | new Slax release, mirror health, pinned signing keys; linux-live HEAD reported, not flagged |
 
 <a id="job-times"></a>
 **How long each job takes**, over the last five green pushes, 2026-09-26 to 2026-09-28 (runs
@@ -355,18 +355,25 @@ not, and do not belong in the repository.
 **When:** `cron: "17 6 * * 1"` — Mondays 06:17 UTC — plus `workflow_dispatch`.
 `ci/upstream-watch.sh` runs standalone too, and takes about a minute.
 
-**Why at all:** upstream is dormant. Slax has shipped nothing since **2023-10-10** and `linux-live`
-was last touched **2024-11-14**, so any movement is notable rather than routine — there is no steady
-stream of releases to filter. And the things this project pins rot *silently*: `slackonly.com` went
-NXDOMAIN and broke `slackpkg` on every stock Slax image, which is the incident the mirror check
-exists for. Nothing here fails because of our code; it fails because the world moved.
+**Why at all:** Slax has shipped nothing since **2023-10-10**, so a release is notable rather than
+routine — there is no steady stream of releases to filter. And the things this project pins rot
+*silently*: `slackonly.com` went NXDOMAIN and broke `slackpkg` on every stock Slax image, which is
+the incident the mirror check exists for. Nothing here fails because of our code; it fails because
+the world moved.
+
+**linux-live's commits are reported, not flagged.** The repository was untouched from 2024-11-14
+until 2026-10-09, so the watch used to flag any commit. Then upstream started committing toward
+Slax 13 (Debian 13, GRUB2 and UEFI, no Slackware) without releasing it. The 2026-10-12 run opened
+[#89](https://github.com/Fullaxx/slax-kitchen/issues/89) for it, and the next run commented again.
+kitchen builds from the published ISOs, so a commit changes nothing here until a release ships it,
+and check 2 catches the release.
 
 **What it watches** — four checks, each against a recorded baseline:
 
 | | check | how | baseline |
 |---|---|---|---|
-| 1 | **`linux-live` HEAD** | `git ls-remote` against Tomáš's repo | `linux_live_head` in [`compat/upstream-baseline.yaml`](../../compat/upstream-baseline.yaml) |
-| 2 | **A new Slax release** | the mirror directory listing at `ftp.linux.cz`, cross-checked against `slax.org/changelog.php` | `latest_releases: [12.2.0, 15.0.4]` |
+| 1 | **`linux-live` HEAD** — reported, not flagged | `git ls-remote` against Tomáš's repo | the `vendor/linux-live` pin, read from the submodule's gitlink |
+| 2 | **A new Slax release** | the mirror directory listing at `ftp.linux.cz`, cross-checked against `slax.org/changelog.php` | `latest_releases: [12.2.0, 15.0.4]` in [`compat/upstream-baseline.yaml`](../../compat/upstream-baseline.yaml) |
 | 3 | **Mirror health** | `curl -sSIL` every mirror × every target | [`compat/sources.yaml`](../../compat/sources.yaml) — HTTP 200 **and** the recorded `Content-Length` |
 | 4 | **Pinned signing keys** | fetch each `key_url` and sha256 it | the `key_sha256` in each recipe's `apt.sources` |
 
@@ -387,10 +394,10 @@ hashing them takes seconds and names the recipe, the source and both hashes. The
 out of `recipes/**/*.yaml`, so a recipe added later is covered without anyone remembering to update
 the watch.
 
-**On a change** it opens an issue labelled `upstream-watch` — or comments on the open one rather
-than filing a duplicate every week — carrying the adoption procedure: `kitchen probe` each ISO,
-regenerate the fingerprint, `kitchen selftest ci`, then fix what breaks. See
-[fingerprints](../70-compat/fingerprints.md).
+**On a flagged change** (a release, a mirror or a key) it opens an issue labelled `upstream-watch`,
+or comments on the open one rather than filing a duplicate every week. The issue carries the
+adoption procedure: `kitchen probe` each ISO, regenerate the fingerprint, `kitchen selftest ci`,
+then fix what breaks. See [fingerprints](../70-compat/fingerprints.md).
 
 > It does **not** watch busybox or CVEs. The busybox replacement is pinned and tested by
 > [`tests/busybox/gates.sh`](../../tests/busybox/gates.sh), not by this.

@@ -640,12 +640,13 @@ kitchen shell: 07-mytools.sb has no /bin/sh.
 
 ## `upstream-diff [--from REF] [--to REF] [--offline] [--write]`
 
-Which pages in [15-upstream/](../15-upstream/) does an upstream move invalidate?
+Which pages under `docs/` does an upstream move invalidate?
 
 `ci/upstream-watch.sh` answers "did upstream move?" weekly. This answers the next question.
-Those pages describe upstream's own source — what `livekitlib`'s 49 functions do, what
-`initramfs_create` copies — and every one is a claim about a file at the pinned commit. When
-the pin moves those claims go stale silently: nothing in the repo changes and no test fails.
+The pages in [15-upstream/](../15-upstream/) describe upstream's own source — what each of
+`livekitlib`'s functions does, what `initramfs_create` copies — and pages elsewhere cite it
+too. Every one is a claim about a file at the pinned commit. When the pin moves those claims go
+stale silently: nothing in the repo changes and no test fails.
 
 ```
 $ kitchen upstream-diff
@@ -659,7 +660,7 @@ $ kitchen upstream-diff
 ```
 
 Grouped by page and ranked by churn, because the action is "go re-read that page". Exit
-status is **1 when something documented moved**, 0 otherwise, so it runs in CI.
+status is **1 when something documented moved**, 0 otherwise, so it can run in CI.
 
 **The map is scraped from the docs.** Each page cites its own source path, so a new page is
 covered the day it is written and a hardcoded table cannot rot — which is the exact failure

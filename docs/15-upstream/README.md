@@ -2,8 +2,8 @@
 
 Slax is built by **Linux Live Kit**, and both live in one repository:
 <https://github.com/Tomas-M/linux-live>. There is **no separate `Tomas-M/slax` repository** — that
-URL 404s, and anyone citing one is mistaken. The Slax-specific build lives inside linux-live under
-`Slax/debian12/` and `Slax/slackware15/`.
+URL 404s, and anyone citing one is mistaken. At the pin below, the Slax-specific build lives inside
+linux-live under `Slax/debian12/` and `Slax/slackware15/`.
 
 That repository is vendored here as a submodule at `vendor/linux-live`, pinned to
 **`9825e937570072a015e2e35ad3330ead9055d21d`** (2024-11-14), so every claim in these pages cites a
@@ -56,6 +56,14 @@ We vendor the repository **unmodified** and never relicense it. A commit gate
 
 ## Keeping the pin honest
 
-`ci/upstream-watch.sh` compares this pin and the slax.org changelog against
-`compat/upstream-baseline.yaml` weekly. Upstream has shipped no release since **2023-10-10** and the
-repository has not been touched since **2024-11-14**, so any movement is notable.
+Each week, `ci/upstream-watch.sh` compares upstream's HEAD with this pin, and the slax.org
+changelog with the releases in `compat/upstream-baseline.yaml`. Upstream has shipped no release
+since **2023-10-10**.
+
+The repository itself, untouched since the pin, started moving on 2026-10-09, toward Slax 13:
+Debian 13, GRUB2 and UEFI, and no Slackware
+([#89](https://github.com/Fullaxx/slax-kitchen/issues/89)). The watch reports those commits
+without flagging them, because none of them is in an ISO yet. When a release is adopted, the pin
+moves to the commit it was built from, and `kitchen upstream-diff` lists the pages, here and
+elsewhere in `docs/`, that the move makes stale. The [drift report](drift-report.md) holds that
+list.
