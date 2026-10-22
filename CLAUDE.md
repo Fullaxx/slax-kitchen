@@ -15,14 +15,15 @@ asking for the next, and a request to commit is not a request to push.
 Sessions committed and pushed on their own while the framework was being built. That stage is
 over: from 2026-09-19 the user inspects every change before it is committed.
 
-## Before committing anything that answers an issue
+## Before committing anything that answers or names an issue
 
 Read [`CONTRIBUTING.md`](CONTRIBUTING.md) § *"There is no pull request for maintainer-side fixes"*
-and follow it exactly. It covers how the commit closes the issue and how many commits an issue
-gets.
+and follow it exactly. It covers how the commit closes the issue, how many commits an issue gets,
+and how a commit that only names one keeps from closing it.
 
 Not optional and not from memory: `6ecf019` fixed #17, #18 and #19 without it, and left three
-issues open that the code had already answered.
+issues open that the code had already answered. `6c574dc` closed #94 by accident, from one word in
+its subject.
 
 ## Before reviewing anything
 

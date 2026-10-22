@@ -305,6 +305,15 @@ maintainer in response to an issue lands as a direct commit. Either way, **the c
 issue** — put `Closes #N` on its own line in the message, and GitHub closes it on the push to
 `master`. One commit per issue, so `git log` reads as the answer to `gh issue list`.
 
+**A commit that only refers to an issue must not close it.** GitHub closes an issue when any of
+close, closes, closed, fix, fixes, fixed, resolve, resolves or resolved stands before its number,
+with or without a colon and in either case
+([GitHub's list](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)),
+anywhere in a commit message: the subject line too. So such a commit says `Refs #N` on its own
+line, and keeps those words away from every issue number. `6c574dc` ended `Refs #94`, but its
+subject read "…after #88 closed: #94 now asks it…", and the push closed
+[#94](https://github.com/Fullaxx/slax-kitchen/issues/94) with none of its questions answered.
+
 ### Proposing a fix is welcome, and it will be checked
 
 Three of the first four reports proposed a fix. Two were right. One suggested a Python API that
