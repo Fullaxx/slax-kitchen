@@ -718,6 +718,28 @@ def test_renumber_refuses_reserved():
                 FAILURES.append(f"bundle.renumber refused to={to!r} wrongly: {e}")
 
 
+def test_renumber_journals_the_old_name_as_removed():
+    """A renumbered bundle is gone from its old name, and the journal says so (#96).
+
+    bundle.renumber journalled only the new name, so in a profile that built a bundle and
+    then renumbered it, the builder's entry for the old name still stood. Held to that
+    journal, a correct image failed for the file this step had renamed: measured 2026-10-23,
+    bundle-from-dir then renumber-bundles failed on `/slax/modules/07-mytools.sb present`.
+    How a removal and a later entry for the same path are read is test_listing.py's
+    test_a_recipe_s_journal_is_what_the_disc_must_hold."""
+    import tempfile
+    work = tempfile.mkdtemp()
+    mods = os.path.join(work, "iso", "slax", "modules")
+    os.makedirs(mods)
+    open(os.path.join(mods, "07-mytools.sb"), "w").close()
+    ctx = apply.Ctx(work, ".", "t")
+    apply.v_bundle_renumber(ctx, {"verb": "bundle.renumber", "match": "^07-mytools",
+                                  "to": "95"})
+    check("the bundle is renamed", sorted(os.listdir(mods)), ["95-mytools.sb"])
+    check("the old name is journalled as removed, and the new one as written",
+          ctx.changes, ["-slax/modules/07-mytools.sb", "slax/modules/95-mytools.sb"])
+
+
 def test_link_targets_refused():
     """A member's NAME being safe says nothing about where its LINK points.
 
@@ -4845,6 +4867,7 @@ def main():
                    test_a_vendoring_project_names_its_own_recipes_and_profiles_bare,
                    test_reserved_bundle_numbers,
                    test_renumber_refuses_reserved,
+                   test_renumber_journals_the_old_name_as_removed,
                    test_link_targets_refused,
                    test_checksums_sign_is_a_key_id,
                    test_removes_come_first,

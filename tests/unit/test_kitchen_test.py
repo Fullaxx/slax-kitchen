@@ -480,15 +480,20 @@ def test_a_projects_structure_checks_reach_iso_assert_and_stay_here(fx):
     with a size ceiling or bundles to require or forbid ran iso_assert.py itself (#67).
     They are structure options, so like --structure they never go to a boot host: its
     `test` would refuse a flag it does not take. The lists are repeatable, and a path
-    holding a space must arrive as one path."""
+    holding a space must arrive as one path.
+
+    --artifacts too, the recipes' record, which the matrix passed for one recipe while
+    nothing let `kitchen test` pass it (#96)."""
     fx.with_boot_host()
     fx.with_xorriso()
     fx.iso_file("/slax/boot/vmlinuz", "k")
     fx.iso_file("/slax/boot/initrfs.img", "i")
+    record = "/out/my image.iso.provenance.json"
     rc, out, calls, left = fx.run("--structure", "--kernel", "--max-size-mib", "400",
                                   "--require", "/slax/modules/40-my app.sb",
                                   "--require", "/slax/modules/41-x.sb",
-                                  "--forbid", "/slax/modules/05-chromium.sb", "--expect-gpt")
+                                  "--forbid", "/slax/modules/05-chromium.sb", "--expect-gpt",
+                                  "--artifacts", record)
     check("it succeeds", rc, 0)
     got = next((c for c in calls if c[:1] == ["iso_assert"]), [])
     check("the ceiling reaches iso_assert", opt(got, "--max-size-mib"), ["400"])
@@ -496,9 +501,11 @@ def test_a_projects_structure_checks_reach_iso_assert_and_stay_here(fx):
           opt(got, "--require"), ["/slax/modules/40-my app.sb", "/slax/modules/41-x.sb"])
     check("--forbid arrives", opt(got, "--forbid"), ["/slax/modules/05-chromium.sb"])
     check("--expect-gpt arrives", "--expect-gpt" in got, True)
+    check("--artifacts arrives intact", opt(got, "--artifacts"), [record])
     sent = fx.sent[0] if fx.sent else []
     check("none of them travels to the boot host",
-          [a for a in ("--max-size-mib", "--require", "--forbid", "--expect-gpt") if a in sent],
+          [a for a in ("--max-size-mib", "--require", "--forbid", "--expect-gpt",
+                       "--artifacts") if a in sent],
           [])
     check("...leaving no scratch", left, [])
 

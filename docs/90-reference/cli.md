@@ -64,12 +64,22 @@ what building on a UEFI-bootable base without `uefi-bootable` produces
 ([LAYERING.md, step 6](../../LAYERING.md#what-a-consumer-does)). A lost hybrid MBR leaves nothing
 behind to catch; `pack` warns about it instead.
 
+**And the structure test holds the image to what its recipes journalled.** Every path the
+profile's recipes wrote has to be on the disc, and every path they removed has to be gone. It reads
+the provenance record `pack` has just written beside the image, `out/<name>.provenance.json`, as
+[`--artifacts`](#test-iso--check-an-iso-you-already-have)
+([#96](https://github.com/Fullaxx/slax-kitchen/issues/96)). Judged by its recipe names and
+pack hints alone, a profile could pass with a recipe's file missing from the disc. There is
+no opt-out: a failure means a file never reached the image, or a journal is wrong, and either is a
+bug.
+
 ## `test <iso>` — check an ISO you already have
 
 ```sh
 kitchen test out/slax-example-12.2.0.iso                 # structure (default)
 kitchen test out/x.iso --structure --expect-uefi --expect-hybrid
 kitchen test out/x.iso --structure --max-size-mib 900 --forbid /slax/modules/05-chromium.sb
+kitchen test out/x.iso --structure --artifacts out/x.iso.provenance.json
 kitchen test out/x.iso --bios --uefi --seconds 40
 kitchen test out/x.iso --kernel --expect 'dpkg-status: 600 packages'
 ```
@@ -94,10 +104,13 @@ A profile's `test:` list can carry them to `kitchen build`, as in the
 [profile format](#profile-format) below. Like `--structure` itself, none of them ever goes to a
 boot host.
 
-`iso_assert.py` also takes `--artifacts <iso>.provenance.json`, which requires every path the
-image's recipes journalled and forbids every path they removed. The recipe matrix passes it for
-every recipe ([#85](https://github.com/Fullaxx/slax-kitchen/issues/85)); `kitchen test` and
-`kitchen build` do not.
+`--artifacts <iso>.provenance.json` holds the image to the record `pack` wrote beside it: every
+path its recipes journalled is required, and every path they removed is forbidden. Where a later
+recipe journals a path an earlier one did, the later entry wins, so a file one recipe wrote and
+another removed has to be gone. The recipe matrix passes it for each recipe alone
+([#85](https://github.com/Fullaxx/slax-kitchen/issues/85)), and `kitchen build` always passes its
+own record ([#96](https://github.com/Fullaxx/slax-kitchen/issues/96)). `kitchen test` checks
+it only when asked, and like the options above it never goes to a boot host.
 
 The required files are found in the same listing `diff` and `sources` use, by exact path. An image
 whose files cannot be listed gets one failure saying so, not five claiming the kernel and bootloader
@@ -431,7 +444,8 @@ confused.
 
 Artifacts, not narration. Each entry is the recipe name, a UTC timestamp, the verbs that
 **actually ran** (a `when:`-skipped step does not appear), and the durable paths it produced.
-A `-` prefix means removed.
+A `-` prefix means removed. A renumbered bundle appears twice: its old name removed, and its new
+name written.
 
 This changed when the journal became readable: recording everything printed gave ~69 lines of
 prose per recipe, including warnings, indented file lists, and the same bundle under two
@@ -794,7 +808,9 @@ test:                      # structure | kernel-boot | bios-boot | uefi-boot | u
 `usb` and `persistence` boot too, and like every boot mode they need KVM to be quick: on a
 [boot host](../60-testing/boot-host.md), or slowly under TCG here. The structure map is
 `max_size_mib`, `require`, `forbid` and `expect_gpt`, the `kitchen test` options of the same names.
-Given twice, it is refused rather than one set of options picked.
+Given twice, it is refused rather than one set of options picked. What the recipes journalled is
+checked either way, bare `structure` or map, as [`build`](#build-profile--the-whole-pipeline)
+says.
 
 **`vars:` overrides merge** over the recipe's own defaults, so setting one leaves the rest alone.
 Naming a var the recipe does not declare is an error listing what it does declare — from `kitchen

@@ -185,7 +185,8 @@ def claims(prov: dict) -> tuple[list, list]:
     isohybrid) or its pack hints (volid), so a recipe whose file never reached the disc
     passed it, and so would one whose removed bundle came back. iso.files was exercised by
     no recipe at all, and #82's change to how it places files was checked only by a unit
-    test and a scratch build (#85).
+    test and a scratch build (#85). `kitchen build` passes the record for a whole profile
+    (#96), which is where one recipe's entry for a path meets another's.
     """
     state: dict = {}
     for r in prov.get("recipes") or []:

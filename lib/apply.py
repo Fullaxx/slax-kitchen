@@ -2624,6 +2624,12 @@ def v_bundle_renumber(ctx: Ctx, step: dict) -> None:
     Load order is the prefix and higher wins, so this is how you make one bundle override
     another without rebuilding either. Renaming 05-chromium.sb to 95-chromium.sb moves it
     above everything; renaming it to 00- puts it below the core.
+
+    Both names are journalled: the new one as written, and the old one as removed, as
+    bundle.remove journals what it takes out. With only the new one, a profile that built a
+    bundle with bundle.fromDir and then renumbered it kept the builder's entry for the old
+    name, and an image held to its journal failed for the file this step had renamed.
+    Measured 2026-10-23, as `kitchen build` began holding a profile to its journal (#96).
     """
     mods = ctx.p("slax", "modules")
     if not os.path.isdir(mods):
@@ -2647,6 +2653,7 @@ def v_bundle_renumber(ctx: Ctx, step: dict) -> None:
         if not ctx.dry:
             os.rename(os.path.join(mods, n), os.path.join(mods, new))
         ctx.say(f"renumbered {n} -> {new}")
+        ctx.record(f"-slax/modules/{n}")
         ctx.record(f"slax/modules/{new}")
 
 

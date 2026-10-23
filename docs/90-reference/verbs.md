@@ -313,6 +313,13 @@ Change a bundle's position in the stack without rebuilding it.
 Two bundles may share a prefix — upstream ships `01-core` and `01-firmware` — in which case
 `sort -n` falls back to comparing the rest of the name. An exact filename collision is refused.
 
+Both names are journalled, the old one as removed and the new one as written, so
+[`kitchen status`](cli.md#status-work--v) lists `- slax/modules/07-x.sb` above
+`+ slax/modules/95-x.sb`. With only the new name, a profile that built a bundle and then
+renumbered it kept the builder's entry for the old name. `kitchen build`'s structure test, which
+holds an image to its journal, would then have required a file that had been renamed
+([#96](https://github.com/Fullaxx/slax-kitchen/issues/96)).
+
 ### `bundle.packages` ◐ chroot
 
 Install distro packages into a new bundle. **Debian only**; see

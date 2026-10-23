@@ -127,7 +127,9 @@ The assertions include what the recipe journalled, read back from the provenance
 pack` writes beside the image: every path the recipe wrote has to be on the disc, and every path it
 removed has to be gone ([#85](https://github.com/Fullaxx/slax-kitchen/issues/85)). Judged by its name
 and pack hints alone, a recipe whose file never reached the disc passed. A recipe that journals
-nothing is still not caught.
+nothing is still not caught. `kitchen build`'s structure test holds a whole profile to its record,
+so recipes that only go wrong together are caught there
+([#96](https://github.com/Fullaxx/slax-kitchen/issues/96)).
 
 Measured on this hardware with nothing skipped, `debian-64bit`, 2026-09-17: **33 recipes in 1315 s**,
 a median of 6 s each. Four recipes account for more than half of it — `all-browsers` 456 s,

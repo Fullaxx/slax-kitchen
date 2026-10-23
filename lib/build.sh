@@ -11,14 +11,22 @@
 # the rest (#67). The two lists are one path per line, as --expect is kept, because a path
 # in an image may hold a space; globbing is off while they are split, because a path may
 # hold a `*` that would otherwise match files here.
+#
+# And the recipes' own record, an <iso>.provenance.json, when there is one: every path they
+# journalled has to be on the disc, and every path they removed has to be gone. The recipe
+# matrix held each recipe to that, alone (#85), while `kitchen build` judged a profile by
+# its recipe names and pack hints, so a profile could build and pass with a recipe's file
+# missing from the disc (#96).
 _test_structure() {
     _iso=$1; _uefi=$2; _hybrid=$3; _volid=$4; _gpt=$5; _max=$6; _reqs=$7; _forbids=$8
+    _artifacts=$9
     set -- "$REPO_ROOT/tests/structure/iso_assert.py" "$_iso"
     [ -n "$_uefi" ] && set -- "$@" --expect-uefi
     [ -n "$_hybrid" ] && set -- "$@" --expect-hybrid
     [ -n "$_gpt" ] && set -- "$@" --expect-gpt
     [ -n "$_volid" ] && set -- "$@" --volid "$_volid"
     [ -n "$_max" ] && set -- "$@" --max-size-mib "$_max"
+    [ -n "$_artifacts" ] && set -- "$@" --artifacts "$_artifacts"
     _oifs=$IFS; IFS='
 '
     set -f
@@ -180,7 +188,7 @@ kitchen_test() {
     iso="" want_structure=0 want_bios=0 want_uefi=0 want_kernel=0
     want_usb=0 want_perch=0
     expect_uefi="" expect_hybrid="" expect_volid="" secs=32 expects=""
-    expect_gpt="" max_size="" requires="" forbids=""
+    expect_gpt="" max_size="" requires="" forbids="" artifacts=""
     keys="" auto_keys=1 mem="" golden="" record="" perchdev="/dev/sda"
     outdir_opt=""
     while [ $# -gt 0 ]; do
@@ -201,6 +209,9 @@ kitchen_test() {
 "; shift 2 ;;
             --forbid)       forbids="$forbids$2
 "; shift 2 ;;
+            # The recipes' record, which is not --record: that one is the Tier C ledger a
+            # boot appends to. See _test_structure.
+            --artifacts)    artifacts=$2; shift 2 ;;
             --seconds)      secs=$2; shift 2 ;;
             --keys)         keys=$2; auto_keys=0; shift 2 ;;
             --no-keys)      keys=""; auto_keys=0; shift ;;
@@ -327,7 +338,7 @@ kitchen_test() {
     if [ "$want_structure" = 1 ]; then
         printf '%s* structure%s\n' "$B" "$O"
         _test_structure "$iso" "$expect_uefi" "$expect_hybrid" "$expect_volid" \
-            "$expect_gpt" "$max_size" "$requires" "$forbids" || rc=1
+            "$expect_gpt" "$max_size" "$requires" "$forbids" "$artifacts" || rc=1
     fi
 
     # THE ONE HOOK. Every boot in this toolkit funnels through the block below, so
@@ -617,6 +628,10 @@ kitchen_build() {
                     [ -n "$_eu" ] && set -- "$@" --expect-uefi
                     [ -n "$_eh" ] && set -- "$@" --expect-hybrid
                     [ -n "$_ev" ] && set -- "$@" --volid "$_ev"
+                    # Always, and from the record pack wrote beside the image just now,
+                    # or it would have exited: every path the recipes journalled, and
+                    # none they removed (#96).
+                    set -- "$@" --artifacts "out/$OUTPUT_NAME.provenance.json"
                     [ -n "$STRUCTURE_EXPECT_GPT" ] && set -- "$@" --expect-gpt
                     [ -n "$STRUCTURE_MAX_SIZE_MIB" ] && \
                         set -- "$@" --max-size-mib "$STRUCTURE_MAX_SIZE_MIB"

@@ -154,7 +154,10 @@ read back out of the bundle — and that driver should call `kitchen` commands (
 `apply`, `pack`, `test`) rather than anything inside the engine. A size ceiling, and paths that must
 or must not be in the image, are not among those: they are `kitchen test --structure` options, and a
 profile's `test:` entry carries them to `kitchen build`
-([#67](https://github.com/Fullaxx/slax-kitchen/issues/67)).
+([#67](https://github.com/Fullaxx/slax-kitchen/issues/67)). Nor is holding the image to what its
+recipes journalled. `kitchen build`'s structure test does that for a profile, and a driver of its
+own passes the record `pack` wrote, as `kitchen test --structure --artifacts <iso>.provenance.json`
+([#96](https://github.com/Fullaxx/slax-kitchen/issues/96)).
 
 ## Provenance and publishing
 

@@ -110,3 +110,5 @@ The recipe matrix holds every recipe to what it journalled
 packed image must hold `/ABOUT.txt`. Shown failing on 2026-10-21: with the file deleted between
 apply and pack, the matrix reported `FAIL disc-readme  structure assertions failed` and
 `FAIL /ABOUT.txt present`. See [CI](../60-testing/ci.md#the-recipe-matrix-is-the-important-one).
+A profile that lists it is held to the same by `kitchen build`'s structure test
+([#96](https://github.com/Fullaxx/slax-kitchen/issues/96)).

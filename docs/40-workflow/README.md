@@ -10,10 +10,12 @@ that automates it noted alongside.
 kitchen unpack isos/slax-64bit-debian-12.2.0.iso
 kitchen apply <recipe…>
 kitchen pack                       # -> out/slax-...-custom.iso
-kitchen test out/*.iso --structure --bios
+kitchen test out/*.iso --structure --artifacts out/*.iso.provenance.json --bios
 ```
 
-Or `kitchen build <profile>` for all four in one step.
+Or `kitchen build <profile>` for all four in one step. `--artifacts` holds the image to what the
+recipes journalled, and `kitchen build`'s structure test always passes it
+([#96](https://github.com/Fullaxx/slax-kitchen/issues/96)).
 
 ## Pages
 

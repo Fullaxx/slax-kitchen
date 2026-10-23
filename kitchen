@@ -636,6 +636,9 @@ kitchen test <iso> [options]      assert things about a built ISO
   --require PATH       --structure: fail unless PATH is in the image (repeatable)
   --forbid PATH        --structure: fail if PATH is in the image (repeatable),
                        e.g. a bundle a removal recipe took out
+  --artifacts FILE     --structure: FILE is an <iso>.provenance.json; require
+                       every path its recipes wrote, and forbid every one they
+                       removed (`kitchen build` passes its own)
 
 --kernel needs no help to assert: it builds its own cmdline with ttyS0 as the only
 console. The bootloader modes are pointed at a boot entry that names ttyS0 LAST --
