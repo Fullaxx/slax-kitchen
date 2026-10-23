@@ -117,8 +117,8 @@ test: [structure]
 7. **Build from the project's root,** where `work/` and `out/` are written:
    `vendor/slax-kitchen/kitchen build myproduct`. `--keep` leaves the work tree for checks of the
    project's own. Under `sudo`, which a recipe needing a chroot requires, what the build writes
-   there is given back to whoever ran it as the build ends, however it ends
-   ([#70](https://github.com/Fullaxx/slax-kitchen/issues/70)).
+   there is given back to whoever ran it as the build ends.
+   [The hand-back](docs/90-reference/handback.md) says what, and the endings it cannot survive.
 8. **Configure the engine from the project's root.** A `boot-host.ini` there is what the vendored
    engine reads, before any in its own checkout; list it in the project's `.gitignore`.
    `vendor/slax-kitchen/kitchen doctor --install-hooks` links the project's own `ci/hooks/` into

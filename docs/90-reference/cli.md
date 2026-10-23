@@ -8,18 +8,15 @@ Paths are relative to your **current directory**, not the repo, so `work/` and `
 build directory. Both are gitignored.
 
 **Under `sudo`, what a command writes goes back to whoever ran it.** `fetch`, `unpack`, `apply`,
-`pack`, `build` and `test` give every path root wrote in the work tree and the output directory to
-`SUDO_UID:SUDO_GID` as they end, whether they succeed, fail or are stopped by INT, TERM or HUP, so
-the next step works without it ([#70](https://github.com/Fullaxx/slax-kitchen/issues/70),
-[#79](https://github.com/Fullaxx/slax-kitchen/issues/79),
-[#81](https://github.com/Fullaxx/slax-kitchen/issues/81),
-[#83](https://github.com/Fullaxx/slax-kitchen/issues/83),
-[#97](https://github.com/Fullaxx/slax-kitchen/issues/97)). Under `nohup` a hangup is still ignored,
-and the command carries on. Only in a place that is that user's: a directory the command created,
-or one the user owns or that sits in one the user owns. So `-w /etc` gives nothing away. Only
-root's paths change, a file with a second name is left alone, symlinks are never followed, and
-setuid bits are kept. Run as root without `sudo`, as in a
-container, nothing changes. The image is not affected: `pack` records every file as root's.
+`pack`, `build` and `test` give what root wrote in the work tree and the output directory to
+`SUDO_UID:SUDO_GID` as they end, so the next step works without `sudo`. That holds whether they
+succeed, fail or are stopped by INT, TERM or HUP. Run as root without `sudo`, as in a container,
+nothing changes, and the image is never affected.
+
+[The hand-back](handback.md) has the rest:
+- which files, and which it never touches;
+- which ways of ending a command it survives;
+- where it falls short.
 
 **Every command checks the tools it needs before it starts**, and names the package for any that
 is missing. `kitchen test` checks what all the modes you asked for need, at once, before running

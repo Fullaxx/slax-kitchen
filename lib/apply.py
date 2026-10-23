@@ -4731,7 +4731,8 @@ def main(argv: list[str]) -> int:
     # Set by `kitchen build` on its second run: its --preflight-only pass has already said
     # the profile's notes. Removed here, so nothing this run starts inherits it (#76).
     profile_noted = os.environ.pop("KITCHEN_PROFILE_NOTED", "") == "1"
-    # Given back as the command ends, under sudo, however it ends (#70, #81).
+    # Given back as the command ends, under sudo: on a return, an error, INT, TERM or HUP (#70,
+    # #81, #83). docs/90-reference/handback.md has the endings it cannot survive.
     GIVE_BACK.append(a.work)
     override = {}
     if a.facts:

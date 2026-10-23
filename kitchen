@@ -29,7 +29,8 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # A path that does not exist yet is one this run creates, which makes it the user's; call
 # handback_add BEFORE creating anything. Any other is given back only where it is the
 # user's place (lib/handback.py). The two kinds reach it mixed, in the order they were
-# registered, and it takes any order (#97).
+# registered, and it takes any order (#97). docs/90-reference/handback.md is the full account:
+# which files, which never, and the endings it cannot survive.
 HANDBACK=""
 handback_add() {
     case $1 in /*) _hb=$1 ;; *) _hb=$PWD/$1 ;; esac

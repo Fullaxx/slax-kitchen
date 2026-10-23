@@ -6,8 +6,10 @@ and output directory, and nothing gave the files back. The next unprivileged ste
 journal, a provenance record and a bundle it could not write, and a directory it could not
 remove. CI's boot job chowned out/ and work/ after its build, slax-wine's build.sh chowns
 its tree after every apply, and publishing-images.md had a publisher `sudo chown -R` out/.
-This does what those did, once, here, however the command ends: the trap in `kitchen`
-makes INT, TERM and HUP exits for the shell commands, and run() does it for the Python ones.
+This does what those did, once, here, as the command ends: on success, on failure, and on
+INT, TERM and HUP, which the trap in `kitchen` makes exits for the shell commands and run()
+for the Python ones. docs/90-reference/handback.md says what it gives back, what it never
+touches, and the endings it cannot survive, as measured.
 
 What it changes is every path under the given ones that root owns, to SUDO_UID:SUDO_GID:
 - only when this process is root and SUDO_UID names someone else, so root in a container,

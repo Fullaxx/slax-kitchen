@@ -83,8 +83,8 @@ preflight failed -- 1 unmet requirement(s), nothing has been modified:
 ```
 
 Recipes declare this as `compat.privilege: mknod`. In CI, `ci/recipe-matrix.sh` runs any recipe with
-a privilege above `none` under `sudo`. What a command writes under `sudo` is given back to the user
-who ran it as it ends ([cli.md](../90-reference/cli.md)).
+a privilege above `none` under `sudo`, and what apply writes there is given back to the user who ran
+it as it ends ([the hand-back](../90-reference/handback.md)).
 
 ## The one real exception
 

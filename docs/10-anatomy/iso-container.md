@@ -80,7 +80,8 @@ owned by uid 1000, the booted system's `/etc` belonged to uid 1000, which on sto
 Rootcopy content under `/etc` had carried its directory's owner onto the union's own. Packed with
 `-uid 0 -gid 0`, the same tree boots with `/etc` root's
 ([#70](https://github.com/Fullaxx/slax-kitchen/issues/70)). It is also what lets a build under
-`sudo` give the tree back to the user without changing the next image.
+`sudo` give the tree back to the user without changing the next image
+([the hand-back](../90-reference/handback.md)).
 
 ## Extent layout
 
