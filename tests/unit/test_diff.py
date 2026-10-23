@@ -268,6 +268,46 @@ def test_an_unreadable_bundle_does_not_abandon_the_report():
     check("...and the report still reaches its verdict", "DIFFERENT" in text, True)
 
 
+def test_a_term_during_bundles_takes_the_unpacked_bundle_away():
+    """`diff --bundles` unpacks each changed bundle into a tree under TMPDIR, and removes it
+    in a `finally`. Python's default TERM runs no `finally`. A TERM while it unpacked a
+    52,903-entry bundle left 344 MiB there, and HUP left 489 MiB (#98, measured). diff.py
+    runs main through handback.run now, which makes both exits.
+
+    lib/diff.py runs as kitchen runs it, on two images whose one bundle differs. It uses the
+    stub xorriso, and a stand-in unsquashfs that sends its parent TERM while the tree is
+    there. The real one cannot pick that moment."""
+    if not _have_tools("a TERM during --bundles"):
+        return
+    import signal
+    src = tempfile.mkdtemp()
+    d = tempfile.mkdtemp()
+    sbs = []
+    for word in ("one", "two"):
+        with open(os.path.join(src, "conf"), "w") as f:
+            f.write(word + "\n")
+        sbs.append(os.path.join(d, word + ".sb"))
+        _sb(src, sbs[-1], "1000")
+    lba, rel = 24, "/slax/modules/08-x.sb"
+    a, b = os.path.join(d, "a.iso"), os.path.join(d, "b.iso")
+    for iso, sb in ((a, sbs[0]), (b, sbs[1])):
+        with open(sb, "rb") as fh:
+            _iso_carrying(iso, fh.read(), lba)
+    stub = _stub_xorriso(d, rel, os.path.getsize(sbs[0]), lba)
+    with open(os.path.join(stub, "unsquashfs"), "w") as f:
+        f.write("#!/bin/sh\nkill -TERM $PPID\nsleep 5\n")
+    os.chmod(os.path.join(stub, "unsquashfs"), 0o755)
+    tmp = os.path.join(d, "tmp")
+    os.makedirs(tmp)
+    env = dict(os.environ, PATH=stub + os.pathsep + os.environ.get("PATH", ""), STUB_DIR=stub,
+               TMPDIR=tmp)
+    r = subprocess.run([sys.executable, os.path.join(_HERE, "..", "..", "lib", "diff.py"),
+                        a, b, "--bundles"], env=env, capture_output=True, text=True, timeout=60)
+    check("a TERM while a bundle is unpacked ends diff as an exit, 143", r.returncode,
+          128 + signal.SIGTERM)
+    check("...and the unpacked bundle is gone from TMPDIR", os.listdir(tmp), [])
+
+
 def main():
     # EVERY FIXTURE THIS FILE MAKES GOES IN ONE BOX, AND THE BOX GOES AWAY. Both the
     # global and the variable: mksquashfs is a child process and reads TMPDIR, which
@@ -280,7 +320,8 @@ def main():
         for fn in [test_a_rebuild_is_not_a_change,
                    test_a_change_is_named,
                    test_a_bundle_that_cannot_be_read_is_refused,
-                   test_an_unreadable_bundle_does_not_abandon_the_report]:
+                   test_an_unreadable_bundle_does_not_abandon_the_report,
+                   test_a_term_during_bundles_takes_the_unpacked_bundle_away]:
             # One test crashing must not stop the rest: the count of failures is only honest
             # if every test ran. The traceback still goes to stderr, because a crash's location
             # is the useful half and a one-line summary loses it.

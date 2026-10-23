@@ -3159,6 +3159,73 @@ def test_a_second_build_under_sudo_still_gives_back():
           seen, [([w, o, o, tree + "/iso", o + "/boot-tests"], [tree])])
 
 
+def test_a_signal_during_a_scratch_removal_waits_for_it():
+    """A chroot step removes its build chroot in a `finally` once the bundle is built.
+    INT, or a TERM or HUP that handback.run makes an exit, landing in that removal stopped
+    it: 1.1 to 1.8 GiB of chroot stayed root's beside the work tree, outside what apply
+    gives back, six times in six (#98, measured).
+
+    handback.remove_tree holds the three while it removes. In a child, because the signal
+    is real: shutil.rmtree is wrapped to send it as the removal starts. TERM goes through
+    run()'s handler, and INT through Python's own KeyboardInterrupt. INT is set to Python's
+    default first, since a caller that ignores it, a job started in the background, would
+    otherwise make the case pass without a signal."""
+    driver = ("import os, shutil, signal, sys\n"
+              "sys.path.insert(0, sys.argv[1])\n"
+              "import handback\n"
+              "signal.signal(signal.SIGINT, signal.default_int_handler)\n"
+              "tree, sig = sys.argv[2], getattr(signal, 'SIG' + sys.argv[3])\n"
+              "real = shutil.rmtree\n"
+              "def rmtree(path, **kw):\n"
+              "    os.kill(os.getpid(), sig)\n"
+              "    real(path, **kw)\n"
+              "shutil.rmtree = rmtree\n"
+              "def main(argv):\n"
+              "    handback.remove_tree(tree)\n"
+              "    return 0\n"
+              "sys.exit(handback.run(main, sys.argv, []))\n")
+    import signal
+    for sig, status in (("TERM", 143), ("INT", -signal.SIGINT)):
+        tree = os.path.join(tempfile.mkdtemp(), "chroot")
+        os.makedirs(os.path.join(tree, "usr", "bin"))
+        for n in ("a", "b", "c"):
+            open(os.path.join(tree, "usr", "bin", n), "w").close()
+        r = subprocess.run([sys.executable, "-c", driver, os.path.join(REPO, "lib"), tree, sig],
+                           capture_output=True, text=True)
+        check(f"{sig} during the removal ends it as it would have", r.returncode, status)
+        check(f"...once the tree is gone ({sig})", os.path.exists(tree), False)
+
+
+def test_kitchen_shell_ended_by_term_takes_its_tree_away():
+    """`kitchen shell` unpacks bundles into a tree under TMPDIR and removes it in a
+    `finally`. Python's default TERM ran no `finally`, and a TERM or HUP to a shell session
+    left 602 MiB root's there (#98, measured). It runs main through handback.run now, as
+    apply and fetch do, which makes both exits.
+
+    lib/shell.py runs as kitchen runs it, with a stand-in unsquashfs on PATH that sends its
+    parent TERM while the tree is there. The real one cannot pick that moment, and a chroot
+    needs root. chroot is a stand-in too, since shell.py checks for it before it starts."""
+    import signal
+    box = tempfile.mkdtemp()
+    bin_dir, tmp = os.path.join(box, "bin"), os.path.join(box, "tmp")
+    os.makedirs(bin_dir)
+    os.makedirs(tmp)
+    with open(os.path.join(bin_dir, "unsquashfs"), "w") as f:
+        f.write("#!/bin/sh\nkill -TERM $PPID\nsleep 5\n")
+    with open(os.path.join(bin_dir, "chroot"), "w") as f:
+        f.write("#!/bin/sh\nexit 0\n")
+    for n in ("unsquashfs", "chroot"):
+        os.chmod(os.path.join(bin_dir, n), 0o755)
+    sb = os.path.join(box, "01-core.sb")
+    open(sb, "w").close()
+    env = dict(os.environ, PATH=bin_dir + os.pathsep + os.environ.get("PATH", ""), TMPDIR=tmp)
+    r = subprocess.run([sys.executable, os.path.join(REPO, "lib", "shell.py"), sb, "-c", "true"],
+                       env=env, capture_output=True, text=True, timeout=60)
+    check("a TERM mid-session ends kitchen shell as an exit, 143", r.returncode,
+          128 + signal.SIGTERM)
+    check("...and its unpacked tree is gone from TMPDIR", os.listdir(tmp), [])
+
+
 def test_iso_files_actually_writes_into_the_iso_tree():
     """`iso.files` was implemented, documented, listed as shipped -- and run by nothing.
 
@@ -3620,6 +3687,32 @@ def test_the_core_is_picked_by_name_not_by_sort_order():
         check(f"{mod}:{fn} asks pick_core", "pick_core(" in body, True)
         check("...and scans for no prefix of its own",
               "startswith('01-core')" in body, False)
+
+
+def test_fingerprint_writes_into_a_directory_that_did_not_exist():
+    """`kitchen fingerprint <iso> -o fp/x.yaml` with no fp/ ended in a FileNotFoundError
+    traceback (#98, measured), because its one write was a bare open(). Every other command's
+    output path makes its directory, and -o makes its own now. main() runs with need.require
+    and the fingerprint itself stubbed, since that would read an image."""
+    import contextlib
+    import io
+    box = tempfile.mkdtemp()
+    iso = os.path.join(box, "x.iso")
+    open(iso, "w").close()
+    out = os.path.join(box, "fp", "new", "x.yaml")
+    saved = fingerprint.need.require, fingerprint.fingerprint
+    fingerprint.need.require = lambda *a, **k: None
+    fingerprint.fingerprint = lambda iso, name: {"apiVersion": "slax-kitchen/v1",
+                                                 "kind": "Fingerprint"}
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = fingerprint.main(["fingerprint.py", iso, "-o", out])
+    except OSError as e:
+        rc = f"{type(e).__name__}: {e}"
+    finally:
+        fingerprint.need.require, fingerprint.fingerprint = saved
+    check("-o into a directory that did not exist writes the file", (rc, os.path.isfile(out)),
+          (0, True))
 
 
 def test_arch_is_a_fact_about_the_tree():
@@ -4942,6 +5035,8 @@ def main():
                    test_a_hangup_from_a_closed_terminal_still_exits_129,
                    test_what_root_wrote_under_sudo_is_given_back,
                    test_a_second_build_under_sudo_still_gives_back,
+                   test_a_signal_during_a_scratch_removal_waits_for_it,
+                   test_kitchen_shell_ended_by_term_takes_its_tree_away,
                    test_iso_files_actually_writes_into_the_iso_tree,
                    test_relax_modes_widens_without_granting,
                    test_apt_reinstall_is_opt_in,
@@ -4953,6 +5048,7 @@ def main():
                    test_flavour_is_a_fact_about_the_tree_or_says_it_is_not,
                    test_both_delta_lines_report_what_the_step_removed,
                    test_the_core_is_picked_by_name_not_by_sort_order,
+                   test_fingerprint_writes_into_a_directory_that_did_not_exist,
                    test_a_menu_entry_names_a_payload_that_is_there,
                    test_an_entry_copied_from_a_label_carries_the_edits_made_before_it,
                    test_serial_console_on_the_stock_menus_is_the_entry_that_was_booted,

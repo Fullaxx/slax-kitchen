@@ -26,6 +26,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import handback  # noqa: E402
 
 
 def _bundles_in(tree: str) -> list:
@@ -179,9 +180,12 @@ def main(argv: list[str]) -> int:
         if not a.command:
             print(f"kitchen shell: left {names}; nothing was saved.")
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        handback.remove_tree(work)
     return rc
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    # TERM and HUP as exits, so the `finally` takes the unpacked tree away. Python's default
+    # TERM ended this with no `finally` run, and left 602 MiB in TMPDIR (#98). Nothing is
+    # given back: nothing this writes is in the user's tree.
+    raise SystemExit(handback.run(main, sys.argv, []))

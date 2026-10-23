@@ -11,9 +11,10 @@ This page is the one place that says exactly what the hand-back does:
 - which ways of ending a command it survives;
 - where it falls short.
 
-The measurements on it were made on 2026-10-23 at `057b682`, unless a row says otherwise. They ran
-as root with `SUDO_UID=1000 SUDO_GID=1000`, in a copy of the tree whose top directory uid 1000
-owned, as a checkout does.
+The measurements on it were made on 2026-10-23, with
+[#98](https://github.com/Fullaxx/slax-kitchen/issues/98)'s fixes, unless a row says
+otherwise. They ran as root with `SUDO_UID=1000 SUDO_GID=1000`, in a copy of the tree whose top
+directory uid 1000 owned, as a checkout does.
 
 ## Why it exists
 
@@ -80,9 +81,9 @@ numbers. `lib/handback.py`'s `invoker()` is the rule.
 | `kitchen pack` | yes | the image's directory, and the source tree (`-s`), because pack rebuilds `98-dpkg-db.sb` there |
 | `kitchen build` | yes | `work/` and `out/` themselves, then what unpack, apply, pack and test register |
 | `kitchen test` | yes | its evidence directory (`--out`, default `boot-tests/` beside the image) |
-| `kitchen shell` | nothing of yours | it works in a temporary directory under `TMPDIR`, and removes it as it ends |
-| `kitchen doctor`, `diff`, `probe`, `validate`, `status`, `selftest`, `boot-host`, `version`, `help` | nothing of yours | they read, or use temporary directories they remove as they end, or, for `boot-host`, the boot host's own disk |
-| `kitchen sources --json/--markdown`, `fingerprint -o`, `upstream-diff --write`, `doctor --install-hooks` | **no** | they write and give nothing back. None needs root: run them as yourself. Measured: `sources --markdown`, `fingerprint -o` and `doctor --install-hooks` each left what it wrote `root:root`. `upstream-diff --write` is read from its code |
+| `kitchen shell` | nothing of yours | it works in a temporary directory under `TMPDIR`, and removes it as it ends, on TERM and HUP too |
+| `kitchen doctor`, `diff`, `probe`, `validate`, `status`, `selftest`, `boot-host`, `version`, `help` | nothing of yours | they read, or use temporary directories they remove as they end, `diff --bundles` on TERM and HUP too, or, for `boot-host`, the boot host's own disk |
+| `kitchen sources --json/--markdown`, `fingerprint -o`, `upstream-diff --write`, `doctor --install-hooks` | **no** | they write and give nothing back, and each makes the directory its path names, as the other commands do. None needs root: run them as yourself. Measured: `sources --markdown`, `fingerprint -o` and `doctor --install-hooks` each left what it wrote `root:root`. `upstream-diff --write` is read from its code |
 
 `kitchen test --record FILE`, the Tier C ledger, appends to `FILE`, which is not in the evidence
 directory.
@@ -100,18 +101,21 @@ place is yours if:
 - it sits in a directory you own.
 
 A path is registered before the command creates it, which is how a directory the command made
-counts as yours.
+counts as yours. A path that does not exist yet is registered from its highest directory that
+does not exist either, so the parents `mkdir -p` makes on the way come back with it.
 
-What that came to on 2026-10-23 at `057b682`:
+What that came to on 2026-10-23, with
+[#98](https://github.com/Fullaxx/slax-kitchen/issues/98)'s fixes:
 
 | run | given back |
 |---|---|
-| `kitchen unpack <iso> -o work/u` | 48 paths: `work/u`, its `.kitchen/origin.yaml`, and the unpacked image. But not `work/` itself: see [the first gap](#where-it-falls-short) |
+| `kitchen unpack <iso> -o work/u`, with no `work/` | 49 paths: `work/`, which it made too, `work/u`, its `.kitchen/origin.yaml`, and the unpacked image |
 | `kitchen apply rootcopy-overlay -w work/u` | 7: `.kitchen/journal.yaml`, `.kitchen/provenance.json`, and `iso/slax/rootcopy/` with the four paths in it |
 | `kitchen apply` of a `bundle.script` recipe | 3: the new bundle, the recipe's rootcopy file, and a record file apply rewrote. The build chroot was removed |
-| `kitchen pack -s work/u/iso -o out/u/u.iso` | 3: `out/u`, the image, and its `.provenance.json` |
+| `kitchen pack -s work/u/iso -o out/u/u.iso`, with no `out/` | 4: `out/` and `out/u`, the image, and its `.provenance.json` |
 | `kitchen test out/u/u.iso --structure` | 1: `out/u/boot-tests/` |
 | `kitchen test out/u/u.iso --kernel`, on the boot host | 2: `u-kernel.serial.log` and `u-kernel.png` |
+| `kitchen test out/u/u.iso --structure --out t-out/a/b` | 3: `t-out`, `t-out/a` and `t-out/a/b` |
 | `kitchen build minimal --keep`, where `work/` and `out/` were root's | 59, in three hand-backs (the preflight pass, apply, and the build's own), with `work/` and `out/` themselves among them |
 | `kitchen fetch debian-64bit-12.2.0 -o dl/a/b --verify-only` | 3: `dl`, `dl/a` and `dl/a/b`, which `--verify-only` creates though it downloads nothing |
 
@@ -142,12 +146,13 @@ cannot mount cannot set it up.
 
 ## Which ways of ending it survives
 
-Measured on 2026-10-23 at `057b682`:
+Measured on 2026-10-23, with [#98](https://github.com/Fullaxx/slax-kitchen/issues/98)'s fixes:
 - `kitchen unpack` stands for the shell commands (unpack, pack, build, test);
 - `kitchen apply` of a recipe with a `bundle.script` step stands for the Python ones (apply, fetch).
 
 Each signal was sent to the command's process group, as Ctrl-C does: 0.2 s into unpack, and 10 s
-into apply, while its chroot step ran.
+into apply, while its chroot step ran. For the removal row it was sent 0.05 s after the bundle
+was built.
 
 | how it ends | shell command | Python command |
 |---|---|---|
@@ -156,8 +161,9 @@ into apply, while its chroot step ran.
 | Ctrl-C (INT) | exit 130, given back | ends by SIGINT, which a shell shows as 130; given back, chroot removed |
 | TERM, e.g. `kill` | exit 143, given back | exit 143, given back, chroot removed |
 | HUP, e.g. a dropped ssh session or a closed terminal | exit 129, given back | exit 129, given back, chroot removed |
+| any of those three while a chroot step removes its build chroot | — | the rest of the removal finishes first (removing a whole 1.8 GiB chroot took 0.85 s), then the same exit; given back, nothing left |
 | HUP under `nohup` | ignored: it carries on, ends 0, and gives back | the same |
-| output piped to something that quits early, e.g. `\| head` | **killed by SIGPIPE, nothing given back** | exit 1, given back |
+| output piped to something that quits early, e.g. `\| head` | exit 141, given back | exit 1, given back |
 | QUIT (Ctrl-\\) | killed, nothing given back | killed, nothing given back, its build chroot left: 1.8 GiB for the recipe measured |
 | KILL, e.g. `kill -9` or the OOM killer | killed, nothing given back | killed, nothing given back, its build chroot left: 1.8 GiB for the recipe measured |
 
@@ -167,38 +173,31 @@ write to the terminal fails, not just a HUP.
 - **Python commands:** `test_a_hangup_from_a_closed_terminal_still_exits_129` closes one. Before
   `86d49d2` that case ended 120.
 
+**PIPE is an exit for the shell commands,** as INT, TERM and HUP are. Python turns a closed pipe
+into an error by itself, so apply and fetch need nothing for it.
+
 **The hand-back never changes why a command ended.** A path it cannot change is named on stderr as
 `handback: <path>: <error>` and skipped, and the command's exit status is left as it was.
 
 ## Where it falls short
 
-Measured on 2026-10-23, and reported, not yet fixed. Each row says what to do meanwhile.
+Only where nothing can run, or where a signal means something else:
+- **KILL** (`kill -9`, the OOM killer) and **a power cut** end the process at once. Nothing gives
+  back, and a chroot step leaves its build chroot beside the work tree.
+- **QUIT** (Ctrl-\\) means "dump core". It is left meaning that rather than made an exit, so it
+  ends the same way.
 
-1. **Parent directories `mkdir -p` creates stay root's.**
-   - **Which commands:** `kitchen unpack -o work/u`, `kitchen pack -o out/u/u.iso` and
-     `kitchen test --out t-out/a/b`. Each registers its destination before creating it, but not the
-     parents it creates on the way.
-   - **Measured:** after the three, `work/`, `out/`, `t-out/` and `t-out/a/` were root's.
-   - **Not affected:** `kitchen fetch` registers the highest directory it creates, and
-     `kitchen build` registers `work/` and `out/` themselves. A build gave both back.
-   - **Meanwhile:** create the parent yourself first.
-2. **A pipe closed early ends the shell commands with nothing given back.**
-   - **Which commands:** unpack, pack, build and test write as they go. When their reader goes, for
-     example `| head`, or `less` quit before the end, the next write kills them with SIGPIPE, which
-     nothing traps. Measured with unpack.
-   - **Not affected:** apply and fetch turn it into an error and give back. Measured with apply.
-   - **Meanwhile:** send the output to a file, or through `tee`.
-3. **A signal during a chroot step's cleanup leaves the rest of its chroot.**
-   - **Where the chroot is:** `bundle.packages` and `bundle.script` build their chroot
-     (`kitchen-pkg-*`, `kitchen-bs-*`) beside the work tree, not in it, and remove it once the
-     bundle is built.
-   - **Measured:** INT, TERM or HUP landing during that removal stopped it. Between 1.1 and
-     1.7 GiB of the measured recipe's chroot stayed root's, 18,600 to 28,200 paths, outside the work
-     tree apply gives back. That happened five times in five.
-   - **Not affected:** a signal earlier in the step lets the removal finish.
-   - **Meanwhile:** after an interrupted apply on `work/x`, `sudo rm -rf work/kitchen-*`.
-4. **`kitchen shell` ended by TERM or HUP leaves its temporary tree.** The tree is 602 MiB for
-   `01-core.sb`, root's, in `TMPDIR`. It is not in your tree.
+[Checking, recovering and testing](#checking-recovering-and-testing) says what to do after one.
+
+Four gaps measured on 2026-10-23 are fixed, all in
+[#98](https://github.com/Fullaxx/slax-kitchen/issues/98):
+- the parents `mkdir -p` made;
+- a closed pipe;
+- a signal during a chroot step's cleanup;
+- the temporary trees of `kitchen shell` and `kitchen diff --bundles`.
+
+Before the fix, a signal in that cleanup left 1.1 to 1.8 GiB of chroot root's beside the work
+tree, six times in six.
 
 ## The image is never affected
 
@@ -223,9 +222,9 @@ also what makes giving the tree back safe.
 **Did it run?**
 - The `gave N path(s) back` line on stderr says so, when it gave anything back.
 - `find work out -user root` lists what root still owns there. That is what the rules above leave,
-  or one of the gaps.
+  or what an ending under [Where it falls short](#where-it-falls-short) left.
 
-**After a `kill -9`, a QUIT, a power cut or one of the gaps above:**
+**After a `kill -9`, a QUIT or a power cut:**
 - **Run the same command under `sudo` again.** It gives back everything root owns under what it
   registers, leftovers included.
   - `kitchen build` registers all of `work/` and `out/`, and gave back what earlier commands had
@@ -249,20 +248,29 @@ also what makes giving the tree back safe.
 | `789e0af` ([#83](https://github.com/Fullaxx/slax-kitchen/issues/83)) | interrupted | HUP did the same, and left apt running in the chroot |
 | `86d49d2` | interrupted | after a closed terminal everything was given back, but the exit status read 120, not 129 |
 | `057b682` ([#97](https://github.com/Fullaxx/slax-kitchen/issues/97)) | normally | a build that reached pack, where `work/` or `out/` already existed, gave back nothing at its end |
+| [#98](https://github.com/Fullaxx/slax-kitchen/issues/98) | both | the parents `mkdir -p` made, a closed pipe, a signal during a chroot step's cleanup, and `kitchen shell`'s and `diff --bundles`' temporary trees |
 
 ## Where it lives
 
 - **`lib/handback.py`:**
   - `give_back()` is the walk and its rules;
-  - `run()` wraps apply's and fetch's entry points, and makes TERM and HUP exits;
+  - `run()` wraps apply's, fetch's, shell's and diff's entry points, and makes TERM and HUP exits;
+  - `remove_tree()` removes a scratch tree with INT, TERM and HUP held until it is gone;
   - `main()` is the command line `kitchen`'s trap calls.
 - **`kitchen`:**
   - `handback_add` registers a path, plain or `--new`;
   - `handback_exit` is the EXIT trap;
-  - the INT, TERM and HUP traps turn those signals into exits.
+  - the INT, TERM, HUP and PIPE traps turn those signals into exits.
 - **The registrations:** `lib/unpack.sh`, `lib/pack.sh` and `lib/build.sh` (build and test), plus
   `GIVE_BACK` in `lib/apply.py` and `WROTE` and `MADE` in `lib/fetch.py`.
-- **The tests:** `test_what_root_wrote_under_sudo_is_given_back`,
-  `test_a_terminated_entry_point_still_gives_back`,
-  `test_a_hangup_from_a_closed_terminal_still_exits_129` and
-  `test_a_second_build_under_sudo_still_gives_back`, all in `tests/unit/test_apply.py`.
+- **The tests:**
+  - in `tests/unit/test_apply.py`: `test_what_root_wrote_under_sudo_is_given_back`,
+    `test_a_terminated_entry_point_still_gives_back`,
+    `test_a_hangup_from_a_closed_terminal_still_exits_129`,
+    `test_a_second_build_under_sudo_still_gives_back`,
+    `test_a_signal_during_a_scratch_removal_waits_for_it` and
+    `test_kitchen_shell_ended_by_term_takes_its_tree_away`;
+  - in `tests/unit/test_kitchen_test.py`:
+    `test_a_nested_evidence_directory_is_given_back_from_its_highest_new_parent` and
+    `test_a_closed_pipe_still_runs_the_hand_back`;
+  - in `tests/unit/test_diff.py`: `test_a_term_during_bundles_takes_the_unpacked_bundle_away`.

@@ -115,7 +115,7 @@ def _have_cap(cap: str) -> bool:
         except OSError:
             return False
         finally:
-            shutil.rmtree(d, ignore_errors=True)
+            handback.remove_tree(d)
     return True
 
 
@@ -770,7 +770,7 @@ def v_initramfs_files(ctx: Ctx, step: dict) -> None:
             ctx.say(f"initramfs: + {spec['dest']}{note}")
         _initramfs_pack(ctx, tree)
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        handback.remove_tree(work)
 
 
 def _elf_note(path: str) -> str:
@@ -1280,7 +1280,7 @@ def v_initramfs_modules(ctx: Ctx, step: dict) -> None:
         ctx.say(f"module directory read from the tree: {release}")
         _initramfs_pack(ctx, tree)
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        handback.remove_tree(work)
 
 
 @verb("initramfs.patch")
@@ -1362,7 +1362,7 @@ def v_initramfs_patch(ctx: Ctx, step: dict) -> None:
             ctx.say(f"{shell} -n {rel}: ok")
         _initramfs_pack(ctx, tree)
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        handback.remove_tree(work)
 
 
 def _short(t: str, n: int = 48) -> str:
@@ -1502,7 +1502,7 @@ def v_initramfs_busybox(ctx: Ctx, step: dict) -> None:
                  claim=provenance.load_claim(local), output="slax/boot/initrfs.img",
                  output_sha256=sha256(ctx.p("slax", "boot", "initrfs.img")))
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        handback.remove_tree(work)
 
 
 def _busybox_applets(path: str) -> set:
@@ -2003,7 +2003,7 @@ def v_bundle_files(ctx: Ctx, step: dict) -> None:
         if fetched:
             ctx.prov(fetched=fetched)
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        handback.remove_tree(work)
 
 
 # ---- following a release feed, and checking a detached OpenPGP signature (#90) ----
@@ -2361,7 +2361,7 @@ def v_bundle_fromtarball(ctx: Ctx, step: dict) -> None:
             ctx.say(f"world_readable: widened {n} path(s) so a non-root user can read them")
         _make_bundle(ctx, root, name, "bundle.fromTarball", all_root=True)
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        handback.remove_tree(work)
 
 
 def _relax_modes(top: str) -> int:
@@ -2782,7 +2782,7 @@ def v_bundle_script(ctx: Ctx, step: dict) -> None:
                  debs=_deb_origins(root, _deb_hashes(root)) or None,
                  declares=step.get("declares"))
     finally:
-        shutil.rmtree(build, ignore_errors=True)
+        handback.remove_tree(build)
 
 
 @verb("bundle.remove")
@@ -3565,7 +3565,7 @@ def v_boot_uefi(ctx: Ctx, step: dict) -> None:
                         "mkfs.vfat": provenance.host_package(shutil.which("mkfs.vfat")),
                         "mcopy": provenance.host_package(shutil.which("mcopy"))})
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        handback.remove_tree(tmp)
 
     ctx.hint("uefi", True)
 
@@ -3835,7 +3835,7 @@ def _core_facts(tree: str) -> tuple[str, str | None]:
         hit = fingerprint.arch_from_extract(cx)
         return fingerprint.flavour_from_extract(cx), (hit[0] if hit else None)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        handback.remove_tree(tmp)
 
 
 def _detect_flavour(tree: str) -> str:
@@ -4165,7 +4165,7 @@ def v_bundle_packages(ctx: Ctx, step: dict) -> None:
                  slackware_installed=_pkgtools_added(before, after) or None,
                  debs=_deb_origins(root, _deb_hashes(root)) or None)
     finally:
-        shutil.rmtree(build, ignore_errors=True)
+        handback.remove_tree(build)
 
 
 # ------------------------------------------------------------- engine --------

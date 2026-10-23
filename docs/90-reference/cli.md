@@ -10,8 +10,8 @@ build directory. Both are gitignored.
 **Under `sudo`, what a command writes goes back to whoever ran it.** `fetch`, `unpack`, `apply`,
 `pack`, `build` and `test` give what root wrote in the work tree and the output directory to
 `SUDO_UID:SUDO_GID` as they end, so the next step works without `sudo`. That holds whether they
-succeed, fail or are stopped by INT, TERM or HUP. Run as root without `sudo`, as in a container,
-nothing changes, and the image is never affected.
+succeed, fail, are stopped by INT, TERM or HUP, or lose the reader of their output. Run as root
+without `sudo`, as in a container, nothing changes, and the image is never affected.
 
 [The hand-back](handback.md) has the rest:
 - which files, and which it never touches;
@@ -391,8 +391,8 @@ took a path. It never did.
 ## `probe <iso>` / `fingerprint <iso> [-o FILE]`
 
 `probe` matches an ISO against `compat/` and classifies every difference as benign, explained by a
-known recipe, unexplained, or critical. `fingerprint` generates a new `compat/` entry. See
-[fingerprints.md](../70-compat/fingerprints.md).
+known recipe, unexplained, or critical. `fingerprint` generates a new `compat/` entry, and `-o`
+makes the directory it names. See [fingerprints.md](../70-compat/fingerprints.md).
 
 ## `status [work] [-v]`
 
@@ -604,8 +604,8 @@ lists a file it cannot read as an ISO as `/` alone and exits 0. So an unreadable
 
 | Option | Effect |
 |---|---|
-| `--json F` | the full manifest: every component, its class, sha256, packages, parts and pointers, and the notes |
-| `--markdown F` | the same for people, as `SOURCES.md` |
+| `--json F` | the full manifest: every component, its class, sha256, packages, parts and pointers, and the notes. A directory `F` names that does not exist is made before the image is read |
+| `--markdown F` | the same for people, as `SOURCES.md`, its directory made the same way |
 | `--provenance F` | read the sidecar from somewhere other than `<iso>.provenance.json` |
 
 **Offline, and optional.** `kitchen build` never runs it. It fetches nothing: `--fetch`, which gathered
@@ -629,7 +629,8 @@ With no `--stack` it layers **every** bundle in load order, which reproduces the
 filesystem — the full Slax stack unpacks in about seven seconds.
 
 **Nothing you do inside persists.** The bundles are unpacked to a temporary directory that
-is deleted on exit and the `.sb` files are never written. That is deliberate: a session of
+is deleted on exit, a TERM or HUP included, and the `.sb` files are never written
+([#98](https://github.com/Fullaxx/slax-kitchen/issues/98)). That is deliberate: a session of
 typing cannot be repeated, so the supported way to capture changes is
 [`bundle.script`](verbs.md#bundlescript--chroot), which runs a script in this same
 environment and packs the delta. Inside, as in a build chroot, `TMPDIR` is the chroot's own

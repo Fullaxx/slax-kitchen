@@ -16,6 +16,12 @@ outcome, and it blamed the image.
 PATH IS CLOSED. Every tool the scripts run is linked into one directory and PATH is that
 directory alone, so "no xorriso" means no xorriso even on a machine that has one.
 
+AND IT CAN STAND IN FOR SUDO. `kitchen` sets its hand-back traps only for root run through
+sudo, and CI's gates job is not root. with_sudo() links a stub `id` that answers `-u` with
+0, which is the only `id` call on this path, and sets SUDO_UID and SUDO_GID. It also writes a
+lib/handback.py stub that records what the EXIT trap hands it, so a case sees exactly that,
+and nothing is chowned.
+
 Run directly: python3 tests/unit/test_kitchen_test.py
 """
 import json
@@ -64,6 +70,20 @@ if argv[:1] == ["active"]:
 with open(os.environ["STUB_BH_LOG"], "a") as f:
     f.write(json.dumps(argv) + "\n")
 raise SystemExit(int(os.environ.get("STUB_BH_RC", "0")))
+'''
+
+# Stands in for lib/handback.py: records the argv `kitchen`'s EXIT trap hands it.
+STUB_HANDBACK = r'''#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ["STUB_HANDBACK_LOG"], "a") as f:
+    f.write(json.dumps(sys.argv[1:]) + "\n")
+'''
+
+# Stands in for id(1) as root's: `id -u` is all kitchen asks it on these paths.
+STUB_ID = r'''#!/bin/sh
+[ "${1:-}" = -u ] && { echo 0; exit 0; }
+echo "stub id: only -u" >&2
+exit 1
 '''
 
 # Captured from: xorriso 1.5.6 -- the exit 5 and the FAILURE line below are that version's.
@@ -148,6 +168,8 @@ class Fixture:
         self.bhlog = os.path.join(tmp, "boot-host.jsonl")
         self.bh_rc = "0"
         self.keys_rc = "0"
+        self.sudo = False
+        self.hblog = os.path.join(tmp, "handback.jsonl")
 
     def with_boot_host(self):
         """A configured boot host: the file, and the driver that reads it.
@@ -171,6 +193,14 @@ class Fixture:
     def with_xorriso(self):
         write(os.path.join(self.bin, "xorriso"), STUB_XORRISO, 0o755)
 
+    def with_sudo(self):
+        """Root run through sudo, as far as `kitchen` can tell, so its hand-back traps are
+        set; and a lib/handback.py that records what the EXIT trap hands it."""
+        os.unlink(os.path.join(self.bin, "id"))
+        write(os.path.join(self.bin, "id"), STUB_ID, 0o755)
+        write(os.path.join(self.repo, "lib", "handback.py"), STUB_HANDBACK, 0o755)
+        self.sudo = True
+
     def without_qemu(self):
         os.unlink(os.path.join(self.bin, "qemu-system-x86_64"))
 
@@ -182,21 +212,46 @@ class Fixture:
     def iso_file(self, path, text):
         write(os.path.join(self.tree, path.lstrip("/")), text)
 
-    def run(self, *args):
-        open(self.log, "w").close()
-        open(self.bhlog, "w").close()
+    def _env(self):
+        for f in (self.log, self.bhlog, self.hblog):
+            open(f, "w").close()
         env = {"PATH": self.bin, "HOME": self.tmp, "TMPDIR": self.box, "NO_COLOR": "1",
                "STUB_HARNESS_LOG": self.log, "STUB_ISO_TREE": self.tree,
                "STUB_BH_LOG": self.bhlog, "STUB_BH_RC": self.bh_rc,
                "STUB_KEYS_RC": self.keys_rc}
+        if self.sudo:
+            env.update(SUDO_UID="1000", SUDO_GID="1000", STUB_HANDBACK_LOG=self.hblog)
+        return env
+
+    def _read_back(self):
+        self.sent = [json.loads(ln) for ln in open(self.bhlog) if ln.strip()]
+        self.handed = [json.loads(ln) for ln in open(self.hblog) if ln.strip()]
+
+    def run(self, *args):
+        env = self._env()
         p = subprocess.run(["sh", os.path.join(self.repo, "kitchen"), "test", self.iso] + list(args),
                            cwd=self.tmp, env=env, capture_output=True, text=True, timeout=60)
         calls = [json.loads(ln) for ln in open(self.log) if ln.strip()]
-        self.sent = [json.loads(ln) for ln in open(self.bhlog) if ln.strip()]
+        self._read_back()
         # kitchen_test's own scratch -- the menu and kernel extraction -- goes in TMPDIR,
         # and every exit path has to take it away again, the new early refusals included.
         left = os.listdir(self.box)
         return p.returncode, p.stdout + p.stderr, calls, left
+
+    def run_into_closed_pipe(self, *args):
+        """As run(), with stdout a pipe whose reader closed before `kitchen` started: what
+        `| head` or a quit `less` leaves it writing to. Returns the exit status."""
+        env = self._env()
+        r, w = os.pipe()
+        os.close(r)
+        try:
+            p = subprocess.run(["sh", os.path.join(self.repo, "kitchen"), "test", self.iso]
+                               + list(args), cwd=self.tmp, env=env, stdout=w,
+                               stderr=subprocess.PIPE, text=True, timeout=60)
+        finally:
+            os.close(w)
+        self._read_back()
+        return p.returncode
 
 
 def opt(call, name):
@@ -311,6 +366,41 @@ def test_structure_needs_no_boot_harness(fx):
     check("--structure is not refused for a missing boot harness",
           "tests/boot/qemu_boot.py is missing" in out, False)
     check("...and it reached the structure check", [c[0] for c in calls], ["iso_assert"])
+
+
+@case
+def test_a_nested_evidence_directory_is_given_back_from_its_highest_new_parent(fx):
+    """Under sudo, `kitchen` hands lib/handback.py every path its command registered,
+    after --new if this run makes it. kitchen test registered its --out directory itself,
+    while `mkdir -p` made the parents on the way, and nothing registered those. `--out
+    t-out/a/b` left t-out/ and t-out/a/ root's, and `unpack -o` and `pack -o` did the same
+    (#98, measured). handback_add registers the highest directory that does not exist yet
+    now, as fetch does."""
+    fx.with_xorriso()
+    fx.with_sudo()
+    rc, out, calls, left = fx.run("--structure", "--out", os.path.join(fx.tmp, "t-out", "a", "b"))
+    check("the structure check ran", (rc, [c[0] for c in calls]), (0, ["iso_assert"]))
+    check("the highest directory the run made is what goes back, as --new",
+          fx.handed, [["--new", os.path.join(fx.tmp, "t-out")]])
+
+
+@case
+def test_a_closed_pipe_still_runs_the_hand_back(fx):
+    """A reader that goes, `| head` or `less` quit early, kills a shell command with SIGPIPE
+    at its next write. A shell killed by a signal it does not trap runs no EXIT trap:
+    `kitchen unpack ... | head -1` left all 48 paths root's, three runs in three (#98,
+    measured). PIPE is trapped now, as INT, TERM and HUP are, so it is an exit, 141, and the
+    hand-back runs.
+
+    The reader has gone before `kitchen` starts, and kitchen test's first write to stdout,
+    `* structure`, comes after it registers its evidence directory, so the signal always
+    lands there."""
+    fx.with_xorriso()
+    fx.with_sudo()
+    rc = fx.run_into_closed_pipe("--structure")
+    check("a closed pipe ends it as an exit, 141, not by the signal", rc, 141)
+    check("...and the hand-back ran, with the evidence directory",
+          fx.handed, [["--new", os.path.join(fx.tmp, "images", "boot-tests")]])
 
 
 @case
@@ -662,6 +752,8 @@ def main():
                    test_every_missing_tool_is_named_at_once,
                    test_a_checkout_without_the_boot_harness_is_refused,
                    test_structure_needs_no_boot_harness,
+                   test_a_nested_evidence_directory_is_given_back_from_its_highest_new_parent,
+                   test_a_closed_pipe_still_runs_the_hand_back,
                    test_a_typed_key_spec_is_checked_before_anything_boots,
                    test_a_refused_key_spec_boots_nothing,
                    test_derived_keys_are_not_second_guessed,

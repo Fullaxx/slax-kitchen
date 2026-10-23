@@ -40,6 +40,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import handback  # noqa: E402
 import need  # noqa: E402
 from isoparse import IsoReader  # noqa: E402
 
@@ -197,7 +198,6 @@ def bundle_manifest(container: str, offset: int = 0) -> dict:
     bug: this used to answer an empty set, and the caller then either skipped the bundle
     in silence or, where only one side failed, reported every file in it as added.
     """
-    import shutil
     import tempfile
     tmp = tempfile.mkdtemp(prefix="kitchen-diff-")
     root = os.path.join(tmp, "x")
@@ -250,7 +250,7 @@ def bundle_manifest(container: str, offset: int = 0) -> dict:
                 }
         return out
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        handback.remove_tree(tmp)
 
 
 def manifest_changes(ma: dict, mb: dict) -> tuple[list, list, list]:
@@ -475,4 +475,7 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    # TERM and HUP as exits, so the `finally` takes --bundles' unpacked bundle away. Python's
+    # default TERM left 344 MiB of it in TMPDIR, and HUP 489 MiB (#98). Nothing is given
+    # back: diff writes nothing in the user's tree.
+    raise SystemExit(handback.run(main, sys.argv, []))

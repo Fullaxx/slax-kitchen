@@ -7,9 +7,10 @@ journal, a provenance record and a bundle it could not write, and a directory it
 remove. CI's boot job chowned out/ and work/ after its build, slax-wine's build.sh chowns
 its tree after every apply, and publishing-images.md had a publisher `sudo chown -R` out/.
 This does what those did, once, here, as the command ends: on success, on failure, and on
-INT, TERM and HUP, which the trap in `kitchen` makes exits for the shell commands and run()
-for the Python ones. docs/90-reference/handback.md says what it gives back, what it never
-touches, and the endings it cannot survive, as measured.
+INT, TERM and HUP. The trap in `kitchen` makes those exits for the shell commands, with PIPE
+too (#98), and run() makes them exits for the Python ones. docs/90-reference/handback.md
+says what it gives back, what it never touches, and the endings it cannot survive, as
+measured.
 
 What it changes is every path under the given ones that root owns, to SUDO_UID:SUDO_GID:
 - only when this process is root and SUDO_UID names someone else, so root in a container,
@@ -28,7 +29,8 @@ stock image does, so who owns the tree never reaches the ISO.
 
 Usage: handback.py [--new PATH | PATH]...
   --new names a path this run created. The shell side decides that as it registers each
-  path, so the two come in any order (main, below); apply.py and fetch.py go through run().
+  path, so the two come in any order (main, below). apply.py and fetch.py go through run(),
+  and so do shell.py and diff.py, which give nothing back (#98).
   fetch gave nothing back until #79, and gives back only what it wrote, since its -o can
   name a place like ~/Downloads.
 """
@@ -180,6 +182,30 @@ def run(main, argv: list, paths: list, created: list = ()) -> int:
         finally:
             for s, handler in previous.items():
                 signal.signal(s, handler)
+
+
+def remove_tree(path: str) -> None:
+    """Remove a scratch tree, holding INT, TERM and HUP until it is gone.
+
+    Each of the three is an exit: run() makes TERM and HUP one, and Python makes INT a
+    KeyboardInterrupt. An exit raised in the middle of shutil.rmtree stops it there, and
+    ignore_errors catches only OSError. So a chroot step's build chroot, removed in a
+    `finally` once its bundle was built, kept whatever the removal had not reached. That
+    was outside the work tree apply gives back, and nothing removed it later. Measured
+    2026-10-23: a TERM 0.05 s into the removal left 1.8 GiB and 28,951 paths root's, and
+    the same window did it five times in five (#98).
+
+    Held, a signal waits for the removal, which took 0.85 s for that chroot. It is then
+    delivered as the mask is put back, and ends the command as it would have.
+    """
+    import shutil
+    import signal
+    held = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, held)
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
 
 
 def main(argv: list[str]) -> int:

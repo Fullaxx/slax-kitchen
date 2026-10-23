@@ -717,6 +717,40 @@ def test_a_binary_a_script_reported_downloading_is_prebuilt():
           (["built", "prebuilt"], 0))
 
 
+def test_an_output_path_in_a_new_directory_is_written():
+    """--json and --markdown into a directory that did not exist ended `kitchen sources` in a
+    FileNotFoundError traceback, after it had classified the whole image. With both options it
+    could leave one file written and not the other (#98, measured). Every other command's
+    output path makes its directory, and these make theirs now, before the classification.
+
+    main() runs with its two outside calls stubbed: need.require, and iso_files, which would
+    list an image with xorriso."""
+    import contextlib
+    import io
+    import json
+    import shutil
+    import tempfile
+    box = tempfile.mkdtemp()
+    iso = os.path.join(box, "x.iso")
+    open(iso, "w").close()
+    with open(iso + ".provenance.json", "w") as f:
+        json.dump({}, f)
+    j, m = os.path.join(box, "new", "j", "x.json"), os.path.join(box, "new", "m", "x.md")
+    saved = sources.need.require, sources.iso_files
+    sources.need.require = lambda *a, **k: None
+    sources.iso_files = lambda path: {"slax/boot/vmlinuz": "0" * 64}
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = sources.main(["sources.py", iso, "--json", j, "--markdown", m])
+    except OSError as e:
+        rc = f"{type(e).__name__}: {e}"
+    finally:
+        sources.need.require, sources.iso_files = saved
+    written = (rc, os.path.isfile(j), os.path.isfile(m))
+    shutil.rmtree(box, ignore_errors=True)
+    check("both written, into directories that did not exist", written, (0, True, True))
+
+
 def main():
     for fn in [test_stock_files_are_slax_by_hash,
                test_a_renumbered_stock_bundle_is_still_slax,
@@ -750,7 +784,8 @@ def main():
                test_markdown_renders,
                test_a_file_bundle_files_downloaded_is_a_prebuilt_part_of_its_bundle,
                test_a_src_entry_naming_an_upstream_source_is_a_prebuilt_part,
-               test_a_binary_a_script_reported_downloading_is_prebuilt]:
+               test_a_binary_a_script_reported_downloading_is_prebuilt,
+               test_an_output_path_in_a_new_directory_is_written]:
         # One test crashing must not stop the rest: the count of failures is only honest
         # if every test ran. The traceback still goes to stderr, because a crash's location
         # is the useful half and a one-line summary loses it.

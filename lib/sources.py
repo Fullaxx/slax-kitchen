@@ -846,6 +846,13 @@ def main(argv: list[str]) -> int:
               f"  `kitchen pack` writes it beside the ISO; rebuild with this kitchen.",
               file=sys.stderr)
         return 2
+    # The directories --json and --markdown name are made now, before the classification, as
+    # every other command's output path's is. A missing one ended the run in a
+    # FileNotFoundError traceback after all of it, and with both options it could leave one
+    # file written and not the other (#98).
+    for out in (a.json, a.markdown):
+        if out:
+            os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     prov = json.load(open(prov_path))
     import yaml
     sources_yaml = yaml.safe_load(open(os.path.join(REPO, "compat", "sources.yaml"))) or {}

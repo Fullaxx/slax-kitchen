@@ -446,6 +446,10 @@ def main(argv: list[str]) -> int:
     except ImportError:
         print("PyYAML required (pip install PyYAML)", file=sys.stderr)
         return 2
+    # The directory -o names is made, as every other command's output path's is. A missing
+    # one ended the run in a FileNotFoundError traceback (#98).
+    if a.output:
+        os.makedirs(os.path.dirname(os.path.abspath(a.output)), exist_ok=True)
     fp = fingerprint(a.iso, a.name)
     order = ["apiVersion", "kind", "metadata", "identity", "iso", "eltorito",
              "kernel", "initramfs", "bundles", "boot_files"]
