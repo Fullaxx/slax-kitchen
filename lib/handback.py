@@ -31,6 +31,7 @@ Usage: handback.py [--new PATH]... [PATH]...
 """
 from __future__ import annotations
 
+import errno
 import os
 import stat
 import sys
@@ -102,6 +103,38 @@ def give_back(paths=(), env=None, created=()) -> int:
     return n
 
 
+def _drop_dead_streams() -> None:
+    """Point stdout or stderr at /dev/null when the terminal behind it has hung up.
+
+    A real hangup -- the terminal closed, or an ssh session dropped -- makes every later write
+    to that terminal fail with EIO. The exit the hangup starts runs cleanup that prints, and a
+    print raised in the middle of it: give_back's own messages are such prints. And CPython
+    flushes stdout and stderr as it exits, so the failed flush there made the exit status
+    120, not the 129 run() promises. Measured 2026-10-23, on a pty whose master was closed:
+    a print to either stream raised EIO, and the exit was 120, three runs in three.
+
+    A write of zero bytes tells a hung-up terminal (EIO) from a live one, a file or a pipe,
+    and writes nothing. It works on the descriptor and never on Python's buffered stream,
+    because CPython's buffered writers are not reentrant. Measured 2026-10-23: a flush from a
+    signal handler that landed inside a write to the same stream raised "reentrant call
+    inside <_io.BufferedWriter name='<stdout>'>", three runs in three. What is still
+    buffered goes to /dev/null at the final flush, where a dead terminal would have refused
+    it anyway. boot_host.py does the same for a pipe closed under `kitchen test ... | head`.
+    """
+    for fd in (1, 2):
+        try:
+            os.write(fd, b"")
+        except OSError as e:
+            if e.errno != errno.EIO:
+                continue
+            try:
+                devnull = os.open(os.devnull, os.O_WRONLY)
+                os.dup2(devnull, fd)
+                os.close(devnull)
+            except OSError:
+                pass
+
+
 def run(main, argv: list, paths: list, created: list = ()) -> int:
     """Run an entry point's main(argv), and give back `paths` and `created` as it ends,
     however it ends: a return, an exception, INT, TERM or HUP. The lists are read when
@@ -119,12 +152,23 @@ def run(main, argv: list, paths: list, created: list = ()) -> int:
     A signal ignored on entry stays ignored, as it does for the shell's trap, which POSIX
     does not let a script set for one. Under nohup HUP is ignored, and that means carry on:
     the first version of #83's fix made it an exit, and ended the run nohup was keeping.
+
+    After a real hangup the terminal is gone and every write to it fails, so the handler
+    first points a stream whose terminal has hung up at /dev/null (_drop_dead_streams). The
+    cleanup can then print, and the exit keeps its status. Until then a closed terminal
+    gave everything back but exited 120, as #83's real-hangup measurement found on
+    2026-10-21.
     """
     import signal
+
+    def _exit(signum, _frame):
+        _drop_dead_streams()
+        sys.exit(128 + signum)
+
     previous = {}
     for s in (signal.SIGTERM, signal.SIGHUP):
         if signal.getsignal(s) is not signal.SIG_IGN:
-            previous[s] = signal.signal(s, lambda signum, _frame: sys.exit(128 + signum))
+            previous[s] = signal.signal(s, _exit)
     try:
         return main(argv)
     finally:

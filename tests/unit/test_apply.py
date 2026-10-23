@@ -2987,6 +2987,63 @@ def test_a_terminated_entry_point_still_gives_back():
               open(marker).read() if os.path.exists(marker) else None, repr((["/w"], ["/n"])))
 
 
+def test_a_hangup_from_a_closed_terminal_still_exits_129():
+    """A closed terminal ends `kitchen apply` or `fetch` with 129, and the hand-back's prints
+    do not stop it.
+
+    #83's real-hangup measurement (2026-10-21): `kitchen apply` under a pty whose master was
+    then closed gave everything back but exited 120. After a hangup every write to the
+    terminal fails with EIO, so a print in the cleanup raises in the middle of it, and
+    CPython's own flush at exit fails too, which turns any exit status into 120. `kill -HUP`
+    cannot show it, because the terminal is still there: this closes a real one.
+
+    The child runs handback.run with a pty for its stdin, stdout and stderr, as its
+    controlling terminal. main() says it is ready, leaves output unflushed, and waits. The
+    stub give_back prints to stderr, as the real one does, before it writes down what it was
+    handed.
+    """
+    import fcntl
+    import pty
+    import termios
+    import time
+    driver = ("import sys, time\n"
+              "sys.path.insert(0, sys.argv[1])\n"
+              "import handback\n"
+              "def give_back(paths=(), env=None, created=()):\n"
+              "    print('  gave them back', file=sys.stderr)\n"
+              "    open(sys.argv[2], 'w').write(repr((list(paths), list(created))))\n"
+              "handback.give_back = give_back\n"
+              "def main(argv):\n"
+              "    sys.stdout.write('ready\\n')\n"
+              "    sys.stdout.flush()\n"
+              "    sys.stdout.write('still buffered')\n"
+              "    time.sleep(30)\n"
+              "    return 0\n"
+              "sys.exit(handback.run(main, sys.argv, ['/w'], created=['/n']))\n")
+    box = tempfile.mkdtemp()
+    marker = os.path.join(box, "given")
+    master, slave = pty.openpty()
+    try:
+        p = subprocess.Popen([sys.executable, "-c", driver, os.path.join(REPO, "lib"), marker],
+                             stdin=slave, stdout=slave, stderr=slave, start_new_session=True,
+                             preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
+        os.close(slave)
+        seen, deadline = b"", time.monotonic() + 30
+        while b"ready" not in seen and time.monotonic() < deadline:
+            seen += os.read(master, 1024)
+        os.close(master)                  # the hangup: SIGHUP, and every later write gets EIO
+        master = None
+        rc = p.wait(timeout=30)
+        given = open(marker).read() if os.path.exists(marker) else None
+    finally:
+        if master is not None:
+            os.close(master)
+        shutil.rmtree(box, ignore_errors=True)
+    check("a closed terminal ends it as an exit, 129, not CPython's 120", rc, 129)
+    check("...and the hand-back ran past its own print, with what main registered",
+          given, repr((["/w"], ["/n"])))
+
+
 def test_what_root_wrote_under_sudo_is_given_back():
     """Under sudo, what a kitchen command wrote in the user's tree stayed root's, so the next
     unprivileged step could not write the journal, the provenance record or the bundle, or
@@ -4828,6 +4885,7 @@ def main():
                    test_iso_identity_takes_a_projects_name_and_keeps_an_earlier_one,
                    test_boot_cmdline_reads_a_var_as_a_list_of_parameters,
                    test_a_terminated_entry_point_still_gives_back,
+                   test_a_hangup_from_a_closed_terminal_still_exits_129,
                    test_what_root_wrote_under_sudo_is_given_back,
                    test_iso_files_actually_writes_into_the_iso_tree,
                    test_relax_modes_widens_without_granting,
