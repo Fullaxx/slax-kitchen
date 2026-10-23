@@ -3128,6 +3128,37 @@ def test_what_root_wrote_under_sudo_is_given_back():
     check("a file with a second name is left alone", owner("hardlink"), (0, 0))
 
 
+def test_a_second_build_under_sudo_still_gives_back():
+    """`kitchen`'s EXIT trap hands lib/handback.py every path its command registered, in
+    the order it registered them: plain if it existed, after --new if this run made it.
+    parse_args() took one run of plain paths, so plain paths on both sides of a --new were
+    refused. `kitchen build` registers work/ and out/, then the tree unpack makes, then
+    pack's and test's, which exist by then. So for every build that got as far as pack,
+    where work/ or out/ already existed, the hand-back exited 2 and gave nothing back: a new
+    image, its provenance record and pack's 98-dpkg-db.sb stayed root's (#97, measured). It
+    was there from 51c5699, and CI never saw it, because its one build runs on a fresh
+    checkout.
+
+    This is the command line a second build passes. give_back is replaced by one that
+    writes down what it was handed. An exit is caught here, because the runner below
+    catches only Exception, and would lose the rest of this file."""
+    import handback
+    w, o = "/c/work", "/c/out"
+    tree = w + "/minimal-debian-64bit-12.2.0"
+    seen = []
+    real = handback.give_back
+    handback.give_back = lambda paths=(), env=None, created=(): seen.append(
+        (list(paths), list(created)))
+    try:
+        handback.main(["handback.py", w, o, "--new", tree, o, tree + "/iso", o + "/boot-tests"])
+    except SystemExit as e:
+        seen.append(f"exit {e.code}")
+    finally:
+        handback.give_back = real
+    check("every path a second build registered reaches give_back, on its own side",
+          seen, [([w, o, o, tree + "/iso", o + "/boot-tests"], [tree])])
+
+
 def test_iso_files_actually_writes_into_the_iso_tree():
     """`iso.files` was implemented, documented, listed as shipped -- and run by nothing.
 
@@ -4910,6 +4941,7 @@ def main():
                    test_a_terminated_entry_point_still_gives_back,
                    test_a_hangup_from_a_closed_terminal_still_exits_129,
                    test_what_root_wrote_under_sudo_is_given_back,
+                   test_a_second_build_under_sudo_still_gives_back,
                    test_iso_files_actually_writes_into_the_iso_tree,
                    test_relax_modes_widens_without_granting,
                    test_apt_reinstall_is_opt_in,

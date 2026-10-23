@@ -24,10 +24,11 @@ What it changes is every path under the given ones that root owns, to SUDO_UID:S
 It cannot change an image: pack records every file as root's (-uid 0 -gid 0), as the
 stock image does, so who owns the tree never reaches the ISO.
 
-Usage: handback.py [--new PATH]... [PATH]...
+Usage: handback.py [--new PATH | PATH]...
   --new names a path this run created. The shell side decides that as it registers each
-  path; apply.py and fetch.py go through run() below. fetch gave nothing back until #79,
-  and gives back only what it wrote, since its -o can name a place like ~/Downloads.
+  path, so the two come in any order (main, below); apply.py and fetch.py go through run().
+  fetch gave nothing back until #79, and gives back only what it wrote, since its -o can
+  name a place like ~/Downloads.
 """
 from __future__ import annotations
 
@@ -179,10 +180,27 @@ def run(main, argv: list, paths: list, created: list = ()) -> int:
                 signal.signal(s, handler)
 
 
-if __name__ == "__main__":
+def main(argv: list[str]) -> int:
+    """The shell side's entry. `kitchen`'s EXIT trap passes every path its command
+    registered, in the order it registered them, each one plain or after --new.
+
+    That is any order, because which one a path is depends on whether it existed.
+    parse_args() fills a positional once, at the first run of plain paths, so plain paths
+    on both sides of a --new one were refused: `handback.py A --new B C` exited 2,
+    "unrecognized arguments: C", and gave nothing. `kitchen build` registers work/ and
+    out/, then the tree unpack makes, then what pack and test write in. So from 51c5699 on,
+    every build that got as far as pack, where work/ or out/ already existed, ended that
+    way (#97). Measured 2026-10-23: a new image, its provenance record and pack's
+    98-dpkg-db.sb stayed root's. parse_intermixed_args() takes the two in any order.
+    """
     import argparse
     ap = argparse.ArgumentParser(prog="handback.py")
     ap.add_argument("--new", action="append", default=[], metavar="PATH")
     ap.add_argument("paths", nargs="*")
-    a = ap.parse_args()
+    a = ap.parse_intermixed_args(argv[1:])
     give_back(a.paths, created=a.new)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

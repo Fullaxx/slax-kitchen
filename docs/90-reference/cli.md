@@ -13,7 +13,8 @@ build directory. Both are gitignored.
 the next step works without it ([#70](https://github.com/Fullaxx/slax-kitchen/issues/70),
 [#79](https://github.com/Fullaxx/slax-kitchen/issues/79),
 [#81](https://github.com/Fullaxx/slax-kitchen/issues/81),
-[#83](https://github.com/Fullaxx/slax-kitchen/issues/83)). Under `nohup` a hangup is still ignored,
+[#83](https://github.com/Fullaxx/slax-kitchen/issues/83),
+[#97](https://github.com/Fullaxx/slax-kitchen/issues/97)). Under `nohup` a hangup is still ignored,
 and the command carries on. Only in a place that is that user's: a directory the command created,
 or one the user owns or that sits in one the user owns. So `-w /etc` gives nothing away. Only
 root's paths change, a file with a second name is left alone, symlinks are never followed, and
