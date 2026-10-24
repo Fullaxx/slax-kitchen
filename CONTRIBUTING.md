@@ -668,8 +668,8 @@ in [`ci/checks/80-unit.sh`](ci/checks/80-unit.sh)'s header:
 - **git's repository-local variables are cleared** before each test. A test that shells out to `git`
   acts on its own fixture and never on the commit in progress. Without this, `git commit -a` under
   the hook died with `error: Error building trees` while the gate printed `ok`.
-- **each test gets a private `TMPDIR`**, removed afterwards. Five tests here had been leaving 46
-  directories per run in `/tmp` and nothing took them away.
+- **each test gets a private `TMPDIR`**, removed afterwards. Until `6e4470e` on 2026-09-18, five
+  tests had been leaving 46 directories per run in `/tmp`, and nothing took them away.
 - **a test that passes having left anything in that `TMPDIR` fails the gate**, named and listed. A
   test that *fails* keeps its fixtures instead, and the path is printed beside the failure.
 
