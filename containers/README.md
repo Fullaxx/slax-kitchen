@@ -160,10 +160,12 @@ back on stdout rather than bind-mounting anything.
 
 **Also expect a git ownership refusal** when the checkout is owned by a different uid than the
 container runs as — CI hits this, because the runner checks out as uid 1001 and the container is
-root:
+root. git checks the submodule's owner too, and the vendor gate runs git inside it
+([#101](https://github.com/Fullaxx/slax-kitchen/issues/101)):
 
 ```sh
 git config --global --add safe.directory /work
+git config --global --add safe.directory /work/vendor/linux-live
 ```
 
 ## What is deliberately absent

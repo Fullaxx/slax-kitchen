@@ -106,11 +106,15 @@ jobs:
         # message". Measured 2026-09-16 -- they did not die. check_files() returned the
         # EMPTY SET, so five gates looped over nothing and reported SUCCESS on a tree
         # with a planted violation in it. ci/lib.sh now refuses to run when git will not
-        # answer, so dropping this line fails the job loudly instead of silently.
+        # answer, so dropping this line fails the job loudly instead of silently. The
+        # submodule needs its own line: gate 20 runs git inside vendor/linux-live, and
+        # git checks that directory's owner as well (#101: reproduced with this job's
+        # ownership in the reference container).
         run: |
           docker run --rm -v "$PWD:/work" -w /work slax-kitchen:ci sh -c '
             set -e
             git config --global --add safe.directory /work
+            git config --global --add safe.directory /work/vendor/linux-live
             ./kitchen doctor --strict
             ./ci/run-checks.sh ci
           '

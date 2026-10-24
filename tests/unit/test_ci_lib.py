@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""ci/lib.sh's file_size, and the size rule in 00-no-binaries that depends on it.
+"""ci/lib.sh's file_size, the size rule in 00-no-binaries that depends on it, and
+20-vendor-pristine, which keeps a submodule pristine.
 
 WHY THIS EXISTS. file_size feeds the size limit in 00-no-binaries, which calls itself the
 most important gate in this repo, and nothing tested it: `grep -rl file_size tests/`
@@ -29,6 +30,7 @@ import traceback
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 LIB = os.path.join(ROOT, "ci", "lib.sh")
 GATE = os.path.join(ROOT, "ci", "checks", "00-no-binaries.sh")
+VENDOR_GATE = os.path.join(ROOT, "ci", "checks", "20-vendor-pristine.sh")
 
 FAILURES = []
 
@@ -204,11 +206,103 @@ def test_require_python3_refuses_instead_of_standing_down():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_the_vendor_gate_sees_inside_the_submodule():
+    """Gate 20 fails on an edited or untracked file inside vendor/linux-live (#101).
+
+    It read only `git submodule status`, whose + means a moved pointer, while its message
+    claimed to catch "uncommitted local modifications". An edit inside the submodule leaves
+    that line unchanged. slax-rpgs measured it on its own copy on 2026-10-01, and on
+    2026-10-24 a scratch clone here passed with a line appended to DOC/bundle.txt, and with
+    an untracked file.
+
+    Driven against a throwaway repository with a real submodule at vendor/linux-live, the
+    way test_the_size_rule_still_has_teeth drives 00-no-binaries.
+    - The clean case comes first: a gate that fails a clean tree is the same defect wearing
+      the other face.
+    - A clone without --recurse-submodules must skip, and not report the parent's files as
+      the submodule's. `git -C` in a directory with no .git answers for the parent, measured.
+    """
+    tmp = tempfile.mkdtemp(prefix="civendor-")
+    try:
+        upstream = new_repo(tmp, "upstream")
+        with open(os.path.join(upstream, "README"), "w") as fh:
+            fh.write("one\n")
+        git(upstream, "add", "-A", check=True)
+        git(upstream, "commit", "-qm", "one", check=True)
+        with open(os.path.join(upstream, "README"), "w") as fh:
+            fh.write("two\n")
+        git(upstream, "commit", "-qam", "two", check=True)
+
+        repo = new_repo(tmp, "repo")
+        os.makedirs(os.path.join(repo, "ci", "checks"))
+        shutil.copy2(LIB, os.path.join(repo, "ci", "lib.sh"))
+        shutil.copy2(VENDOR_GATE, os.path.join(repo, "ci", "checks", "20-vendor-pristine.sh"))
+        r = git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q",
+                upstream, "vendor/linux-live")
+        if r.returncode != 0:
+            FAILURES.append(f"could not create a submodule fixture: {r.stderr.strip()}")
+            return
+        git(repo, "add", "-A", check=True)
+        git(repo, "commit", "-qm", "seed", check=True)
+        sub = os.path.join(repo, "vendor", "linux-live")
+
+        def gate(where, **extra):
+            # REPO_ROOT set, not inherited: run-checks.sh exports this checkout's, and
+            # lib.sh keeps an inherited one, so under the unit gate the gate checked THIS
+            # repository's clean submodule and passed every case.
+            p = subprocess.run(["sh", "ci/checks/20-vendor-pristine.sh"], cwd=where,
+                               capture_output=True, text=True,
+                               env=dict(os.environ, KITCHEN_SCOPE="tree", NO_COLOR="1",
+                                        REPO_ROOT=where, **extra))
+            return p.returncode, p.stdout + p.stderr
+
+        rc, out = gate(repo)
+        check("a clean submodule passes", (rc, "FAIL" in out), (0, False))
+        # ...under a git hook too, which exports the parent's GIT_DIR and GIT_INDEX_FILE.
+        # git inside the submodule read them, and the pre-commit hook refused #101's own
+        # commit: "fatal: .git/index: index file open failed: Not a directory".
+        rc, out = gate(repo, GIT_DIR=".git", GIT_INDEX_FILE=".git/index")
+        check("...and under a git hook's GIT_DIR and GIT_INDEX_FILE", (rc, "FAIL" in out),
+              (0, False))
+
+        # One run for both halves of rule 3: the message must name each path, so a gate that
+        # saw only edits, or only untracked files, still fails this.
+        with open(os.path.join(sub, "README"), "a") as fh:
+            fh.write("edited\n")
+        with open(os.path.join(sub, "NEW"), "w") as fh:
+            fh.write("x\n")
+        rc, out = gate(repo)
+        check("an edited and an untracked file inside fail, each named (#101)",
+              (rc != 0, "2 modified or untracked path(s)" in out, "README" in out, "NEW" in out),
+              (True, True, True, True))
+        git(sub, "checkout", "-q", "--", "README", check=True)
+        os.remove(os.path.join(sub, "NEW"))
+
+        git(sub, "checkout", "-q", "HEAD~1", check=True)
+        rc, out = gate(repo)
+        check("a checkout at another commit still fails",
+              (rc != 0, "other than its pin" in out), (True, True))
+        git(sub, "checkout", "-q", "-", check=True)
+
+        bare = os.path.join(tmp, "bare")
+        git(tmp, "clone", "-q", repo, bare, check=True)
+        with open(os.path.join(bare, "stray"), "w") as fh:
+            fh.write("y\n")
+        rc, out = gate(bare)
+        check("a submodule not checked out is skipped, and says so",
+              (rc, "not checked out" in out), (0, True))
+        check("...without reporting the parent's own file as the submodule's",
+              "stray" in out, False)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     for fn in [test_a_staged_submodule_measures_zero_not_missing,
                test_the_size_rule_still_has_teeth,
                test_a_stat_without_c_still_refuses_to_run,
-               test_require_python3_refuses_instead_of_standing_down]:
+               test_require_python3_refuses_instead_of_standing_down,
+               test_the_vendor_gate_sees_inside_the_submodule]:
         # One test crashing must not stop the rest: the count of failures is only honest
         # if every test ran. The traceback still goes to stderr, because a crash's location
         # is the useful half and a one-line summary loses it.

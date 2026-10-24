@@ -64,8 +64,8 @@ cd slax-kitchen && ./kitchen doctor
 
 **`--recurse-submodules` matters.** `vendor/linux-live` is upstream's source, pinned and vendored
 unmodified; a lot of the documentation cites paths inside it, and `kitchen upstream-diff` needs it.
-Without it the vendor gate skips rather than fails, so the omission is quiet — if you already
-cloned, `git submodule update --init`.
+Without it the vendor gate skips its checks of the submodule rather than failing, and says so in
+one line — if you already cloned, `git submodule update --init`.
 
 `kitchen doctor` will tell you what your machine can and cannot do before you waste time on
 something it cannot run. You do not need root, KVM, or a privileged container for most of this.
