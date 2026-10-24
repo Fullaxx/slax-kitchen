@@ -1209,7 +1209,8 @@ def cmd_clean(cfg: Config) -> int:
 #
 # EVERYTHING BELOW RUNS ON THE BOOT HOST, started by the driver above as
 # `python3 boot_host.py agent <scratch>`. It talks JSON lines over stdin/stdout and must
-# not assume anything about that machine except python3 >= 3.9 and a POSIX filesystem.
+# not assume anything about that machine except python3 >= 3.11 and a POSIX filesystem:
+# kitchen's floor, set by the oldest python3 CI runs (#100).
 
 class Agent:
     def __init__(self, scratch: str):
@@ -1355,8 +1356,8 @@ class Agent:
         # what a boot actually runs.
         if found:
             ok_lines.append("tools: " + ", ".join(found))
-        if sys.version_info < (3, 9):
-            problems.append(f"python3 is {sys.version.split()[0]}; this needs 3.9 or newer")
+        if sys.version_info < (3, 11):
+            problems.append(f"python3 is {sys.version.split()[0]}; this needs 3.11 or newer")
         else:
             ok_lines.append(f"python3 {sys.version.split()[0]}")
 

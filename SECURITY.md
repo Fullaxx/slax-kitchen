@@ -15,7 +15,7 @@ Written after the first real one, GHSA-p2w2-qh4r-jr53, so it describes what actu
 rather than what was imagined.
 
 1. **Confirmed by reproduction, not by reading.** The report is rebuilt here before anything is
-   written — including proposed fixes, which are measured against the declared `python3 >= 3.9`
+   written — including proposed fixes, which are measured against the declared `python3 >= 3.11`
    floor and both container bases (`ubuntu:24.04` and `debian:12`). The first advisory's suggested
    one-liner needed a Python API newer than that floor and would have been a `TypeError` on Debian
    12; the explicit check it also suggested turned out to be the only portable half.

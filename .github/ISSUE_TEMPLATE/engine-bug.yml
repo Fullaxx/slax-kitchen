@@ -55,7 +55,7 @@ body:
       description: |
         Tool versions and kernel capabilities live here. Most "works here, fails
         there" reports are answered by this block alone — uid, `mknod`, `chroot`, and
-        the two toolchain probes especially.
+        the toolchain probes especially.
       render: text
     validations: {required: true}
   - type: input

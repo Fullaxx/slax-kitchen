@@ -317,9 +317,10 @@ subject read "…after #88 closed: #94 now asks it…", and the push closed
 ### Proposing a fix is welcome, and it will be checked
 
 Three of the first four reports proposed a fix. Two were right. One suggested a Python API that
-needs 3.11.4+, which is past this project's declared floor of `python3 >= 3.9` and a `TypeError` on
-`debian:12` — one of the two container bases CI builds inside. It would have turned a security patch
-into a crash on half the matrix.
+needs 3.11.4+, which is past this project's declared floor (`python3 >= 3.9` then, `>= 3.11` since
+[#100](https://github.com/Fullaxx/slax-kitchen/issues/100)) and a `TypeError` on `debian:12` —
+one of the two container bases CI builds inside. It would have turned a security patch into a
+crash on half the matrix.
 
 That is not a complaint about the report; it was a good report and its own closing paragraph
 anticipated the problem. It is the reason the floor is now asserted by `kitchen doctor` rather than

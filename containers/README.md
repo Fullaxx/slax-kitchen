@@ -70,15 +70,17 @@ docker run --rm slax-kitchen head -5 /etc/slax-kitchen-toolchain.txt
 
 ## Which base, and why the default is Ubuntu
 
-Four things constrain the base. None is a version pin; all four are satisfied by any current
-Debian-family release — **Debian included**.
+Four things constrain the base. None is a version pin, and both bases CI builds satisfy all
+four: `ubuntu:24.04` and **`debian:12`**. Ubuntu 22.04 and Debian 11 fall below the python3
+floor: their python3 is 3.10.12 and 3.9.2, measured 2026-10-24. A newer release is likely to
+work, and is not tested.
 
 | constraint | why |
 |---|---|
 | `/usr/lib/ISOLINUX/isohdpfx.bin` | hardcoded absolute path — `boot.isohybrid` needs it |
 | `/usr/share/OVMF/OVMF_{CODE,VARS}_4M.fd` | hardcoded absolute path — the UEFI boot test needs them |
 | `xz` supporting `--check=crc32` | the kernel's xz decoder cannot do CRC64, and CRC64 is xz's default |
-| `squashfs-tools >= 4.2`, `python3 >= 3.9` | asserted by `kitchen doctor`; 3.9 for builtin generics |
+| `squashfs-tools >= 4.2`, `python3 >= 3.11` | asserted by `kitchen doctor`. 3.11 is the oldest python3 CI runs, `debian:12`'s 3.11.2, and nothing older is tested: the floor was 3.9, and two commands could not start there ([#100](https://github.com/Fullaxx/slax-kitchen/issues/100)) |
 
 Those rule out Fedora and Alpine, which put the first two files elsewhere. They do **not** rule out
 Debian 12, which ships both at the identical paths.
@@ -95,7 +97,7 @@ technical advantage to Ubuntu here.
 image is the build host. Debian 12's toolchain is literally what produced the stock bundles.
 
 CI builds **both** on every push and runs `doctor --strict` plus all thirteen gates in each, so
-"any Debian-family release works" is a tested claim rather than an assumption.
+both bases are a tested claim rather than an assumption.
 
 ### One file, and when to stop
 

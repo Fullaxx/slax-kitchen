@@ -515,7 +515,7 @@ The packages are the ones the boot tests use:
 [`containers/packages/boot.txt`](../../containers/packages/boot.txt) (`qemu-system-x86`, which
 carries both `qemu-system-x86_64` and `qemu-system-i386`, `qemu-utils`, `ovmf`, `e2fsprogs`) and
 `xorriso` from [`build.txt`](../../containers/packages/build.txt) for `--kernel-boot`, plus `python3`
-3.9 or newer. `ovmf-ia32` is the one extra, and only for `--arch x86 --uefi`. A launch that is missing
+3.11 or newer. `ovmf-ia32` is the one extra, and only for `--arch x86 --uefi`. A launch that is missing
 something it needs says which package to install before it creates anything; `--print` needs none of
 them, and instead lists what the machine that runs its commands will need.
 

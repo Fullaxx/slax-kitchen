@@ -409,23 +409,29 @@ doctor_toolchain() {
     else
         echo "squashfs-tools >= 4.2: unknown (mksquashfs not found)"
     fi
-    # The third one. containers/README.md has always DECLARED a floor of python3 >= 3.9
-    # and claimed doctor asserted it; doctor did not, so the floor was prose. It matters:
-    # 3.9 is what lets lib/ use builtin generics, and the floor is also what decides which
-    # stdlib APIs a fix may reach for. A proposed fix for GHSA-p2w2-qh4r-jr53 wanted
-    # tarfile's extractall(filter=...), which needs 3.11.4+ -- out of bounds here, and it
-    # would have been a TypeError on debian:12's 3.11.2, one of our two container bases.
-    # An unchecked floor cannot refuse that; this can.
+    # The third one. containers/README.md has always DECLARED a python3 floor and claimed
+    # doctor asserted it; doctor did not, so the floor was prose. It matters: the floor is
+    # what decides which stdlib APIs a fix may reach for. A proposed fix for
+    # GHSA-p2w2-qh4r-jr53 wanted tarfile's extractall(filter=...), which needs 3.11.4+ --
+    # out of bounds here, and it would have been a TypeError on debian:12's 3.11.2, one of
+    # our two container bases. An unchecked floor cannot refuse that; this can.
+    #
+    # 3.11, THE OLDEST PYTHON CI RUNS. The floor was 3.9, the lowest that lib/'s builtin
+    # generics allow (b4945ab), and nothing ever ran it: `kitchen shell` and `kitchen
+    # upstream-diff` could not even start on 3.9 from the day they were written, and
+    # nothing noticed until #100. debian:12's 3.11.2 is the oldest python3 anything here
+    # runs -- CI's container job runs doctor --strict and every gate inside it -- so 3.11
+    # is the floor, because a floor nobody runs is a claim, not a test.
     _py=$(timeout 5 python3 -c 'import sys; print("%d %d" % sys.version_info[:2])' 2>/dev/null)
     if [ -n "${_py:-}" ]; then
         _pymaj=${_py%% *}; _pymin=${_py##* }
-        if [ "$_pymaj" -gt 3 ] || { [ "$_pymaj" -eq 3 ] && [ "$_pymin" -ge 9 ]; }; then
-            echo "python3 >= 3.9: yes ($_pymaj.$_pymin)"
+        if [ "$_pymaj" -gt 3 ] || { [ "$_pymaj" -eq 3 ] && [ "$_pymin" -ge 11 ]; }; then
+            echo "python3 >= 3.11: yes ($_pymaj.$_pymin)"
         else
-            echo "python3 >= 3.9: NO ($_pymaj.$_pymin) -- lib/ uses builtin generics (PEP 585)"
+            echo "python3 >= 3.11: NO ($_pymaj.$_pymin) -- untested: CI's oldest is debian:12's 3.11 (#100)"
         fi
     else
-        echo "python3 >= 3.9: unknown (python3 did not run)"
+        echo "python3 >= 3.11: unknown (python3 did not run)"
     fi
     # The fourth one. apt's python3-yaml, python3-jsonschema and python3-pyflakes are
     # invisible to a python3 that resolves into a venv, and the failure surfaces as a

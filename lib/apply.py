@@ -1647,8 +1647,8 @@ def _refuse_escaping_link(m, verb: str) -> None:
     bundle has no business containing one.
 
     Not delegated to tarfile's `filter="data"`, which is the obvious fix and the wrong
-    one here. That parameter landed in 3.11.4/3.12; this project's floor is python3 >= 3.9
-    (containers/README.md) and Debian 12 -- one of our two container bases, and what
+    one here. That parameter landed in 3.11.4/3.12; this project's floor is python3 >= 3.11
+    (containers/README.md), and Debian 12 -- one of our two container bases, and what
     upstream actually builds Slax on -- ships 3.11.2, where `extractall(filter=...)` is a
     TypeError and `tarfile.data_filter` does not exist. `filter="tar"` is available on the
     same versions and would NOT help: measured, it allows all three escapes below.

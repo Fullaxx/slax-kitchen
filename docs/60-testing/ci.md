@@ -98,10 +98,11 @@ The `container` job is what keeps that honest. `kitchen doctor --strict` exits n
 its tools is missing or any toolchain assertion fails, so an incomplete list fails the build
 rather than surfacing later as a recipe that cannot find `mcopy`.
 
-It runs on both supported bases. `containers/README.md` claims any current Debian-family release
-works; building `ubuntu:24.04` and `debian:12` on every push is what turns that from an assumption
-into a tested statement. Both legs run beside the build jobs, which take far longer
-([times](#job-times)), so the second one costs nothing.
+It runs on both supported bases, `ubuntu:24.04` and `debian:12`. Building both on every push is
+what turns them from an assumption into a tested statement, and `debian:12`'s Python 3.11.2 is
+why kitchen's floor is 3.11 ([#100](https://github.com/Fullaxx/slax-kitchen/issues/100)). Both legs
+run beside the build jobs, which take far longer ([times](#job-times)), so the second one costs
+nothing.
 
 Because those bases move, so do the tools in them — which is half the reason a test here asserts
 what *we* do with a tool's output rather than whether the tool works. The rule for writing one, and

@@ -660,10 +660,18 @@ capabilities:
   mknod=yes  chroot=yes  kvm=no ...
 ```
 
-The `toolchain` block **probes** the two facts that decide correctness rather than convenience:
-the kernel's xz decoder cannot do CRC64, which is xz's default, so an initramfs built without
-`--check=crc32` is an image that will not boot. Both were asserted in prose here for a long time
-and tested nowhere.
+The `toolchain` block **probes** the facts that decide correctness rather than convenience. The
+sample above was captured at `3b2f6e0`, before the last two existed:
+- `xz --check=crc32`: the kernel's xz decoder cannot do CRC64, which is xz's default, so an
+  initramfs built without `--check=crc32` is an image that will not boot;
+- `squashfs-tools >= 4.2`: below it, xz compression is not reliable;
+- `python3 >= 3.11`: the oldest Python CI runs, `debian:12`'s 3.11.2. Nothing older is tested,
+  and on 3.9, the floor until
+  [#100](https://github.com/Fullaxx/slax-kitchen/issues/100), two commands could not even start;
+- `python3 imports yaml + jsonschema + pyflakes`: apt's packages are invisible to a python3 that
+  resolves into a venv, so a gate would fail to run, not name the missing package.
+
+The first two were asserted in prose here for a long time and tested nowhere.
 
 **`kvm` means this account can write `/dev/kvm`**, which is the test every boot uses to choose
 KVM over TCG. It used to test for read access, so a device that was readable but not writable had

@@ -84,9 +84,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Both supported bases, because containers/README.md claims any current
-        # Debian-family release works and a claim nobody runs is an assumption.
-        # debian:12 is not decoration: it is what upstream actually builds Slax on.
+        # Both supported bases, because containers/README.md names both and a claim
+        # nobody runs is an assumption. debian:12 is not decoration: it is what
+        # upstream actually builds Slax on, and its python3 (3.11.2) is why kitchen's
+        # floor is 3.11 (#100).
         base: [ubuntu:24.04, "debian:12"]
     steps:
       - uses: actions/checkout@v7

@@ -76,7 +76,7 @@ prompt in a build script is a command that hangs waiting for a terminal nobody i
 Set the key up first — `ssh-copy-id <host>`, then `ssh <host> true`.
 
 **On the boot host** you need `qemu-system-x86_64`, `qemu-img`, `xorriso`, `e2fsprogs`,
-`rsync`, `python3` ≥ 3.9, a writable `/dev/kvm`, and `ovmf` for `--uefi`. Nothing else, and
+`rsync`, `python3` ≥ 3.11, a writable `/dev/kvm`, and `ovmf` for `--uefi`. Nothing else, and
 no pip: the agent that runs there is one stdlib Python file. `kitchen boot-host check`
 reports whatever is missing and names the fix.
 
