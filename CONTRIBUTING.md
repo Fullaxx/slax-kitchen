@@ -410,7 +410,7 @@ More counts as a change than a recipe's own writes:
 | promise | backed by |
 |---|---|
 | a repack with no recipes keeps every file's bytes and mode | [`ci/roundtrip.sh`](ci/roundtrip.sh), in CI |
-| two images' contents can be compared | [`kitchen diff`](docs/90-reference/cli.md#diff-isoa-isob---bundles---limit-n). It hashes every file, and under `--bundles` every entry inside a bundle, leaving mtimes out. A rebuilt bundle still counts as changed, because its own bytes differ; `--bundles` says when every entry inside it matches |
+| two images' contents can be compared | [`kitchen diff`](docs/90-reference/diff.md). It hashes every file, and under `--bundles` every entry inside each changed bundle and every file of each FAT12 image, the ESP among them, leaving times out. Under `--bundles`, two images whose only differences are containers whose contents match end `identical content`, exit 0 |
 | two builds' contents match | not promised in general. They can, when the inputs match: pinned package sources, and a script that writes the same thing every run |
 
 **Don't make a promise hold by changing the times.** Stamping every file with one date, or

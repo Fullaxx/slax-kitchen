@@ -8,9 +8,9 @@ anything are never bit-identical, and nothing here promises they are**
 
 - **fidelity:** a repack with no recipes keeps every file's bytes and mode, which
   [`ci/roundtrip.sh`](../../ci/roundtrip.sh) checks in CI;
-- **comparison:** [`kitchen diff`](../90-reference/cli.md#diff-isoa-isob---bundles---limit-n)
-  compares two images' files by content, not by time, and with `--bundles` the entries inside each
-  bundle;
+- **comparison:** [`kitchen diff`](../90-reference/diff.md) compares two images' files by content,
+  not by time, and with `--bundles` what is inside each bundle and each FAT12 image, the ESP among
+  them;
 - **matching contents:** two builds can hold the same contents when their inputs match, though that
   is not promised in general.
 
@@ -20,6 +20,7 @@ anything are never bit-identical, and nothing here promises they are**
 |---|---|---|
 | **a bundle a build makes** | its superblock records when it was made, and each file a script writes records when it was written — see below | `kitchen diff --bundles` |
 | **`98-dpkg-db.sb`** | rebuilt by every `kitchen pack` of a tree where a recipe installed Debian packages | `kitchen diff --bundles` |
+| **the ESP** (`/boot/efi.img`) | `mkfs.vfat` picks a volume serial for every image, and each directory entry records when it was written. Two builds' ESPs differed in those 20 bytes and in nothing they hold (2026-10-23) | `kitchen diff --bundles` |
 | **initramfs** (`initrfs.img`) | rewritten when a verb edits it. Kitchen sorts its entries, so their order is stable: one tree packs the same twice. Upstream's command does not sort | [extract both](edit-initramfs.md) and compare the trees |
 | **ISO** | each file's modify, access and change times, as the tree has them; the volume's dates, unless `--date` pins them; under genisoimage, the extent order; under `--uefi --hybrid`, the GPT's disk GUID | `kitchen diff` |
 
@@ -154,7 +155,7 @@ Kitchen does not pin those times to make the bytes match. That would give each f
 and the image would hand that to its users
 ([CONTRIBUTING](../../CONTRIBUTING.md#promise-only-what-can-be-true)).
 
-This is why [`kitchen diff --bundles`](../90-reference/cli.md) also compares what is *inside* a
+This is why [`kitchen diff --bundles`](../90-reference/diff.md) also compares what is *inside* a
 bundle: its bytes report two builds of one tree as different, every time, which is exactly the case
 you are usually asking about.
 
@@ -189,13 +190,13 @@ each. No shipped `bundle.script` reads one it does not set (read 2026-10-22).
 kitchen diff a.iso b.iso --bundles
 ```
 
-It compares every file by content and mode, and under `--bundles` every entry inside each bundle,
-and compares no recorded time; see
-[`kitchen diff`](../90-reference/cli.md#diff-isoa-isob---bundles---limit-n). A bundle a build made
-still counts as changed, because its own bytes differ, so two builds that each make a bundle end
-`DIFFERENT` even when every rebuilt bundle reads `(identical content -- every entry matches …)`.
-Measured 2026-10-22: two builds of one script that writes the same file every run did exactly
-that, and one tree packed twice read `identical`, its volume dates three seconds apart.
+It compares every file by content and mode, and under `--bundles` what is inside each changed
+bundle and ESP, and compares no recorded time; see [`kitchen diff`](../90-reference/diff.md).
+When every difference is a container whose contents match, as a rebuild's are, it ends
+`identical content`, exit 0. Measured 2026-10-23: two builds each of `example`, `boot-matrix` and
+`tor` ended that way, and two of `minimal`, which makes neither a bundle nor an ESP, read
+`identical`. Without `--bundles`, the first three pairs end `DIFFERENT`. On 2026-10-22, one tree
+packed twice read `identical`, its volume dates three seconds apart.
 
 **To prove a rebuild did not corrupt anything** — which is the more common need —
 `ci/roundtrip.sh` is the check:

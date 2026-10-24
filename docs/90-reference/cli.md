@@ -463,76 +463,27 @@ error: branding.yaml: branding was already applied to this tree at 2026-09-14T21
 Previously this surfaced as whichever verb collided first — `slax/modules/07-branding.sb already
 exists. Pick another number` — which is true, unhelpful, and points at the wrong problem.
 
-## `diff <isoA> <isoB> [--bundles] [--limit N]`
+## `diff <A> <B> [--bundles] [--limit N]`
 
-What changed between two images — identity, boot structure, and every entry. Where `probe` asks
-"is this a known release, and has it been modified?", `diff` answers "what is the difference between
-**these two**?", which is the question you have when both are yours. Captured on 2026-09-14
-(`20e82bd`), when the command was written:
+What differs between two ISO images, two bundles, or two FAT12 images such as an image's ESP. It
+tells which it was given by their content, and refuses a mix:
+- **two images** get the image diff: their identity, their boot structure, and every file by
+  content and mode, read straight from the image's extents;
+- **two bundles, or two FAT12 images,** get the container diff, which compares what is inside
+  them;
+- **`--bundles`**, on two images, hands each changed bundle or FAT12 image to the container diff,
+  and judges the images by what is inside them.
 
-```
-$ kitchen diff isos/slax-64bit-debian-12.2.0.iso out/custom.iso
+It ends with a verdict:
+- `identical`, exit 0;
+- `identical content`, exit 0, when only the containers' own bytes differ, as a rebuild's do;
+- `DIFFERENT`, exit 1.
 
-  size        435,853,312 -> 359,440,384   (-72.9 MiB)
+Exit 2 means a question it could not answer. Without `--bundles` the verdict is by the bytes, so
+two builds that each make a bundle end `DIFFERENT`.
 
-  identity    application_id  'slax' -> 'SLAX'
-
-  boot        El Torito       x86-BIOS  (2 entries) -> x86-BIOS, EFI  (4 entries)
-
-  entries     45 -> 48   (+4 added, -1 removed)
-    +  /boot/efi.img                                    6.2 MiB
-    +  /boot/grub/grub.cfg                              635 B
-    -  /slax/modules/05-chromium.sb                     79.1 MiB
-    =  /slax/boot/isolinux.bin                          boot-info-table only (checksum ok)
-                                                        moved LBA 46 -> 3214
-
-  DIFFERENT
-```
-
-Exit status is **0 when identical, 1 when different**, like `diff(1)`, so it drops into a script —
-and **2 when something could not be read**, which is not an answer about the two images. Under
-`--bundles` a bundle nobody can read is named in place and the rest of the report still reaches its
-verdict; one unreadable bundle does not withhold the answer about every other one.
-It is **2 when an image cannot be listed**. xorriso does not always say so itself: 1.5.6 lists a
-file that is not an ISO as `/` alone and exits 0. So a listing with no files in it is refused, where
-it used to diff as an empty image, with every file of the other reported removed.
-
-**Nothing is extracted.** xorriso reports each file's start LBA and size, so content hashes come
-from reading those extents straight out of the image — comparing two 416 MiB ISOs took under a
-second on 2026-10-01, with both in the page cache, and no scratch space.
-
-Two cases get special handling, because the naive answer is confidently wrong:
-
-| | |
-|---|---|
-| `isolinux.bin` | bytes 8–63 are the boot-info-table, written **after** the file is placed, so two functionally identical builds differ there whenever the extent moves. Compared past byte 64, with the checksum verified separately and the LBA move reported. See [el-torito.md](../10-anatomy/el-torito.md). |
-| `*.sb` bundles | a squashfs is a container with its own creation time, and it stores an mtime per file — so **two builds of the same tree differ in bytes while every file in them is identical**. "content changed" on a 79 MiB bundle is true and useless. `--bundles` compares what is *inside*: type, mode, owner, size, link target and sha256 per entry, with mtimes deliberately excluded. |
-
-```
-  inside /slax/modules/07-branding.sb   5 -> 4 entries
-    +  etc/motd
-    -  etc/issue
-    ~  etc/hostname                                    content
-```
-
-When a bundle's bytes differ but nothing inside it does — a plain rebuild — it says so
-rather than leaving you to guess:
-
-```
-  inside /slax/modules/08-ssh.sb   6 -> 6 entries
-    (identical content -- every entry matches; only the container's own bytes differ, as a rebuild's do)
-```
-
-The verdict still counts the bundle's own bytes, so two builds that each make a bundle end
-`DIFFERENT`, exit 1, even when every rebuilt bundle says this (measured 2026-10-22). The bundles'
-lines, not the exit status, tell a rebuild from a change.
-
-This is the one place `diff` extracts, and only for a bundle whose bytes already differ: a
-content hash of a file inside a squashfs cannot be read from the ISO's extents. A bundle
-that cannot be read is refused with exit 2, not reported as a bundle with no files.
-
-The El Torito boot catalog is compared **by meaning** — platforms and bootable flags — not by bytes.
-It has no file extent of its own, so a byte comparison could not see it at all.
+**[`kitchen diff`](diff.md)** has the rest: what each diff compares and never compares, how to
+read its report, every exit status, what it costs, and the pitfalls.
 
 ## `sources <iso> [--json F] [--markdown F]`
 

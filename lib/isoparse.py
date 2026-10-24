@@ -294,9 +294,53 @@ class FatImage:
     files: dict[str, bytes] = field(default_factory=dict)   # path -> its first bytes
 
 
-def fat12(path: str, head: int = 4096) -> FatImage | None:
+@dataclass
+class FatLayout:
+    """Where a FAT12 image keeps what, from its boot sector. Offsets are in bytes."""
+    bps: int                                            # bytes per sector
+    reserved: int                                       # sectors before the first FAT
+    spf: int                                            # sectors per FAT
+    total: int                                          # sectors in the image
+    root_at: int                                        # the root directory
+    data_at: int                                        # cluster 2, the first data cluster
+    csize: int                                          # bytes per cluster
+    clusters: int                                       # data clusters
+
+
+def fat12_layout(boot: bytes) -> FatLayout | None:
+    """The layout a FAT12 boot sector describes, or None when `boot` is not one.
+
+    fat12() reads an image by this, and kitchen diff tells a FAT12 image -- the ESP -- by
+    it, from the first 512 bytes alone (#99). FAT32 has no fixed root directory and no
+    16-bit FAT size, so both read as zero and it is refused here; so is FAT16, by the
+    cluster count, FAT's own rule for which FAT an image is.
+    """
+    def u16(o: int) -> int:
+        return struct.unpack_from("<H", boot, o)[0]
+
+    if len(boot) < 512 or boot[510:512] != b"\x55\xaa":
+        return None
+    bps, spc, reserved, nfats = u16(11), boot[13], u16(14), boot[16]
+    root_entries, spf = u16(17), u16(22)
+    total = u16(19) or struct.unpack_from("<I", boot, 32)[0]
+    if (bps not in (512, 1024, 2048, 4096)
+            or spc not in (1, 2, 4, 8, 16, 32, 64, 128)
+            or not (reserved and nfats and root_entries and spf and total)):
+        return None
+    root_at = (reserved + nfats * spf) * bps
+    data_at = root_at + -(-root_entries * 32 // bps) * bps
+    csize = spc * bps
+    clusters = (total * bps - data_at) // csize
+    if not 0 < clusters < 4085:                         # the FAT12 limit
+        return None
+    return FatLayout(bps, reserved, spf, total, root_at, data_at, csize, clusters)
+
+
+def fat12(path: str = "", head: int = 4096, data: bytes | None = None) -> FatImage | None:
     """The label and every file of the FAT12 image at `path`, each file with its first
-    `head` bytes, or None when it is not a FAT12 image this can read.
+    `head` bytes, or None when it is not a FAT12 image this can read. With `data`, the
+    image is those bytes and `path` is not read: kitchen diff reads an ESP straight out of
+    an ISO's extent this way, and compares two by their files (#99).
 
     For the EFI system partition: boot.uefi builds one with mkfs.vfat -F 12 and mtools, and
     reads an existing one back with this before it will replace it. Paths are the 8.3 short
@@ -308,30 +352,25 @@ def fat12(path: str, head: int = 4096) -> FatImage | None:
         return struct.unpack_from("<H", b, o)[0]
 
     try:
-        with open(path, "rb") as f:
-            boot = f.read(512)
-            if len(boot) < 512 or boot[510:512] != b"\x55\xaa":
+        if data is None:
+            with open(path, "rb") as f:
+                lay = fat12_layout(f.read(512))
+                if lay is None:
+                    return None
+                f.seek(0)
+                img = f.read(lay.total * lay.bps)
+        else:
+            lay = fat12_layout(bytes(data[:512]))
+            if lay is None:
                 return None
-            bps, spc, reserved, nfats = u16(boot, 11), boot[13], u16(boot, 14), boot[16]
-            root_entries, spf = u16(boot, 17), u16(boot, 22)
-            total = u16(boot, 19) or struct.unpack_from("<I", boot, 32)[0]
-            # FAT32 has no fixed root directory and no 16-bit FAT size: both zero.
-            if (bps not in (512, 1024, 2048, 4096)
-                    or spc not in (1, 2, 4, 8, 16, 32, 64, 128)
-                    or not (reserved and nfats and root_entries and spf and total)):
-                return None
-            root_at = (reserved + nfats * spf) * bps
-            data_at = root_at + -(-root_entries * 32 // bps) * bps
-            csize = spc * bps
-            clusters = (total * bps - data_at) // csize
-            if not 0 < clusters < 4085:                 # the FAT12 limit, by FAT's own rule
-                return None
-            f.seek(0)
-            img = f.read(total * bps)
+            img = bytes(data[:lay.total * lay.bps])
     except OSError:
         return None
-    if len(img) < total * bps:
+    if len(img) < lay.total * lay.bps:
         return None
+    bps, reserved, spf = lay.bps, lay.reserved, lay.spf
+    root_at, data_at, csize, clusters = lay.root_at, lay.data_at, lay.csize, lay.clusters
+    boot = img[:512]
     fat = img[reserved * bps:(reserved + spf) * bps]
 
     def read(c: int, n: int) -> bytes:

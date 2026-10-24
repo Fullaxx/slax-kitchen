@@ -31,7 +31,9 @@ FAILURES = []
 
 # Every command that used to run its tools unchecked, with arguments that get it past
 # argparse, and every tool it must name when none is installed. Nothing here needs the image
-# to exist: the check comes before the image is opened.
+# to exist: the check comes before the image is opened. Except diff's: it reads the start of
+# what it was given first, because an ISO image needs xorriso, a bundle unsquashfs and a
+# FAT12 image nothing (#99). So its two images exist, and only begin as ISO images do.
 #
 # The last three were found by the self-review of the change that introduced this file:
 # `sources` ran git on every run (provenance.git_digest), not only for --fetch -- both gone
@@ -39,7 +41,7 @@ FAILURES = []
 # mksquashfs; `upstream-diff` runs git.
 FINGERPRINT = ["xorriso", "unsquashfs", "xz", "cpio", "file"]
 COMMANDS = [
-    ("kitchen diff", ["lib/diff.py", "a.iso", "b.iso"], ["xorriso"]),
+    ("kitchen diff", ["lib/diff.py", "one.iso", "two.iso"], ["xorriso"]),
     ("kitchen probe", ["lib/probe.py", "a.iso"], FINGERPRINT),
     ("kitchen fingerprint", ["lib/fingerprint.py", "a.iso"], FINGERPRINT),
     ("iso_assert.py", ["tests/structure/iso_assert.py", "a.iso"], ["xorriso"]),
@@ -135,6 +137,9 @@ def test_every_command_refuses_instead_of_crashing():
     package -- it used to get as far as running the first, and died in a traceback."""
     empty = tempfile.mkdtemp(prefix="need-empty-")
     try:
+        for name in ("one.iso", "two.iso"):         # CD001 at sector 16, and nothing else
+            with open(os.path.join(empty, name), "wb") as f:
+                f.write(bytes(16 * 2048 + 1) + b"CD001")
         for who, args, tools in COMMANDS:
             p = subprocess.run([sys.executable] + [os.path.join(ROOT, args[0])] + args[1:],
                                cwd=empty, env={"PATH": empty, "HOME": empty},

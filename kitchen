@@ -142,7 +142,7 @@ ${B}COMMANDS${O}
   test <iso> [--structure] [--kernel] [--bios] [--uefi] [--usb] [--persistence]
   boot-host [check|clean]    the machine boot tests run on (see boot-host.example.ini)
   shell <bundle|work>        chroot into a bundle for exploration
-  diff <isoA> <isoB>         structural + per-file diff
+  diff <A> <B>               what differs: two ISOs, two bundles or two ESPs
   sources <iso>              what is in a built ISO, and where each part's source lives
   upstream-diff              regenerate docs/15-upstream/drift-report.md
   version                    print the version and git commit

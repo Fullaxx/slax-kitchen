@@ -82,7 +82,7 @@ numbers. `lib/handback.py`'s `invoker()` is the rule.
 | `kitchen build` | yes | `work/` and `out/` themselves, then what unpack, apply, pack and test register |
 | `kitchen test` | yes | its evidence directory (`--out`, default `boot-tests/` beside the image) |
 | `kitchen shell` | nothing of yours | it works in a temporary directory under `TMPDIR`, and removes it as it ends, on TERM and HUP too |
-| `kitchen doctor`, `diff`, `probe`, `validate`, `status`, `selftest`, `boot-host`, `version`, `help` | nothing of yours | they read, or use temporary directories they remove as they end, `diff --bundles` on TERM and HUP too, or, for `boot-host`, the boot host's own disk |
+| `kitchen doctor`, `diff`, `probe`, `validate`, `status`, `selftest`, `boot-host`, `version`, `help` | nothing of yours | they read, or use temporary directories they remove as they end, `diff` on TERM and HUP too when it unpacks a bundle, or, for `boot-host`, the boot host's own disk |
 | `kitchen sources --json/--markdown`, `fingerprint -o`, `upstream-diff --write`, `doctor --install-hooks` | **no** | they write and give nothing back, and each makes the directory its path names, as the other commands do. None needs root: run them as yourself. Measured: `sources --markdown`, `fingerprint -o` and `doctor --install-hooks` each left what it wrote `root:root`. `upstream-diff --write` is read from its code |
 
 `kitchen test --record FILE`, the Tier C ledger, appends to `FILE`, which is not in the evidence
