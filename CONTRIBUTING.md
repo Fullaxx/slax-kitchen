@@ -576,27 +576,6 @@ Four more, each from a kind of error #73 found:
 The tell for a number that has gone stale is the word *here*, or *this tree*, in the present
 tense. If you are writing one, either a gate can check it or it needs a date.
 
-**The gate runs your test in a sandbox, and has opinions about what you leave in it.** Three rules,
-each of which came from something that shipped — the measurements and the failures behind them are
-in [`ci/checks/80-unit.sh`](ci/checks/80-unit.sh)'s header:
-
-- **git's repository-local variables are cleared** before each test. A test that shells out to `git`
-  acts on its own fixture and never on the commit in progress. Without this, `git commit -a` under
-  the hook died with `error: Error building trees` while the gate printed `ok`.
-- **each test gets a private `TMPDIR`**, removed afterwards. Five tests here had been leaving 46
-  directories per run in `/tmp` and nothing took them away.
-- **a test that passes having left anything in that `TMPDIR` fails the gate**, named and listed. A
-  test that *fails* keeps its fixtures instead, and the path is printed beside the failure.
-
-Clean up after yourself anyway. The gate is a net for a **gate** run; someone running your file
-directly gets none of it, which is what the third rule is there to notice.
-
-**A check that cannot fail is worse than no check.** This has bitten this project at least four
-times — a workflow that never opened an issue because `$?` after a pipeline is `tee`'s status; a
-fidelity test that compared a tree against itself; a boot test whose only assertion was "a
-screenshot exists"; a verb that reported "cmdline updated on 2 entries" while changing nothing. If
-you add a test, **make it fail on purpose once** and check it says something useful.
-
 ### What a test here is for
 
 A new test should be able to answer four questions. If it cannot answer the first two, it is
@@ -681,6 +660,27 @@ Three notes that follow from question 2, all of which the tree already does some
   fixture reads as broken, but label it, so it never reads as a claim about this project.
 - **Cost is part of the argument.** See the timings above: the unit gate is paid at **both**
   `pre-commit` and `pre-push`, so a test that sleeps, spawns or waits spends that twice per change.
+
+**The gate runs your test in a sandbox, and has opinions about what you leave in it.** Three rules,
+each of which came from something that shipped — the measurements and the failures behind them are
+in [`ci/checks/80-unit.sh`](ci/checks/80-unit.sh)'s header:
+
+- **git's repository-local variables are cleared** before each test. A test that shells out to `git`
+  acts on its own fixture and never on the commit in progress. Without this, `git commit -a` under
+  the hook died with `error: Error building trees` while the gate printed `ok`.
+- **each test gets a private `TMPDIR`**, removed afterwards. Five tests here had been leaving 46
+  directories per run in `/tmp` and nothing took them away.
+- **a test that passes having left anything in that `TMPDIR` fails the gate**, named and listed. A
+  test that *fails* keeps its fixtures instead, and the path is printed beside the failure.
+
+Clean up after yourself anyway. The gate is a net for a **gate** run; someone running your file
+directly gets none of it, which is what the third rule is there to notice.
+
+**A check that cannot fail is worse than no check.** This has bitten this project at least four
+times — a workflow that never opened an issue because `$?` after a pipeline is `tee`'s status; a
+fidelity test that compared a tree against itself; a boot test whose only assertion was "a
+screenshot exists"; a verb that reported "cmdline updated on 2 entries" while changing nothing. If
+you add a test, **make it fail on purpose once** and check it says something useful.
 
 ---
 
