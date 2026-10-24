@@ -682,6 +682,13 @@ fidelity test that compared a tree against itself; a boot test whose only assert
 screenshot exists"; a verb that reported "cmdline updated on 2 entries" while changing nothing. If
 you add a test, **make it fail on purpose once** and check it says something useful.
 
+**And before deleting one as redundant, break the code it guards.** Reading a test tells you what
+it says; only breaking the code tells you what it holds. On 2026-09-20 an audit proposed seven
+removals, and putting each to a mutation first overturned three of them. Two tests were the only
+thing catching their bug, and a third had never called the code it was testing, so its bug was
+caught by nothing in the suite (`87bf974`). A test the mutation saves says so in its docstring —
+`Mutation-checked`, with the date — so the next audit does not retry it.
+
 ---
 
 ## 6. Writing a recipe: the parts that surprise people
