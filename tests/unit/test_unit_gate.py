@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""ci/checks/80-unit.sh must not hand git's repository variables to the tests it runs.
+"""ci/checks/80-unit.sh must not hand git's repository variables to the tests it runs, nor
+kitchen's own REPO_ROOT and KITCHEN_SCOPE.
 
 WHY THIS EXISTS. githooks(5) says a hook that runs git "in a foreign repository or in a
 different working tree" must clear GIT_DIR, GIT_INDEX_FILE and the rest first. Four tests
@@ -23,6 +24,12 @@ THE FIX IS INVISIBLE TO AN ORDINARY RUN, which is the whole reason this file exi
 Outside a hook none of those variables is set, so `unset` is a no-op and `run-checks.sh ci`
 says nothing about whether the scrub works. A fix that only its own absence can detect is
 what this project refuses to ship: a check which cannot fail is worse than no check.
+
+AND KITCHEN'S OWN TWO (#102). run-checks.sh exports REPO_ROOT and KITCHEN_SCOPE for every
+gate, and this gate handed them on. ci/lib.sh keeps an inherited REPO_ROOT, so a test that
+ran a gate against a fixture, without setting it, had the gate check this checkout. The
+first version of #101's test passed when run by hand, and under the gate saw gate 20 pass
+every case. The probe reports those two as well.
 
 So the gate is driven against a throwaway repository with a VALID poison pointing at a
 second one -- the same shape as test_ci_lib.py and test_tier_c_guard.py, which drive shell
@@ -56,7 +63,8 @@ g("init", "-q"); g("config", "user.email", "t@e"); g("config", "user.name", "t")
 open(os.path.join(d, "fixture-file"), "w").write("x\\n")
 g("add", "-A"); g("commit", "-qm", "fixture commit")
 with open(os.environ["PROBE_REPORT"], "w") as fh:
-    fh.write("\\n".join(sorted(k for k in os.environ if k.startswith("GIT_"))))
+    fh.write("\\n".join(sorted(k for k in os.environ
+                               if k.startswith("GIT_") or k in ("REPO_ROOT", "KITCHEN_SCOPE"))))
 LITTER or shutil.rmtree(d, ignore_errors=True)
 sys.exit(EXIT)
 '''
@@ -240,6 +248,11 @@ def test_a_test_cannot_reach_the_commit_in_progress():
               sorted(seen & set(local_env_vars())), [])
         check("...and the poison really was a set git calls repository-local",
               sorted(set(POISON) - set(local_env_vars())), [])
+        # Nor kitchen's own two, which run-checks.sh exports for every gate and run_gate
+        # sets as it does. A test that ran a gate against a fixture had it check THIS
+        # checkout instead (#102).
+        check("...nor kitchen's REPO_ROOT and KITCHEN_SCOPE",
+              sorted(seen & {"REPO_ROOT", "KITCHEN_SCOPE"}), [])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -247,9 +247,10 @@ def test_the_vendor_gate_sees_inside_the_submodule():
         sub = os.path.join(repo, "vendor", "linux-live")
 
         def gate(where, **extra):
-            # REPO_ROOT set, not inherited: run-checks.sh exports this checkout's, and
-            # lib.sh keeps an inherited one, so under the unit gate the gate checked THIS
-            # repository's clean submodule and passed every case.
+            # REPO_ROOT set, not inherited. run-checks.sh exports this checkout's and
+            # lib.sh keeps an inherited one, and until #102 the unit gate passed it on: the
+            # gate checked THIS repository's clean submodule and passed every case. The
+            # sandbox clears it now; setting it here still holds in a shell that exports it.
             p = subprocess.run(["sh", "ci/checks/20-vendor-pristine.sh"], cwd=where,
                                capture_output=True, text=True,
                                env=dict(os.environ, KITCHEN_SCOPE="tree", NO_COLOR="1",

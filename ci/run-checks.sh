@@ -7,6 +7,8 @@
 # Hooks and CI both call this -- there is exactly one implementation of every gate.
 set -u
 STAGE=${1:-pre-commit}
+# REPO_ROOT and KITCHEN_SCOPE are exported for the gates, and ci/lib.sh keeps both.
+# 80-unit.sh clears them for the tests it runs, beside git's own variables (#102).
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 export REPO_ROOT
 

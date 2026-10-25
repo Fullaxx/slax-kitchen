@@ -38,6 +38,14 @@
 #
 # The names come from git rather than a list copied into this file, which would be one more
 # pair of things to keep in step.
+#
+# AND KITCHEN'S OWN TWO. run-checks.sh exports REPO_ROOT and KITCHEN_SCOPE for every gate,
+# and ci/lib.sh, release-guard.sh and release-notes.sh keep an inherited value. So a test
+# that ran a gate against a fixture, without setting REPO_ROOT itself, had the gate check
+# THIS checkout. The first version of #101's test passed when run by hand, and here saw
+# gate 20 pass every case (2026-10-24). Three tests had learned to set it against this, and
+# two of them did not say why. Cleared beside git's, for the same two reasons: every other
+# gate must keep them, and one rule in one place covers the tests not written yet (#102).
 _repo_env=$(git rev-parse --local-env-vars 2>/dev/null)
 if [ -z "$_repo_env" ]; then
     # Fail closed. An empty list here means running every test with the commit's own index
@@ -119,14 +127,16 @@ export KITCHEN_BOOT_HOST
 # removes the variable before the test runs, so a test that drives the runner itself, as
 # test_unit_gate.py does, writes nothing into this one.
 _notes=/tmp/.kitchen-unit-notes.$$
+# Taken before the loop: the subshell's exec would expand $REPO_ROOT after the unset.
+_runner=$REPO_ROOT/ci/unit-run.py
 
 for t in "$REPO_ROOT"/tests/unit/test_*.py; do
     [ -f "$t" ] || continue
     _tmp=$(mktemp -d) || { fail "$(basename "$t"): cannot create its TMPDIR"; continue; }
     rm -f "$_notes"
-    ( unset $_repo_env; TMPDIR=$_tmp; KITCHEN_UNIT_NOTES=$_notes; \
+    ( unset $_repo_env REPO_ROOT KITCHEN_SCOPE; TMPDIR=$_tmp; KITCHEN_UNIT_NOTES=$_notes; \
       export TMPDIR KITCHEN_UNIT_NOTES; \
-      exec python3 "$REPO_ROOT/ci/unit-run.py" "$t" ) \
+      exec python3 "$_runner" "$t" ) \
         >/dev/null 2>/tmp/.kitchen-unit.$$ || {
         fail "$(basename "$t")"
         sed 's/^/      /' /tmp/.kitchen-unit.$$ >&2
