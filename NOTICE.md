@@ -27,14 +27,12 @@ If you find this toolkit useful, support Slax upstream. This repository is not t
 `vendor/linux-live` is a git submodule pinned to an upstream commit and is **never modified**. A
 commit gate, `ci/checks/20-vendor-pristine.sh`, keeps the license boundary from eroding by
 accident. It runs in CI, and before each commit and push wherever the hooks are installed. It
-fails:
-- when a file of that tree is committed into this repository;
-- when the submodule is checked out at another commit than its pin;
-- when any file inside it is modified or untracked
-  ([#101](https://github.com/Fullaxx/slax-kitchen/issues/101)).
+fails a commit that records the submodule as anything but its pointer, such as a file of that tree
+committed into this repository ([#103](https://github.com/Fullaxx/slax-kitchen/issues/103)).
 
-It does not check whether a newly recorded pin is an upstream commit. Without the submodule
-checked out, it skips the last two, and says so.
+It does not check whether a newly recorded pin is an upstream commit. A commit that moves the pin
+shows the change as `Subproject commit` for review. Nor does it read the submodule's checkout,
+which no commit records: `git status` shows an edit inside it as ` M vendor/linux-live`.
 
 Upstream's `DOC/LICENSE` says "released under GNU GENERAL PUBLIC LICENSE" and names no version. The
 license text shipped beside it, `DOC/GNU_GPL`, is version 2 (June 1991). There is no

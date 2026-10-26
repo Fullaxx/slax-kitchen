@@ -51,8 +51,8 @@ Linux Live Kit and the Slax build scripts are **GPLv2** (`vendor/linux-live/DOC/
 the project — the intent is unambiguous from `DOC/`, but it is not machine-detectable.
 
 We vendor the repository **unmodified** and never relicense it. A commit gate,
-`ci/checks/20-vendor-pristine.sh`, keeps it so; [NOTICE.md](../../NOTICE.md) says what it
-checks, and what it does not.
+`ci/checks/20-vendor-pristine.sh`, keeps its files out of this repository's history;
+[NOTICE.md](../../NOTICE.md) says what it checks, and what it does not.
 
 ## Keeping the pin honest
 

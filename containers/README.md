@@ -160,13 +160,21 @@ back on stdout rather than bind-mounting anything.
 
 **Also expect a git ownership refusal** when the checkout is owned by a different uid than the
 container runs as — CI hits this, because the runner checks out as uid 1001 and the container is
-root. git checks the submodule's owner too, and the vendor gate runs git inside it
-([#101](https://github.com/Fullaxx/slax-kitchen/issues/101)):
+root:
 
 ```sh
 git config --global --add safe.directory /work
-git config --global --add safe.directory /work/vendor/linux-live
 ```
+
+git would refuse a command run inside `vendor/linux-live` too.
+- **The gates run none** since [#103](https://github.com/Fullaxx/slax-kitchen/issues/103): the
+  vendor gate reads only the pointer a commit records.
+- **A provenance record's `git submodule status`** worked with only the line above.
+- **`kitchen upstream-diff` runs git inside it.** Without a line for it, `upstream-diff` exits 2,
+  "cannot read the pinned commit". To run it here, add `/work/vendor/linux-live` as well.
+
+Both were measured on 2026-10-26 in both reference containers, with git 2.39 and 2.43, as root on
+a checkout owned by uid 1001.
 
 ## What is deliberately absent
 

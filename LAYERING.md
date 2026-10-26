@@ -136,10 +136,15 @@ every project.
 
 A gate checks the repository it lives in and nothing else. A project gets gates by copying them
 from its engine pin, and chooses which: slax-rpgs, which will commit a game payload that
-`00-no-binaries` refuses, can leave that folder out of its copy or leave the gate out. slax-wine
-gives each copy a header naming the file and commit it came from, and at every update fails any
-copy whose header cites a commit other than the pin. Apart from that header, it checks the copies
-it calls verbatim byte-for-byte against the pinned engine, and not the ones it calls adapted
+`00-no-binaries` refuses, can leave that folder out of its copy or leave the gate out.
+`20-vendor-pristine` reads the submodule paths from the project's own `.gitmodules`, so a project
+copies it unchanged: it holds `vendor/slax-kitchen` to its pointer there as it holds
+`vendor/linux-live` here ([#103](https://github.com/Fullaxx/slax-kitchen/issues/103)).
+
+slax-wine gives each copy a header naming the file and commit it came from, and at every update
+fails any copy whose header cites a commit other than the pin. Apart from that header, it checks
+the copies it calls verbatim byte-for-byte against the pinned engine, and not the ones it calls
+adapted
 ([`96-release-consistency.sh`](https://github.com/Fullaxx/slax-wine/blob/7535d6c/ci/checks/96-release-consistency.sh)).
 So a gate fix reaches a verbatim copy at the next engine update, and an adapted one only when it is
 re-adapted. That is slax-wine's choice; a project takes as much of it as it wants.

@@ -49,9 +49,9 @@ jobs:
     name: commit gates
     runs-on: ubuntu-24.04
     steps:
+      # No job here checks out vendor/linux-live. Nothing in CI reads it, and gate 20
+      # reads only the pointer a commit records (#103).
       - uses: actions/checkout@v7
-        with:
-          submodules: true          # 20-vendor-pristine needs the submodule present
       # containers/packages/*.txt is the list, and the reference container installs
       # the same files. This used to be three inline copies here plus a fourth in
       # docs/40-workflow/toolchain.md, and they had already drifted apart.
@@ -91,7 +91,6 @@ jobs:
         base: [ubuntu:24.04, "debian:12"]
     steps:
       - uses: actions/checkout@v7
-        with: {submodules: true}
       - run: |
           docker build -f containers/Containerfile \
             --build-arg BASE=${{ matrix.base }} -t slax-kitchen:ci containers/
@@ -106,15 +105,13 @@ jobs:
         # message". Measured 2026-09-16 -- they did not die. check_files() returned the
         # EMPTY SET, so five gates looped over nothing and reported SUCCESS on a tree
         # with a planted violation in it. ci/lib.sh now refuses to run when git will not
-        # answer, so dropping this line fails the job loudly instead of silently. The
-        # submodule needs its own line: gate 20 runs git inside vendor/linux-live, and
-        # git checks that directory's owner as well (#101: reproduced with this job's
-        # ownership in the reference container).
+        # answer, so dropping this line fails the job loudly instead of silently. From
+        # #101 to #103 the submodule needed a line of its own, because gate 20 ran git
+        # inside it. Nothing in this job does now.
         run: |
           docker run --rm -v "$PWD:/work" -w /work slax-kitchen:ci sh -c '
             set -e
             git config --global --add safe.directory /work
-            git config --global --add safe.directory /work/vendor/linux-live
             ./kitchen doctor --strict
             ./ci/run-checks.sh ci
           '
@@ -142,7 +139,6 @@ jobs:
             iso: slax-32bit-slackware-15.0.4.iso
     steps:
       - uses: actions/checkout@v7
-        with: {submodules: true}
 
       - name: install toolchain
         run: |
@@ -273,7 +269,6 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-        with: {submodules: true}
       # boot.txt is additive to build.txt, not a replacement for it.
       - name: install toolchain
         run: |

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """ci/lib.sh's file_size, the size rule in 00-no-binaries that depends on it, and
-20-vendor-pristine, which keeps a submodule pristine.
+20-vendor-pristine, which holds each submodule to its pointer.
 
 WHY THIS EXISTS. file_size feeds the size limit in 00-no-binaries, which calls itself the
 most important gate in this repo, and nothing tested it: `grep -rl file_size tests/`
@@ -206,21 +206,28 @@ def test_require_python3_refuses_instead_of_standing_down():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_the_vendor_gate_sees_inside_the_submodule():
-    """Gate 20 fails on an edited or untracked file inside vendor/linux-live (#101).
+def test_the_vendor_gate_holds_each_submodule_to_its_pointer():
+    """Gate 20 fails a submodule committed as anything but its pointer, and nothing else (#103).
 
-    It read only `git submodule status`, whose + means a moved pointer, while its message
-    claimed to catch "uncommitted local modifications". An edit inside the submodule leaves
-    that line unchanged. slax-rpgs measured it on its own copy on 2026-10-01, and on
-    2026-10-24 a scratch clone here passed with a line appended to DOC/bundle.txt, and with
-    an untracked file.
+    Until #103 it read the submodule's working tree: checked out at its pin, and (#101)
+    nothing edited or untracked inside. Measured 2026-10-26, that failed a commit leaving a
+    moved checkout unstaged, which moved nothing, and passed `git add -A` and `git commit -a`,
+    which staged the move. A commit records a pointer or files, never a working tree. Every
+    downstream copy had to change the path as well: #101's test failed three of six checks
+    against slax-wine's gate on 2026-10-25, until slax-wine adapted it.
 
-    Driven against a throwaway repository with a real submodule at vendor/linux-live, the
-    way test_the_size_rule_still_has_teeth drives 00-no-binaries.
+    So the fixture names a submodule path of its own in its own .gitmodules, and the gate
+    must find it there, as a copy must in any project. The path holds a space, which
+    `--get-regexp` uses to separate key and value, and a byte above 127, which
+    `git ls-files` quotes without -z: the gate's first draft failed `deps/ünï` (2026-10-26).
     - The clean case comes first: a gate that fails a clean tree is the same defect wearing
-      the other face.
-    - A clone without --recurse-submodules must skip, and not report the parent's files as
-      the submodule's. `git -C` in a directory with no .git answers for the parent, measured.
+      the other face. A moved and edited checkout is clean as far as history goes.
+    - The hook case takes the pointer out of an index of the hook's own, the kind
+      `git commit -a` makes. #101's fix cleared GIT_INDEX_FILE for git inside the
+      submodule; done here, that would check .git/index instead of the commit being made.
+    - A .gitmodules git cannot read must fail. `git config --blob` exits 1 for one, the
+      same as for one that names nothing, and the gate's first draft passed it (measured
+      2026-10-26).
     """
     tmp = tempfile.mkdtemp(prefix="civendor-")
     try:
@@ -233,67 +240,83 @@ def test_the_vendor_gate_sees_inside_the_submodule():
             fh.write("two\n")
         git(upstream, "commit", "-qam", "two", check=True)
 
-        repo = new_repo(tmp, "repo")
-        os.makedirs(os.path.join(repo, "ci", "checks"))
-        shutil.copy2(LIB, os.path.join(repo, "ci", "lib.sh"))
-        shutil.copy2(VENDOR_GATE, os.path.join(repo, "ci", "checks", "20-vendor-pristine.sh"))
+        def project(name):
+            repo = new_repo(tmp, name)
+            os.makedirs(os.path.join(repo, "ci", "checks"))
+            shutil.copy2(LIB, os.path.join(repo, "ci", "lib.sh"))
+            shutil.copy2(VENDOR_GATE, os.path.join(repo, "ci", "checks",
+                                                   "20-vendor-pristine.sh"))
+            return repo
+
+        def gate(where, **extra):
+            # REPO_ROOT set, not inherited. run-checks.sh exports this checkout's, lib.sh
+            # keeps an inherited one, and until #102 the unit gate passed it on, so the gate
+            # checked THIS repository. The sandbox clears it now; this holds in a shell that
+            # exports one. Staged scope, as at pre-commit: the gate reads the index in either.
+            p = subprocess.run(["sh", "ci/checks/20-vendor-pristine.sh"], cwd=where,
+                               capture_output=True, text=True,
+                               env=dict(os.environ, KITCHEN_SCOPE="staged", NO_COLOR="1",
+                                        REPO_ROOT=where, **extra))
+            return p.returncode, p.stdout + p.stderr
+
+        repo = project("repo")
+        path = "deps/the thïng"
         r = git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q",
-                upstream, "vendor/linux-live")
+                upstream, path)
         if r.returncode != 0:
             FAILURES.append(f"could not create a submodule fixture: {r.stderr.strip()}")
             return
         git(repo, "add", "-A", check=True)
         git(repo, "commit", "-qm", "seed", check=True)
-        sub = os.path.join(repo, "vendor", "linux-live")
-
-        def gate(where, **extra):
-            # REPO_ROOT set, not inherited. run-checks.sh exports this checkout's and
-            # lib.sh keeps an inherited one, and until #102 the unit gate passed it on: the
-            # gate checked THIS repository's clean submodule and passed every case. The
-            # sandbox clears it now; setting it here still holds in a shell that exports it.
-            p = subprocess.run(["sh", "ci/checks/20-vendor-pristine.sh"], cwd=where,
-                               capture_output=True, text=True,
-                               env=dict(os.environ, KITCHEN_SCOPE="tree", NO_COLOR="1",
-                                        REPO_ROOT=where, **extra))
-            return p.returncode, p.stdout + p.stderr
+        sub = os.path.join(repo, path)
 
         rc, out = gate(repo)
         check("a clean submodule passes", (rc, "FAIL" in out), (0, False))
-        # ...under a git hook too, which exports the parent's GIT_DIR and GIT_INDEX_FILE.
-        # git inside the submodule read them, and the pre-commit hook refused #101's own
-        # commit: "fatal: .git/index: index file open failed: Not a directory".
-        rc, out = gate(repo, GIT_DIR=".git", GIT_INDEX_FILE=".git/index")
-        check("...and under a git hook's GIT_DIR and GIT_INDEX_FILE", (rc, "FAIL" in out),
-              (0, False))
-
-        # One run for both halves of rule 3: the message must name each path, so a gate that
-        # saw only edits, or only untracked files, still fails this.
-        with open(os.path.join(sub, "README"), "a") as fh:
-            fh.write("edited\n")
-        with open(os.path.join(sub, "NEW"), "w") as fh:
-            fh.write("x\n")
-        rc, out = gate(repo)
-        check("an edited and an untracked file inside fail, each named (#101)",
-              (rc != 0, "2 modified or untracked path(s)" in out, "README" in out, "NEW" in out),
-              (True, True, True, True))
-        git(sub, "checkout", "-q", "--", "README", check=True)
-        os.remove(os.path.join(sub, "NEW"))
 
         git(sub, "checkout", "-q", "HEAD~1", check=True)
+        with open(os.path.join(sub, "README"), "a") as fh:
+            fh.write("edited\n")
         rc, out = gate(repo)
-        check("a checkout at another commit still fails",
-              (rc != 0, "other than its pin" in out), (True, True))
-        git(sub, "checkout", "-q", "-", check=True)
+        check("...and so does a moved and edited checkout, which no commit records (#103)",
+              (rc, "FAIL" in out), (0, False))
+        git(sub, "checkout", "-q", "-f", "-", check=True)
 
-        bare = os.path.join(tmp, "bare")
-        git(tmp, "clone", "-q", repo, bare, check=True)
-        with open(os.path.join(bare, "stray"), "w") as fh:
-            fh.write("y\n")
-        rc, out = gate(bare)
-        check("a submodule not checked out is skipped, and says so",
-              (rc, "not checked out" in out), (0, True))
-        check("...without reporting the parent's own file as the submodule's",
-              "stray" in out, False)
+        hook_index = os.path.join(repo, ".git", "hook-index")
+        shutil.copy2(os.path.join(repo, ".git", "index"), hook_index)
+        git(repo, "rm", "-q", "--cached", path, check=True,
+            env=dict(os.environ, GIT_INDEX_FILE=hook_index))
+        rc, out = gate(repo, GIT_DIR=".git", GIT_INDEX_FILE=hook_index)
+        plain_rc, _ = gate(repo, GIT_DIR=".git")
+        check("a pointer missing from a hook's own index fails, named, while .git/index passes",
+              (rc != 0, f"{path} is a submodule in .gitmodules, but the index records no pointer"
+               in out, plain_rc), (True, True, 0))
+        os.remove(hook_index)
+
+        # The vendored tree committed as files: the pointer gone, its files in its place.
+        git(repo, "rm", "-q", "--cached", path, check=True)
+        shutil.rmtree(sub)
+        os.makedirs(os.path.join(sub, "sub"))
+        for n in ("a", "b", "c", "d", "sub/e"):
+            with open(os.path.join(sub, n), "w") as fh:
+                fh.write(n + "\n")
+        git(repo, "add", "--", path, check=True)
+        rc, out = gate(repo)
+        check("its tree committed as files instead fails, with the count and the first names",
+              (rc != 0, "committed as 5 file(s) instead of a pointer" in out, f"{path}/a" in out),
+              (True, True, True))
+
+        with open(os.path.join(repo, ".gitmodules"), "w") as fh:
+            fh.write('[submodule "x"\n\tpath = x\n')
+        git(repo, "add", ".gitmodules", check=True)
+        rc, out = gate(repo)
+        check("a .gitmodules git cannot read fails, and says so",
+              (rc != 0, "git cannot read .gitmodules" in out), (True, True))
+
+        plain = project("plain")
+        git(plain, "add", "-A", check=True)
+        rc, out = gate(plain)
+        check("a project with no .gitmodules passes, and says so",
+              (rc, "no .gitmodules" in out), (0, True))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -303,7 +326,7 @@ def main():
                test_the_size_rule_still_has_teeth,
                test_a_stat_without_c_still_refuses_to_run,
                test_require_python3_refuses_instead_of_standing_down,
-               test_the_vendor_gate_sees_inside_the_submodule]:
+               test_the_vendor_gate_holds_each_submodule_to_its_pointer]:
         # One test crashing must not stop the rest: the count of failures is only honest
         # if every test ran. The traceback still goes to stderr, because a crash's location
         # is the useful half and a one-line summary loses it.
