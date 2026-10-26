@@ -137,11 +137,12 @@ every project.
 A gate checks the repository it lives in and nothing else. A project gets gates by copying them
 from its engine pin, and chooses which: slax-rpgs, which will commit a game payload that
 `00-no-binaries` refuses, can leave that folder out of its copy or leave the gate out. slax-wine
-marks each copy with the file and commit it came from and checks it byte-for-byte against the
-pinned engine at every update
-([`96-release-consistency.sh`](https://github.com/Fullaxx/slax-wine/blob/7535d6c/ci/checks/96-release-consistency.sh)),
-so a gate fix reaches it at its next engine update. That is slax-wine's choice; a project takes as
-much of it as it wants.
+gives each copy a header naming the file and commit it came from, and at every update fails any
+copy whose header cites a commit other than the pin. Apart from that header, it checks the copies
+it calls verbatim byte-for-byte against the pinned engine, and not the ones it calls adapted
+([`96-release-consistency.sh`](https://github.com/Fullaxx/slax-wine/blob/7535d6c/ci/checks/96-release-consistency.sh)).
+So a gate fix reaches a verbatim copy at the next engine update, and an adapted one only when it is
+re-adapted. That is slax-wine's choice; a project takes as much of it as it wants.
 
 ## The build driver
 

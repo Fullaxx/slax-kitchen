@@ -296,7 +296,7 @@ def test_a_vendored_kitchen_installs_the_projects_hooks():
     project's hooks into the project's repository (#66).
 
     It tested for a `.git` DIRECTORY, and a submodule's `.git` is a file, so it died with
-    "not a git repo". slax-wine's docs tell people not to use it, and install its hooks
+    "not a git repo". slax-wine's docs told people not to use it, and to install its hooks
     with `ln -sf` by hand. Had the test passed, the hooks it linked would have run the
     engine's gates over the engine's tree. Here the project is found through provenance.py,
     as a real submodule makes it, and a project with no ci/hooks/ is told so.

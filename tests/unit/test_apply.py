@@ -3070,7 +3070,7 @@ def test_what_root_wrote_under_sudo_is_given_back():
     """Under sudo, what a kitchen command wrote in the user's tree stayed root's, so the next
     unprivileged step could not write the journal, the provenance record or the bundle, or
     remove a directory root had made (#70). CI chowned out/ and work/ after its build, and
-    slax-wine's build.sh chowns its tree after every apply: "one failed build wedged every
+    slax-wine's build.sh chowned its tree after every apply: "one failed build wedged every
     subsequent one".
 
     The rest are the hazards of a chown -R run as root on a path someone named. Following

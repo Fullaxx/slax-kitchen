@@ -4,7 +4,7 @@
 Under sudo, unpack, apply, pack, build and test write as root into that user's work tree
 and output directory, and nothing gave the files back. The next unprivileged step met a
 journal, a provenance record and a bundle it could not write, and a directory it could not
-remove. CI's boot job chowned out/ and work/ after its build, slax-wine's build.sh chowns
+remove. CI's boot job chowned out/ and work/ after its build, slax-wine's build.sh chowned
 its tree after every apply, and publishing-images.md had a publisher `sudo chown -R` out/.
 This does what those did, once, here, as the command ends: on success, on failure, and on
 INT, TERM and HUP. The trap in `kitchen` makes those exits for the shell commands, with PIPE
