@@ -114,9 +114,11 @@ def test_a_file_that_cannot_be_read_is_reported_not_raised():
 
 
 def main():
-    # test_every_shipped_recipe_passes LAST. ci/unit-run.py profiles every call until it
-    # has seen each test begin, and this one validates every shipped recipe. With #74's
-    # test listed after it, it ran under the profiler and cost the gate 0.3 s more.
+    # test_every_shipped_recipe_passes LAST. ci/unit-run.py profiled every call until it
+    # had seen each test begin, and this one validates every shipped recipe: with #74's
+    # test listed after it, it ran under the profiler and cost the gate 0.3 s more. Since
+    # #92 that holds on python 3.11 only, where the runner falls back to that profiler,
+    # and debian:12's python is 3.11. On 3.12 and later order costs nothing.
     for fn in [test_a_recipe_that_removes_may_do_nothing_else,
                test_a_file_that_cannot_be_read_is_reported_not_raised,
                test_every_shipped_recipe_passes]:

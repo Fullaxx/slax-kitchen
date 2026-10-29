@@ -509,7 +509,8 @@ def test_kitchen_validate_holds_a_profile_to_the_vars_its_recipes_declare():
     shipped recipe, found as apply finds it.
 
     Here rather than in test_validate.py because the check imports apply, which this file
-    has already paid for: under ci/unit-run.py, importing it there cost 0.33 s.
+    has already paid for: under ci/unit-run.py's sys.setprofile hook, importing it there
+    cost 0.33 s (9f3eb09, 2026-09-28). Since #92 that hook runs on python 3.11 only.
     """
     import contextlib
     import io
@@ -5054,8 +5055,9 @@ def main():
                    test_serial_console_on_the_stock_menus_is_the_entry_that_was_booted,
                    test_a_chroot_gets_its_own_home,
                    test_a_chroot_does_not_get_kitchens_repo_root,
-                   # Not last: unit-run.py's profiler stays on until every test has begun,
-                   # so a cheap test listed last keeps the one before it profiled.
+                   # Not last: on python 3.11 unit-run.py's profiler stays on until every
+                   # test has begun, so a cheap test listed last keeps the one before it
+                   # profiled. 3.12 and later use sys.monitoring, where order is free (#92).
                    test_a_chroot_gets_its_own_tmpdir,
                    test_a_missing_from_label_is_refused_before_either_file_is_written]:
             # One test crashing must not stop the rest: the count of failures is only honest

@@ -19,9 +19,20 @@ list looks like, still read as registered:
 
 Each fix made the inference sharper without making it true. What is actually being asked
 is "did this function run", which is not a question about the source text at all. So it
-is measured: sys.setprofile fires on every call, the run's own entries are recorded, and
-what is left over is named. The same move as asking Python for its temporary directory
-rather than assuming /tmp (ci/tier-c.sh, 9595de4).
+is measured: the run's own functions are recorded as they start, and what is left over is
+named. The same move as asking Python for its temporary directory rather than assuming
+/tmp (ci/tier-c.sh, 9595de4).
+
+HOW IT IS MEASURED (#92). On Python 3.12 and later, sys.monitoring reports each function's
+first start (PY_START) and is then told not to report that function again, so a function
+costs one callback however often it runs. Before that, the only way was sys.setprofile,
+whose hook is a Python function called on every call and return in the process, C calls
+included, and that hook was what this check cost the unit gate: CONTRIBUTING.md, "Seconds,
+not milliseconds", holds the figures. The hook is still the fallback where there
+is no sys.monitoring (python 3.11, debian:12's, one of CI's two container bases) and where
+another tool holds the profiler slot (see watch()). The two differ in one way, measured:
+sys.monitoring sees every thread and sys.setprofile only the thread that set it, so on
+3.12 a test first called from another thread counts as run. It did run.
 
 A file that discovers its tests from globals() needs no exemption here. It never could
 have this bug, and now it does not need to be recognised either -- it simply runs them
@@ -101,6 +112,45 @@ def disabled_tests(tree: ast.Module) -> dict:
     return out
 
 
+def watch(path: str, entered: set):
+    """Record each function in `path` as it first starts, through sys.monitoring.
+
+    Returns sys.monitoring while it is recording, or None when the caller has to fall back
+    to sys.setprofile: on a Python with no sys.monitoring, and when another tool already
+    holds the profiler slot. cProfile holds it while it runs, so `python3 -m cProfile
+    ci/unit-run.py ...` ended #92's prototype, which claimed the slot unguarded, with
+    "ValueError: tool 2 is already in use" (measured 2026-10-29, python 3.12.3). Falling
+    back keeps the measurement; skipping it would pass a file without measuring, the one
+    thing this runner may never do. sys.setprofile still sees every call while the slot is
+    held, measured the same day.
+    """
+    mon = getattr(sys, "monitoring", None)
+    if mon is None:
+        return None
+    try:
+        mon.use_tool_id(mon.PROFILER_ID, "unit-run")
+    except ValueError:
+        return None
+
+    def started(code, _offset):
+        # co_filename, as in the setprofile hook. DISABLE switches this event off for the
+        # code object that raised it, so each function reports once, however often it runs.
+        if code.co_filename == path:
+            entered.add(code.co_name)
+        return mon.DISABLE
+
+    mon.register_callback(mon.PROFILER_ID, mon.events.PY_START, started)
+    mon.set_events(mon.PROFILER_ID, mon.events.PY_START)
+    return mon
+
+
+def unwatch(mon) -> None:
+    """Undo watch(): no events, no callback, and the slot given back."""
+    mon.set_events(mon.PROFILER_ID, 0)
+    mon.register_callback(mon.PROFILER_ID, mon.events.PY_START, None)
+    mon.free_tool_id(mon.PROFILER_ID)
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print("usage: unit-run.py <test file> [args...]", file=sys.stderr)
@@ -127,14 +177,16 @@ def main(argv: list[str]) -> int:
             entered.add(frame.f_code.co_name)
             if want <= entered:
                 # Nothing left to see. The hook is called for every call in every module,
-                # which is what the measurement costs, so it stops as soon as the answer
-                # can no longer change.
+                # which is what this way of measuring costs, so it stops as soon as the
+                # answer can no longer change.
                 sys.setprofile(None)
 
     notes_to = os.environ.pop("KITCHEN_UNIT_NOTES", "")
     sys.argv = [path] + list(argv[2:])
     rc = 0
-    sys.setprofile(hook)
+    mon = watch(path, entered)
+    if mon is None:
+        sys.setprofile(hook)
     try:
         runpy.run_path(path, run_name="__main__")
     except SystemExit as e:
@@ -149,8 +201,10 @@ def main(argv: list[str]) -> int:
         traceback.print_exc()
         rc = 1
     finally:
-        # Off before anything is printed, so the reporting below is not itself profiled.
+        # Off before anything is printed, so the reporting below is not itself measured.
         sys.setprofile(None)
+        if mon is not None:
+            unwatch(mon)
 
     if rc == SKIP_STATUS:
         note(notes_to, f"{os.path.basename(path)}: skipped")

@@ -489,8 +489,71 @@ def test_the_runners_notes_reach_the_gate():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# STRAY's shape for the runner on its own, with no gate around it: one test that runs, and
+# one that is only mentioned in a list nothing iterates.
+RUN_ONE = '''
+def test_that_runs():
+    pass
+
+
+def test_never_called():
+    raise AssertionError("a test nobody ran cannot fail, which is the bug")
+
+
+_LEFTOVER = [test_never_called]
+
+test_that_runs()
+'''
+
+# How the runner measures depends on what it finds when it starts (#92), so each way is
+# reached by changing sys first, in the runner's own process.
+WAYS = {
+    "as this python is": "",
+    "sys.monitoring hidden, as on python 3.11":
+        "if hasattr(sys, 'monitoring'):\n    delattr(sys, 'monitoring')\n",
+    "the profiler slot held, as under cProfile":
+        "sys.monitoring.use_tool_id(sys.monitoring.PROFILER_ID, 'cProfile')\n",
+}
+
+
+def test_every_way_the_runner_measures_names_a_test_that_did_not_run():
+    """#92 gave ci/unit-run.py two ways to see which tests ran: sys.monitoring where Python
+    has it, and sys.setprofile where it does not or where another tool holds the profiler
+    slot. The second is the only way on python 3.11, which is debian:12's, one of CI's two
+    container bases. And the slot is held whenever the gate is profiled: under
+    `python3 -m cProfile`, #92's prototype, which claimed the slot unguarded, ended with a
+    ValueError (measured 2026-10-29). The rule from #92 is to fall back, and never to pass
+    without measuring.
+
+    A way that measured nothing would pass a stray test in silence, the gate's oldest
+    failure (test_a_test_that_never_runs_is_named). So each way runs the same file and must
+    name the stray, and only the stray. The second half is what fails a way that records
+    nothing, since that way names both."""
+    tmp = tempfile.mkdtemp(prefix="unitgate-")
+    try:
+        f = os.path.join(tmp, "test_two.py")
+        with open(f, "w") as fh:
+            fh.write(RUN_ONE)
+        for way, prelude in WAYS.items():
+            if "slot held" in way and not hasattr(sys, "monitoring"):
+                print(f"{way}: python {sys.version.split()[0]} has no sys.monitoring, "
+                      f"so there is no slot to hold")
+                continue
+            script = ("import runpy, sys\n" + prelude + "sys.argv = sys.argv[1:]\n"
+                      "runpy.run_path(sys.argv[0], run_name='__main__')\n")
+            p = subprocess.run([sys.executable, "-c", script, RUNNER, f],
+                               capture_output=True, text=True, timeout=60)
+            check(f"{way}: the run fails", p.returncode, 1)
+            check(f"{way}: ...naming the test that did not run",
+                  "test_never_called is defined but never ran" in p.stderr, True)
+            check(f"{way}: ...and not the one that did", "test_that_runs" in p.stderr, False)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 TESTS = [test_a_test_cannot_reach_the_commit_in_progress,
          test_a_test_that_never_runs_is_named,
+         test_every_way_the_runner_measures_names_a_test_that_did_not_run,
          test_the_runners_notes_reach_the_gate,
          test_a_test_leaves_nothing_behind,
          test_a_test_that_litters_is_named,
