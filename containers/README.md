@@ -70,20 +70,24 @@ docker run --rm slax-kitchen head -5 /etc/slax-kitchen-toolchain.txt
 
 ## Which base, and why the default is Ubuntu
 
-Four things constrain the base. None is a version pin, and both bases CI builds satisfy all
-four: `ubuntu:24.04` and **`debian:12`**. Ubuntu 22.04 and Debian 11 fall below the python3
+Three things constrain the base. None is a version pin, and both bases CI builds satisfy all
+three: `ubuntu:24.04` and **`debian:12`**. Ubuntu 22.04 and Debian 11 fall below the python3
 floor: their python3 is 3.10.12 and 3.9.2, measured 2026-10-24. A newer release is likely to
 work, and is not tested.
 
 | constraint | why |
 |---|---|
 | `/usr/lib/ISOLINUX/isohdpfx.bin` | hardcoded absolute path — `boot.isohybrid` needs it |
-| `/usr/share/OVMF/OVMF_{CODE,VARS}_4M.fd` | hardcoded absolute path — the UEFI boot test needs them |
 | `xz` supporting `--check=crc32` | the kernel's xz decoder cannot do CRC64, and CRC64 is xz's default |
 | `squashfs-tools >= 4.2`, `python3 >= 3.11` | asserted by `kitchen doctor`. 3.11 is the oldest python3 CI runs, `debian:12`'s 3.11.2, and nothing older is tested: the floor was 3.9, and two commands could not start there ([#100](https://github.com/Fullaxx/slax-kitchen/issues/100)) |
 
-Those rule out Fedora and Alpine, which put the first two files elsewhere. They do **not** rule out
-Debian 12, which ships both at the identical paths.
+The first rules out Fedora and Alpine, which put that file elsewhere. It does **not** rule out
+Debian 12, which ships it at the identical path.
+
+OVMF is not on the list. The UEFI boot test searches `/usr/share/OVMF`, `/usr/share/ovmf`,
+`/usr/share/edk2/ovmf` and `/usr/share/qemu` for it, and `$OVMF_CODE` and `$OVMF_VARS` override
+the search ([`tests/boot/qemu_boot.py`](../tests/boot/qemu_boot.py)), so a base that puts its
+firmware somewhere else needs only those two variables.
 
 **The default is `ubuntu:24.04` for exactly one reason: it is what `runs-on` gives us.**
 `.github/workflows/ci.yml` installs the toolchain on the *runner*, not in this image, so matching

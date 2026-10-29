@@ -16,10 +16,10 @@
 # seccomp=unconfined are not needed for anything.
 #
 # WHICH BASE. ubuntu:24.04 and debian:12 satisfy every constraint the toolkit has.
-# Two absolute paths are hardcoded -- /usr/lib/ISOLINUX/isohdpfx.bin and
-# /usr/share/OVMF/OVMF_*_4M.fd -- and they are Debian-family spellings, which rules
-# out Fedora and Alpine but NOT Debian. python3 must be 3.11 or newer, which rules
-# out Ubuntu 22.04 and Debian 11 (#100). CI builds both bases and runs
+# One absolute path is hardcoded -- /usr/lib/ISOLINUX/isohdpfx.bin, a Debian-family
+# spelling, which rules out Fedora and Alpine but NOT Debian. OVMF is searched for,
+# and $OVMF_CODE/$OVMF_VARS override the search. python3 must be 3.11 or newer,
+# which rules out Ubuntu 22.04 and Debian 11 (#100). CI builds both bases and runs
 # `doctor --strict` plus every commit gate in each, so that is a tested claim
 # rather than an assumption.
 #
