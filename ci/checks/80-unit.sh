@@ -107,7 +107,8 @@ export KITCHEN_BOOT_HOST
 # to that list looks like -- still read as registered. Each version made the inference
 # sharper without making it true, because "did this function run" is not a question about
 # the source text. ci/unit-run.py measures it: every unit test file below is run through
-# it, sys.setprofile records what was entered, and what is left over is named.
+# it, sys.monitoring records what was entered (sys.setprofile on python 3.11, or when a
+# profiler holds the slot: #92), and what is left over is named.
 #
 # That is also why there is no globals() exemption any more. A file that discovers its
 # tests that way runs them, and the measurement sees it.
