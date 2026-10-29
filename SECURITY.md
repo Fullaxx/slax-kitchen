@@ -45,6 +45,13 @@ In scope:
 - Anything that makes `kitchen` write outside the tree it was pointed at, or execute code from a
   recipe in a way a reader of that recipe would not expect. Recipes are meant to be **shared**, so
   a recipe that can do more than it appears to is a real finding.
+- Anything a crafted image can make `kitchen sources` do besides report on it. It is built to be
+  pointed at images somebody else made: it lists an image with xorriso and reads each file where
+  it lies rather than unpacking it, caps how far it decompresses an initramfs, and reports
+  malformed input as unreadable
+  ([`lib/sources.py`](lib/sources.py)). An image that makes it hang, exhaust memory, write anywhere
+  but the reports it was asked for, or run anything is a real finding. A bug in xorriso itself is
+  xorriso's.
 - Anything that lets a downloaded artifact through without its pinned checksum being enforced, or
   without its signature by the key a recipe pins (`signed_by:`) being checked.
 - Anything that weakens a built image relative to what the recipe says it does — a credential that
